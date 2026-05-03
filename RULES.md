@@ -65,13 +65,13 @@ Each player begins the game with:
 | Educator | 3 | 2 Professor, 1 Unskilled | 55% | ~100 |
 | Banker | 3 | 2 Banker, 1 Unskilled | 70% | ~100 |
 | Manufacturer | 5 | 2 Assembly Worker, 3 Unskilled | 50% | ~100 |
-| Doctor | 12 | 2 Doctor, 10 Nurse | 55% | ~100 |
+| Doctor | 6 | 2 Doctor, 4 Nurse | 55% | ~100 |
 
 > **Base Capacity** is the minimum effective production factor guaranteed by the island's physical plant. When a workforce's efficiency falls below this threshold (e.g. workers away at training), the island still produces at the base capacity rate. As the workforce gains experience and training it will eventually surpass the base capacity.
 
 > **Population** is distinct from the workforce. Each island starts with ~100 residents. The workforce is a subset of these people. New residents are born at the end of each year but are **not** automatic workers — they must be actively **recruited** (see Recruit Workers action on your turn).
 
-> **Healthcare Island full capacity** = 4 Doctors + 20 Nurses + 20 unskilled workers (44 total). Starting at 12 trained professionals means the clinic operates at partial capacity until additional staff are recruited and trained.
+> **Healthcare Island full capacity** = 4 Doctors + 20 Nurses + 20 unskilled workers (44 total). Starting at 6 trained professionals (2 Doctors + 4 Nurses) means the clinic operates at partial capacity until additional staff are recruited and trained.
 
 ---
 
