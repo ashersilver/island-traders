@@ -5,7 +5,11 @@ from ..models.resource import ResourceType
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
-from ..constants import BASE_PRICES, MANUFACTURER_PRODUCT_LINES
+from ..models.insurance import InsurancePolicy
+from ..constants import (
+    BASE_PRICES, MANUFACTURER_PRODUCT_LINES,
+    WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
+)
 
 
 class AIStrategy:
@@ -16,6 +20,47 @@ class AIStrategy:
     3. Sell produced resources if market price >= 80% of base price.
     Training is handled by TurnManager via _ai_educator_respond / _auto_arrange_transport.
     """
+
+    def _ai_offer_insurance(
+        self,
+        banker: Player,
+        other_players: list[Player],
+        season_name: str,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        """Banker AI proactively sells base-premium policies to uninsured high-risk players."""
+        actions: list[str] = []
+        purchased_tick = year * 4 + season_index
+        expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
+        for target in other_players:
+            for role in target.roles:
+                risk = WORKPLACE_RISK.get(role.name, {})
+                if not risk.get("injury_rate") and not risk.get("fatality_rate"):
+                    continue
+                for policy_type in ("life", "medical"):
+                    if target.has_active_insurance(policy_type, year, season_index):
+                        continue
+                    premium = INSURANCE_BASE_PREMIUM[policy_type]
+                    if target.dollops < premium or banker.dollops < 0:
+                        continue
+                    target.spend_dollops(premium)
+                    banker.receive_dollops(premium)
+                    policy = InsurancePolicy(
+                        policy_id=len(target.insurance_policies) + 1,
+                        policy_type=policy_type,
+                        holder_player_id=target.player_id,
+                        banker_player_id=banker.player_id,
+                        premium_paid=premium,
+                        purchased_tick=purchased_tick,
+                        expires_at_tick=expires_at,
+                    )
+                    target.add_insurance_policy(policy)
+                    actions.append(
+                        f"[AI] {banker.name} issued {policy_type} insurance to "
+                        f"{target.name} for {premium:.0f} Dp"
+                    )
+        return actions
 
     def _choose_product_line(self, player: Player, market: Market) -> str:
         """Pick the Manufacturer product line with the best expected profit margin.
@@ -52,6 +97,8 @@ class AIStrategy:
         trading_engine: TradingEngine,
         event_result: EventResult,
         season_name: str = "Spring",
+        year: int = 0,
+        season_index: int = 0,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -96,7 +143,13 @@ class AIStrategy:
             missing_str = ", ".join(f"{qty}x {r.value}" for r, qty in missing.items())
             actions.append(f"[AI] {player.name} cannot produce — missing: {missing_str}")
 
-        # 4. Sell produced resources if market price >= 80% of base price
+        # 4. Banker AI: offer insurance to high-risk players who don't already have it
+        if any(r.name == "Banker" for r in player.roles):
+            actions.extend(
+                self._ai_offer_insurance(player, other_players, season_name, year, season_index)
+            )
+
+        # 5. Sell produced resources if market price >= 80% of base price
         for rtype in player.all_produced_resources():
             qty = player.inventory.get(rtype)
             if qty > 0:

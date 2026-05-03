@@ -9,9 +9,13 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
+from ..models.insurance import InsurancePolicy
+from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
     FLIGHT_COST_FRACTION, CARGO_FREE_PASSENGERS, MANUFACTURER_PRODUCT_LINES,
+    INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
+    MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
 
 
@@ -24,6 +28,8 @@ class TurnAction(Enum):
     REVIEW_TRAINING    = "review_training"     # Educator: approve/reject requests
     ARRANGE_TRANSPORT  = "arrange_transport"   # Transporter: accept transport jobs
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
+    SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
+    BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -49,7 +55,9 @@ class TurnManager:
         market: Market,
         io_adapter,
         training: TrainingRegistry | None = None,
+        rng=None,
     ):
+        import random as _random
         self.players = players
         self.production = production_engine
         self.trading = trading_engine
@@ -58,6 +66,7 @@ class TurnManager:
         self.training = training or TrainingRegistry()
         self._ai = AIStrategy()
         self._damage_counters: dict[int, int] = {}
+        self._rng: _random.Random = rng if rng is not None else _random.Random()
 
     def run_season(
         self,
@@ -70,6 +79,15 @@ class TurnManager:
         self.io.print(f"\n{'='*50}")
         self.io.print(f"  Year {year + 1}  —  {season_name}")
         self.io.print(f"{'='*50}")
+
+        # Apply workplace injuries/fatalities before turns begin
+        banker_players = [p for p in self.players if any(r.name == "Banker" for r in p.roles)]
+        risk_reports = apply_workplace_risks(
+            self.players, year, season_index, banker_players, rng=self._rng
+        )
+        for report in risk_reports:
+            if report.has_events:
+                self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         results = []
         for player in self.players:
@@ -104,13 +122,13 @@ class TurnManager:
         if not player.is_human:
             actions = self._ai.take_turn(
                 player, self.market, self.players, self.production, self.trading,
-                event_result, season_name,
+                event_result, season_name, year, season_index,
             )
             result.actions_taken = actions
             for a in actions:
                 self.io.print(a)
         else:
-            self._human_turn(player, event_result, result, season_name, year)
+            self._human_turn(player, event_result, result, season_name, year, season_index)
 
         result.dollops_delta = player.dollops - dollops_before
         return result
@@ -122,6 +140,7 @@ class TurnManager:
         result: TurnResult,
         season_name: str,
         year: int,
+        season_index: int = 0,
     ) -> None:
         sym = CURRENCY_SYMBOL
         self.io.print(f"\n--- {player.name}'s turn ({player.role_names()}) ---")
@@ -159,6 +178,10 @@ class TurnManager:
                 self._action_arrange_transport(player, result, season_name, year)
             elif action == TurnAction.RECRUIT_WORKERS:
                 self._action_recruit_workers(player, result)
+            elif action == TurnAction.SELL_INSURANCE:
+                self._action_sell_insurance(player, result, year, season_index)
+            elif action == TurnAction.BUY_INSURANCE:
+                self._action_buy_insurance(player, result, year, season_index)
 
     def _choose_product_line_human(self) -> str:
         """Prompt the human Manufacturer player to choose a product line."""
@@ -517,6 +540,162 @@ class TurnManager:
             f"Workforce now: {player.workforce.count}"
         )
         result.actions_taken.append(f"recruit:{recruited}_workers")
+
+    def _action_sell_insurance(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Banker sells a life or medical insurance policy to another player."""
+        if not any(r.name == "Banker" for r in player.roles):
+            self.io.print("  Only the Banker can sell insurance policies.")
+            return
+        sym = CURRENCY_SYMBOL
+        eligible = [p for p in self.players if p.player_id != player.player_id]
+        if not eligible:
+            self.io.print("  No other players to sell insurance to.")
+            return
+
+        self.io.print("\n  Insurance Products Available:")
+        self.io.print(
+            f"    1. Life Insurance     — pays {LIFE_INSURANCE_DEATH_BENEFIT:.0f} {sym} death benefit per fatality\n"
+            f"       Base premium: {INSURANCE_BASE_PREMIUM['life']:.0f} {sym}  |  covers 1 year (4 seasons)"
+        )
+        self.io.print(
+            f"    2. Medical Insurance  — halves seasonal injury-absence rate ({MEDICAL_INSURANCE_INJURY_REDUCTION*100:.0f}% reduction)\n"
+            f"       Base premium: {INSURANCE_BASE_PREMIUM['medical']:.0f} {sym}  |  covers 1 year (4 seasons)"
+        )
+        self.io.print("\n  High-hazard roles: Farmer, Miner, Transporter, Manufacturer")
+
+        choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
+        policy_type = "life" if choice == 1 else "medical"
+        base = INSURANCE_BASE_PREMIUM[policy_type]
+
+        buyer = self.io.choose_player("Sell to which player?", eligible)
+
+        # Show current cover for buyer
+        existing = buyer.active_policies(year, season_index)
+        existing_same = [p for p in existing if p.policy_type == policy_type]
+        if existing_same:
+            self.io.print(
+                f"  Note: {buyer.name} already holds an active {policy_type} policy."
+            )
+
+        premium = self.io.ask_dollop_amount(
+            f"Set premium ({sym})? [base: {base:.0f} {sym}]", buyer.dollops
+        )
+        if premium <= 0:
+            self.io.print("  Premium must be positive.")
+            return
+        if buyer.dollops < premium:
+            self.io.print(f"  {buyer.name} cannot afford {premium:.0f} {sym}.")
+            return
+        if not self.io.confirm(
+            f"Sell {policy_type} insurance to {buyer.name} for {premium:.0f} {sym}?"
+        ):
+            return
+
+        buyer.spend_dollops(premium)
+        player.receive_dollops(premium)
+        policy_id = len(buyer.insurance_policies) + 1
+        purchased_tick = year * 4 + season_index
+        policy = InsurancePolicy(
+            policy_id=policy_id,
+            policy_type=policy_type,
+            holder_player_id=buyer.player_id,
+            banker_player_id=player.player_id,
+            premium_paid=premium,
+            purchased_tick=purchased_tick,
+            expires_at_tick=purchased_tick + INSURANCE_DURATION_SEASONS,
+        )
+        buyer.add_insurance_policy(policy)
+        self.io.print(
+            f"  Policy issued: {policy.describe()}  "
+            f"— {buyer.name} paid {premium:.0f} {sym}"
+        )
+        result.actions_taken.append(f"sell_insurance:{policy_type}:{buyer.name}")
+
+    def _action_buy_insurance(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Any player buys an insurance policy from an available Banker."""
+        sym = CURRENCY_SYMBOL
+        # Check player is at risk
+        risk = {}
+        for role in player.roles:
+            r = WORKPLACE_RISK.get(role.name, {})
+            if r.get("injury_rate", 0) or r.get("fatality_rate", 0):
+                risk = r
+                break
+        if not risk:
+            self.io.print(
+                "  Your island has no workplace hazards — insurance is not applicable."
+            )
+            return
+
+        bankers = [p for p in self.players if any(r.name == "Banker" for r in p.roles)]
+        if not bankers:
+            self.io.print("  No Banker player in this game.")
+            return
+        banker = self.io.choose_player("Buy from which Banker?", bankers)
+
+        self.io.print("\n  Available policies:")
+        self.io.print(
+            f"    1. Life Insurance     — {LIFE_INSURANCE_DEATH_BENEFIT:.0f} {sym}/fatality benefit\n"
+            f"       (fatality rate this role: ~{risk.get('fatality_rate',0)*100:.0f}%/season/worker)"
+        )
+        self.io.print(
+            f"    2. Medical Insurance  — {MEDICAL_INSURANCE_INJURY_REDUCTION*100:.0f}% injury-rate reduction\n"
+            f"       (injury rate this role: ~{risk.get('injury_rate',0)*100:.0f}%/season/worker)"
+        )
+        # Show existing cover
+        existing = player.active_policies(year, season_index)
+        if existing:
+            self.io.print("  Current active policies:")
+            for pol in existing:
+                self.io.print(f"    {pol.describe()}")
+
+        choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
+        policy_type = "life" if choice == 1 else "medical"
+        base = INSURANCE_BASE_PREMIUM[policy_type]
+
+        premium = self.io.ask_dollop_amount(
+            f"Offer premium to {banker.name} ({sym})? [base: {base:.0f}]", player.dollops
+        )
+        if premium <= 0:
+            self.io.print("  Premium must be positive.")
+            return
+
+        # If Banker is AI, auto-accept if premium >= base
+        if not banker.is_human:
+            if premium < base * 0.9:
+                self.io.print(
+                    f"  [AI] {banker.name} declined — offer at least {base:.0f} {sym}."
+                )
+                return
+        elif not self.io.confirm(
+            f"Confirm: {banker.name} issues {policy_type} policy for {premium:.0f} {sym}?"
+        ):
+            return
+
+        if player.dollops < premium:
+            self.io.print(f"  You cannot afford {premium:.0f} {sym}.")
+            return
+
+        player.spend_dollops(premium)
+        banker.receive_dollops(premium)
+        policy_id = len(player.insurance_policies) + 1
+        purchased_tick = year * 4 + season_index
+        policy = InsurancePolicy(
+            policy_id=policy_id,
+            policy_type=policy_type,
+            holder_player_id=player.player_id,
+            banker_player_id=banker.player_id,
+            premium_paid=premium,
+            purchased_tick=purchased_tick,
+            expires_at_tick=purchased_tick + INSURANCE_DURATION_SEASONS,
+        )
+        player.add_insurance_policy(policy)
+        self.io.print(f"  Issued: {policy.describe()}")
+        result.actions_taken.append(f"buy_insurance:{policy_type}")
 
     def _action_market_buy(self, player: Player, result: TurnResult) -> None:
         sym = CURRENCY_SYMBOL

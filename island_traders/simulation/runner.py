@@ -95,13 +95,16 @@ class SimulationRunner:
                 starting_dollops=100.0,
                 event_charts_path=self.event_charts_path,
             )
-            # Override event resolver RNG for reproducibility
+            # Override event resolver and turn-manager RNGs for reproducibility
             io = _SilentIO()
             game = Game(config, io)
             game.setup()
+            game_rng = random.Random(game_seed)
             game.event_resolver = SeasonEventResolver(
                 game.event_resolver.charts, rng=random.Random(game_seed)
             )
+            if game.turn_manager:
+                game.turn_manager._rng = random.Random(game_seed)
             summary = game.run()
 
             # Record stats

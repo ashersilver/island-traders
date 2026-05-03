@@ -4,6 +4,7 @@ from .role import Role
 from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
 from .profession import Profession
+from .insurance import InsurancePolicy
 from ..constants import (
     PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, UNSKILLED_RECRUITMENT_RATIO,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
@@ -24,6 +25,7 @@ class Player:
     workforce: Workforce = field(default_factory=Workforce)
     is_human: bool = True
     wealth_history: list[float] = field(default_factory=list)
+    insurance_policies: list[InsurancePolicy] = field(default_factory=list)
     # Minimum effective workforce factor from island infrastructure.
     # Production never falls below this fraction of base output (even with
     # poor workforce coverage), representing physical plant & equipment.
@@ -48,6 +50,18 @@ class Player:
             self.workforce.add_workers(can_recruit, training_level=0,
                                        profession=Profession.UNSKILLED.value)
         return can_recruit
+
+    def has_active_insurance(self, policy_type: str, year: int, season_index: int) -> bool:
+        return any(
+            p.policy_type == policy_type and p.is_valid(year, season_index)
+            for p in self.insurance_policies
+        )
+
+    def add_insurance_policy(self, policy: InsurancePolicy) -> None:
+        self.insurance_policies.append(policy)
+
+    def active_policies(self, year: int, season_index: int) -> list[InsurancePolicy]:
+        return [p for p in self.insurance_policies if p.is_valid(year, season_index)]
 
     def all_produced_resources(self) -> list[ResourceType]:
         seen: set[ResourceType] = set()

@@ -134,6 +134,13 @@ class Workforce:
                 dispatched.append(w)
         return dispatched
 
+    def remove_workers(self, worker_ids: list[int]) -> list[Worker]:
+        """Permanently remove workers (fatalities). Returns removed workers."""
+        id_set = set(worker_ids)
+        removed = [w for w in self.workers if w.worker_id in id_set]
+        self.workers = [w for w in self.workers if w.worker_id not in id_set]
+        return removed
+
     def return_from_training(
         self, worker_ids: list[int], target_profession: str | None = None
     ) -> list[Worker]:

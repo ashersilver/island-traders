@@ -308,3 +308,36 @@ FLIGHT_COST_FRACTION: float = 0.20
 # Passengers via cargo arrive one full season later than via flight or Transporter.
 CARGO_FREE_PASSENGERS: int = 2
 CARGO_TRANSIT_SEASONS: int = 1   # extra seasons of absence when travelling by cargo
+
+# ---------------------------------------------------------------------------
+# Workplace risk constants
+# ---------------------------------------------------------------------------
+# Applied at the start of each season for high-hazard roles.
+# injury_rate: fraction of active skilled workers who miss THIS season (lost-work-days).
+# fatality_rate: probability per season that ONE skilled/experienced worker dies.
+# Medical insurance halves injury_rate; Life insurance pays a death benefit on fatality.
+WORKPLACE_RISK: dict[str, dict[str, float]] = {
+    "Farmer":       {"injury_rate": 0.08, "fatality_rate": 0.04},   # machinery accidents
+    "Miner":        {"injury_rate": 0.14, "fatality_rate": 0.08},   # collapses, gases
+    "Transporter":  {"injury_rate": 0.07, "fatality_rate": 0.03},   # vehicle accidents
+    "Manufacturer": {"injury_rate": 0.10, "fatality_rate": 0.05},   # industrial accidents
+    # Low-risk roles — no workplace risk rolls applied
+    "Educator":     {"injury_rate": 0.0,  "fatality_rate": 0.0},
+    "Banker":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
+    "Doctor":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
+}
+
+# Seasons a policy stays valid after purchase (4 = one full year).
+INSURANCE_DURATION_SEASONS: int = 4
+
+# Base annual premium per policy type.  Banker can charge more or less.
+INSURANCE_BASE_PREMIUM: dict[str, float] = {
+    "life":    25.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
+    "medical": 30.0,    # flat per island; halves seasonal injury rate
+}
+
+# Dollops paid to the insured player per fatality (funded by the Banker).
+LIFE_INSURANCE_DEATH_BENEFIT: float = 60.0
+
+# Medical insurance reduces the effective injury_rate by this fraction.
+MEDICAL_INSURANCE_INJURY_REDUCTION: float = 0.5
