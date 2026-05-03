@@ -11,7 +11,7 @@ from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
-    FLIGHT_COST_FRACTION, CARGO_FREE_PASSENGERS,
+    FLIGHT_COST_FRACTION, CARGO_FREE_PASSENGERS, MANUFACTURER_PRODUCT_LINES,
 )
 
 
@@ -160,10 +160,36 @@ class TurnManager:
             elif action == TurnAction.RECRUIT_WORKERS:
                 self._action_recruit_workers(player, result)
 
+    def _choose_product_line_human(self) -> str:
+        """Prompt the human Manufacturer player to choose a product line."""
+        lines = list(MANUFACTURER_PRODUCT_LINES.items())
+        self.io.print("\n  ForgeHaven Product Lines:")
+        for i, (key, line) in enumerate(lines, 1):
+            freight_note = (
+                f"  (no freight surcharge)"
+                if line["freight_per_unit"] == 0
+                else f"  (+{line['freight_per_unit']} Freight/unit shipped)"
+            )
+            self.io.print(
+                f"    {i}. {line['desc']:<30}"
+                f"  Inputs: {line['inputs']}"
+                f"  → {line['qty']}x {line['output']}"
+                f"  | Skilled: {line['skilled']}  Unskilled: {line['unskilled']}"
+                f"{freight_note}"
+            )
+        choice = self.io.choose_quantity("Choose product line [1–4]:", 1, len(lines))
+        return lines[choice - 1][0]
+
     def _action_produce(
         self, player: Player, event_result: EventResult, result: TurnResult, season_name: str
     ) -> None:
-        preview = self.production.production_preview(player, event_result, season_name)
+        is_manufacturer = any(r.name == "Manufacturer" for r in player.roles)
+        product_line: str | None = None
+
+        if is_manufacturer:
+            product_line = self._choose_product_line_human()
+
+        preview = self.production.production_preview(player, event_result, season_name, product_line)
         self.io.print(f"  Event: {preview['event']}")
         if preview["outage"]:
             self.io.print("  Production halted this season.")
@@ -181,9 +207,16 @@ class TurnManager:
             f"capacity floor: {preview['base_capacity_pct']}%  →  "
             f"effective factor: {preview['effective_factor']:.2f}"
         )
+        if product_line:
+            line_info = MANUFACTURER_PRODUCT_LINES[product_line]
+            freight_note = (
+                "" if line_info["freight_per_unit"] == 0
+                else f"  (freight surcharge: {preview.get('freight_surcharge', 0)} Freight)"
+            )
+            self.io.print(f"  Product line: {line_info['desc']}{freight_note}")
         self.io.print(f"  Will produce: {preview['outputs']}")
         if self.io.confirm("Produce?"):
-            produced = self.production.produce(player, event_result, season_name)
+            produced = self.production.produce(player, event_result, season_name, product_line)
             summary = ", ".join(f"{qty}x {r.value}" for r, qty in produced.items())
             self.io.print(f"  Produced: {summary}")
             result.actions_taken.append(f"produce:{summary}")

@@ -9,50 +9,56 @@ STARTING_DOLLOPS: float = 100.0
 # Bootstrap inventory so roles with input dependencies can produce on turn 1.
 # Miner gets 1 Freight so the Miner↔Transporter circular dependency is bootstrapped.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    "Farmer":        {"CapitalEquipment": 2, "Oil": 2},
+    "Farmer":        {"Ore": 1, "Oil": 2},        # FarmMachinery input + fuel
     "Miner":         {"Oil": 2, "Freight": 1},
-    "Transporter":   {"Oil": 3, "CapitalEquipment": 1},
+    "Transporter":   {"Oil": 3, "Ore": 1},         # TransportEquipment input
     "Educator":      {"CapitalEquipment": 2, "Finance": 1},
     "Banker":        {"Knowledge": 1, "CapitalEquipment": 1},
-    "Manufacturer":  {"Ore": 3, "Oil": 2, "Freight": 2, "CapitalEquipment": 1},
-    "Doctor":        {"Knowledge": 2, "CapitalEquipment": 2},
+    "Manufacturer":  {"Ore": 4, "Oil": 3},
+    "Doctor":        {"Knowledge": 2, "Ore": 1},   # MedicalDevices input
 }
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":              10.0,
-    "Fish":               8.0,
-    "Ore":               15.0,
-    "Oil":               20.0,
-    "Freight":           12.0,
-    "Knowledge":         18.0,
-    "CapitalEquipment":  28.0,
-    "Goods":             30.0,
-    "HealthServices":    35.0,
-    "Vaccine":           40.0,
-    "Finance":           20.0,
+    "Food":                10.0,
+    "Fish":                 8.0,
+    "Ore":                 15.0,
+    "Oil":                 20.0,
+    "Freight":             12.0,
+    "Knowledge":           18.0,
+    "CapitalEquipment":    28.0,
+    "Goods":               30.0,
+    "HealthServices":      35.0,
+    "Vaccine":             40.0,
+    "Finance":             20.0,
+    # ForgeHaven product lines
+    "FarmMachinery":       32.0,   # tractors, ploughs, harvesters
+    "MiningEquipment":     42.0,   # drills, excavators, ore separators
+    "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
+    "TransportEquipment":  65.0,   # vehicles, ships, cranes (no freight surcharge)
 }
 
 # Units produced per season before event modifiers
 # Farmer output is defined by FARMER_SEASONAL_CONVERSION instead.
+# Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 5, "Oil": 3},
     "Transporter":   {"Freight": 6},
     "Educator":      {"Knowledge": 4},
     "Banker":        {"Finance": 3},
-    "Manufacturer":  {"Goods": 3, "CapitalEquipment": 2},
     "Doctor":        {"HealthServices": 4, "Vaccine": 1},
 }
 
-# Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION).
+# Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
+# Manufacturer uses MANUFACTURER_PRODUCT_LINES keyed by chosen product line).
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
-    "Farmer":        {"CapitalEquipment": 1, "Oil": 1},       # machinery + fuel
-    "Miner":         {"Oil": 1, "Freight": 1},
-    "Transporter":   {"Oil": 2, "CapitalEquipment": 1},       # fuel + fleet maintenance
+    "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
+    "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
+    "Transporter":   {"Oil": 2, "TransportEquipment": 1},     # fuel + fleet maintenance
     "Educator":      {"CapitalEquipment": 1, "Finance": 1},   # equipment + operating budget
     "Banker":        {"Knowledge": 1, "CapitalEquipment": 1}, # expertise + infrastructure
-    "Manufacturer":  {"Ore": 2, "Oil": 1, "Freight": 1},
-    "Doctor":        {"Knowledge": 1, "CapitalEquipment": 1},
+    # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
+    "Doctor":        {"Knowledge": 1, "MedicalDevices": 1},
 }
 
 # Per-season input→output table for the Farmer island.
@@ -60,20 +66,71 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
 # Inputs are consumed and outputs produced exactly as listed; workforce/event modifiers still apply.
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
-        "inputs":  {"CapitalEquipment": 1, "Oil": 1},
+        "inputs":  {"FarmMachinery": 1, "Oil": 1},
         "outputs": {"Food": 2, "Fish": 3},   # planting underway; good fishing
     },
     "Summer": {
-        "inputs":  {"CapitalEquipment": 1, "Oil": 1},
+        "inputs":  {"FarmMachinery": 1, "Oil": 1},
         "outputs": {"Food": 3, "Fish": 5},   # peak fishing; crops growing
     },
     "Autumn": {
-        "inputs":  {"CapitalEquipment": 1, "Oil": 1},
+        "inputs":  {"FarmMachinery": 1, "Oil": 1},
         "outputs": {"Food": 7, "Fish": 2},   # bumper harvest; fishing winds down
     },
     "Winter": {
-        "inputs":  {"CapitalEquipment": 1, "Oil": 1},
+        "inputs":  {"FarmMachinery": 1, "Oil": 1},
         "outputs": {"Food": 2, "Fish": 1},   # stores drawn down; minimal production
+    },
+}
+
+# ForgeHaven (Manufacturer) produces one of four specialised product lines each season.
+# The player (or AI) chooses which line to run at the start of production.
+# Keys match ResourceType values for the output resource.
+#
+# Each entry:
+#   inputs         – Ore and Oil consumed per production run
+#   output         – resource type produced (str matching ResourceType value)
+#   qty            – units produced per run (before event/workforce modifiers)
+#   skilled        – skilled workers required (AssemblyWorker or Engineer)
+#   unskilled      – unskilled workers required
+#   freight_per_unit – Freight consumed to ship each unit produced (0 = no surcharge)
+#   desc           – short human-readable label shown in CLI and export
+MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
+    "FarmMachinery": {
+        "inputs":           {"Ore": 2, "Oil": 1},
+        "output":           "FarmMachinery",
+        "qty":              3,
+        "skilled":          2,   # AssemblyWorkers to weld and fit
+        "unskilled":        3,   # general labour for sub-assembly
+        "freight_per_unit": 2,   # large steel frames; shipped on flatbeds
+        "desc":             "Tractors & Farm Machinery",
+    },
+    "MiningEquipment": {
+        "inputs":           {"Ore": 3, "Oil": 2},
+        "output":           "MiningEquipment",
+        "qty":              2,
+        "skilled":          3,   # Engineers to spec heavy drilling rigs
+        "unskilled":        2,
+        "freight_per_unit": 3,   # heaviest line; specialist transport
+        "desc":             "Mining Equipment",
+    },
+    "MedicalDevices": {
+        "inputs":           {"Ore": 1, "Oil": 1},
+        "output":           "MedicalDevices",
+        "qty":              3,
+        "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
+        "unskilled":        1,   # minimal general labour
+        "freight_per_unit": 1,   # small, high-value items
+        "desc":             "Medical & Dental Devices",
+    },
+    "TransportEquipment": {
+        "inputs":           {"Ore": 2, "Oil": 2},
+        "output":           "TransportEquipment",
+        "qty":              2,
+        "skilled":          2,
+        "unskilled":        3,
+        "freight_per_unit": 0,   # self-propelled / delivered under own power
+        "desc":             "Transportation Equipment",
     },
 }
 
@@ -157,7 +214,8 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
     "Transporter":  {"skilled": 2, "unskilled": 2},   # Engineers + loaders/stevedores
     "Educator":     {"skilled": 2, "unskilled": 1},   # Professors + admin staff
     "Banker":       {"skilled": 2, "unskilled": 1},   # Bankers + clerical support
-    "Manufacturer": {"skilled": 2, "unskilled": 3},   # Assembly workers + general labour
+    # Manufacturer labour comes from MANUFACTURER_PRODUCT_LINES per chosen line
+    "Manufacturer": {"skilled": 2, "unskilled": 2},   # fallback; overridden by product line
     "Doctor":       {"skilled": 2, "unskilled": 2},   # Doctors/Nurses + orderlies
 }
 

@@ -17,21 +17,21 @@ ROLES: dict[str, Role] = {
         name="Farmer",
         island="Agriculture, Fisheries & Foods Island",
         produces=(ResourceType.FOOD, ResourceType.FISH),
-        needs=(ResourceType.CAPITAL_EQUIPMENT, ResourceType.OIL),
+        needs=(ResourceType.FARM_MACHINERY, ResourceType.OIL),
         description="Feeds the archipelago — output varies by season (see FARMER_SEASONAL_CONVERSION).",
     ),
     "Miner": Role(
         name="Miner",
         island="Mining & Oil Island",
         produces=(ResourceType.ORE, ResourceType.OIL),
-        needs=(ResourceType.OIL, ResourceType.FREIGHT),
+        needs=(ResourceType.OIL, ResourceType.FREIGHT, ResourceType.MINING_EQUIPMENT),
         description="Extracts raw materials and energy resources from the earth.",
     ),
     "Transporter": Role(
         name="Transporter",
         island="Transportation & Shipping Island",
         produces=(ResourceType.FREIGHT,),
-        needs=(ResourceType.OIL, ResourceType.CAPITAL_EQUIPMENT),
+        needs=(ResourceType.OIL, ResourceType.TRANSPORT_EQUIPMENT),
         description="Moves goods between islands — the backbone of trade.",
     ),
     "Educator": Role(
@@ -50,16 +50,24 @@ ROLES: dict[str, Role] = {
     ),
     "Manufacturer": Role(
         name="Manufacturer",
-        island="Manufacturing Island",
-        produces=(ResourceType.GOODS, ResourceType.CAPITAL_EQUIPMENT),
-        needs=(ResourceType.ORE, ResourceType.OIL, ResourceType.FREIGHT),
-        description="Transforms raw materials into finished goods and capital equipment.",
+        island="ForgeHaven Manufacturing Island",
+        produces=(
+            ResourceType.FARM_MACHINERY,
+            ResourceType.MINING_EQUIPMENT,
+            ResourceType.MEDICAL_DEVICES,
+            ResourceType.TRANSPORT_EQUIPMENT,
+        ),
+        needs=(ResourceType.ORE, ResourceType.OIL),
+        description=(
+            "ForgeHaven runs four product lines — Farm Machinery, Mining Equipment, "
+            "Medical Devices, or Transportation Equipment. Choose one per season."
+        ),
     ),
     "Doctor": Role(
         name="Doctor",
         island="Healthcare Island",
         produces=(ResourceType.HEALTH_SERVICES, ResourceType.VACCINE),
-        needs=(ResourceType.KNOWLEDGE, ResourceType.CAPITAL_EQUIPMENT),
+        needs=(ResourceType.KNOWLEDGE, ResourceType.MEDICAL_DEVICES),
         description="Provides health services and vaccines, keeping the workforce productive.",
     ),
 }

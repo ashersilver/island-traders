@@ -6,7 +6,7 @@ from .workforce import Workforce
 from .profession import Profession
 from ..constants import (
     PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, UNSKILLED_RECRUITMENT_RATIO,
-    FARMER_SEASONAL_CONVERSION,
+    FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
 )
 
 
@@ -59,11 +59,20 @@ class Player:
                     result.append(r)
         return result
 
-    def all_required_inputs(self, season: str = "Spring") -> dict[ResourceType, int]:
+    def all_required_inputs(
+        self, season: str = "Spring", product_line: str | None = None
+    ) -> dict[ResourceType, int]:
         totals: dict[ResourceType, int] = {}
         for role in self.roles:
             if role.name == "Farmer":
                 raw = FARMER_SEASONAL_CONVERSION[season]["inputs"]
+            elif role.name == "Manufacturer":
+                line_key = (
+                    product_line
+                    if product_line and product_line in MANUFACTURER_PRODUCT_LINES
+                    else next(iter(MANUFACTURER_PRODUCT_LINES))
+                )
+                raw = MANUFACTURER_PRODUCT_LINES[line_key]["inputs"]
             else:
                 raw = PRODUCTION_INPUTS.get(role.name, {})
             for r_str, qty in raw.items():

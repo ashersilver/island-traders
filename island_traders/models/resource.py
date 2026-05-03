@@ -12,9 +12,13 @@ class ResourceType(str, Enum):
     KNOWLEDGE         = "Knowledge"
     CAPITAL_EQUIPMENT = "CapitalEquipment"
     GOODS             = "Goods"
-    HEALTH_SERVICES   = "HealthServices"
-    VACCINE           = "Vaccine"
-    FINANCE           = "Finance"
+    HEALTH_SERVICES      = "HealthServices"
+    VACCINE              = "Vaccine"
+    FINANCE              = "Finance"
+    FARM_MACHINERY       = "FarmMachinery"
+    MINING_EQUIPMENT     = "MiningEquipment"
+    MEDICAL_DEVICES      = "MedicalDevices"
+    TRANSPORT_EQUIPMENT  = "TransportEquipment"
 
 
 class InsufficientResourceError(Exception):

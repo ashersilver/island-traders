@@ -5,7 +5,7 @@ from island_traders.models.resource import ResourceType
 
 
 def _give_farmer_inputs(farmer):
-    farmer.receive_resources(ResourceType.CAPITAL_EQUIPMENT, 1)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
     farmer.receive_resources(ResourceType.OIL, 1)
 
 
@@ -15,7 +15,7 @@ def test_farmer_produces_with_inputs(farmer, normal_event):
     produced = engine.produce(farmer, normal_event, season_name="Spring")
     assert ResourceType.FOOD in produced
     assert ResourceType.FISH in produced
-    assert farmer.inventory.get(ResourceType.CAPITAL_EQUIPMENT) == 0
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
     assert farmer.inventory.get(ResourceType.OIL) == 0
 
 
@@ -40,7 +40,7 @@ def test_outage_blocks_production(farmer, outage_event):
     engine = ProductionEngine()
     produced = engine.produce(farmer, outage_event)
     assert produced == {}
-    assert farmer.inventory.get(ResourceType.CAPITAL_EQUIPMENT) == 1
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 1
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
@@ -83,4 +83,27 @@ def test_can_produce_returns_missing(farmer, normal_event):
     engine = ProductionEngine()
     can, missing = engine.can_produce(farmer, normal_event)
     assert not can
-    assert ResourceType.CAPITAL_EQUIPMENT in missing or ResourceType.OIL in missing
+    assert ResourceType.FARM_MACHINERY in missing or ResourceType.OIL in missing
+
+
+def test_manufacturer_product_lines(manufacturer, normal_event):
+    """Each product line should produce a distinct resource."""
+    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
+    engine = ProductionEngine()
+    for line_key, line in MANUFACTURER_PRODUCT_LINES.items():
+        # Give inputs
+        for r_str, qty in line["inputs"].items():
+            manufacturer.receive_resources(ResourceType(r_str), qty)
+        produced = engine.produce(manufacturer, normal_event, season_name="Spring", product_line=line_key)
+        assert ResourceType(line["output"]) in produced, f"Line {line_key} produced nothing"
+
+
+def test_manufacturer_without_line_uses_default(manufacturer, normal_event):
+    """If no product_line supplied, defaults to first line (FarmMachinery)."""
+    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
+    first_line = next(iter(MANUFACTURER_PRODUCT_LINES.values()))
+    for r_str, qty in first_line["inputs"].items():
+        manufacturer.receive_resources(ResourceType(r_str), qty)
+    engine = ProductionEngine()
+    produced = engine.produce(manufacturer, normal_event, season_name="Spring")
+    assert ResourceType(first_line["output"]) in produced
