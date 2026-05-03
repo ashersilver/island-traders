@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Island Traders</title>
+<style>
+:root {
+  --bg: #0a1628;
+  --panel: #111d33;
+  --border: #1e3a5f;
+  --text: #c8d6e5;
+  --heading: #f5f6fa;
+  --accent: #0abde3;
+  --gold: #f6b93b;
+  --green: #26de81;
+  --red: #fc5c65;
+  --dim: #576574;
+  --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ---------- LOBBY ---------- */
+#lobby {
+  max-width: 800px;
+  margin: 4vh auto;
+  padding: 2rem;
+}
+#lobby h1 {
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  color: var(--gold);
+  text-align: center;
+  margin-bottom: 0.3em;
+}
+#lobby .subtitle {
+  text-align: center;
+  color: var(--dim);
+  margin-bottom: 2rem;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+}
+.card h2 { color: var(--accent); font-size: 1.1rem; margin-bottom: 0.8rem; }
+.form-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  flex-wrap: wrap;
+}
+.form-row label {
+  min-width: 100px;
+  padding-top: 0.4rem;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+input, select, button {
+  font-family: inherit;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  padding: 0.4rem 0.8rem;
+}
+input:focus, select:focus { outline: 1px solid var(--accent); }
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1.4rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+button:hover { opacity: 0.85; }
+button.secondary { background: var(--border); }
+button.gold { background: var(--gold); color: #000; }
+.room-list { list-style: none; }
+.room-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.room-list li:last-child { border: none; }
+
+/* ---------- GAME DASHBOARD ---------- */
+#game {
+  display: none;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+.game-grid {
+  display: grid;
+  height: 100vh;
+  grid-template-columns: 300px 1fr 320px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "header header header"
+    "sidebar main   info"
+    "log     log     log";
+  gap: 2px;
+}
+/* Responsive: stack on narrow screens */
+@media (max-width: 1200px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr auto auto;
+    grid-template-areas: "header" "sidebar" "main" "info" "log";
+  }
+}
+/* Ultrawide: wider sidebar and info */
+@media (min-width: 3000px) {
+  .game-grid { grid-template-columns: 400px 1fr 420px; }
+}
+
+.g-header {
+  grid-area: header;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1.2rem;
+  min-height: 48px;
+}
+.g-header h1 {
+  font-size: 1.1rem;
+  color: var(--gold);
+}
+.g-header .season-info {
+  font-size: 0.9rem;
+  color: var(--accent);
+}
+
+.g-sidebar {
+  grid-area: sidebar;
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 0.8rem;
+  border-right: 1px solid var(--border);
+}
+.g-main {
+  grid-area: main;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.g-info {
+  grid-area: info;
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 0.8rem;
+  border-left: 1px solid var(--border);
+}
+.g-log {
+  grid-area: log;
+  background: #050d1a;
+  border-top: 1px solid var(--border);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 0.5rem 1rem;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--dim);
+}
+.g-log .event { color: var(--gold); }
+.g-log .error { color: var(--red); }
+
+/* Sections inside panels */
+.section { margin-bottom: 1rem; }
+.section h3 {
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3rem;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  font-size: 0.85rem;
+}
+.stat-row .label { color: var(--dim); }
+.stat-row .value { color: var(--heading); font-weight: 600; }
+.stat-row .value.gold { color: var(--gold); }
+.stat-row .value.green { color: var(--green); }
+
+/* Island map (SVG) */
+#island-map {
+  width: 100%;
+  max-height: 280px;
+  margin-bottom: 0.5rem;
+}
+#island-map svg {
+  width: 100%;
+  height: auto;
+}
+
+/* Competitor table */
+.comp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.comp-table th {
+  text-align: left;
+  color: var(--dim);
+  font-weight: 500;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+.comp-table td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid #0d1a2d;
+}
+.comp-table tr.me { background: rgba(10, 189, 227, 0.08); }
+
+/* Action prompt area */
+.prompt-area {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.prompt-area h3 { color: var(--heading); margin-bottom: 0.5rem; }
+.action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.action-buttons button {
+  font-size: 0.82rem;
+  padding: 0.4rem 0.9rem;
+}
+.action-buttons button.highlight {
+  background: var(--gold);
+  color: #000;
+}
+
+/* Market panel */
+.market-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.15rem 0;
+  font-size: 0.82rem;
+}
+.market-row .res { color: var(--text); }
+.market-row .price { color: var(--gold); font-weight: 600; }
+.market-row .supply { color: var(--dim); font-size: 0.75rem; }
+
+/* Input overlays */
+.input-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.input-overlay.active { display: flex; }
+.input-dialog {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1.5rem;
+  min-width: 320px;
+  max-width: 90vw;
+}
+.input-dialog h3 { color: var(--heading); margin-bottom: 1rem; }
+.input-dialog .options { display: flex; flex-direction: column; gap: 0.3rem; }
+.input-dialog .options button {
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.input-dialog .options button:hover {
+  border-color: var(--accent);
+  background: rgba(10, 189, 227, 0.1);
+}
+.input-dialog input[type=number],
+.input-dialog input[type=text] {
+  width: 100%;
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== LOBBY ==================== -->
+<div id="lobby">
+  <h1>Island Traders</h1>
+  <p class="subtitle">Resource-trading board game for 2–7 players</p>
+
+  <div class="card">
+    <h2>Create Game</h2>
+    <div class="form-row">
+      <label>Your Name</label>
+      <input id="create-name" value="Player 1" />
+    </div>
+    <div class="form-row">
+      <label>Room Name</label>
+      <input id="create-room-name" value="Game Room" />
+    </div>
+    <div class="form-row">
+      <label>Max Players</label>
+      <select id="create-max">
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7" selected>7</option>
+      </select>
+      <label>Years</label>
+      <select id="create-years">
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="5">5</option>
+      </select>
+    </div>
+    <button onclick="createRoom()">Create Room</button>
+  </div>
+
+  <div class="card">
+    <h2>Join Game</h2>
+    <div class="form-row">
+      <label>Your Name</label>
+      <input id="join-name" value="Player" />
+    </div>
+    <div class="form-row">
+      <label>Room Code</label>
+      <input id="join-code" placeholder="e.g. a1b2c3d4" />
+    </div>
+    <button onclick="joinRoom()">Join</button>
+  </div>
+
+  <div class="card">
+    <h2>Open Games</h2>
+    <ul id="room-list" class="room-list">
+      <li style="color:var(--dim)">Loading...</li>
+    </ul>
+    <button class="secondary" onclick="refreshRooms()" style="margin-top:0.5rem">Refresh</button>
+  </div>
+
+  <!-- Waiting room (shown after create/join) -->
+  <div class="card" id="waiting-room" style="display:none">
+    <h2>Waiting Room — <span id="wr-room-name"></span></h2>
+    <p style="margin-bottom:0.5rem;color:var(--dim)">Room code: <strong id="wr-room-id" style="color:var(--accent)"></strong></p>
+    <ul id="wr-players" class="room-list"></ul>
+    <div style="margin-top:0.8rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+      <button class="secondary" onclick="addAI()">Add AI Player</button>
+      <button class="gold" onclick="startGame()">Start Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== GAME DASHBOARD ==================== -->
+<div id="game">
+  <div class="game-grid">
+    <!-- Header -->
+    <div class="g-header">
+      <h1>Island Traders</h1>
+      <div class="season-info" id="season-display">— Waiting —</div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <span id="my-dollops" style="color:var(--gold);font-weight:600"></span>
+        <button class="secondary" style="padding:0.3rem 0.6rem;font-size:0.8rem" onclick="requestState()">⟳</button>
+      </div>
+    </div>
+
+    <!-- Left sidebar: own status -->
+    <div class="g-sidebar">
+      <div class="section" id="island-map">
+        <!-- SVG map injected by JS -->
+      </div>
+      <div class="section">
+        <h3>My Island</h3>
+        <div id="my-status">
+          <div class="stat-row"><span class="label">Role</span><span class="value" id="my-role">—</span></div>
+          <div class="stat-row"><span class="label">Dollops</span><span class="value gold" id="my-dollops-detail">—</span></div>
+          <div class="stat-row"><span class="label">Wealth</span><span class="value gold" id="my-wealth">—</span></div>
+          <div class="stat-row"><span class="label">Workers</span><span class="value" id="my-workers">—</span></div>
+          <div class="stat-row"><span class="label">Efficiency</span><span class="value" id="my-efficiency">—</span></div>
+          <div class="stat-row"><span class="label">Capacity</span><span class="value" id="my-capacity">—</span></div>
+          <div class="stat-row"><span class="label">Population</span><span class="value" id="my-pop">—</span></div>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Inventory</h3>
+        <div id="my-inventory">—</div>
+      </div>
+      <div class="section">
+        <h3>Insurance</h3>
+        <div id="my-insurance" style="font-size:0.82rem">None</div>
+      </div>
+    </div>
+
+    <!-- Main area: action prompt + competitors -->
+    <div class="g-main">
+      <div class="prompt-area" id="prompt-area" style="display:none">
+        <h3 id="prompt-title">Waiting for your turn...</h3>
+        <div class="action-buttons" id="prompt-buttons"></div>
+        <div id="prompt-input" style="margin-top:0.5rem"></div>
+      </div>
+
+      <div class="section">
+        <h3>All Players</h3>
+        <table class="comp-table">
+          <thead><tr>
+            <th>Player</th><th>Role</th><th>Wealth</th><th>Dp</th><th>Workers</th><th>Pop</th>
+          </tr></thead>
+          <tbody id="comp-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right info panel: market -->
+    <div class="g-info">
+      <div class="section">
+        <h3>Market Prices</h3>
+        <div id="market-panel">—</div>
+      </div>
+    </div>
+
+    <!-- Bottom: event log -->
+    <div class="g-log" id="event-log"></div>
+  </div>
+</div>
+
+<!-- ==================== INPUT OVERLAY ==================== -->
+<div class="input-overlay" id="input-overlay">
+  <div class="input-dialog" id="input-dialog">
+    <h3 id="dialog-title">Choose</h3>
+    <div id="dialog-body"></div>
+  </div>
+</div>
+
+<script>
+// ==================== STATE ====================
+let ws = null;
+let myPlayerId = null;
+let myPlayerIdx = null;
+let currentRoomId = null;
+let gameState = null;
+
+const API = window.location.origin;
+
+// ==================== LOBBY ====================
+
+async function refreshRooms() {
+  const res = await fetch(`${API}/api/rooms`);
+  const rooms = await res.json();
+  const ul = document.getElementById('room-list');
+  if (!rooms.length) {
+    ul.innerHTML = '<li style="color:var(--dim)">No open games</li>';
+    return;
+  }
+  ul.innerHTML = rooms.map(r => `
+    <li>
+      <span>${esc(r.name)} (${r.player_count}/${r.max_players})</span>
+      ${r.status === 'waiting' ?
+        `<button onclick="joinRoomById('${r.room_id}')">Join</button>` :
+        `<span style="color:var(--dim)">${r.status}</span>`
+      }
+    </li>
+  `).join('');
+}
+
+async function createRoom() {
+  const name = document.getElementById('create-name').value.trim() || 'Player 1';
+  const roomName = document.getElementById('create-room-name').value.trim() || 'Game Room';
+  const maxPlayers = +document.getElementById('create-max').value;
+  const numYears = +document.getElementById('create-years').value;
+
+  const res = await fetch(`${API}/api/rooms`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: roomName, max_players: maxPlayers,
+      num_years: numYears, creator_name: name,
+    }),
+  });
+  const room = await res.json();
+  currentRoomId = room.room_id;
+  myPlayerId = room.players[0].player_id;
+  showWaitingRoom(room);
+}
+
+async function joinRoom() {
+  const code = document.getElementById('join-code').value.trim();
+  if (!code) return;
+  await joinRoomById(code);
+}
+
+async function joinRoomById(roomId) {
+  const name = document.getElementById('join-name').value.trim() || 'Player';
+  const res = await fetch(`${API}/api/rooms/${roomId}/join`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name}),
+  });
+  if (!res.ok) { alert('Cannot join room'); return; }
+  const data = await res.json();
+  currentRoomId = roomId;
+  myPlayerId = data.player_id;
+  showWaitingRoom(data.room);
+}
+
+function showWaitingRoom(room) {
+  document.getElementById('waiting-room').style.display = 'block';
+  document.getElementById('wr-room-name').textContent = room.name;
+  document.getElementById('wr-room-id').textContent = room.room_id;
+  const ul = document.getElementById('wr-players');
+  ul.innerHTML = room.players.map(p => `
+    <li>
+      <span>${esc(p.name)}${p.player_id === myPlayerId ? ' (you)' : ''}</span>
+      <span style="color:var(--dim)">${p.role_name || 'auto'}</span>
+    </li>
+  `).join('');
+}
+
+async function addAI() {
+  const roles = ['Farmer','Miner','Transporter','Educator','Banker','Manufacturer','Doctor'];
+  const aiNames = ['Alice','Bob','Carol','Dave','Eve','Frank','Grace'];
+  const res = await fetch(`${API}/api/rooms/${currentRoomId}`);
+  const room = await res.json();
+  const idx = room.players.length;
+  await fetch(`${API}/api/rooms/${currentRoomId}/ai`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name: aiNames[idx % aiNames.length] + ' (AI)'}),
+  });
+  // Refresh waiting room
+  const res2 = await fetch(`${API}/api/rooms/${currentRoomId}`);
+  showWaitingRoom(await res2.json());
+}
+
+async function startGame() {
+  const res = await fetch(`${API}/api/rooms/${currentRoomId}/start`, {method: 'POST'});
+  if (!res.ok) { alert('Cannot start — need at least 2 players'); return; }
+  enterGame();
+}
+
+// ==================== GAME ====================
+
+function enterGame() {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'block';
+  connectWebSocket();
+}
+
+function connectWebSocket() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/${currentRoomId}/${myPlayerId}`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+  ws.onclose = () => {
+    addLog('Connection lost. Reconnecting in 3s...', 'error');
+    setTimeout(connectWebSocket, 3000);
+  };
+}
+
+function sendResponse(value) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'response', value}));
+  }
+  hideOverlay();
+}
+
+function requestState() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'get_state'}));
+  }
+}
+
+// ==================== MESSAGE HANDLERS ====================
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'game_state':
+      gameState = msg;
+      renderGameState();
+      break;
+    case 'print':
+      addLog(msg.text);
+      break;
+    case 'choose_action':
+      showActionPrompt(msg);
+      break;
+    case 'choose_resource':
+    case 'choose_profession':
+      showOptionPicker(msg);
+      break;
+    case 'choose_quantity':
+      showQuantityInput(msg);
+      break;
+    case 'choose_player':
+      showPlayerPicker(msg);
+      break;
+    case 'confirm':
+      showConfirm(msg);
+      break;
+    case 'ask_dollop_amount':
+      showDollopInput(msg);
+      break;
+    case 'game_over':
+      showGameOver(msg);
+      break;
+    case 'chat':
+      addLog(`[${msg.from}] ${msg.text}`);
+      break;
+    case 'error':
+      addLog(msg.message, 'error');
+      break;
+  }
+}
+
+// ==================== RENDERING ====================
+
+function renderGameState() {
+  if (!gameState) return;
+
+  // Find my player index
+  const myP = gameState.players.find((_, i) => {
+    const room = null; // We identify by matching player_id
+    return true;
+  });
+
+  // Identify myself by matching lobby player index
+  // Since player specs are ordered same as lobby, use stored idx
+  if (myPlayerIdx === null) {
+    // Request room data to find my index
+    fetch(`${API}/api/rooms/${currentRoomId}`).then(r => r.json()).then(room => {
+      myPlayerIdx = room.players.findIndex(p => p.player_id === myPlayerId);
+      renderGameState();
+    });
+    return;
+  }
+
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+
+  // My status
+  document.getElementById('my-role').textContent = me.roles;
+  document.getElementById('my-dollops').textContent = `${me.dollops} Dp`;
+  document.getElementById('my-dollops-detail').textContent = `${me.dollops} Dp`;
+  document.getElementById('my-wealth').textContent = `${me.wealth} Dp`;
+  document.getElementById('my-workers').textContent = `${me.workforce_active}/${me.workforce_count}`;
+  document.getElementById('my-efficiency').textContent = `${me.workforce_efficiency}%`;
+  document.getElementById('my-capacity').textContent = `${me.production_capacity}%`;
+  document.getElementById('my-pop').textContent = me.population;
+
+  // Inventory
+  const inv = me.inventory || {};
+  const invHtml = Object.entries(inv)
+    .filter(([,q]) => q > 0)
+    .map(([r,q]) => `<div class="market-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
+    .join('') || '<span style="color:var(--dim)">Empty</span>';
+  document.getElementById('my-inventory').innerHTML = invHtml;
+
+  // Insurance
+  const policies = me.policies || [];
+  document.getElementById('my-insurance').innerHTML = policies.length
+    ? policies.map(p => `<div style="margin-bottom:0.3rem">${esc(p)}</div>`).join('')
+    : '<span style="color:var(--dim)">None</span>';
+
+  // Competitors table
+  const tbody = document.getElementById('comp-tbody');
+  tbody.innerHTML = gameState.players.map((p, i) => `
+    <tr class="${i === myPlayerIdx ? 'me' : ''}">
+      <td>${esc(p.name)}${i === myPlayerIdx ? ' ★' : ''}</td>
+      <td>${esc(p.roles)}</td>
+      <td style="color:var(--gold)">${p.wealth}</td>
+      <td>${p.dollops}</td>
+      <td>${p.workforce_active}/${p.workforce_count}</td>
+      <td>${p.population}</td>
+    </tr>
+  `).join('');
+
+  // Market
+  if (gameState.market) {
+    const mkt = gameState.market;
+    document.getElementById('market-panel').innerHTML = Object.entries(mkt)
+      .map(([r, d]) => `
+        <div class="market-row">
+          <span class="res">${r}</span>
+          <span class="price">${d.price} Dp</span>
+          <span class="supply">×${d.supply}</span>
+        </div>
+      `).join('');
+  }
+
+  // Island map
+  renderIslandMap();
+}
+
+function renderIslandMap() {
+  const container = document.getElementById('island-map');
+  if (container.querySelector('svg')) return;  // already rendered
+
+  const islands = [
+    {name:'Transport', cx:225, cy:165, color:'#3498db'},
+    {name:'Mining',    cx:134, cy:110, color:'#e67e22'},
+    {name:'Agriculture',cx:225, cy:58, color:'#27ae60'},
+    {name:'Healthcare',cx:316, cy:110, color:'#e74c3c'},
+    {name:'Banking',   cx:316, cy:215, color:'#f1c40f'},
+    {name:'Education', cx:225, cy:268, color:'#9b59b6'},
+    {name:'Manufacturing',cx:134,cy:215,color:'#1abc9c'},
+  ];
+
+  let paths = '';
+  for (let i = 1; i < islands.length; i++) {
+    paths += `<line x1="${islands[0].cx}" y1="${islands[0].cy}"
+                    x2="${islands[i].cx}" y2="${islands[i].cy}"
+                    stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="4,4"/>`;
+  }
+
+  let nodes = islands.map(isl => `
+    <ellipse cx="${isl.cx}" cy="${isl.cy}" rx="42" ry="34"
+             fill="${isl.color}22" stroke="${isl.color}" stroke-width="1.5"/>
+    <text x="${isl.cx}" y="${isl.cy + 4}" text-anchor="middle"
+          fill="${isl.color}" font-size="10" font-weight="600">${isl.name}</text>
+  `).join('');
+
+  container.innerHTML = `
+    <svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">
+      ${paths}${nodes}
+    </svg>
+  `;
+}
+
+// ==================== INPUT PROMPTS ====================
+
+function showActionPrompt(msg) {
+  const area = document.getElementById('prompt-area');
+  area.style.display = 'block';
+  document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
+  const btns = document.getElementById('prompt-buttons');
+  btns.innerHTML = msg.options.map(o => {
+    const cls = o.value === 'produce' ? 'highlight' : '';
+    return `<button class="${cls}" onclick="sendResponse('${o.value}')">${o.label}</button>`;
+  }).join('');
+  document.getElementById('prompt-input').innerHTML = '';
+}
+
+function showOptionPicker(msg) {
+  showOverlay(msg.prompt || 'Choose', msg.options.map(o =>
+    `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
+  ).join(''));
+}
+
+function showPlayerPicker(msg) {
+  showOverlay(msg.prompt, msg.options.map(o =>
+    `<button onclick="sendResponse('${o.id}')">${esc(o.name)} (${esc(o.roles)})</button>`
+  ).join(''));
+}
+
+function showQuantityInput(msg) {
+  showOverlay(msg.prompt, `
+    <input type="number" id="qty-input" min="${msg.min}" max="${msg.max}" value="${msg.min}" />
+    <button onclick="sendResponse(document.getElementById('qty-input').value)">OK</button>
+  `);
+}
+
+function showDollopInput(msg) {
+  showOverlay(msg.prompt, `
+    <input type="number" id="dp-input" min="0" max="${msg.max}" step="0.1" value="0" />
+    <button onclick="sendResponse(document.getElementById('dp-input').value)">OK</button>
+  `);
+}
+
+function showConfirm(msg) {
+  showOverlay(msg.prompt, `
+    <div style="display:flex;gap:0.5rem">
+      <button class="gold" onclick="sendResponse('true')">Yes</button>
+      <button class="secondary" onclick="sendResponse('false')">No</button>
+    </div>
+  `);
+}
+
+function showGameOver(msg) {
+  const area = document.getElementById('prompt-area');
+  area.style.display = 'block';
+  document.getElementById('prompt-title').textContent = `Game Over — Winner: ${msg.winner}`;
+  document.getElementById('prompt-buttons').innerHTML = '';
+  document.getElementById('prompt-input').innerHTML = `
+    <table class="comp-table" style="margin-top:0.5rem">
+      <thead><tr><th>#</th><th>Player</th><th>Role</th><th>Wealth</th></tr></thead>
+      <tbody>
+        ${msg.rankings.map((r, i) => `
+          <tr><td>${i+1}</td><td>${esc(r.name)}</td><td>${esc(r.roles)}</td>
+          <td style="color:var(--gold)">${r.wealth} Dp</td></tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function showOverlay(title, bodyHtml) {
+  document.getElementById('dialog-title').textContent = title;
+  document.getElementById('dialog-body').innerHTML = `<div class="options">${bodyHtml}</div>`;
+  document.getElementById('input-overlay').classList.add('active');
+}
+
+function hideOverlay() {
+  document.getElementById('input-overlay').classList.remove('active');
+  document.getElementById('prompt-area').style.display = 'none';
+}
+
+// ==================== EVENT LOG ====================
+
+function addLog(text, cls = '') {
+  const log = document.getElementById('event-log');
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  else if (text.includes('[EVENT]') || text.includes('[WORKPLACE]')) div.className = 'event';
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ==================== HELPERS ====================
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// Init
+refreshRooms();
+setInterval(refreshRooms, 10000);
+</script>
+</body>
+</html>

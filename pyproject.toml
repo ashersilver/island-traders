@@ -6,11 +6,13 @@ dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov"]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "websockets>=12.0"]
 
 [project.scripts]
 island-traders = "island_traders.cli.session:main"
 island-traders-sim = "island_traders.simulation.runner:main"
 island-traders-export = "island_traders.export.printables:main"
+island-traders-server = "island_traders.server.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

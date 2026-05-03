@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  island-traders:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # For development: mount source for live editing (remove for production)
+    # volumes:
+    #   - ./island_traders:/app/island_traders
+    #   - ./config:/app/config
