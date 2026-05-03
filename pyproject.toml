@@ -1,0 +1,24 @@
+[project]
+name = "island-traders"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov"]
+
+[project.scripts]
+island-traders = "island_traders.cli.session:main"
+island-traders-sim = "island_traders.simulation.runner:main"
+island-traders-export = "island_traders.export.printables:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["island_traders*"]
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

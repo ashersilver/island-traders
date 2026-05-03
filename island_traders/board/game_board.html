@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Island Traders — Freeward Archipelago</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --c-sienna: #C4603C;
+    --c-raw: #C8872A;
+    --c-ink: #1C1410;
+    --c-silver: #9E9B94;
+    --c-silver-light: #D4D0C8;
+    --c-silver-subtle: #EDEBE6;
+    --c-cream: #F5EFE6;
+    --c-white: #FDFBF8;
+    --c-earth: #7A4A2C;
+    --c-earth-light: #A06A4A;
+    --font-display: 'Spectral', Georgia, serif;
+    --font-body: 'DM Sans', Arial, sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-body);
+    background: #1a1208;
+    color: var(--c-cream);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid rgba(212,208,200,0.15);
+    background: rgba(28,20,16,0.8);
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    flex-shrink: 0;
+  }
+  #header h1 {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    color: var(--c-cream);
+  }
+  #header h1 span { color: var(--c-sienna); font-style: italic; }
+  .turn-info {
+    display: flex; gap: 24px; align-items: center;
+  }
+  .turn-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--c-silver);
+  }
+  .turn-badge strong { color: var(--c-raw); font-weight: 600; }
+  .resource-bar {
+    display: flex; gap: 12px;
+  }
+  .res-chip {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; font-weight: 500;
+    color: var(--c-cream); opacity: 0.85;
+  }
+  .res-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Main layout */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Board */
+  #board-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  #board {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Ocean texture */
+  .ocean-bg {
+    fill: url(#oceanGrad);
+  }
+
+  /* Connection lines */
+  .conn-line {
+    stroke: rgba(212,208,200,0.12);
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 5 6;
+    transition: stroke 0.2s, stroke-width 0.2s, opacity 0.2s;
+    pointer-events: none;
+  }
+  .conn-line.active {
+    stroke: rgba(196,96,60,0.6);
+    stroke-width: 2.5;
+    stroke-dasharray: none;
+    opacity: 1;
+  }
+  .conn-line.trade-anim {
+    stroke: var(--c-raw);
+    stroke-width: 3;
+    stroke-dasharray: none;
+    opacity: 0.9;
+  }
+
+  /* Islands */
+  .island-group { cursor: pointer; }
+  .island-body {
+    transition: filter 0.25s;
+  }
+  .island-group:hover .island-body {
+    filter: brightness(1.15);
+  }
+  .island-group.selected .island-body {
+    filter: brightness(1.3);
+  }
+  .island-group.selected .island-ring {
+    opacity: 1;
+  }
+  .island-ring {
+    fill: none;
+    stroke-width: 3;
+    opacity: 0;
+    transition: opacity 0.25s;
+    animation: pulse-ring 2s infinite;
+  }
+  @keyframes pulse-ring {
+    0%, 100% { stroke-width: 3; opacity: 0.7; }
+    50% { stroke-width: 5; opacity: 1; }
+  }
+
+  .island-label {
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    fill: var(--c-cream);
+    text-anchor: middle;
+    pointer-events: none;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  }
+  .island-icon {
+    font-size: 22px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+  }
+  .island-sublabel {
+    font-family: var(--font-display);
+    font-size: 9px;
+    font-weight: 400;
+    font-style: italic;
+    fill: rgba(245,239,230,0.65);
+    text-anchor: middle;
+    pointer-events: none;
+  }
+
+  /* Trade packet animation */
+  .trade-packet {
+    pointer-events: none;
+  }
+
+  /* Side panel */
+  #side-panel {
+    width: 300px;
+    background: rgba(28,20,16,0.92);
+    border-left: 1px solid rgba(212,208,200,0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .panel-island-header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid rgba(212,208,200,0.1);
+  }
+  .panel-island-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .panel-island-name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 400;
+    color: var(--c-cream);
+    margin-bottom: 2px;
+  }
+  .panel-island-type {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--c-sienna);
+  }
+  .panel-island-desc {
+    font-size: 0.8rem;
+    color: rgba(245,239,230,0.6);
+    line-height: 1.55;
+    margin-top: 10px;
+    font-style: italic;
+    font-family: var(--font-display);
+  }
+
+  .panel-section {
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(212,208,200,0.08);
+  }
+  .panel-section-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--c-silver);
+    margin-bottom: 10px;
+  }
+
+  /* Stats */
+  .stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 7px;
+  }
+  .stat-name {
+    font-size: 0.78rem;
+    color: rgba(245,239,230,0.75);
+  }
+  .stat-bar-wrap {
+    display: flex; align-items: center; gap: 7px;
+  }
+  .stat-bar-bg {
+    width: 80px; height: 4px;
+    background: rgba(212,208,200,0.12);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .stat-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s;
+  }
+  .stat-val {
+    font-size: 0.72rem;
+    font-weight: 600;
+    font-family: var(--font-display);
+    color: var(--c-raw);
+    width: 20px;
+    text-align: right;
+  }
+
+  /* Trade actions */
+  .trade-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    margin-bottom: 6px;
+    border: 1px solid rgba(212,208,200,0.12);
+    border-radius: 6px;
+    background: rgba(245,239,230,0.04);
+    color: var(--c-cream);
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .trade-btn:hover {
+    background: rgba(196,96,60,0.15);
+    border-color: rgba(196,96,60,0.35);
+  }
+  .trade-btn:active {
+    background: rgba(196,96,60,0.25);
+  }
+  .trade-btn-icon { font-size: 14px; opacity: 0.8; }
+  .trade-btn-label { flex: 1; }
+  .trade-btn-cost {
+    font-size: 0.68rem;
+    color: var(--c-raw);
+    font-weight: 600;
+  }
+
+  /* Log */
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 20px;
+  }
+  #log::-webkit-scrollbar { width: 4px; }
+  #log::-webkit-scrollbar-track { background: transparent; }
+  #log::-webkit-scrollbar-thumb { background: rgba(212,208,200,0.2); border-radius: 2px; }
+
+  .log-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--c-silver);
+    margin-bottom: 8px;
+  }
+  .log-entry {
+    font-size: 0.75rem;
+    color: rgba(245,239,230,0.55);
+    line-height: 1.5;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(212,208,200,0.05);
+  }
+  .log-entry strong { color: var(--c-cream); font-weight: 500; }
+  .log-entry .log-time {
+    font-size: 0.65rem;
+    color: var(--c-sienna);
+    font-weight: 600;
+    font-family: var(--font-display);
+    font-style: italic;
+  }
+
+  /* Empty state */
+  .panel-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    text-align: center;
+    gap: 12px;
+  }
+  .panel-empty-icon { font-size: 40px; opacity: 0.3; }
+  .panel-empty-text {
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    font-style: italic;
+    color: rgba(245,239,230,0.35);
+    line-height: 1.6;
+  }
+
+  /* Tweaks panel */
+  #tweaks-panel {
+    display: none;
+    position: fixed;
+    bottom: 24px;
+    right: 324px;
+    width: 220px;
+    background: rgba(28,20,16,0.97);
+    border: 1px solid rgba(212,208,200,0.2);
+    border-radius: 8px;
+    padding: 14px;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  #tweaks-panel h3 {
+    font-family: var(--font-display);
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: var(--c-cream);
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(212,208,200,0.1);
+    padding-bottom: 8px;
+  }
+  .tweak-row { margin-bottom: 10px; }
+  .tweak-label { font-size: 0.7rem; color: var(--c-silver); margin-bottom: 4px; letter-spacing: 0.06em; }
+  .tweak-row input[type=range] { width: 100%; accent-color: var(--c-sienna); }
+  .tweak-row select {
+    width: 100%;
+    background: rgba(245,239,230,0.06);
+    border: 1px solid rgba(212,208,200,0.15);
+    color: var(--c-cream);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Island Traders — <span>Freeward Archipelago</span></h1>
+  <div class="turn-info">
+    <div class="resource-bar" id="global-resources">
+      <div class="res-chip"><div class="res-dot" style="background:#7A4A2C"></div> <span id="res-dollops">100</span> Dp</div>
+      <div class="res-chip"><div class="res-dot" style="background:#C8872A"></div> <span id="res-goods">85</span> Goods</div>
+      <div class="res-chip"><div class="res-dot" style="background:#4A7C59"></div> <span id="res-food">95</span> Food</div>
+      <div class="res-chip"><div class="res-dot" style="background:#4A6E8C"></div> <span id="res-knowledge">60</span> Knowledge</div>
+    </div>
+    <div class="turn-badge">Turn <strong id="turn-num">1</strong></div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="board-wrap">
+    <svg id="board" viewBox="0 0 900 650" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <radialGradient id="oceanGrad" cx="50%" cy="50%" r="70%">
+          <stop offset="0%" stop-color="#1e2d3a"/>
+          <stop offset="60%" stop-color="#132030"/>
+          <stop offset="100%" stop-color="#0d1520"/>
+        </radialGradient>
+        <!-- Wave pattern -->
+        <pattern id="waves" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
+          <path d="M0 30 Q15 20 30 30 Q45 40 60 30" stroke="rgba(255,255,255,0.025)" stroke-width="1" fill="none"/>
+          <path d="M0 45 Q15 35 30 45 Q45 55 60 45" stroke="rgba(255,255,255,0.015)" stroke-width="1" fill="none"/>
+        </pattern>
+        <!-- Island gradients -->
+        <radialGradient id="grad-hub" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#B8A080"/>
+          <stop offset="100%" stop-color="#6B4E2C"/>
+        </radialGradient>
+        <radialGradient id="grad-resources" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#8C6040"/>
+          <stop offset="100%" stop-color="#4A2A10"/>
+        </radialGradient>
+        <radialGradient id="grad-agriculture" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#7A9458"/>
+          <stop offset="100%" stop-color="#3D5228"/>
+        </radialGradient>
+        <radialGradient id="grad-healthcare" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#C4603C"/>
+          <stop offset="100%" stop-color="#7A2818"/>
+        </radialGradient>
+        <radialGradient id="grad-banking" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#8C7840"/>
+          <stop offset="100%" stop-color="#4A3C18"/>
+        </radialGradient>
+        <radialGradient id="grad-manufacturing" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#7A6860"/>
+          <stop offset="100%" stop-color="#3C2C24"/>
+        </radialGradient>
+        <radialGradient id="grad-education" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#4A6E8C"/>
+          <stop offset="100%" stop-color="#1E3448"/>
+        </radialGradient>
+        <!-- Glow filter -->
+        <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <!-- Marker for trade arrows -->
+        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto">
+          <polygon points="0 0, 8 3, 0 6" fill="var(--c-raw)" opacity="0.8"/>
+        </marker>
+      </defs>
+
+      <!-- Ocean -->
+      <rect width="900" height="650" fill="url(#oceanGrad)"/>
+      <rect width="900" height="650" fill="url(#waves)"/>
+
+      <!-- Grid lines (subtle) -->
+      <g stroke="rgba(255,255,255,0.025)" stroke-width="0.5">
+        <line x1="0" y1="108" x2="900" y2="108"/>
+        <line x1="0" y1="216" x2="900" y2="216"/>
+        <line x1="0" y1="324" x2="900" y2="324"/>
+        <line x1="0" y1="432" x2="900" y2="432"/>
+        <line x1="0" y1="540" x2="900" y2="540"/>
+        <line x1="150" y1="0" x2="150" y2="650"/>
+        <line x1="300" y1="0" x2="300" y2="650"/>
+        <line x1="450" y1="0" x2="450" y2="650"/>
+        <line x1="600" y1="0" x2="600" y2="650"/>
+        <line x1="750" y1="0" x2="750" y2="650"/>
+      </g>
+
+      <!-- Connection lines (all pairs) -->
+      <g id="connections"></g>
+
+      <!-- Trade route animations -->
+      <g id="trade-animations"></g>
+
+      <!-- Islands -->
+      <g id="islands"></g>
+    </svg>
+  </div>
+
+  <div id="side-panel">
+    <div id="panel-content">
+      <div class="panel-empty">
+        <div class="panel-empty-icon">⛵</div>
+        <div class="panel-empty-text">Select an island to inspect its resources, trade routes, and available actions.</div>
+      </div>
+    </div>
+    <div id="log">
+      <div class="log-title">Ledger</div>
+      <div id="log-entries"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tweaks-panel">
+  <h3>Tweaks</h3>
+  <div class="tweak-row">
+    <div class="tweak-label">Ocean Depth</div>
+    <input type="range" min="0" max="100" value="50" oninput="tweakOcean(this.value)">
+  </div>
+  <div class="tweak-row">
+    <div class="tweak-label">Island Style</div>
+    <select onchange="tweakIslandStyle(this.value)">
+      <option value="natural">Natural</option>
+      <option value="tactical">Tactical</option>
+      <option value="minimal">Minimal</option>
+    </select>
+  </div>
+  <div class="tweak-row">
+    <div class="tweak-label">Connection Density</div>
+    <select onchange="tweakConnections(this.value)">
+      <option value="all">Show all routes</option>
+      <option value="selected">Only selected</option>
+    </select>
+  </div>
+</div>
+
+<script>
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "oceanDepth": 50,
+  "islandStyle": "natural",
+  "connectionDensity": "all"
+}/*EDITMODE-END*/;
+
+// ── Island Data ──────────────────────────────────────────────
+const ISLANDS = [
+  {
+    id: 'transport',
+    name: 'Port Sovereign',
+    type: 'Transportation & Shipping',
+    icon: '⚓',
+    desc: 'The nexus of all trade. Every cargo route passes through here — Freight is life.',
+    cx: 450, cy: 310,
+    rx: 72, ry: 58,
+    grad: 'grad-hub',
+    ring: '#D4D0C8',
+    stats: { Connectivity: 10, 'Fleet Size': 7, 'Trade Volume': 9, Reliability: 8 },
+    produces: ['⚓ Freight  6 / season'],
+    needs:    ['🛢️ Oil  2 / season'],
+    actions: [
+      { icon: '⚓', label: 'Produce Freight', target: 'self', cost: '2 Oil' },
+      { icon: '🚢', label: 'Arrange Worker Transport', target: 'any', cost: 'negotiated' },
+      { icon: '💱', label: 'Market Sell Freight', target: 'market', cost: '—' },
+    ]
+  },
+  {
+    id: 'mining',
+    name: 'Ironvein Isle',
+    type: 'Mining & Oil',
+    icon: '⛏️',
+    desc: 'Rich ore veins and deep oil wells. The raw fuel of the entire archipelago.',
+    cx: 140, cy: 145,
+    rx: 60, ry: 52,
+    grad: 'grad-resources',
+    ring: '#C4603C',
+    stats: { 'Ore Reserves': 10, 'Oil Output': 8, Labour: 6, Equipment: 7 },
+    produces: ['⛏️ Ore  5 / season', '🛢️ Oil  3 / season'],
+    needs:    ['🛢️ Oil  1 / season', '🚢 Freight  1 / season'],
+    actions: [
+      { icon: '⛏️', label: 'Extract Ore & Oil', target: 'self', cost: '1 Oil + 1 Freight' },
+      { icon: '🚛', label: 'Export Ore to Forgehaven', target: 'manufacturing', cost: '—' },
+      { icon: '💱', label: 'Sell Oil on Market', target: 'market', cost: '—' },
+    ]
+  },
+  {
+    id: 'agriculture',
+    name: 'Greenfeld',
+    type: 'Agriculture & Fisheries',
+    icon: '🌾',
+    desc: 'Fertile plains and abundant seas. It feeds every island in the archipelago.',
+    cx: 760, cy: 130,
+    rx: 65, ry: 55,
+    grad: 'grad-agriculture',
+    ring: '#7A9458',
+    stats: { 'Food Output': 9, 'Fish Harvest': 8, Fertility: 7, Stability: 9 },
+    produces: ['🌾 Food  4 / season', '🐟 Fish  3 / season'],
+    needs:    ['⚙️ Capital Equipment  1 / season'],
+    actions: [
+      { icon: '🌾', label: 'Harvest Season', target: 'self', cost: '1 Capital Equipment' },
+      { icon: '🚢', label: 'Export Food Supply', target: 'any', cost: '—' },
+      { icon: '💱', label: 'Market Sell Food & Fish', target: 'market', cost: '—' },
+    ]
+  },
+  {
+    id: 'healthcare',
+    name: 'Mericula',
+    type: 'Healthcare',
+    icon: '⚕️',
+    desc: 'Healers, apothecaries, and vaccine labs. Life and wellness are their currency.',
+    cx: 790, cy: 350,
+    rx: 58, ry: 48,
+    grad: 'grad-healthcare',
+    ring: '#C4603C',
+    stats: { 'Health Index': 9, 'Vaccine Output': 6, Research: 7, Population: 8 },
+    produces: ['⚕️ Health Services  4 / season', '💉 Vaccine  1 / season'],
+    needs:    ['📚 Knowledge  1 / season', '⚙️ Capital Equipment  1 / season'],
+    actions: [
+      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Knowledge + 1 Equip' },
+      { icon: '💉', label: 'Distribute Vaccines', target: 'any', cost: '1 Vaccine / island' },
+      { icon: '🔬', label: 'Joint Research with Scholara', target: 'education', cost: '—' },
+    ]
+  },
+  {
+    id: 'banking',
+    name: 'Aurum Cay',
+    type: 'Banking',
+    icon: '🏦',
+    desc: 'Vaults of gold and ledgers of empire. Finance flows where it is invited.',
+    cx: 630, cy: 530,
+    rx: 65, ry: 52,
+    grad: 'grad-banking',
+    ring: '#C8872A',
+    stats: { Capital: 10, 'Interest Rate': 8, Influence: 9, Risk: 5 },
+    produces: ['💳 Finance  3 / season'],
+    needs:    ['— (no inputs required)'],
+    actions: [
+      { icon: '💳', label: 'Produce Finance', target: 'self', cost: '—' },
+      { icon: '📈', label: 'Issue Loan to Island', target: 'any', cost: '—' },
+      { icon: '🏛️', label: 'Establish Credit Line', target: 'any', cost: 'negotiated' },
+    ]
+  },
+  {
+    id: 'manufacturing',
+    name: 'Forgehaven',
+    type: 'Manufacturing',
+    icon: '⚙️',
+    desc: 'Furnaces roar, wheels turn. Ore becomes goods and capital equipment.',
+    cx: 155, cy: 490,
+    rx: 65, ry: 55,
+    grad: 'grad-manufacturing',
+    ring: '#9E9B94',
+    stats: { Output: 9, Labour: 8, Technology: 6, 'Energy Use': 7 },
+    produces: ['📦 Goods  3 / season', '⚙️ Capital Equipment  2 / season'],
+    needs:    ['⛏️ Ore  2 / season', '🛢️ Oil  1 / season', '🚢 Freight  1 / season'],
+    actions: [
+      { icon: '🏭', label: 'Produce Goods & Equipment', target: 'self', cost: '2 Ore + 1 Oil + 1 Freight' },
+      { icon: '⚙️', label: 'Export Capital Equipment', target: 'any', cost: '—' },
+      { icon: '🔧', label: 'Order Power Station (20 MW)', target: 'any', cost: '15 Goods + 5 Equip' },
+    ]
+  },
+  {
+    id: 'education',
+    name: 'Scholara',
+    type: 'Education & Training',
+    icon: '📚',
+    desc: 'Libraries, academies, and the University. Skilled workers are its greatest export.',
+    cx: 330, cy: 540,
+    rx: 60, ry: 50,
+    grad: 'grad-education',
+    ring: '#4A6E8C',
+    stats: { Knowledge: 9, 'Training Slots': 8, Research: 7, Influence: 6 },
+    produces: ['📚 Knowledge  4 / season'],
+    needs:    ['⚙️ Capital Equipment  1 / season'],
+    actions: [
+      { icon: '📚', label: 'Produce Knowledge', target: 'self', cost: '1 Capital Equipment' },
+      { icon: '🎓', label: 'Review Training Requests', target: 'self', cost: 'negotiated fee' },
+      { icon: '🔬', label: 'Joint Research with Mericula', target: 'healthcare', cost: '—' },
+    ]
+  }
+];
+
+// ── State ────────────────────────────────────────────────────
+let selectedId = null;
+let turn = 1;
+let gameState = {
+  dollops: 100, goods: 85, food: 95, knowledge: 60
+};
+let connectionMode = 'all';
+let logEntries = [];
+
+// ── Layout helpers ───────────────────────────────────────────
+function islandById(id) { return ISLANDS.find(i => i.id === id); }
+
+// Build organic island shape using ellipse with noise-like path
+function islandPath(cx, cy, rx, ry) {
+  const pts = [];
+  const n = 16;
+  const bumps = [0.92, 1.08, 0.96, 1.12, 0.88, 1.05, 0.95, 1.1, 0.9, 1.07, 0.93, 1.04, 0.97, 1.09, 0.91, 1.06];
+  for (let i = 0; i < n; i++) {
+    const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const b = bumps[i];
+    const x = cx + Math.cos(angle) * rx * b;
+    const y = cy + Math.sin(angle) * ry * b;
+    pts.push([x, y]);
+  }
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < n; i++) {
+    const curr = pts[i];
+    const next = pts[(i + 1) % n];
+    const mid = [(curr[0] + next[0]) / 2, (curr[1] + next[1]) / 2];
+    d += ` Q ${curr[0]} ${curr[1]} ${mid[0]} ${mid[1]}`;
+  }
+  d += ' Z';
+  return d;
+}
+
+// ── Render connections ───────────────────────────────────────
+function renderConnections() {
+  const g = document.getElementById('connections');
+  g.innerHTML = '';
+  for (let i = 0; i < ISLANDS.length; i++) {
+    for (let j = i + 1; j < ISLANDS.length; j++) {
+      const a = ISLANDS[i], b = ISLANDS[j];
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', a.cx); line.setAttribute('y1', a.cy);
+      line.setAttribute('x2', b.cx); line.setAttribute('y2', b.cy);
+      line.classList.add('conn-line');
+      line.id = `conn-${a.id}-${b.id}`;
+      g.appendChild(line);
+    }
+  }
+}
+
+function highlightConnections(islandId) {
+  document.querySelectorAll('.conn-line').forEach(l => l.classList.remove('active'));
+  if (!islandId) return;
+  ISLANDS.forEach(other => {
+    if (other.id === islandId) return;
+    const ids = [islandId, other.id].sort();
+    const line = document.getElementById(`conn-${ids[0]}-${ids[1]}`);
+    if (line) line.classList.add('active');
+  });
+}
+
+// ── Render islands ───────────────────────────────────────────
+function renderIslands() {
+  const g = document.getElementById('islands');
+  g.innerHTML = '';
+  ISLANDS.forEach(island => {
+    const grp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    grp.classList.add('island-group');
+    grp.id = `island-${island.id}`;
+    grp.setAttribute('data-id', island.id);
+
+    // Glow halo
+    const halo = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+    halo.setAttribute('cx', island.cx); halo.setAttribute('cy', island.cy);
+    halo.setAttribute('rx', island.rx + 18); halo.setAttribute('ry', island.ry + 14);
+    halo.setAttribute('fill', island.ring);
+    halo.setAttribute('opacity', '0.08');
+    halo.setAttribute('filter', 'url(#glow)');
+    grp.appendChild(halo);
+
+    // Pulse ring
+    const ring = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    ring.setAttribute('d', islandPath(island.cx, island.cy, island.rx + 10, island.ry + 8));
+    ring.setAttribute('stroke', island.ring);
+    ring.setAttribute('fill', 'none');
+    ring.setAttribute('stroke-width', '3');
+    ring.classList.add('island-ring');
+    grp.appendChild(ring);
+
+    // Island body
+    const body = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    body.setAttribute('d', islandPath(island.cx, island.cy, island.rx, island.ry));
+    body.setAttribute('fill', `url(#${island.grad})`);
+    body.setAttribute('filter', 'url(#glow-soft)');
+    body.classList.add('island-body');
+    grp.appendChild(body);
+
+    // Shore outline
+    const shore = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    shore.setAttribute('d', islandPath(island.cx, island.cy, island.rx, island.ry));
+    shore.setAttribute('fill', 'none');
+    shore.setAttribute('stroke', 'rgba(245,239,230,0.18)');
+    shore.setAttribute('stroke-width', '1.5');
+    grp.appendChild(shore);
+
+    // Icon
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    icon.setAttribute('x', island.cx); icon.setAttribute('y', island.cy - 10);
+    icon.setAttribute('font-size', '20'); icon.setAttribute('text-anchor', 'middle');
+    icon.setAttribute('dominant-baseline', 'middle');
+    icon.textContent = island.icon;
+    grp.appendChild(icon);
+
+    // Name label
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', island.cx); label.setAttribute('y', island.cy + 12);
+    label.classList.add('island-label');
+    label.textContent = island.name;
+    grp.appendChild(label);
+
+    // Type sublabel
+    const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    sub.setAttribute('x', island.cx); sub.setAttribute('y', island.cy + 24);
+    sub.classList.add('island-sublabel');
+    sub.textContent = island.type;
+    grp.appendChild(sub);
+
+    grp.addEventListener('click', () => selectIsland(island.id));
+    g.appendChild(grp);
+  });
+}
+
+// ── Select island ────────────────────────────────────────────
+function selectIsland(id) {
+  if (selectedId === id) {
+    selectedId = null;
+    document.querySelectorAll('.island-group').forEach(g => g.classList.remove('selected'));
+    highlightConnections(null);
+    showEmptyPanel();
+    return;
+  }
+  selectedId = id;
+  document.querySelectorAll('.island-group').forEach(g => g.classList.remove('selected'));
+  document.getElementById(`island-${id}`).classList.add('selected');
+  highlightConnections(id);
+  showIslandPanel(islandById(id));
+}
+
+function showEmptyPanel() {
+  document.getElementById('panel-content').innerHTML = `
+    <div class="panel-empty">
+      <div class="panel-empty-icon">⛵</div>
+      <div class="panel-empty-text">Select an island to inspect its resources, trade routes, and available actions.</div>
+    </div>`;
+}
+
+function showIslandPanel(island) {
+  const statsHtml = Object.entries(island.stats).map(([k, v]) => `
+    <div class="stat-row">
+      <span class="stat-name">${k}</span>
+      <div class="stat-bar-wrap">
+        <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${v*10}%;background:${island.ring}"></div></div>
+        <span class="stat-val">${v}</span>
+      </div>
+    </div>`).join('');
+
+  const producesHtml = island.produces.map(r =>
+    `<div style="font-size:0.78rem;color:rgba(245,239,230,0.85);padding:3px 0">${r}</div>`
+  ).join('');
+
+  const needsHtml = island.needs.map(r =>
+    `<div style="font-size:0.78rem;color:rgba(245,239,230,0.6);padding:3px 0">${r}</div>`
+  ).join('');
+
+  const actionsHtml = island.actions.map((a, i) => `
+    <button class="trade-btn" onclick="doAction('${island.id}', ${i})">
+      <span class="trade-btn-icon">${a.icon}</span>
+      <span class="trade-btn-label">${a.label}</span>
+      <span class="trade-btn-cost">${a.cost}</span>
+    </button>`).join('');
+
+  const transportHtml = selectedId ? `
+    <div class="panel-section" style="background:rgba(196,96,60,0.06)">
+      <div class="panel-section-title">Transport here</div>
+      <div style="font-size:0.75rem;color:rgba(245,239,230,0.65);line-height:1.7">
+        ✈️ <strong style="color:var(--c-cream)">Flight</strong> — 20% of primary fee, immediate<br>
+        🚢 <strong style="color:var(--c-cream)">Cargo vessel</strong> — free ≤ 2 passengers, +1 season<br>
+        🚤 <strong style="color:var(--c-cream)">Hire Transporter</strong> — negotiated, immediate
+      </div>
+    </div>` : '';
+
+  document.getElementById('panel-content').innerHTML = `
+    <div class="panel-island-header">
+      <span class="panel-island-icon">${island.icon}</span>
+      <div class="panel-island-name">${island.name}</div>
+      <div class="panel-island-type">${island.type}</div>
+      <div class="panel-island-desc">${island.desc}</div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Attributes</div>
+      ${statsHtml}
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Produces</div>
+      ${producesHtml}
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Needs</div>
+      ${needsHtml}
+    </div>
+    ${transportHtml}
+    <div class="panel-section">
+      <div class="panel-section-title">Actions</div>
+      ${actionsHtml}
+    </div>`;
+}
+
+// ── Actions / Trade animation ─────────────────────────────────
+function doAction(islandId, actionIdx) {
+  const island = islandById(islandId);
+  const action = island.actions[actionIdx];
+
+  // Find target island for animation
+  let targetIsland = null;
+  if (action.target === 'any') targetIsland = ISLANDS.find(i => i.id !== islandId);
+  else if (action.target !== 'self' && action.target !== 'all') targetIsland = islandById(action.target);
+
+  if (targetIsland) animateTrade(island, targetIsland);
+
+  // Update resources
+  const rand = (n) => Math.floor(Math.random() * n) + 1;
+  gameState.goods = Math.max(0, gameState.goods + (islandId === 'manufacturing' ? rand(8) : -rand(3)));
+  gameState.dollops = Math.max(0, gameState.dollops + (islandId === 'banking' ? rand(10) : -rand(4)));
+  gameState.food = Math.max(0, gameState.food + (islandId === 'agriculture' ? rand(7) : -rand(2)));
+  gameState.knowledge = Math.max(0, gameState.knowledge + (islandId === 'education' ? rand(6) : -rand(2)));
+  updateResourceBar();
+
+  // Advance turn
+  turn++;
+  document.getElementById('turn-num').textContent = turn;
+
+  // Log
+  addLog(island, action);
+}
+
+function animateTrade(from, to) {
+  const g = document.getElementById('trade-animations');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', from.cx); line.setAttribute('y1', from.cy);
+  line.setAttribute('x2', to.cx); line.setAttribute('y2', to.cy);
+  line.setAttribute('stroke', '#C8872A');
+  line.setAttribute('stroke-width', '2.5');
+  line.setAttribute('stroke-dasharray', '8 4');
+  line.setAttribute('marker-end', 'url(#arrowhead)');
+  line.setAttribute('opacity', '0');
+  g.appendChild(line);
+
+  // Fade in, hold, fade out
+  let op = 0;
+  const fadeIn = setInterval(() => {
+    op += 0.1;
+    line.setAttribute('opacity', Math.min(op, 1));
+    if (op >= 1) { clearInterval(fadeIn); setTimeout(fadeOut, 600); }
+  }, 30);
+  function fadeOut() {
+    const fi = setInterval(() => {
+      op -= 0.08;
+      line.setAttribute('opacity', Math.max(op, 0));
+      if (op <= 0) { clearInterval(fi); g.removeChild(line); }
+    }, 30);
+  }
+
+  // Packet dot
+  const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  dot.setAttribute('r', '5');
+  dot.setAttribute('fill', '#C8872A');
+  dot.setAttribute('opacity', '0.9');
+  g.appendChild(dot);
+
+  let t = 0;
+  const anim = setInterval(() => {
+    t += 0.025;
+    if (t > 1) { clearInterval(anim); g.removeChild(dot); return; }
+    const x = from.cx + (to.cx - from.cx) * t;
+    const y = from.cy + (to.cy - from.cy) * t;
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+  }, 16);
+}
+
+function updateResourceBar() {
+  document.getElementById('res-dollops').textContent = gameState.dollops;
+  document.getElementById('res-goods').textContent = gameState.goods;
+  document.getElementById('res-food').textContent = gameState.food;
+  document.getElementById('res-knowledge').textContent = gameState.knowledge;
+}
+
+function addLog(island, action) {
+  const entry = document.createElement('div');
+  entry.classList.add('log-entry');
+  entry.innerHTML = `<span class="log-time">Turn ${turn}</span> — <strong>${island.name}</strong>: ${action.label} <span style="color:var(--c-silver);font-size:0.68rem">(${action.cost})</span>`;
+  const logEl = document.getElementById('log-entries');
+  logEl.insertBefore(entry, logEl.firstChild);
+  // trim log
+  while (logEl.children.length > 20) logEl.removeChild(logEl.lastChild);
+}
+
+// ── Tweaks ───────────────────────────────────────────────────
+function tweakOcean(val) {
+  const stop1 = `hsl(210, ${20 + val/5}%, ${8 + val/12}%)`;
+  document.getElementById('board').style.filter = `brightness(${0.7 + val/200})`;
+}
+function tweakIslandStyle(val) {
+  // Could swap path complexity — simplified for demo
+  document.querySelectorAll('.island-body, .island-ring').forEach(el => {
+    if (val === 'tactical') el.style.filter = 'none';
+    else if (val === 'minimal') el.style.opacity = '0.8';
+    else el.style.filter = '';
+  });
+}
+function tweakConnections(val) {
+  connectionMode = val;
+  if (val === 'all') {
+    document.querySelectorAll('.conn-line').forEach(l => l.style.display = '');
+    highlightConnections(selectedId);
+  } else {
+    document.querySelectorAll('.conn-line').forEach(l => l.style.display = 'none');
+    if (selectedId) highlightConnections(selectedId);
+  }
+}
+
+// ── Tweaks panel toggle (host protocol) ──────────────────────
+window.addEventListener('message', e => {
+  if (e.data?.type === '__activate_edit_mode') document.getElementById('tweaks-panel').style.display = 'block';
+  if (e.data?.type === '__deactivate_edit_mode') document.getElementById('tweaks-panel').style.display = 'none';
+});
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+
+// ── Init ─────────────────────────────────────────────────────
+renderConnections();
+renderIslands();
+
+// Opening log entry
+setTimeout(() => {
+  const entry = document.createElement('div');
+  entry.classList.add('log-entry');
+  entry.innerHTML = `<span class="log-time">Turn 1</span> — <em style="color:rgba(245,239,230,0.4)">The archipelago stirs. Seven islands await your hand.</em>`;
+  document.getElementById('log-entries').appendChild(entry);
+}, 300);
+</script>
+</body>
+</html>

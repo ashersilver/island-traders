@@ -1,0 +1,420 @@
+from __future__ import annotations
+import json
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from ..models.player import Player
+from ..models.market import Market
+from ..models.deal import DealLedger
+from ..models.resource import ResourceType
+from ..models.role import ROLES
+from ..models.profession import Profession
+from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
+from ..models.workforce import Workforce, Worker
+from ..engine.events import EventChartLoader, SeasonEventResolver
+from ..engine.production import ProductionEngine
+from ..engine.trading import TradingEngine
+from ..engine.turn import TurnManager
+from ..constants import (
+    SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
+    STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
+    STARTING_WORKERS_BY_PROFESSION,
+    BASE_BIRTH_RATE,
+    STARTING_PRODUCTION_CAPACITY,
+    STARTING_POPULATION,
+    CURRENCY_SYMBOL,
+    BASE_PRICES,
+)
+
+SAVE_VERSION = 4
+
+
+@dataclass
+class PlayerSpec:
+    name: str
+    role_names: list[str]
+    is_human: bool = True
+
+
+@dataclass
+class GameConfig:
+    player_specs: list[PlayerSpec]
+    num_years: int = 3
+    starting_dollops: float = STARTING_DOLLOPS
+    event_charts_path: str | None = None
+
+
+@dataclass
+class GameSummary:
+    winner: Player
+    final_rankings: list[tuple[Player, float]]
+    deal_count: int
+    price_history: list
+
+
+class Game:
+    def __init__(self, config: GameConfig, io_adapter, save_path: str = "island_traders_save.json"):
+        self.config = config
+        self.io = io_adapter
+        self.save_path = save_path
+        self.players: list[Player] = []
+        self.market: Market | None = None
+        self.ledger: DealLedger | None = None
+        self.training: TrainingRegistry | None = None
+        self.turn_manager: TurnManager | None = None
+        self._resume_year: int = 0
+        self._resume_season: int = 0
+
+    def setup(self) -> None:
+        self.market = Market()
+        self.ledger = DealLedger()
+        self.training = TrainingRegistry()
+
+        for idx, spec in enumerate(self.config.player_specs):
+            roles = []
+            for rname in spec.role_names:
+                if rname not in ROLES:
+                    raise ValueError(f"Unknown role: {rname!r}. Valid roles: {list(ROLES.keys())}")
+                roles.append(ROLES[rname])
+
+            player = Player(
+                player_id=idx,
+                name=spec.name,
+                roles=roles,
+                dollops=self.config.starting_dollops,
+                is_human=spec.is_human,
+                population=STARTING_POPULATION,
+            )
+
+            # Production capacity = max of all assigned roles
+            combined_capacity = max(
+                (STARTING_PRODUCTION_CAPACITY.get(rname, 0.5) for rname in spec.role_names),
+                default=0.5,
+            )
+            player.production_capacity = combined_capacity
+
+            # Bootstrap starting inventory
+            for rname in spec.role_names:
+                for res_str, qty in STARTING_INVENTORY.get(rname, {}).items():
+                    player.receive_resources(ResourceType(res_str), qty)
+
+            # Build starting workforce with specific professions
+            for rname in spec.role_names:
+                total_workers = STARTING_WORKFORCE.get(rname, 3)
+                profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
+
+                allocated = 0
+                for profession_name, count in profession_breakdown:
+                    player.workforce.add_workers(count, training_level=1, profession=profession_name)
+                    allocated += count
+
+                # Remaining slots are Unskilled
+                unskilled_count = total_workers - allocated
+                if unskilled_count > 0:
+                    player.workforce.add_workers(unskilled_count, training_level=0,
+                                                 profession=Profession.UNSKILLED.value)
+
+            self.players.append(player)
+
+        charts = (
+            EventChartLoader.from_yaml(self.config.event_charts_path)
+            if self.config.event_charts_path
+            else EventChartLoader.default_charts()
+        )
+        self.event_resolver = SeasonEventResolver(charts)
+        production = ProductionEngine()
+        trading = TradingEngine(self.market, self.ledger)
+        self.turn_manager = TurnManager(
+            self.players, production, trading, self.market, self.io, self.training
+        )
+
+    def run(self) -> GameSummary:
+        for year in range(self._resume_year, self.config.num_years):
+            start_season = self._resume_season if year == self._resume_year else 0
+            for season_index in range(start_season, len(SEASONS)):
+                self._process_training_returns(year, season_index)
+                event_results = self.event_resolver.resolve_all(
+                    self.players, self.turn_manager._damage_counters
+                )
+                self.turn_manager.run_season(year, season_index, event_results)
+                self._auto_save(year, season_index + 1)
+
+            prices = self.market.current_prices()
+            wealthies = [p.total_wealth(prices) for p in self.players]
+            max_wealth = max(wealthies) if wealthies else 1.0
+
+            for player, wealth in zip(self.players, wealthies):
+                player.record_year_wealth(prices)
+                wealth_ratio = wealth / max_wealth if max_wealth > 0 else 0.0
+                birth_rate = BASE_BIRTH_RATE * max(0.0, 1.0 - wealth_ratio)
+                new_people = max(0, round(player.population * birth_rate))
+                if new_people:
+                    player.population += new_people
+                    self.io.print(
+                        f"  [Population] {player.name}: +{new_people} people born  "
+                        f"(island population now {player.population}; "
+                        f"{player.available_unskilled} recruitable)"
+                    )
+
+            self.io.print(self._year_end_summary(year, prices))
+
+        Path(self.save_path).unlink(missing_ok=True)
+        return self.compute_summary()
+
+    def _process_training_returns(self, year: int, season: int) -> None:
+        player_map = {p.player_id: p for p in self.players}
+        returned_batches = self.training.process_returns(year, season)
+        for batch in returned_batches:
+            player = player_map.get(batch.requester_id)
+            if player:
+                returned = player.workforce.return_from_training(
+                    batch.worker_ids, batch.target_profession
+                )
+                if returned:
+                    self.io.print(
+                        f"\n[Training] {player.name}: {len(returned)} worker(s) returned "
+                        f"as {batch.target_profession}. "
+                        f"New avg efficiency: {player.workforce.average_efficiency*100:.1f}%"
+                    )
+
+    def compute_summary(self) -> GameSummary:
+        prices = self.market.current_prices()
+        rankings = sorted(
+            [(p, p.total_wealth(prices)) for p in self.players],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        return GameSummary(
+            winner=rankings[0][0],
+            final_rankings=rankings,
+            deal_count=len(self.ledger.deals),
+            price_history=self.market.price_history,
+        )
+
+    def _year_end_summary(self, year: int, prices: dict[ResourceType, float]) -> str:
+        sym = CURRENCY_SYMBOL
+        lines = [f"\n{'*'*50}", f"  End of Year {year + 1} — Leaderboard", f"{'*'*50}"]
+        ranked = sorted(self.players, key=lambda p: p.total_wealth(prices), reverse=True)
+        for i, p in enumerate(ranked, 1):
+            ws = p.workforce.summary()
+            lines.append(
+                f"  {i}. {p.name} ({p.role_names()}) — "
+                f"{p.total_wealth(prices):.1f} {sym}  "
+                f"[workers: {ws['active']}/{ws['total']}, pop: {p.population}, "
+                f"eff: {ws['avg_efficiency_pct']}%]"
+            )
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Save / Load
+    # ------------------------------------------------------------------
+
+    def _auto_save(self, completed_year: int, next_season: int) -> None:
+        try:
+            self.save(self.save_path, resume_year=completed_year, resume_season=next_season)
+        except Exception:
+            pass
+
+    def save(self, path: str, resume_year: int = 0, resume_season: int = 0) -> None:
+        if resume_season >= len(SEASONS):
+            resume_year += 1
+            resume_season = 0
+
+        state = {
+            "save_version": SAVE_VERSION,
+            "save_id": str(uuid.uuid4()),
+            "resume_year": resume_year,
+            "resume_season": resume_season,
+            "config": {
+                "num_years": self.config.num_years,
+                "starting_dollops": self.config.starting_dollops,
+                "event_charts_path": self.config.event_charts_path,
+                "player_specs": [
+                    {"name": s.name, "role_names": s.role_names, "is_human": s.is_human}
+                    for s in self.config.player_specs
+                ],
+            },
+            "players": [self._serialise_player(p) for p in self.players],
+            "market": self._serialise_market(),
+            "training": self._serialise_training(),
+            "damage_counters": {
+                str(k): v for k, v in self.turn_manager._damage_counters.items()
+            } if self.turn_manager else {},
+        }
+        Path(path).write_text(json.dumps(state, indent=2))
+
+    def _serialise_player(self, p: Player) -> dict:
+        return {
+            "player_id": p.player_id,
+            "name": p.name,
+            "role_names": [r.name for r in p.roles],
+            "is_human": p.is_human,
+            "dollops": p.dollops,
+            "production_capacity": p.production_capacity,
+            "population": p.population,
+            "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
+            "wealth_history": p.wealth_history,
+            "workforce": {
+                "next_id": p.workforce._next_id,
+                "workers": [
+                    {
+                        "worker_id": w.worker_id,
+                        "training_level": w.training_level,
+                        "experience_seasons": w.experience_seasons,
+                        "in_training": w.in_training,
+                        "profession": w.profession,
+                    }
+                    for w in p.workforce.workers
+                ],
+            },
+        }
+
+    def _serialise_market(self) -> dict:
+        return {
+            "supply": {r.value: v for r, v in self.market.supply.items()},
+            "demand": {r.value: v for r, v in self.market.demand.items()},
+            "shocks": [
+                {"resource": s.resource.value, "multiplier": s.multiplier, "remaining": s.seasons_remaining}
+                for s in self.market._shocks
+            ],
+            "price_history": [
+                {"year": snap.year, "season": snap.season,
+                 "prices": {r.value: p for r, p in snap.prices.items()}}
+                for snap in self.market.price_history
+            ],
+        }
+
+    def _serialise_training(self) -> dict:
+        return {
+            "next_id": self.training._next_id,
+            "requests": [
+                {
+                    "batch_id": r.batch_id,
+                    "requester_id": r.requester_id,
+                    "worker_ids": r.worker_ids,
+                    "educator_id": r.educator_id,
+                    "transporter_id": r.transporter_id,
+                    "dollops_to_educator": r.dollops_to_educator,
+                    "dollops_to_transporter": r.dollops_to_transporter,
+                    "target_profession": r.target_profession,
+                    "proposed_year": r.proposed_year,
+                    "proposed_season": r.proposed_season,
+                    "status": r.status.value,
+                    "dispatched_year": r.dispatched_year,
+                    "dispatched_season": r.dispatched_season,
+                    "return_year": r.return_year,
+                    "return_season": r.return_season,
+                    "transport_mode": r.transport_mode,
+                }
+                for r in self.training.all_requests()
+            ],
+        }
+
+    @classmethod
+    def load(cls, path: str, io_adapter) -> "Game":
+        from ..models.market import PriceShock, PriceSnapshot
+        data = json.loads(Path(path).read_text())
+
+        cfg_data = data["config"]
+        specs = [
+            PlayerSpec(name=s["name"], role_names=s["role_names"], is_human=s["is_human"])
+            for s in cfg_data["player_specs"]
+        ]
+        config = GameConfig(
+            player_specs=specs,
+            num_years=cfg_data["num_years"],
+            starting_dollops=cfg_data.get("starting_dollops", STARTING_DOLLOPS),
+            event_charts_path=cfg_data.get("event_charts_path"),
+        )
+        game = cls(config, io_adapter, save_path=path)
+
+        for pd in data["players"]:
+            roles = [ROLES[rn] for rn in pd["role_names"]]
+            p = Player(
+                player_id=pd["player_id"],
+                name=pd["name"],
+                roles=roles,
+                dollops=pd["dollops"],
+                is_human=pd["is_human"],
+                wealth_history=pd.get("wealth_history", []),
+                production_capacity=pd.get("production_capacity", 0.5),
+                population=pd.get("population", STARTING_POPULATION),
+            )
+            for r_str, qty in pd.get("inventory", {}).items():
+                p.receive_resources(ResourceType(r_str), qty)
+            wf_data = pd.get("workforce", {})
+            p.workforce._next_id = wf_data.get("next_id", 0)
+            p.workforce.workers = [
+                Worker(
+                    worker_id=w["worker_id"],
+                    training_level=w["training_level"],
+                    experience_seasons=w["experience_seasons"],
+                    in_training=w.get("in_training", False),
+                    profession=w.get("profession", Profession.UNSKILLED.value),
+                )
+                for w in wf_data.get("workers", [])
+            ]
+            game.players.append(p)
+
+        md = data["market"]
+        game.market = Market()
+        game.market.supply = {ResourceType(k): v for k, v in md.get("supply", {}).items()}
+        game.market.demand = {ResourceType(k): v for k, v in md.get("demand", {}).items()}
+        from ..models.market import PriceShock, PriceSnapshot
+        game.market._shocks = [
+            PriceShock(ResourceType(s["resource"]), s["multiplier"], s["remaining"])
+            for s in md.get("shocks", [])
+        ]
+        game.market.price_history = [
+            PriceSnapshot(
+                year=snap["year"],
+                season=snap["season"],
+                prices={ResourceType(r): p for r, p in snap["prices"].items()},
+            )
+            for snap in md.get("price_history", [])
+        ]
+
+        game.ledger = DealLedger()
+        game.training = TrainingRegistry()
+        td = data.get("training", {})
+        game.training._next_id = td.get("next_id", 0)
+        for rd in td.get("requests", []):
+            req = TrainingRequest(
+                batch_id=rd["batch_id"],
+                requester_id=rd["requester_id"],
+                worker_ids=rd["worker_ids"],
+                educator_id=rd["educator_id"],
+                transporter_id=rd.get("transporter_id"),
+                dollops_to_educator=rd.get("dollops_to_educator", 0),
+                dollops_to_transporter=rd.get("dollops_to_transporter", 0),
+                target_profession=rd.get("target_profession", Profession.UNSKILLED.value),
+                proposed_year=rd.get("proposed_year", 0),
+                proposed_season=rd.get("proposed_season", 0),
+                status=TrainingStatus(rd["status"]),
+                dispatched_year=rd.get("dispatched_year", -1),
+                dispatched_season=rd.get("dispatched_season", -1),
+                return_year=rd.get("return_year", -1),
+                return_season=rd.get("return_season", -1),
+                transport_mode=rd.get("transport_mode", "transporter"),
+            )
+            game.training._requests.append(req)
+
+        game._resume_year = data.get("resume_year", 0)
+        game._resume_season = data.get("resume_season", 0)
+
+        charts = (
+            EventChartLoader.from_yaml(config.event_charts_path)
+            if config.event_charts_path
+            else EventChartLoader.default_charts()
+        )
+        game.event_resolver = SeasonEventResolver(charts)
+        production = ProductionEngine()
+        trading = TradingEngine(game.market, game.ledger)
+        game.turn_manager = TurnManager(
+            game.players, production, trading, game.market, io_adapter, game.training
+        )
+        game.turn_manager._damage_counters = {
+            int(k): v for k, v in data.get("damage_counters", {}).items()
+        }
+
+        return game

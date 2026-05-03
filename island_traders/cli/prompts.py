@@ -1,0 +1,134 @@
+from __future__ import annotations
+from ..models.resource import ResourceType
+from ..engine.turn import TurnAction
+from ..constants import CURRENCY_SYMBOL
+
+
+class IOAdapter:
+    """All terminal I/O goes through this class. Subclass for tests or alternative UIs."""
+
+    def print(self, text: str) -> None:
+        print(text)
+
+    def input(self, prompt: str) -> str:
+        return input(prompt)
+
+    def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
+        self.print(f"\n  {player.name}'s turn ({player.role_names()}) — choose:")
+        for i, action in enumerate(available, 1):
+            self.print(f"    {i}. {action.value.replace('_', ' ').title()}")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(available):
+                    return available[idx]
+            self.print("  Invalid choice, try again.")
+
+    def choose_resource(self, prompt: str, available: list[ResourceType]) -> ResourceType:
+        self.print(f"\n  {prompt}")
+        for i, r in enumerate(available, 1):
+            self.print(f"    {i}. {r.value}")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(available):
+                    return available[idx]
+            self.print("  Invalid choice.")
+
+    def choose_quantity(self, prompt: str, min_qty: int, max_qty: int) -> int:
+        self.print(f"\n  {prompt} [{min_qty}–{max_qty}]")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                qty = int(raw)
+                if min_qty <= qty <= max_qty:
+                    return qty
+            self.print(f"  Enter a number between {min_qty} and {max_qty}.")
+
+    def choose_player(self, prompt: str, players: list) -> object:
+        self.print(f"\n  {prompt}")
+        for i, p in enumerate(players, 1):
+            self.print(f"    {i}. {p.name} ({p.role_names()})")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(players):
+                    return players[idx]
+            self.print("  Invalid choice.")
+
+    def confirm(self, prompt: str) -> bool:
+        while True:
+            raw = self.input(f"  {prompt} [y/n] > ").strip().lower()
+            if raw in ("y", "yes"):
+                return True
+            if raw in ("n", "no"):
+                return False
+            self.print("  Enter y or n.")
+
+    def choose_profession(self, prompt: str, available: list[str]) -> str:
+        self.print(f"\n  {prompt}")
+        for i, prof in enumerate(available, 1):
+            self.print(f"    {i}. {prof}")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(available):
+                    return available[idx]
+            self.print("  Invalid choice.")
+
+    def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
+        sym = CURRENCY_SYMBOL
+        self.print(f"\n  {prompt} (max {max_dollops:.1f} {sym}, 0 to skip)")
+        while True:
+            raw = self.input("  > ").strip()
+            try:
+                val = float(raw)
+                if -max_dollops <= val <= max_dollops:
+                    return val
+            except ValueError:
+                pass
+            self.print(f"  Enter a number between {-max_dollops:.1f} and {max_dollops:.1f}.")
+
+
+class FakeIOAdapter(IOAdapter):
+    """
+    Scripted IO adapter for tests.
+    Feed a list of responses; they are consumed in order.
+    """
+
+    def __init__(self, responses: list[str] | None = None):
+        self._responses = list(responses or [])
+        self.printed: list[str] = []
+
+    def print(self, text: str) -> None:
+        self.printed.append(text)
+
+    def input(self, prompt: str) -> str:
+        if self._responses:
+            return self._responses.pop(0)
+        return ""
+
+    def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
+        return TurnAction.END_TURN
+
+    def choose_resource(self, prompt, available):
+        return available[0] if available else None
+
+    def choose_quantity(self, prompt, min_qty, max_qty):
+        return min_qty
+
+    def choose_player(self, prompt, players):
+        return players[0] if players else None
+
+    def choose_profession(self, prompt, available):
+        return available[0] if available else None
+
+    def confirm(self, prompt):
+        return True
+
+    def ask_dollop_amount(self, prompt, max_dollops):
+        return 0.0
