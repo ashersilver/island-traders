@@ -3,6 +3,7 @@ Island Traders — WebSocket game server.
 
 Provides:
   - REST endpoints for lobby management (create/join/list games)
+  - Role auction phase before game start
   - WebSocket endpoint for real-time game play
   - Static file serving for the dashboard
 
@@ -13,6 +14,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
+import string
 import threading
 import time
 import uuid
@@ -22,7 +25,10 @@ from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..models.resource import ResourceType
-from ..constants import SEASONS, CURRENCY_SYMBOL
+from ..constants import (
+    SEASONS, CURRENCY_SYMBOL,
+    TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
+)
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -35,17 +41,82 @@ except ImportError:
 
 logger = logging.getLogger("island_traders.server")
 
+ALL_ROLES = ["Farmer", "Miner", "Transporter", "Educator",
+             "Banker", "Manufacturer", "Doctor"]
+
+ROLE_INFO = {
+    "Farmer":       {"island": "Agriculture, Fisheries & Foods", "produces": "Food, Fish",
+                     "needs": "Farm Machinery, Oil", "color": "#27ae60"},
+    "Miner":        {"island": "Mining & Oil", "produces": "Ore, Oil",
+                     "needs": "Mining Equipment, Freight", "color": "#e67e22"},
+    "Transporter":  {"island": "Transportation & Shipping", "produces": "Freight",
+                     "needs": "Transport Equipment, Oil", "color": "#3498db"},
+    "Educator":     {"island": "Education & Training", "produces": "Knowledge",
+                     "needs": "Capital Equipment, Finance", "color": "#9b59b6"},
+    "Banker":       {"island": "Banking & Insurance", "produces": "Finance",
+                     "needs": "Knowledge, Capital Equipment", "color": "#f1c40f"},
+    "Manufacturer": {"island": "Manufacturing (ForgeHaven)", "produces": "Machinery, Equipment",
+                     "needs": "Ore, Oil, Freight", "color": "#1abc9c"},
+    "Doctor":       {"island": "Healthcare", "produces": "Health Services, Vaccine",
+                     "needs": "Knowledge, Medical Devices", "color": "#e74c3c"},
+}
+
+AUCTION_DURATION_SECONDS = 60
+
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
+def _short_id() -> str:
+    return str(uuid.uuid4())[:8]
+
+
+def _join_code() -> str:
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+
+@dataclass
+class RoleBid:
+    player_id: str
+    player_name: str
+    amount: float
+    timestamp: float
+
+
+@dataclass
+class AuctionState:
+    bids: dict[str, list[RoleBid]] = field(default_factory=dict)
+    assignments: dict[str, str] = field(default_factory=dict)
+    budget_spent: dict[str, float] = field(default_factory=dict)
+    phase: str = "bidding"
+    timer_end: float = 0.0
+    _timer_task: Any = field(default=None, repr=False)
+
+    def to_dict(self) -> dict:
+        bids_out = {}
+        for role, bid_list in self.bids.items():
+            bids_out[role] = [
+                {"player_id": b.player_id, "player_name": b.player_name,
+                 "amount": round(b.amount, 1)}
+                for b in bid_list
+            ]
+        return {
+            "bids": bids_out,
+            "assignments": self.assignments,
+            "phase": self.phase,
+            "timer_remaining": max(0, round(self.timer_end - time.time(), 1)),
+        }
+
+
 @dataclass
 class LobbyPlayer:
-    player_id: str          # UUID
+    player_id: str
     name: str
     role_name: str | None = None
     is_human: bool = True
     connected: bool = False
+
 
 @dataclass
 class GameRoom:
@@ -53,28 +124,39 @@ class GameRoom:
     name: str
     max_players: int = 7
     num_years: int = 3
-    status: str = "waiting"  # waiting | running | finished
+    is_public: bool = True
+    join_code: str = ""
+    require_all_human: bool = False
+    status: str = "waiting"  # waiting | auction | running | finished
     players: list[LobbyPlayer] = field(default_factory=list)
     creator_id: str = ""
+    auction: AuctionState | None = None
     game: Game | None = None
     game_thread: threading.Thread | None = None
     io_adapter: WebSocketIOAdapter | None = None
     summary: GameSummary | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "room_id": self.room_id,
             "name": self.name,
             "max_players": self.max_players,
             "num_years": self.num_years,
+            "is_public": self.is_public,
+            "join_code": self.join_code,
+            "require_all_human": self.require_all_human,
             "status": self.status,
-            "player_count": len(self.players),
+            "player_count": len([p for p in self.players if p.is_human]),
             "players": [
                 {"player_id": p.player_id, "name": p.name,
-                 "role_name": p.role_name, "connected": p.connected}
+                 "role_name": p.role_name, "is_human": p.is_human,
+                 "connected": p.connected}
                 for p in self.players
             ],
         }
+        if self.auction:
+            d["auction"] = self.auction.to_dict()
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -84,83 +166,284 @@ class GameRoom:
 class GameManager:
     def __init__(self):
         self.rooms: dict[str, GameRoom] = {}
-        self._ws_connections: dict[str, dict[str, Any]] = {}  # room_id -> {player_id: ws}
+        self._code_index: dict[str, str] = {}  # join_code -> room_id
+        self._ws_connections: dict[str, dict[str, Any]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
+    # ---- Room management ----
+
     def create_room(self, name: str, max_players: int = 7,
-                    num_years: int = 3, creator_name: str = "Host") -> GameRoom:
-        room_id = str(uuid.uuid4())[:8]
-        creator_id = str(uuid.uuid4())[:8]
+                    num_years: int = 3, creator_name: str = "Host",
+                    is_public: bool = True,
+                    require_all_human: bool = False) -> GameRoom:
+        room_id = _short_id()
+        creator_id = _short_id()
+        code = _join_code()
         room = GameRoom(
             room_id=room_id, name=name,
             max_players=max_players, num_years=num_years,
+            is_public=is_public, join_code=code,
+            require_all_human=require_all_human,
             creator_id=creator_id,
         )
         room.players.append(LobbyPlayer(player_id=creator_id, name=creator_name))
         self.rooms[room_id] = room
+        self._code_index[code] = room_id
         self._ws_connections[room_id] = {}
         return room
 
-    def join_room(self, room_id: str, player_name: str,
-                  role_name: str | None = None) -> tuple[GameRoom, LobbyPlayer] | None:
+    def find_room_by_code(self, code: str) -> GameRoom | None:
+        room_id = self._code_index.get(code.upper())
+        if room_id:
+            return self.rooms.get(room_id)
+        return None
+
+    def join_room(self, room_id: str, player_name: str) -> tuple[GameRoom, LobbyPlayer] | None:
         room = self.rooms.get(room_id)
-        if not room or room.status != "waiting":
+        if not room or room.status not in ("waiting", "auction"):
             return None
-        if len(room.players) >= room.max_players:
+        human_count = sum(1 for p in room.players if p.is_human)
+        if human_count >= room.max_players:
             return None
-        player_id = str(uuid.uuid4())[:8]
-        lp = LobbyPlayer(player_id=player_id, name=player_name, role_name=role_name)
+        player_id = _short_id()
+        lp = LobbyPlayer(player_id=player_id, name=player_name)
         room.players.append(lp)
+        self._broadcast_room_update(room)
         return room, lp
 
-    def add_ai_player(self, room_id: str, name: str,
-                      role_name: str | None = None) -> LobbyPlayer | None:
-        room = self.rooms.get(room_id)
-        if not room or room.status != "waiting":
-            return None
-        if len(room.players) >= room.max_players:
-            return None
-        player_id = str(uuid.uuid4())[:8]
-        lp = LobbyPlayer(player_id=player_id, name=name,
-                          role_name=role_name, is_human=False)
-        room.players.append(lp)
-        return lp
+    def _broadcast_room_update(self, room: GameRoom) -> None:
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "room_update",
+            "room": room.to_dict(),
+        })
 
-    def start_game(self, room_id: str) -> bool:
+    # ---- Auction ----
+
+    def start_auction(self, room_id: str) -> bool:
         room = self.rooms.get(room_id)
         if not room or room.status != "waiting":
             return False
-        if len(room.players) < 2:
+        if len([p for p in room.players if p.is_human]) < 1:
             return False
 
-        available_roles = ["Farmer", "Miner", "Transporter", "Educator",
-                           "Banker", "Manufacturer", "Doctor"]
-        used_roles: set[str] = set()
+        room.status = "auction"
+        room.auction = AuctionState(
+            bids={role: [] for role in ALL_ROLES},
+            budget_spent={p.player_id: 0.0 for p in room.players if p.is_human},
+            timer_end=time.time() + AUCTION_DURATION_SECONDS,
+        )
+
+        num_humans = len([p for p in room.players if p.is_human])
+        budget = TOTAL_STARTING_DOLLOPS / num_humans
+
+        self._thread_safe_broadcast(room_id, {
+            "type": "auction_start",
+            "roles": [
+                {**ROLE_INFO[r], "name": r} for r in ALL_ROLES
+            ],
+            "timer_seconds": AUCTION_DURATION_SECONDS,
+            "budget": round(budget, 1),
+        })
+
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self._auction_timer(room_id, AUCTION_DURATION_SECONDS),
+                self._loop,
+            )
+        return True
+
+    async def _auction_timer(self, room_id: str, seconds: int) -> None:
+        await asyncio.sleep(seconds)
+        room = self.rooms.get(room_id)
+        if room and room.status == "auction":
+            self._resolve_auction(room_id)
+
+    def place_bid(self, room_id: str, player_id: str,
+                  role_name: str, amount: float) -> dict:
+        room = self.rooms.get(room_id)
+        if not room or room.status != "auction" or not room.auction:
+            return {"error": "No active auction"}
+        if role_name not in ALL_ROLES:
+            return {"error": "Invalid role"}
+
+        lp = next((p for p in room.players if p.player_id == player_id and p.is_human), None)
+        if not lp:
+            return {"error": "Player not found"}
+
+        num_humans = len([p for p in room.players if p.is_human])
+        budget = TOTAL_STARTING_DOLLOPS / num_humans
+        amount = round(max(0.0, amount), 1)
+
+        # Remove any existing bid by this player on this role
+        existing = [b for b in room.auction.bids[role_name] if b.player_id == player_id]
+        for old in existing:
+            room.auction.budget_spent[player_id] -= old.amount
+            room.auction.bids[role_name].remove(old)
+
+        spent = room.auction.budget_spent.get(player_id, 0.0)
+        if amount > budget - spent:
+            amount = round(budget - spent, 1)
+        if amount < 0:
+            return {"error": "Insufficient budget"}
+
+        room.auction.bids[role_name].append(RoleBid(
+            player_id=player_id, player_name=lp.name,
+            amount=amount, timestamp=time.time(),
+        ))
+        room.auction.budget_spent[player_id] = spent + amount
+
+        self._thread_safe_broadcast(room_id, {
+            "type": "auction_update",
+            "auction": room.auction.to_dict(),
+        })
+        return {"ok": True, "amount": amount}
+
+    def withdraw_bid(self, room_id: str, player_id: str, role_name: str) -> dict:
+        room = self.rooms.get(room_id)
+        if not room or room.status != "auction" or not room.auction:
+            return {"error": "No active auction"}
+
+        bids = room.auction.bids.get(role_name, [])
+        removed = [b for b in bids if b.player_id == player_id]
+        for b in removed:
+            room.auction.budget_spent[player_id] -= b.amount
+            bids.remove(b)
+
+        self._thread_safe_broadcast(room_id, {
+            "type": "auction_update",
+            "auction": room.auction.to_dict(),
+        })
+        return {"ok": True}
+
+    def _resolve_auction(self, room_id: str) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.auction:
+            return
+
+        auction = room.auction
+        auction.phase = "complete"
+        winners: dict[str, str] = {}  # role -> player_id
+        player_won: dict[str, str] = {}  # player_id -> role (one role per player)
+        deductions: dict[str, float] = {}
+
+        # Resolve each role: highest bid wins, ties broken by timestamp
+        for role in ALL_ROLES:
+            bids = sorted(
+                auction.bids.get(role, []),
+                key=lambda b: (-b.amount, b.timestamp),
+            )
+            for bid in bids:
+                if bid.player_id not in player_won:
+                    winners[role] = bid.player_id
+                    player_won[bid.player_id] = role
+                    deductions[bid.player_id] = deductions.get(bid.player_id, 0) + bid.amount
+                    break
+
+        # Check require_all_human
+        if room.require_all_human:
+            unclaimed = [r for r in ALL_ROLES if r not in winners]
+            if unclaimed:
+                self._thread_safe_broadcast(room_id, {
+                    "type": "auction_failed",
+                    "message": f"All roles must be claimed. Unclaimed: {', '.join(unclaimed)}",
+                    "unclaimed": unclaimed,
+                })
+                auction.phase = "bidding"
+                auction.timer_end = time.time() + AUCTION_DURATION_SECONDS
+                if self._loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self._auction_timer(room_id, AUCTION_DURATION_SECONDS),
+                        self._loop,
+                    )
+                return
+
+        auction.assignments = {role: pid for role, pid in winners.items()}
+
+        # Assign roles to lobby players
+        for role, pid in winners.items():
+            lp = next((p for p in room.players if p.player_id == pid), None)
+            if lp:
+                lp.role_name = role
+
+        # Fill unclaimed roles with AI
+        ai_roles = []
+        for role in ALL_ROLES:
+            if role not in winners:
+                ai_id = _short_id()
+                ai_name = f"{role} Island (AI)"
+                ai_lp = LobbyPlayer(
+                    player_id=ai_id, name=ai_name,
+                    role_name=role, is_human=False,
+                )
+                room.players.append(ai_lp)
+                ai_roles.append(role)
+
+        # Broadcast result
+        result_assignments = {}
+        for role in ALL_ROLES:
+            lp = next((p for p in room.players if p.role_name == role), None)
+            if lp:
+                result_assignments[role] = {
+                    "player_name": lp.name,
+                    "player_id": lp.player_id,
+                    "is_human": lp.is_human,
+                }
+
+        self._thread_safe_broadcast(room_id, {
+            "type": "auction_result",
+            "assignments": result_assignments,
+            "ai_roles": ai_roles,
+            "deductions": {pid: round(amt, 1) for pid, amt in deductions.items()},
+        })
+
+        # Start the game after a short delay
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(
+                self._delayed_game_start(room_id, deductions, delay=5),
+                self._loop,
+            )
+
+    async def _delayed_game_start(self, room_id: str,
+                                   deductions: dict[str, float],
+                                   delay: int = 5) -> None:
+        await asyncio.sleep(delay)
+        self._launch_game(room_id, deductions)
+
+    # ---- Game launch ----
+
+    def _launch_game(self, room_id: str,
+                     deductions: dict[str, float] | None = None) -> bool:
+        room = self.rooms.get(room_id)
+        if not room:
+            return False
+
+        num_humans = len([p for p in room.players if p.is_human])
+        base_dollops = TOTAL_STARTING_DOLLOPS / num_humans if num_humans else 100.0
 
         specs = []
         for lp in room.players:
             role = lp.role_name
-            if not role or role in used_roles:
-                for r in available_roles:
-                    if r not in used_roles:
-                        role = r
-                        break
-            used_roles.add(role)
-            lp.role_name = role
+            if not role:
+                continue
+            player_dollops = base_dollops
+            if lp.is_human and deductions:
+                player_dollops -= deductions.get(lp.player_id, 0)
+            elif not lp.is_human:
+                player_dollops = base_dollops  # AI gets average budget
             specs.append(PlayerSpec(
-                name=lp.name, role_names=[role], is_human=lp.is_human
+                name=lp.name, role_names=[role], is_human=lp.is_human,
+                starting_dollops=round(player_dollops, 1),
             ))
 
         config = GameConfig(player_specs=specs, num_years=room.num_years)
 
-        # Build send functions that bridge thread → asyncio
         player_send_fns: dict[int, object] = {}
-        for idx, lp in enumerate(room.players):
-            player_idx = idx
-            def make_send(lp_id=lp.player_id, p_idx=player_idx):
+        lobby_order = [lp for lp in room.players if lp.role_name]
+        for idx, lp in enumerate(lobby_order):
+            def make_send(lp_id=lp.player_id):
                 def send(msg):
                     self._thread_safe_send(room_id, lp_id, msg)
                 return send
@@ -205,6 +488,34 @@ class GameManager:
         thread.start()
         return True
 
+    def start_game_quick(self, room_id: str) -> bool:
+        """Legacy quick-start: auto-assign roles, no auction."""
+        room = self.rooms.get(room_id)
+        if not room or room.status != "waiting":
+            return False
+        if len(room.players) < 2:
+            return False
+
+        used: set[str] = set()
+        for lp in room.players:
+            if not lp.role_name or lp.role_name in used:
+                for r in ALL_ROLES:
+                    if r not in used:
+                        lp.role_name = r
+                        break
+            used.add(lp.role_name)
+
+        # Fill remaining roles with AI
+        for role in ALL_ROLES:
+            if role not in used:
+                ai_id = _short_id()
+                room.players.append(LobbyPlayer(
+                    player_id=ai_id, name=f"{role} Island (AI)",
+                    role_name=role, is_human=False,
+                ))
+
+        return self._launch_game(room_id)
+
     def get_game_state(self, room_id: str, player_id: str | None = None) -> dict | None:
         room = self.rooms.get(room_id)
         if not room or not room.game:
@@ -229,13 +540,11 @@ class GameManager:
                     pol.describe() for pol in p.insurance_policies if pol.active
                 ],
             }
-            # Full inventory only for requesting player or spectators
             lobby_player = next(
                 (lp for lp in room.players if lp.player_id == player_id),
                 None
             )
             if lobby_player and not lobby_player.is_human:
-                # AI — show nothing
                 pass
             else:
                 pd["inventory"] = {
@@ -261,7 +570,7 @@ class GameManager:
             "price_history": [
                 {"year": s.year, "season": s.season,
                  "prices": {r.value: round(p, 2) for r, p in s.prices.items()}}
-                for s in game.market.price_history[-8:]  # last 2 years
+                for s in game.market.price_history[-8:]
             ],
         }
 
@@ -333,7 +642,7 @@ def create_app() -> FastAPI:
         html_path = static_dir / "index.html"
         if html_path.exists():
             return HTMLResponse(html_path.read_text())
-        return HTMLResponse("<h1>Island Traders Server</h1><p>Dashboard at /static/index.html</p>")
+        return HTMLResponse("<h1>Island Traders Server</h1>")
 
     @app.post("/api/rooms")
     async def create_room(body: dict = {}):
@@ -342,12 +651,18 @@ def create_app() -> FastAPI:
             max_players=body.get("max_players", 7),
             num_years=body.get("num_years", 3),
             creator_name=body.get("creator_name", "Host"),
+            is_public=body.get("is_public", True),
+            require_all_human=body.get("require_all_human", False),
         )
         return JSONResponse(room.to_dict())
 
     @app.get("/api/rooms")
     async def list_rooms():
-        return JSONResponse([r.to_dict() for r in manager.rooms.values()])
+        public = [
+            r.to_dict() for r in manager.rooms.values()
+            if r.is_public and r.status == "waiting"
+        ]
+        return JSONResponse(public)
 
     @app.get("/api/rooms/{room_id}")
     async def get_room(room_id: str):
@@ -356,33 +671,49 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Room not found"}, status_code=404)
         return JSONResponse(room.to_dict())
 
-    @app.post("/api/rooms/{room_id}/join")
-    async def join_room(room_id: str, body: dict = {}):
-        result = manager.join_room(
-            room_id, body.get("name", "Player"),
-            role_name=body.get("role_name"),
-        )
+    @app.post("/api/rooms/join-by-code")
+    async def join_by_code(body: dict = {}):
+        code = body.get("code", "").strip().upper()
+        name = body.get("name", "Player")
+        room = manager.find_room_by_code(code)
+        if not room:
+            return JSONResponse({"error": "Invalid room code"}, status_code=404)
+        result = manager.join_room(room.room_id, name)
         if not result:
             return JSONResponse({"error": "Cannot join room"}, status_code=400)
         room, lp = result
-        return JSONResponse({
-            "room": room.to_dict(),
-            "player_id": lp.player_id,
-        })
+        return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
-    @app.post("/api/rooms/{room_id}/ai")
-    async def add_ai(room_id: str, body: dict = {}):
-        lp = manager.add_ai_player(
-            room_id, body.get("name", "AI Bot"),
-            role_name=body.get("role_name"),
+    @app.post("/api/rooms/{room_id}/join")
+    async def join_room(room_id: str, body: dict = {}):
+        result = manager.join_room(room_id, body.get("name", "Player"))
+        if not result:
+            return JSONResponse({"error": "Cannot join room"}, status_code=400)
+        room, lp = result
+        return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
+
+    @app.post("/api/rooms/{room_id}/auction/start")
+    async def start_auction(room_id: str):
+        ok = manager.start_auction(room_id)
+        if not ok:
+            return JSONResponse({"error": "Cannot start auction"}, status_code=400)
+        return JSONResponse({"status": "auction"})
+
+    @app.post("/api/rooms/{room_id}/auction/bid")
+    async def place_bid(room_id: str, body: dict = {}):
+        result = manager.place_bid(
+            room_id,
+            body.get("player_id", ""),
+            body.get("role_name", ""),
+            float(body.get("amount", 0)),
         )
-        if not lp:
-            return JSONResponse({"error": "Cannot add AI"}, status_code=400)
-        return JSONResponse({"player_id": lp.player_id, "name": lp.name})
+        if "error" in result:
+            return JSONResponse(result, status_code=400)
+        return JSONResponse(result)
 
     @app.post("/api/rooms/{room_id}/start")
-    async def start_game(room_id: str):
-        ok = manager.start_game(room_id)
+    async def start_game_quick(room_id: str):
+        ok = manager.start_game_quick(room_id)
         if not ok:
             return JSONResponse({"error": "Cannot start game"}, status_code=400)
         return JSONResponse({"status": "running"})
@@ -394,7 +725,11 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "No game state"}, status_code=404)
         return JSONResponse(state)
 
-    # ---- WebSocket: Game play ----
+    @app.get("/api/roles")
+    async def list_roles():
+        return JSONResponse([{**ROLE_INFO[r], "name": r} for r in ALL_ROLES])
+
+    # ---- WebSocket ----
 
     @app.websocket("/ws/{room_id}/{player_id}")
     async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
@@ -413,10 +748,16 @@ def create_app() -> FastAPI:
         manager.register_ws(room_id, player_id, websocket)
 
         try:
-            # Send current state on connect
-            state = manager.get_game_state(room_id, player_id)
-            if state:
-                await websocket.send_text(json.dumps(state))
+            # Send current state
+            if room.status == "auction" and room.auction:
+                await websocket.send_text(json.dumps({
+                    "type": "auction_update",
+                    "auction": room.auction.to_dict(),
+                }))
+            elif room.status == "running":
+                state = manager.get_game_state(room_id, player_id)
+                if state:
+                    await websocket.send_text(json.dumps(state))
 
             while True:
                 raw = await websocket.receive_text()
@@ -432,6 +773,16 @@ def create_app() -> FastAPI:
                     state = manager.get_game_state(room_id, player_id)
                     if state:
                         await websocket.send_text(json.dumps(state))
+                elif msg_type == "bid":
+                    result = manager.place_bid(
+                        room_id, player_id,
+                        msg.get("role_name", ""),
+                        float(msg.get("amount", 0)),
+                    )
+                    await websocket.send_text(json.dumps({"type": "bid_ack", **result}))
+                elif msg_type == "withdraw_bid":
+                    result = manager.withdraw_bid(room_id, player_id, msg.get("role_name", ""))
+                    await websocket.send_text(json.dumps({"type": "bid_ack", **result}))
                 elif msg_type == "chat":
                     manager._thread_safe_broadcast(room_id, {
                         "type": "chat",

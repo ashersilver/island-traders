@@ -22,6 +22,7 @@ from ..constants import (
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
+    TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
 )
@@ -34,6 +35,7 @@ class PlayerSpec:
     name: str
     role_names: list[str]
     is_human: bool = True
+    starting_dollops: float | None = None  # overrides config default if set
 
 
 @dataclass
@@ -70,6 +72,11 @@ class Game:
         self.ledger = DealLedger()
         self.training = TrainingRegistry()
 
+        num_players = len(self.config.player_specs)
+        default_dollops = TOTAL_STARTING_DOLLOPS / num_players
+        default_population = TOTAL_STARTING_POPULATION // num_players
+        workforce_scale = 7 / num_players
+
         for idx, spec in enumerate(self.config.player_specs):
             roles = []
             for rname in spec.role_names:
@@ -77,13 +84,15 @@ class Game:
                     raise ValueError(f"Unknown role: {rname!r}. Valid roles: {list(ROLES.keys())}")
                 roles.append(ROLES[rname])
 
+            dollops = spec.starting_dollops if spec.starting_dollops is not None else default_dollops
+
             player = Player(
                 player_id=idx,
                 name=spec.name,
                 roles=roles,
-                dollops=self.config.starting_dollops,
+                dollops=dollops,
                 is_human=spec.is_human,
-                population=STARTING_POPULATION,
+                population=default_population,
             )
 
             # Production capacity = max of all assigned roles
@@ -98,15 +107,16 @@ class Game:
                 for res_str, qty in STARTING_INVENTORY.get(rname, {}).items():
                     player.receive_resources(ResourceType(res_str), qty)
 
-            # Build starting workforce with specific professions
+            # Build starting workforce with specific professions (scaled by player count)
             for rname in spec.role_names:
-                total_workers = STARTING_WORKFORCE.get(rname, 3)
+                total_workers = max(1, round(STARTING_WORKFORCE.get(rname, 3) * workforce_scale))
                 profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
 
                 allocated = 0
                 for profession_name, count in profession_breakdown:
-                    player.workforce.add_workers(count, training_level=1, profession=profession_name)
-                    allocated += count
+                    scaled_count = max(1, round(count * workforce_scale))
+                    player.workforce.add_workers(scaled_count, training_level=1, profession=profession_name)
+                    allocated += scaled_count
 
                 # Remaining slots are Unskilled
                 unskilled_count = total_workers - allocated

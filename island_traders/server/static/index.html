@@ -6,438 +6,523 @@
 <title>Island Traders</title>
 <style>
 :root {
-  --bg: #0a1628;
-  --panel: #111d33;
-  --border: #1e3a5f;
-  --text: #c8d6e5;
-  --heading: #f5f6fa;
-  --accent: #0abde3;
-  --gold: #f6b93b;
-  --green: #26de81;
-  --red: #fc5c65;
-  --dim: #576574;
-  --radius: 6px;
+  --bg:      #070f1e;
+  --panel:   #0d1b2e;
+  --panel2:  #111f33;
+  --border:  #1a3050;
+  --text:    #b8cde0;
+  --heading: #eaf0f8;
+  --accent:  #0abde3;
+  --gold:    #f6b93b;
+  --green:   #26de81;
+  --red:     #fc5c65;
+  --dim:     #4a6080;
+  --radius:  8px;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ── shared ── */
+.hidden{display:none!important}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1.2rem;margin-bottom:1rem}
+.card h2{color:var(--accent);font-size:1rem;margin-bottom:.8rem;letter-spacing:.04em;text-transform:uppercase}
+.form-row{display:flex;gap:.5rem;margin-bottom:.6rem;flex-wrap:wrap;align-items:center}
+.form-row label{min-width:110px;color:var(--dim);font-size:.83rem}
+input,select,textarea{font-family:inherit;font-size:.9rem;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);color:var(--text);padding:.4rem .75rem;flex:1;min-width:0}
+input:focus,select:focus{outline:1px solid var(--accent)}
+button{font-family:inherit;font-size:.88rem;border:none;border-radius:var(--radius);cursor:pointer;padding:.5rem 1.3rem;font-weight:600;transition:opacity .15s,transform .1s}
+button:hover{opacity:.88}
+button:active{transform:scale(.97)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-gold{background:var(--gold);color:#000}
+.btn-ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.btn-sm{padding:.3rem .8rem;font-size:.8rem}
+.btn-danger{background:var(--red);color:#fff}
+.tag{display:inline-block;padding:.15rem .5rem;border-radius:4px;font-size:.75rem;font-weight:600}
+.tag-public{background:#1a4a2e;color:var(--green)}
+.tag-private{background:#3a2010;color:var(--gold)}
+.badge{display:inline-block;padding:.1rem .45rem;border-radius:12px;font-size:.72rem;font-weight:700;line-height:1.4}
+
+/* ── LANDING ── */
+#screen-landing{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;padding:2rem;position:relative;overflow:hidden;
+}
+#screen-landing::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 50% 30%,#0d2a4a 0%,var(--bg) 70%);
+  pointer-events:none;
+}
+.landing-map{width:min(420px,90vw);opacity:.18;margin-bottom:2rem;position:relative;z-index:1}
+.landing-map svg{width:100%;height:auto}
+.landing-title{position:relative;z-index:1;text-align:center;margin-bottom:3rem}
+.landing-title h1{
+  font-size:clamp(2.4rem,6vw,4rem);font-weight:800;letter-spacing:.06em;
+  background:linear-gradient(135deg,var(--gold) 30%,var(--accent) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  text-transform:uppercase;
+}
+.landing-title p{color:var(--dim);margin-top:.5rem;font-size:1rem;letter-spacing:.05em}
+.landing-actions{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;position:relative;z-index:1}
+.landing-actions button{
+  font-size:1rem;padding:.85rem 2.6rem;border-radius:50px;letter-spacing:.04em;
+}
+.wave{position:absolute;bottom:0;left:0;right:0;height:100px;overflow:hidden}
+.wave svg{width:100%;height:100%;opacity:.08}
+
+/* ── LOBBY SCREENS ── */
+.lobby-wrap{max-width:680px;margin:0 auto;padding:2rem 1rem}
+.screen-header{display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem}
+.back-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:.35rem .7rem;font-size:.85rem;border-radius:var(--radius)}
+.back-btn:hover{border-color:var(--accent);color:var(--accent)}
+.screen-header h1{font-size:1.3rem;color:var(--heading)}
+
+/* toggle switch */
+.toggle-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.6rem}
+.toggle-row label{color:var(--dim);font-size:.83rem;flex:1}
+.toggle{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;border-radius:24px;background:var(--border);cursor:pointer;transition:.2s}
+.toggle-slider:before{content:'';position:absolute;width:18px;height:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.toggle-slider{background:var(--accent)}
+.toggle input:checked+.toggle-slider:before{transform:translateX(20px)}
+
+/* room list */
+.room-list{list-style:none}
+.room-list li{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:.6rem .2rem;border-bottom:1px solid var(--border);gap:.5rem;
+}
+.room-list li:last-child{border:none}
+.room-list .room-info{flex:1;min-width:0}
+.room-list .room-name{color:var(--heading);font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.room-list .room-meta{color:var(--dim);font-size:.75rem;margin-top:.15rem}
+
+/* waiting room */
+.player-list{list-style:none}
+.player-list li{
+  display:flex;align-items:center;gap:.6rem;
+  padding:.5rem 0;border-bottom:1px solid var(--border);
+}
+.player-list li:last-child{border:none}
+.player-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;flex-shrink:0}
+.player-list .player-name{color:var(--heading);font-size:.88rem}
+.player-list .player-meta{color:var(--dim);font-size:.75rem}
+.room-code-box{
+  background:var(--bg);border:1px dashed var(--border);border-radius:var(--radius);
+  padding:.6rem 1rem;display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:1rem;
+}
+.room-code-box .code{font-family:monospace;font-size:1.5rem;letter-spacing:.25em;color:var(--accent);font-weight:700}
+.room-code-box .copy-hint{color:var(--dim);font-size:.75rem}
+
+/* ── AUCTION ── */
+#screen-auction{display:none}
+.auction-wrap{max-width:900px;margin:0 auto;padding:1.5rem 1rem}
+.auction-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;flex-wrap:wrap;gap:.5rem}
+.auction-header h1{font-size:1.2rem;color:var(--heading)}
+.timer-box{
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:.4rem 1rem;display:flex;align-items:center;gap:.5rem;
+}
+.timer-box .timer-val{font-size:1.3rem;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;min-width:2.5ch;text-align:right}
+.timer-box .timer-lbl{color:var(--dim);font-size:.78rem}
+.budget-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.budget-bar .budget-label{color:var(--dim);font-size:.82rem}
+.budget-bar .budget-val{color:var(--gold);font-weight:700;font-size:1rem}
+.budget-track{flex:1;min-width:120px;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.budget-track-fill{height:100%;background:var(--gold);border-radius:3px;transition:width .3s}
+
+.roles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem;margin-bottom:1.2rem}
+.role-card{
+  background:var(--panel2);border:2px solid var(--border);border-radius:var(--radius);
+  padding:.9rem;cursor:pointer;transition:border-color .15s,box-shadow .15s;
+  position:relative;
+}
+.role-card:hover{border-color:var(--accent)}
+.role-card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 20px rgba(10,189,227,.12)}
+.role-card.won{border-color:var(--green);background:#0a1f14}
+.role-card.outbid{border-color:var(--red)}
+.role-card .rc-name{font-size:.95rem;font-weight:700;color:var(--heading);margin-bottom:.25rem}
+.role-card .rc-island{font-size:.73rem;color:var(--dim);margin-bottom:.5rem}
+.role-card .rc-produces{font-size:.75rem;color:var(--text);margin-bottom:.4rem}
+.role-card .rc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:.4rem}
+.rc-top-bid{
+  background:var(--bg);border-radius:4px;padding:.3rem .5rem;
+  font-size:.8rem;margin-top:.5rem;display:flex;align-items:center;justify-content:space-between;
+}
+.rc-top-bid .tb-amount{color:var(--gold);font-weight:700}
+.rc-top-bid .tb-player{color:var(--dim);font-size:.72rem}
+.rc-my-bid{margin-top:.35rem;font-size:.75rem;color:var(--accent)}
+.role-card .rc-won-badge{
+  position:absolute;top:.5rem;right:.5rem;
+  background:var(--green);color:#000;font-size:.65rem;font-weight:700;
+  padding:.1rem .4rem;border-radius:3px;
 }
 
-/* ---------- LOBBY ---------- */
-#lobby {
-  max-width: 800px;
-  margin: 4vh auto;
-  padding: 2rem;
-}
-#lobby h1 {
-  font-size: clamp(1.8rem, 3vw, 2.8rem);
-  color: var(--gold);
-  text-align: center;
-  margin-bottom: 0.3em;
-}
-#lobby .subtitle {
-  text-align: center;
-  color: var(--dim);
-  margin-bottom: 2rem;
-}
-.card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.2rem;
-  margin-bottom: 1rem;
-}
-.card h2 { color: var(--accent); font-size: 1.1rem; margin-bottom: 0.8rem; }
-.form-row {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.6rem;
-  flex-wrap: wrap;
-}
-.form-row label {
-  min-width: 100px;
-  padding-top: 0.4rem;
-  color: var(--dim);
-  font-size: 0.85rem;
-}
-input, select, button {
-  font-family: inherit;
-  font-size: 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  padding: 0.4rem 0.8rem;
-}
-input:focus, select:focus { outline: 1px solid var(--accent); }
-button {
-  cursor: pointer;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  padding: 0.5rem 1.4rem;
-  font-weight: 600;
-  transition: opacity 0.15s;
-}
-button:hover { opacity: 0.85; }
-button.secondary { background: var(--border); }
-button.gold { background: var(--gold); color: #000; }
-.room-list { list-style: none; }
-.room-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--border);
-}
-.room-list li:last-child { border: none; }
+.bid-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;margin-top:.5rem}
+.bid-panel h3{color:var(--accent);font-size:.9rem;margin-bottom:.75rem}
+.bid-input-row{display:flex;gap:.5rem;align-items:center}
+.bid-input-row input{flex:1;font-size:1rem;text-align:right;padding:.5rem .75rem}
+.bid-input-row .dp-label{color:var(--dim);font-size:.9rem;white-space:nowrap}
+.bid-actions{display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap}
+.bid-msg{color:var(--green);font-size:.8rem;margin-top:.4rem;min-height:1.2em}
 
-/* ---------- GAME DASHBOARD ---------- */
-#game {
-  display: none;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
+/* ── GAME DASHBOARD ── */
+#screen-game{display:none;height:100vh;width:100vw;overflow:hidden}
+.game-grid{
+  display:grid;height:100vh;
+  grid-template-columns:280px 1fr 300px;
+  grid-template-rows:48px 1fr 160px;
+  grid-template-areas:"hdr hdr hdr" "side main info" "log log log";
+  gap:2px;
 }
-.game-grid {
-  display: grid;
-  height: 100vh;
-  grid-template-columns: 300px 1fr 320px;
-  grid-template-rows: auto 1fr auto;
-  grid-template-areas:
-    "header header header"
-    "sidebar main   info"
-    "log     log     log";
-  gap: 2px;
-}
-/* Responsive: stack on narrow screens */
-@media (max-width: 1200px) {
-  .game-grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr auto auto;
-    grid-template-areas: "header" "sidebar" "main" "info" "log";
+@media(max-width:1200px){
+  .game-grid{
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto 1fr auto auto;
+    grid-template-areas:"hdr" "side" "main" "info" "log";
+    height:auto;overflow:auto;
   }
+  #screen-game{height:auto;overflow:auto}
 }
-/* Ultrawide: wider sidebar and info */
-@media (min-width: 3000px) {
-  .game-grid { grid-template-columns: 400px 1fr 420px; }
-}
+@media(min-width:3000px){.game-grid{grid-template-columns:380px 1fr 400px}}
+@media(min-width:2560px) and (max-width:2999px){.game-grid{grid-template-columns:340px 1fr 360px}}
 
-.g-header {
-  grid-area: header;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 1.2rem;
-  min-height: 48px;
+.g-hdr{
+  grid-area:hdr;background:var(--panel);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;padding:0 1rem;
+  gap:.5rem;min-height:48px;
 }
-.g-header h1 {
-  font-size: 1.1rem;
-  color: var(--gold);
-}
-.g-header .season-info {
-  font-size: 0.9rem;
-  color: var(--accent);
-}
+.g-hdr .title{font-size:1rem;font-weight:700;color:var(--gold);white-space:nowrap}
+.g-hdr .season{font-size:.82rem;color:var(--accent)}
+.g-hdr .wealth{color:var(--gold);font-weight:700;font-size:.9rem}
 
-.g-sidebar {
-  grid-area: sidebar;
-  background: var(--panel);
-  overflow-y: auto;
-  padding: 0.8rem;
-  border-right: 1px solid var(--border);
+/* tabs */
+.island-tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.island-tabs::-webkit-scrollbar{display:none}
+.tab-btn{
+  white-space:nowrap;padding:.4rem .9rem;font-size:.78rem;
+  background:var(--bg);color:var(--dim);border:none;border-radius:4px 4px 0 0;
+  cursor:pointer;border:1px solid transparent;border-bottom:none;
 }
-.g-main {
-  grid-area: main;
-  background: var(--bg);
-  overflow-y: auto;
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-.g-info {
-  grid-area: info;
-  background: var(--panel);
-  overflow-y: auto;
-  padding: 0.8rem;
-  border-left: 1px solid var(--border);
-}
-.g-log {
-  grid-area: log;
-  background: #050d1a;
-  border-top: 1px solid var(--border);
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 0.5rem 1rem;
-  font-family: 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--dim);
-}
-.g-log .event { color: var(--gold); }
-.g-log .error { color: var(--red); }
+.tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
 
-/* Sections inside panels */
-.section { margin-bottom: 1rem; }
-.section h3 {
-  font-size: 0.85rem;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.3rem;
+.g-side{grid-area:side;background:var(--panel);overflow-y:auto;padding:.75rem;border-right:1px solid var(--border)}
+.g-main{grid-area:main;background:var(--bg);overflow-y:auto;padding:.9rem;display:flex;flex-direction:column;gap:.75rem}
+.g-info{grid-area:info;background:var(--panel);overflow-y:auto;padding:.75rem;border-left:1px solid var(--border)}
+.g-log{
+  grid-area:log;background:#04090f;border-top:1px solid var(--border);
+  overflow-y:auto;padding:.5rem 1rem;
+  font-family:'Fira Code','Cascadia Code',monospace;font-size:.74rem;line-height:1.6;color:var(--dim);
 }
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.15rem 0;
-  font-size: 0.85rem;
-}
-.stat-row .label { color: var(--dim); }
-.stat-row .value { color: var(--heading); font-weight: 600; }
-.stat-row .value.gold { color: var(--gold); }
-.stat-row .value.green { color: var(--green); }
+.g-log .ev{color:var(--gold)}
+.g-log .err{color:var(--red)}
+.g-log .info{color:var(--accent)}
 
-/* Island map (SVG) */
-#island-map {
-  width: 100%;
-  max-height: 280px;
-  margin-bottom: 0.5rem;
+.section{margin-bottom:.9rem}
+.section h3{
+  font-size:.75rem;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;
+  margin-bottom:.4rem;padding-bottom:.25rem;border-bottom:1px solid var(--border);
 }
-#island-map svg {
-  width: 100%;
-  height: auto;
-}
+.stat{display:flex;justify-content:space-between;padding:.12rem 0;font-size:.82rem}
+.stat .lbl{color:var(--dim)}
+.stat .val{color:var(--heading);font-weight:600}
+.stat .val.gold{color:var(--gold)}
+.stat .val.green{color:var(--green)}
+.stat .val.red{color:var(--red)}
 
-/* Competitor table */
-.comp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-}
-.comp-table th {
-  text-align: left;
-  color: var(--dim);
-  font-weight: 500;
-  padding: 0.3rem 0.4rem;
-  border-bottom: 1px solid var(--border);
-}
-.comp-table td {
-  padding: 0.3rem 0.4rem;
-  border-bottom: 1px solid #0d1a2d;
-}
-.comp-table tr.me { background: rgba(10, 189, 227, 0.08); }
+.mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
+.mkt-row .res{color:var(--text)}
+.mkt-row .price{color:var(--gold);font-weight:600}
+.mkt-row .supply{color:var(--dim);font-size:.72rem}
 
-/* Action prompt area */
-.prompt-area {
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
-.prompt-area h3 { color: var(--heading); margin-bottom: 0.5rem; }
-.action-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-.action-buttons button {
-  font-size: 0.82rem;
-  padding: 0.4rem 0.9rem;
-}
-.action-buttons button.highlight {
-  background: var(--gold);
-  color: #000;
-}
+.comp-table{width:100%;border-collapse:collapse;font-size:.79rem}
+.comp-table th{color:var(--dim);font-weight:500;padding:.25rem .35rem;border-bottom:1px solid var(--border);text-align:left}
+.comp-table td{padding:.25rem .35rem;border-bottom:1px solid #0a1220}
+.comp-table tr.me{background:rgba(10,189,227,.07)}
 
-/* Market panel */
-.market-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.15rem 0;
-  font-size: 0.82rem;
-}
-.market-row .res { color: var(--text); }
-.market-row .price { color: var(--gold); font-weight: 600; }
-.market-row .supply { color: var(--dim); font-size: 0.75rem; }
+.prompt-area{background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);padding:.9rem}
+.prompt-area h3{color:var(--heading);margin-bottom:.5rem;font-size:.9rem}
+.action-btns{display:flex;flex-wrap:wrap;gap:.35rem}
+.action-btns button{font-size:.8rem;padding:.35rem .8rem;background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+.action-btns button.highlight{background:var(--gold);color:#000;border:none}
+.action-btns button:hover{border-color:var(--accent)}
 
-/* Input overlays */
-.input-overlay {
-  display: none;
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.6);
-  z-index: 100;
-  align-items: center;
-  justify-content: center;
+/* island map */
+.island-map-container{width:100%;margin-bottom:.5rem}
+.island-map-container svg{width:100%;height:auto;max-height:200px}
+
+/* overlay */
+.overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
+  z-index:200;align-items:center;justify-content:center;
 }
-.input-overlay.active { display: flex; }
-.input-dialog {
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  padding: 1.5rem;
-  min-width: 320px;
-  max-width: 90vw;
+.overlay.active{display:flex}
+.dialog{
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;
+  padding:1.5rem;min-width:300px;max-width:90vw;
 }
-.input-dialog h3 { color: var(--heading); margin-bottom: 1rem; }
-.input-dialog .options { display: flex; flex-direction: column; gap: 0.3rem; }
-.input-dialog .options button {
-  text-align: left;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-.input-dialog .options button:hover {
-  border-color: var(--accent);
-  background: rgba(10, 189, 227, 0.1);
-}
-.input-dialog input[type=number],
-.input-dialog input[type=text] {
-  width: 100%;
-  margin: 0.5rem 0;
-  padding: 0.5rem;
-}
+.dialog h3{color:var(--heading);margin-bottom:1rem;font-size:1rem}
+.dialog .opts{display:flex;flex-direction:column;gap:.3rem}
+.dialog .opts button{text-align:left;background:var(--bg);border:1px solid var(--border);color:var(--text)}
+.dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
+.dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 </style>
 </head>
 <body>
 
-<!-- ==================== LOBBY ==================== -->
-<div id="lobby">
-  <h1>Island Traders</h1>
-  <p class="subtitle">Resource-trading board game for 2–7 players</p>
-
-  <div class="card">
-    <h2>Create Game</h2>
-    <div class="form-row">
-      <label>Your Name</label>
-      <input id="create-name" value="Player 1" />
-    </div>
-    <div class="form-row">
-      <label>Room Name</label>
-      <input id="create-room-name" value="Game Room" />
-    </div>
-    <div class="form-row">
-      <label>Max Players</label>
-      <select id="create-max">
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7" selected>7</option>
-      </select>
-      <label>Years</label>
-      <select id="create-years">
-        <option value="2">2</option>
-        <option value="3" selected>3</option>
-        <option value="5">5</option>
-      </select>
-    </div>
-    <button onclick="createRoom()">Create Room</button>
+<!-- ===================== LANDING ===================== -->
+<div id="screen-landing">
+  <div class="landing-map">
+    <svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">
+      <!-- trade routes -->
+      <g stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="5,4" opacity=".7">
+        <line x1="225" y1="165" x2="134" y2="110"/>
+        <line x1="225" y1="165" x2="225" y2="58"/>
+        <line x1="225" y1="165" x2="316" y2="110"/>
+        <line x1="225" y1="165" x2="316" y2="215"/>
+        <line x1="225" y1="165" x2="225" y2="268"/>
+        <line x1="225" y1="165" x2="134" y2="215"/>
+        <line x1="134" y1="110" x2="225" y2="58"/>
+        <line x1="225" y1="58" x2="316" y2="110"/>
+        <line x1="316" y1="110" x2="316" y2="215"/>
+        <line x1="316" y1="215" x2="225" y2="268"/>
+        <line x1="225" y1="268" x2="134" y2="215"/>
+        <line x1="134" y1="215" x2="134" y2="110"/>
+      </g>
+      <!-- islands -->
+      <ellipse cx="225" cy="165" rx="44" ry="36" fill="#3498db22" stroke="#3498db" stroke-width="1.5"/>
+      <text x="225" y="169" text-anchor="middle" fill="#3498db" font-size="9" font-weight="700">Transport</text>
+      <ellipse cx="134" cy="110" rx="40" ry="32" fill="#e67e2222" stroke="#e67e22" stroke-width="1.5"/>
+      <text x="134" y="114" text-anchor="middle" fill="#e67e22" font-size="9" font-weight="700">Mining</text>
+      <ellipse cx="225" cy="58" rx="42" ry="32" fill="#27ae6022" stroke="#27ae60" stroke-width="1.5"/>
+      <text x="225" y="62" text-anchor="middle" fill="#27ae60" font-size="9" font-weight="700">Agriculture</text>
+      <ellipse cx="316" cy="110" rx="40" ry="32" fill="#e74c3c22" stroke="#e74c3c" stroke-width="1.5"/>
+      <text x="316" y="114" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="700">Healthcare</text>
+      <ellipse cx="316" cy="215" rx="40" ry="32" fill="#f1c40f22" stroke="#f1c40f" stroke-width="1.5"/>
+      <text x="316" y="219" text-anchor="middle" fill="#f1c40f" font-size="9" font-weight="700">Banking</text>
+      <ellipse cx="225" cy="268" rx="42" ry="32" fill="#9b59b622" stroke="#9b59b6" stroke-width="1.5"/>
+      <text x="225" y="272" text-anchor="middle" fill="#9b59b6" font-size="9" font-weight="700">Education</text>
+      <ellipse cx="134" cy="215" rx="42" ry="32" fill="#1abc9c22" stroke="#1abc9c" stroke-width="1.5"/>
+      <text x="134" y="219" text-anchor="middle" fill="#1abc9c" font-size="9" font-weight="700">Manufacturing</text>
+    </svg>
   </div>
-
-  <div class="card">
-    <h2>Join Game</h2>
-    <div class="form-row">
-      <label>Your Name</label>
-      <input id="join-name" value="Player" />
-    </div>
-    <div class="form-row">
-      <label>Room Code</label>
-      <input id="join-code" placeholder="e.g. a1b2c3d4" />
-    </div>
-    <button onclick="joinRoom()">Join</button>
+  <div class="landing-title">
+    <h1>Island Traders</h1>
+    <p>Resource-trading board game · 2–7 players</p>
   </div>
-
-  <div class="card">
-    <h2>Open Games</h2>
-    <ul id="room-list" class="room-list">
-      <li style="color:var(--dim)">Loading...</li>
-    </ul>
-    <button class="secondary" onclick="refreshRooms()" style="margin-top:0.5rem">Refresh</button>
+  <div class="landing-actions">
+    <button class="btn-gold" onclick="showScreen('create')" style="border-radius:50px;font-size:1rem;padding:.85rem 2.6rem">
+      ⚑ Create Game
+    </button>
+    <button class="btn-ghost" onclick="showScreen('join')" style="border-radius:50px;font-size:1rem;padding:.85rem 2.6rem">
+      ⟶ Join Game
+    </button>
   </div>
+  <div class="wave">
+    <svg viewBox="0 0 1200 100" preserveAspectRatio="none">
+      <path d="M0,50 C200,0 400,100 600,50 C800,0 1000,100 1200,50 L1200,100 L0,100 Z" fill="#0abde3"/>
+    </svg>
+  </div>
+</div>
 
-  <!-- Waiting room (shown after create/join) -->
-  <div class="card" id="waiting-room" style="display:none">
-    <h2>Waiting Room — <span id="wr-room-name"></span></h2>
-    <p style="margin-bottom:0.5rem;color:var(--dim)">Room code: <strong id="wr-room-id" style="color:var(--accent)"></strong></p>
-    <ul id="wr-players" class="room-list"></ul>
-    <div style="margin-top:0.8rem;display:flex;gap:0.5rem;flex-wrap:wrap">
-      <button class="secondary" onclick="addAI()">Add AI Player</button>
-      <button class="gold" onclick="startGame()">Start Game</button>
+<!-- ===================== CREATE GAME ===================== -->
+<div id="screen-create" class="hidden">
+  <div class="lobby-wrap">
+    <div class="screen-header">
+      <button class="back-btn" onclick="showScreen('landing')">← Back</button>
+      <h1>Create Game</h1>
+    </div>
+    <div class="card">
+      <h2>Your Details</h2>
+      <div class="form-row"><label>Your Name</label><input id="c-name" value="Player 1" maxlength="24"/></div>
+    </div>
+    <div class="card">
+      <h2>Room Settings</h2>
+      <div class="form-row"><label>Room Name</label><input id="c-room" value="Island Traders"/></div>
+      <div class="form-row">
+        <label>Max Players</label>
+        <select id="c-max">
+          <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7" selected>7</option>
+        </select>
+        <label style="margin-left:.5rem">Years</label>
+        <select id="c-years">
+          <option value="2">2</option><option value="3" selected>3</option><option value="5">5</option>
+        </select>
+      </div>
+      <div class="toggle-row">
+        <label>Public game (visible in open games list)</label>
+        <label class="toggle"><input type="checkbox" id="c-public" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <label>Require all roles claimed by humans before start</label>
+        <label class="toggle"><input type="checkbox" id="c-allhuman"><span class="toggle-slider"></span></label>
+      </div>
+    </div>
+    <button class="btn-gold" style="width:100%;padding:.75rem" onclick="createRoom()">Create Room →</button>
+  </div>
+</div>
+
+<!-- ===================== JOIN GAME ===================== -->
+<div id="screen-join" class="hidden">
+  <div class="lobby-wrap">
+    <div class="screen-header">
+      <button class="back-btn" onclick="showScreen('landing')">← Back</button>
+      <h1>Join Game</h1>
+    </div>
+    <div class="card">
+      <h2>Your Name</h2>
+      <div class="form-row"><label>Name</label><input id="j-name" value="Player" maxlength="24"/></div>
+    </div>
+    <div class="card">
+      <h2>Enter Room Code</h2>
+      <p style="color:var(--dim);font-size:.83rem;margin-bottom:.7rem">Ask the host for the 6-character room code.</p>
+      <div class="form-row">
+        <input id="j-code" placeholder="e.g. AB12CD" maxlength="6" style="font-family:monospace;font-size:1.1rem;letter-spacing:.15em;text-transform:uppercase"/>
+        <button class="btn-primary" onclick="joinByCode()">Join →</button>
+      </div>
+      <div id="j-code-error" style="color:var(--red);font-size:.8rem;margin-top:.3rem;min-height:1.1em"></div>
+    </div>
+    <div class="card">
+      <h2>Open Games</h2>
+      <ul id="open-room-list" class="room-list">
+        <li style="color:var(--dim);padding:.5rem 0">Loading…</li>
+      </ul>
+      <button class="btn-ghost btn-sm" onclick="refreshPublicRooms()" style="margin-top:.5rem">↻ Refresh</button>
     </div>
   </div>
 </div>
 
-<!-- ==================== GAME DASHBOARD ==================== -->
-<div id="game">
+<!-- ===================== WAITING ROOM ===================== -->
+<div id="screen-waiting" class="hidden">
+  <div class="lobby-wrap">
+    <div class="screen-header">
+      <h1>Waiting Room</h1>
+      <span id="wr-status" class="badge" style="background:var(--border);color:var(--dim)">Waiting</span>
+    </div>
+    <div class="card">
+      <h2>Room Code — Share with friends</h2>
+      <div class="room-code-box">
+        <span class="code" id="wr-code">——</span>
+        <div>
+          <div id="wr-visibility" class="tag tag-public" style="margin-bottom:.3rem">Public</div>
+          <div class="copy-hint"><button class="btn-ghost btn-sm" onclick="copyCode()">Copy Code</button></div>
+        </div>
+      </div>
+      <div class="stat"><span class="lbl">Room</span><span class="val" id="wr-name">—</span></div>
+      <div class="stat"><span class="lbl">Years</span><span class="val" id="wr-years">—</span></div>
+      <div class="stat"><span class="lbl">Max players</span><span class="val" id="wr-max">—</span></div>
+    </div>
+    <div class="card">
+      <h2>Players</h2>
+      <ul id="wr-players" class="player-list"></ul>
+      <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button id="btn-add-ai" class="btn-ghost btn-sm" onclick="addAI()">+ Add AI Player</button>
+        <button id="btn-start-auction" class="btn-gold" onclick="startAuction()">Start Role Auction →</button>
+      </div>
+    </div>
+    <div id="wr-require-notice" class="hidden" style="color:var(--dim);font-size:.8rem;padding:.4rem .6rem;background:var(--panel2);border-radius:var(--radius)">
+      ⚑ All roles must be claimed by human players before the game can start.
+    </div>
+  </div>
+</div>
+
+<!-- ===================== AUCTION ===================== -->
+<div id="screen-auction" class="hidden">
+  <div class="auction-wrap">
+    <div class="auction-header">
+      <div>
+        <h1>Role Auction</h1>
+        <div style="color:var(--dim);font-size:.82rem;margin-top:.2rem">Bid for your island. Highest bid wins. One role per player.</div>
+      </div>
+      <div class="timer-box">
+        <div class="timer-lbl">Time left</div>
+        <div class="timer-val" id="timer-val">60</div>
+        <div class="timer-lbl">s</div>
+      </div>
+    </div>
+    <div class="budget-bar">
+      <div class="budget-label">Your budget:</div>
+      <div class="budget-val" id="budget-display">— Dp</div>
+      <div class="budget-track"><div class="budget-track-fill" id="budget-fill" style="width:100%"></div></div>
+      <div class="budget-label">Spent:</div>
+      <div class="budget-val" id="spent-display">0 Dp</div>
+    </div>
+    <div class="roles-grid" id="roles-grid"><!-- role cards injected --></div>
+    <div class="bid-panel hidden" id="bid-panel">
+      <h3>Bid on: <span id="bid-panel-role">—</span></h3>
+      <div class="bid-input-row">
+        <input type="number" id="bid-amount" min="0" step="1" value="0"/>
+        <span class="dp-label">Dp</span>
+      </div>
+      <div class="bid-actions">
+        <button class="btn-primary" onclick="submitBid()">Place Bid</button>
+        <button class="btn-ghost" onclick="withdrawBid()">Withdraw Bid</button>
+        <button class="btn-ghost btn-sm" onclick="closeBidPanel()" style="margin-left:auto">Close</button>
+      </div>
+      <div class="bid-msg" id="bid-msg"></div>
+    </div>
+    <div id="auction-result-overlay" class="hidden" style="margin-top:1rem;background:var(--panel);border:1px solid var(--green);border-radius:var(--radius);padding:1.2rem">
+      <h2 style="color:var(--green);margin-bottom:.8rem">Auction Complete!</h2>
+      <div id="auction-result-content"></div>
+      <div style="margin-top:.8rem;color:var(--dim);font-size:.82rem">Game starting in <span id="result-countdown">5</span>s…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== GAME DASHBOARD ===================== -->
+<div id="screen-game">
   <div class="game-grid">
-    <!-- Header -->
-    <div class="g-header">
-      <h1>Island Traders</h1>
-      <div class="season-info" id="season-display">— Waiting —</div>
-      <div style="display:flex;gap:0.5rem;align-items:center">
-        <span id="my-dollops" style="color:var(--gold);font-weight:600"></span>
-        <button class="secondary" style="padding:0.3rem 0.6rem;font-size:0.8rem" onclick="requestState()">⟳</button>
+    <div class="g-hdr">
+      <span class="title">⚓ Island Traders</span>
+      <div class="island-tabs" id="island-tabs"><!-- tabs injected --></div>
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <span class="season" id="season-display">—</span>
+        <span class="wealth" id="hdr-wealth">—</span>
+        <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
       </div>
     </div>
 
-    <!-- Left sidebar: own status -->
-    <div class="g-sidebar">
-      <div class="section" id="island-map">
-        <!-- SVG map injected by JS -->
-      </div>
+    <div class="g-side">
+      <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
       <div class="section">
-        <h3>My Island</h3>
-        <div id="my-status">
-          <div class="stat-row"><span class="label">Role</span><span class="value" id="my-role">—</span></div>
-          <div class="stat-row"><span class="label">Dollops</span><span class="value gold" id="my-dollops-detail">—</span></div>
-          <div class="stat-row"><span class="label">Wealth</span><span class="value gold" id="my-wealth">—</span></div>
-          <div class="stat-row"><span class="label">Workers</span><span class="value" id="my-workers">—</span></div>
-          <div class="stat-row"><span class="label">Efficiency</span><span class="value" id="my-efficiency">—</span></div>
-          <div class="stat-row"><span class="label">Capacity</span><span class="value" id="my-capacity">—</span></div>
-          <div class="stat-row"><span class="label">Population</span><span class="value" id="my-pop">—</span></div>
-        </div>
+        <h3 id="tab-island-name">My Island</h3>
+        <div class="stat"><span class="lbl">Role</span><span class="val" id="s-role">—</span></div>
+        <div class="stat"><span class="lbl">Working Capital</span><span class="val gold" id="s-dollops">—</span></div>
+        <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
+        <div class="stat"><span class="lbl">Net Wealth</span><span class="val gold" id="s-wealth">—</span></div>
+        <div class="stat"><span class="lbl">Workers</span><span class="val" id="s-workers">—</span></div>
+        <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
+        <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
+        <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
       </div>
       <div class="section">
         <h3>Inventory</h3>
-        <div id="my-inventory">—</div>
+        <div id="s-inventory">—</div>
       </div>
       <div class="section">
         <h3>Insurance</h3>
-        <div id="my-insurance" style="font-size:0.82rem">None</div>
+        <div id="s-insurance" style="font-size:.8rem">None</div>
       </div>
     </div>
 
-    <!-- Main area: action prompt + competitors -->
     <div class="g-main">
-      <div class="prompt-area" id="prompt-area" style="display:none">
-        <h3 id="prompt-title">Waiting for your turn...</h3>
-        <div class="action-buttons" id="prompt-buttons"></div>
-        <div id="prompt-input" style="margin-top:0.5rem"></div>
+      <div class="prompt-area hidden" id="prompt-area">
+        <h3 id="prompt-title">Waiting…</h3>
+        <div class="action-btns" id="prompt-btns"></div>
+        <div id="prompt-input" style="margin-top:.5rem"></div>
       </div>
-
       <div class="section">
         <h3>All Players</h3>
         <table class="comp-table">
-          <thead><tr>
-            <th>Player</th><th>Role</th><th>Wealth</th><th>Dp</th><th>Workers</th><th>Pop</th>
-          </tr></thead>
+          <thead><tr><th>Player</th><th>Role</th><th>Wealth (Dp)</th><th>Capital (Dp)</th><th>Workers</th></tr></thead>
           <tbody id="comp-tbody"></tbody>
         </table>
       </div>
     </div>
 
-    <!-- Right info panel: market -->
     <div class="g-info">
       <div class="section">
         <h3>Market Prices</h3>
@@ -445,144 +530,358 @@ button.gold { background: var(--gold); color: #000; }
       </div>
     </div>
 
-    <!-- Bottom: event log -->
     <div class="g-log" id="event-log"></div>
   </div>
 </div>
 
-<!-- ==================== INPUT OVERLAY ==================== -->
-<div class="input-overlay" id="input-overlay">
-  <div class="input-dialog" id="input-dialog">
-    <h3 id="dialog-title">Choose</h3>
-    <div id="dialog-body"></div>
+<!-- ===================== OVERLAY / DIALOG ===================== -->
+<div class="overlay" id="overlay">
+  <div class="dialog" id="dialog">
+    <h3 id="dlg-title">Choose</h3>
+    <div id="dlg-body"></div>
   </div>
 </div>
 
 <script>
 // ==================== STATE ====================
+const API = window.location.origin;
 let ws = null;
 let myPlayerId = null;
 let myPlayerIdx = null;
 let currentRoomId = null;
+let currentRoom = null;
 let gameState = null;
+let auctionData = null;
+let auctionBudget = 100;
+let auctionSpent = 0;
+let selectedRole = null;
+let myBids = {};  // role -> amount
+let timerInterval = null;
+let auctionTimerEnd = 0;
+let activeTabRole = null;
 
-const API = window.location.origin;
+const ROLE_COLORS = {
+  Farmer:'#27ae60', Miner:'#e67e22', Transporter:'#3498db',
+  Educator:'#9b59b6', Banker:'#f1c40f', Manufacturer:'#1abc9c', Doctor:'#e74c3c',
+};
+const AVATAR_LETTERS = {
+  Farmer:'F', Miner:'Mi', Transporter:'Tr', Educator:'Ed',
+  Banker:'B', Manufacturer:'Mn', Doctor:'Dr',
+};
 
-// ==================== LOBBY ====================
+// ==================== NAVIGATION ====================
+function showScreen(name) {
+  ['landing','create','join','waiting','auction','game'].forEach(s => {
+    const el = document.getElementById('screen-' + s);
+    if (el) el.classList.toggle('hidden', s !== name);
+  });
+  if (name === 'join') refreshPublicRooms();
+}
 
-async function refreshRooms() {
-  const res = await fetch(`${API}/api/rooms`);
-  const rooms = await res.json();
-  const ul = document.getElementById('room-list');
+// ==================== CREATE ROOM ====================
+async function createRoom() {
+  const name = v('c-name') || 'Player';
+  const roomName = v('c-room') || 'Island Traders';
+  const maxPlayers = +v('c-max');
+  const numYears = +v('c-years');
+  const isPublic = document.getElementById('c-public').checked;
+  const requireAllHuman = document.getElementById('c-allhuman').checked;
+
+  const room = await apiFetch('/api/rooms', 'POST', {
+    name: roomName, max_players: maxPlayers, num_years: numYears,
+    creator_name: name, is_public: isPublic, require_all_human: requireAllHuman,
+  });
+  myPlayerId = room.players[0].player_id;
+  enterWaiting(room);
+}
+
+// ==================== JOIN ROOM ====================
+async function joinByCode() {
+  const code = v('j-code').trim().toUpperCase();
+  const name = v('j-name') || 'Player';
+  if (!code) return;
+  document.getElementById('j-code-error').textContent = '';
+  try {
+    const data = await apiFetch('/api/rooms/join-by-code', 'POST', {code, name});
+    myPlayerId = data.player_id;
+    enterWaiting(data.room);
+  } catch(e) {
+    document.getElementById('j-code-error').textContent = 'Invalid or full room code.';
+  }
+}
+
+async function joinRoomById(roomId) {
+  const name = v('j-name') || 'Player';
+  try {
+    const data = await apiFetch(`/api/rooms/${roomId}/join`, 'POST', {name});
+    myPlayerId = data.player_id;
+    enterWaiting(data.room);
+  } catch(e) {
+    alert('Could not join room.');
+  }
+}
+
+async function refreshPublicRooms() {
+  const rooms = await apiFetch('/api/rooms');
+  const ul = document.getElementById('open-room-list');
   if (!rooms.length) {
-    ul.innerHTML = '<li style="color:var(--dim)">No open games</li>';
+    ul.innerHTML = '<li style="color:var(--dim);padding:.5rem 0">No open games right now.</li>';
     return;
   }
   ul.innerHTML = rooms.map(r => `
     <li>
-      <span>${esc(r.name)} (${r.player_count}/${r.max_players})</span>
-      ${r.status === 'waiting' ?
-        `<button onclick="joinRoomById('${r.room_id}')">Join</button>` :
-        `<span style="color:var(--dim)">${r.status}</span>`
-      }
+      <div class="room-info">
+        <div class="room-name">${esc(r.name)}</div>
+        <div class="room-meta">${r.player_count}/${r.max_players} players · ${r.num_years} years</div>
+      </div>
+      <button class="btn-primary btn-sm" onclick="joinRoomById('${r.room_id}')">Join</button>
     </li>
   `).join('');
 }
 
-async function createRoom() {
-  const name = document.getElementById('create-name').value.trim() || 'Player 1';
-  const roomName = document.getElementById('create-room-name').value.trim() || 'Game Room';
-  const maxPlayers = +document.getElementById('create-max').value;
-  const numYears = +document.getElementById('create-years').value;
-
-  const res = await fetch(`${API}/api/rooms`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-      name: roomName, max_players: maxPlayers,
-      num_years: numYears, creator_name: name,
-    }),
-  });
-  const room = await res.json();
+// ==================== WAITING ROOM ====================
+function enterWaiting(room) {
   currentRoomId = room.room_id;
-  myPlayerId = room.players[0].player_id;
-  showWaitingRoom(room);
+  currentRoom = room;
+  renderWaitingRoom(room);
+  showScreen('waiting');
+  connectWS();
 }
 
-async function joinRoom() {
-  const code = document.getElementById('join-code').value.trim();
-  if (!code) return;
-  await joinRoomById(code);
-}
+function renderWaitingRoom(room) {
+  currentRoom = room;
+  document.getElementById('wr-code').textContent = room.join_code || '——';
+  document.getElementById('wr-name').textContent = room.name;
+  document.getElementById('wr-years').textContent = room.num_years;
+  document.getElementById('wr-max').textContent = room.max_players;
+  const vis = document.getElementById('wr-visibility');
+  if (room.is_public) {
+    vis.className = 'tag tag-public'; vis.textContent = 'Public';
+  } else {
+    vis.className = 'tag tag-private'; vis.textContent = 'Private';
+  }
+  if (room.require_all_human) {
+    document.getElementById('wr-require-notice').classList.remove('hidden');
+  }
 
-async function joinRoomById(roomId) {
-  const name = document.getElementById('join-name').value.trim() || 'Player';
-  const res = await fetch(`${API}/api/rooms/${roomId}/join`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name}),
-  });
-  if (!res.ok) { alert('Cannot join room'); return; }
-  const data = await res.json();
-  currentRoomId = roomId;
-  myPlayerId = data.player_id;
-  showWaitingRoom(data.room);
-}
-
-function showWaitingRoom(room) {
-  document.getElementById('waiting-room').style.display = 'block';
-  document.getElementById('wr-room-name').textContent = room.name;
-  document.getElementById('wr-room-id').textContent = room.room_id;
   const ul = document.getElementById('wr-players');
-  ul.innerHTML = room.players.map(p => `
-    <li>
-      <span>${esc(p.name)}${p.player_id === myPlayerId ? ' (you)' : ''}</span>
-      <span style="color:var(--dim)">${p.role_name || 'auto'}</span>
-    </li>
-  `).join('');
+  const avatarColors = ['#3498db','#e67e22','#27ae60','#e74c3c','#9b59b6','#f1c40f','#1abc9c'];
+  ul.innerHTML = room.players.map((p, i) => {
+    const mine = p.player_id === myPlayerId;
+    const initials = p.name.slice(0,2).toUpperCase();
+    const col = avatarColors[i % avatarColors.length];
+    return `<li>
+      <div class="player-avatar" style="background:${col}22;color:${col};border:1px solid ${col}44">${initials}</div>
+      <div>
+        <div class="player-name">${esc(p.name)}${mine ? ' <span style="color:var(--accent);font-size:.72rem">(you)</span>' : ''}</div>
+        <div class="player-meta">${p.is_human ? '👤 Human' : '🤖 AI'}</div>
+      </div>
+    </li>`;
+  }).join('');
+
+  // Only host can start
+  const isHost = room.creator_id === undefined || room.players[0]?.player_id === myPlayerId;
+  document.getElementById('btn-start-auction').style.display = isHost ? '' : 'none';
+  document.getElementById('btn-add-ai').style.display = isHost ? '' : 'none';
+}
+
+function copyCode() {
+  const code = document.getElementById('wr-code').textContent;
+  navigator.clipboard?.writeText(code);
+  const btn = event.target;
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy Code', 1500);
 }
 
 async function addAI() {
-  const roles = ['Farmer','Miner','Transporter','Educator','Banker','Manufacturer','Doctor'];
-  const aiNames = ['Alice','Bob','Carol','Dave','Eve','Frank','Grace'];
-  const res = await fetch(`${API}/api/rooms/${currentRoomId}`);
-  const room = await res.json();
-  const idx = room.players.length;
-  await fetch(`${API}/api/rooms/${currentRoomId}/ai`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({name: aiNames[idx % aiNames.length] + ' (AI)'}),
-  });
-  // Refresh waiting room
-  const res2 = await fetch(`${API}/api/rooms/${currentRoomId}`);
-  showWaitingRoom(await res2.json());
+  const aiNames = ['Atlas','Calypso','Iris','Helios','Poseidon','Artemis','Zephyr'];
+  const room = await apiFetch(`/api/rooms/${currentRoomId}`);
+  const idx = room.players.length % aiNames.length;
+  await apiFetch(`/api/rooms/${currentRoomId}/ai`, 'POST', {name: aiNames[idx] + ' AI'});
+  const updated = await apiFetch(`/api/rooms/${currentRoomId}`);
+  renderWaitingRoom(updated);
 }
 
-async function startGame() {
-  const res = await fetch(`${API}/api/rooms/${currentRoomId}/start`, {method: 'POST'});
-  if (!res.ok) { alert('Cannot start — need at least 2 players'); return; }
-  enterGame();
+async function startAuction() {
+  try {
+    await apiFetch(`/api/rooms/${currentRoomId}/auction/start`, 'POST');
+  } catch(e) {
+    alert('Cannot start auction yet. You need at least 1 player.');
+  }
 }
 
-// ==================== GAME ====================
-
-function enterGame() {
-  document.getElementById('lobby').style.display = 'none';
-  document.getElementById('game').style.display = 'block';
-  connectWebSocket();
+// ==================== AUCTION ====================
+function enterAuction(msg) {
+  showScreen('auction');
+  auctionBudget = msg.budget || 100;
+  auctionSpent = 0;
+  myBids = {};
+  document.getElementById('budget-display').textContent = auctionBudget.toFixed(1) + ' Dp';
+  document.getElementById('spent-display').textContent = '0 Dp';
+  document.getElementById('budget-fill').style.width = '100%';
+  auctionTimerEnd = Date.now() / 1000 + (msg.timer_seconds || 60);
+  startAuctionTimer();
+  buildRoleCards(msg.roles);
 }
 
-function connectWebSocket() {
+function buildRoleCards(roles) {
+  const grid = document.getElementById('roles-grid');
+  grid.innerHTML = roles.map(r => `
+    <div class="role-card" id="rc-${r.name}" onclick="selectRole('${r.name}')">
+      <div class="rc-dot" style="background:${r.color};display:inline-block;border-radius:50%;width:10px;height:10px"></div>
+      <span class="rc-name">${r.name}</span>
+      <div class="rc-island">${r.island}</div>
+      <div class="rc-produces">Produces: <strong>${r.produces}</strong></div>
+      <div class="rc-produces" style="color:var(--dim)">Needs: ${r.needs}</div>
+      <div class="rc-top-bid" id="rc-bid-${r.name}">
+        <span class="tb-amount">0 Dp</span>
+        <span class="tb-player">No bids</span>
+      </div>
+      <div class="rc-my-bid hidden" id="rc-mybid-${r.name}">My bid: 0 Dp</div>
+    </div>
+  `).join('');
+}
+
+function updateAuctionDisplay(auction) {
+  auctionData = auction;
+  if (auction.timer_remaining !== undefined) {
+    auctionTimerEnd = Date.now() / 1000 + auction.timer_remaining;
+  }
+
+  // Recompute my spent amount from server state
+  auctionSpent = 0;
+  const myBidsFromServer = {};
+  for (const [role, bids] of Object.entries(auction.bids || {})) {
+    const mine = bids.find(b => b.player_id === myPlayerId);
+    if (mine) {
+      myBidsFromServer[role] = mine.amount;
+      auctionSpent += mine.amount;
+    }
+  }
+  myBids = myBidsFromServer;
+  updateBudgetDisplay();
+
+  for (const [role, bids] of Object.entries(auction.bids || {})) {
+    const bidEl = document.getElementById(`rc-bid-${role}`);
+    const myBidEl = document.getElementById(`rc-mybid-${role}`);
+    const card = document.getElementById(`rc-${role}`);
+    if (!bidEl) continue;
+
+    const sorted = [...bids].sort((a,b) => b.amount - a.amount);
+    if (sorted.length) {
+      const top = sorted[0];
+      bidEl.innerHTML = `<span class="tb-amount">${top.amount.toFixed(1)} Dp</span><span class="tb-player">${esc(top.player_name)}</span>`;
+      if (top.player_id === myPlayerId && card) {
+        card.classList.add('selected');
+      }
+    } else {
+      bidEl.innerHTML = `<span class="tb-amount">0 Dp</span><span class="tb-player">No bids</span>`;
+    }
+
+    if (myBids[role] !== undefined && myBidEl) {
+      myBidEl.textContent = `My bid: ${myBids[role].toFixed(1)} Dp`;
+      myBidEl.classList.remove('hidden');
+    } else if (myBidEl) {
+      myBidEl.classList.add('hidden');
+    }
+  }
+}
+
+function updateBudgetDisplay() {
+  const remaining = auctionBudget - auctionSpent;
+  document.getElementById('budget-display').textContent = auctionBudget.toFixed(1) + ' Dp';
+  document.getElementById('spent-display').textContent = auctionSpent.toFixed(1) + ' Dp';
+  const pct = Math.max(0, remaining / auctionBudget * 100);
+  document.getElementById('budget-fill').style.width = pct + '%';
+}
+
+function startAuctionTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const remaining = Math.max(0, auctionTimerEnd - Date.now() / 1000);
+    const el = document.getElementById('timer-val');
+    if (el) {
+      el.textContent = Math.ceil(remaining);
+      el.style.color = remaining < 10 ? 'var(--red)' : 'var(--gold)';
+    }
+    if (remaining <= 0) clearInterval(timerInterval);
+  }, 500);
+}
+
+function selectRole(roleName) {
+  selectedRole = roleName;
+  document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+  const card = document.getElementById(`rc-${roleName}`);
+  if (card) card.classList.add('selected');
+  const panel = document.getElementById('bid-panel');
+  panel.classList.remove('hidden');
+  document.getElementById('bid-panel-role').textContent = roleName;
+  const current = myBids[roleName] || 0;
+  document.getElementById('bid-amount').value = current;
+  document.getElementById('bid-msg').textContent = '';
+}
+
+function closeBidPanel() {
+  document.getElementById('bid-panel').classList.add('hidden');
+  selectedRole = null;
+}
+
+function submitBid() {
+  if (!selectedRole || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const amount = parseFloat(document.getElementById('bid-amount').value) || 0;
+  ws.send(JSON.stringify({type: 'bid', role_name: selectedRole, amount}));
+}
+
+function withdrawBid() {
+  if (!selectedRole || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type: 'withdraw_bid', role_name: selectedRole}));
+  document.getElementById('bid-msg').textContent = 'Bid withdrawn.';
+}
+
+function showAuctionResult(msg) {
+  clearInterval(timerInterval);
+  const overlay = document.getElementById('auction-result-overlay');
+  overlay.classList.remove('hidden');
+
+  const assignments = msg.assignments || {};
+  const aiRoles = msg.ai_roles || [];
+  const deductions = msg.deductions || {};
+
+  let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.5rem">';
+  for (const [role, info] of Object.entries(assignments)) {
+    const color = ROLE_COLORS[role] || '#aaa';
+    const isMe = info.player_id === myPlayerId;
+    const deduction = deductions[info.player_id] || 0;
+    html += `<div style="background:${color}18;border:1px solid ${color}44;border-radius:6px;padding:.6rem;">
+      <div style="font-weight:700;color:${color}">${role}</div>
+      <div style="font-size:.82rem;margin-top:.2rem">${esc(info.player_name)}${isMe ? ' ✦' : ''}</div>
+      ${deduction > 0 ? `<div style="font-size:.75rem;color:var(--dim)">-${deduction.toFixed(1)} Dp bid</div>` : ''}
+      ${info.is_human ? '' : '<div style="font-size:.72rem;color:var(--dim)">🤖 AI</div>'}
+    </div>`;
+  }
+  html += '</div>';
+  document.getElementById('auction-result-content').innerHTML = html;
+
+  let countdown = 5;
+  const cdEl = document.getElementById('result-countdown');
+  const cdInt = setInterval(() => {
+    countdown--;
+    if (cdEl) cdEl.textContent = countdown;
+    if (countdown <= 0) clearInterval(cdInt);
+  }, 1000);
+}
+
+// ==================== WEBSOCKET ====================
+function connectWS() {
+  if (!currentRoomId || !myPlayerId) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws/${currentRoomId}/${myPlayerId}`);
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    handleMessage(msg);
-  };
+  ws.onmessage = e => handleMessage(JSON.parse(e.data));
   ws.onclose = () => {
-    addLog('Connection lost. Reconnecting in 3s...', 'error');
-    setTimeout(connectWebSocket, 3000);
+    addLog('Connection lost. Reconnecting in 3s…', 'err');
+    setTimeout(connectWS, 3000);
   };
+  ws.onerror = () => {};
 }
 
 function sendResponse(value) {
@@ -593,18 +892,36 @@ function sendResponse(value) {
 }
 
 function requestState() {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type: 'get_state'}));
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: 'get_state'}));
 }
 
 // ==================== MESSAGE HANDLERS ====================
-
 function handleMessage(msg) {
-  switch (msg.type) {
+  switch(msg.type) {
+    case 'room_update':
+      if (currentRoom && msg.room) {
+        renderWaitingRoom(msg.room);
+      }
+      break;
+    case 'auction_start':
+      enterAuction(msg);
+      break;
+    case 'auction_update':
+      updateAuctionDisplay(msg.auction);
+      break;
+    case 'auction_result':
+      showAuctionResult(msg);
+      break;
+    case 'auction_failed':
+      addLog('Auction failed: ' + msg.message, 'err');
+      break;
     case 'game_state':
       gameState = msg;
       renderGameState();
+      if (document.getElementById('screen-game').classList.contains('hidden')) {
+        showScreen('game');
+        buildIslandMap();
+      }
       break;
     case 'print':
       addLog(msg.text);
@@ -612,8 +929,7 @@ function handleMessage(msg) {
     case 'choose_action':
       showActionPrompt(msg);
       break;
-    case 'choose_resource':
-    case 'choose_profession':
+    case 'choose_resource': case 'choose_profession':
       showOptionPicker(msg);
       break;
     case 'choose_quantity':
@@ -631,31 +947,28 @@ function handleMessage(msg) {
     case 'game_over':
       showGameOver(msg);
       break;
+    case 'bid_ack':
+      if (msg.ok) {
+        document.getElementById('bid-msg').textContent = `Bid placed: ${(msg.amount||0).toFixed(1)} Dp ✓`;
+      } else {
+        document.getElementById('bid-msg').textContent = msg.error || 'Bid failed.';
+      }
+      break;
     case 'chat':
-      addLog(`[${msg.from}] ${msg.text}`);
+      addLog(`[${msg.from}] ${msg.text}`, 'info');
       break;
     case 'error':
-      addLog(msg.message, 'error');
+      addLog(msg.message, 'err');
       break;
   }
 }
 
-// ==================== RENDERING ====================
-
+// ==================== GAME RENDERING ====================
 function renderGameState() {
   if (!gameState) return;
 
-  // Find my player index
-  const myP = gameState.players.find((_, i) => {
-    const room = null; // We identify by matching player_id
-    return true;
-  });
-
-  // Identify myself by matching lobby player index
-  // Since player specs are ordered same as lobby, use stored idx
   if (myPlayerIdx === null) {
-    // Request room data to find my index
-    fetch(`${API}/api/rooms/${currentRoomId}`).then(r => r.json()).then(room => {
+    apiFetch(`/api/rooms/${currentRoomId}`).then(room => {
       myPlayerIdx = room.players.findIndex(p => p.player_id === myPlayerId);
       renderGameState();
     });
@@ -665,186 +978,186 @@ function renderGameState() {
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
 
-  // My status
-  document.getElementById('my-role').textContent = me.roles;
-  document.getElementById('my-dollops').textContent = `${me.dollops} Dp`;
-  document.getElementById('my-dollops-detail').textContent = `${me.dollops} Dp`;
-  document.getElementById('my-wealth').textContent = `${me.wealth} Dp`;
-  document.getElementById('my-workers').textContent = `${me.workforce_active}/${me.workforce_count}`;
-  document.getElementById('my-efficiency').textContent = `${me.workforce_efficiency}%`;
-  document.getElementById('my-capacity').textContent = `${me.production_capacity}%`;
-  document.getElementById('my-pop').textContent = me.population;
+  // Build tabs if needed
+  buildIslandTabs(gameState.players);
 
-  // Inventory
-  const inv = me.inventory || {};
-  const invHtml = Object.entries(inv)
-    .filter(([,q]) => q > 0)
-    .map(([r,q]) => `<div class="market-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
-    .join('') || '<span style="color:var(--dim)">Empty</span>';
-  document.getElementById('my-inventory').innerHTML = invHtml;
+  const tabRole = activeTabRole || (me.roles && me.roles[0]);
+  const displayPlayer = tabRole === 'ALL'
+    ? null  // consolidated view — future enhancement
+    : me;
 
-  // Insurance
-  const policies = me.policies || [];
-  document.getElementById('my-insurance').innerHTML = policies.length
-    ? policies.map(p => `<div style="margin-bottom:0.3rem">${esc(p)}</div>`).join('')
-    : '<span style="color:var(--dim)">None</span>';
+  if (displayPlayer) {
+    document.getElementById('tab-island-name').textContent = tabRole || 'My Island';
+    document.getElementById('s-role').textContent = Array.isArray(me.roles) ? me.roles.join(', ') : me.roles;
+    document.getElementById('s-dollops').textContent = me.dollops + ' Dp';
+    document.getElementById('s-loans').textContent = '0 Dp'; // loans not yet implemented
+    document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
+    document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+    document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
+    document.getElementById('s-capacity').textContent = me.production_capacity + '%';
+    document.getElementById('s-pop').textContent = me.population;
+    document.getElementById('hdr-wealth').textContent = me.wealth + ' Dp';
+
+    const inv = me.inventory || {};
+    document.getElementById('s-inventory').innerHTML = Object.entries(inv)
+      .filter(([,q]) => q > 0)
+      .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
+      .join('') || '<span style="color:var(--dim)">Empty</span>';
+
+    const pols = me.policies || [];
+    document.getElementById('s-insurance').innerHTML = pols.length
+      ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
+      : '<span style="color:var(--dim)">None</span>';
+  }
 
   // Competitors table
-  const tbody = document.getElementById('comp-tbody');
-  tbody.innerHTML = gameState.players.map((p, i) => `
+  document.getElementById('comp-tbody').innerHTML = gameState.players.map((p, i) => `
     <tr class="${i === myPlayerIdx ? 'me' : ''}">
       <td>${esc(p.name)}${i === myPlayerIdx ? ' ★' : ''}</td>
-      <td>${esc(p.roles)}</td>
+      <td>${esc(Array.isArray(p.roles) ? p.roles.join(', ') : p.roles)}</td>
       <td style="color:var(--gold)">${p.wealth}</td>
       <td>${p.dollops}</td>
       <td>${p.workforce_active}/${p.workforce_count}</td>
-      <td>${p.population}</td>
     </tr>
   `).join('');
 
   // Market
   if (gameState.market) {
-    const mkt = gameState.market;
-    document.getElementById('market-panel').innerHTML = Object.entries(mkt)
-      .map(([r, d]) => `
-        <div class="market-row">
-          <span class="res">${r}</span>
-          <span class="price">${d.price} Dp</span>
-          <span class="supply">×${d.supply}</span>
-        </div>
-      `).join('');
+    document.getElementById('market-panel').innerHTML = Object.entries(gameState.market)
+      .map(([r, d]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${d.price} Dp</span><span class="supply">×${d.supply}</span></div>`)
+      .join('');
   }
-
-  // Island map
-  renderIslandMap();
 }
 
-function renderIslandMap() {
-  const container = document.getElementById('island-map');
-  if (container.querySelector('svg')) return;  // already rendered
+function buildIslandTabs(players) {
+  const me = players[myPlayerIdx];
+  if (!me) return;
+  const tabs = document.getElementById('island-tabs');
+  if (tabs.childElementCount > 0) return; // already built
 
+  const roles = Array.isArray(me.roles) ? me.roles : [me.roles];
+  activeTabRole = roles[0];
+  let html = roles.map(r => `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" onclick="switchTab('${r}')">${r}</button>`).join('');
+  if (roles.length > 1) {
+    html += `<button class="tab-btn" onclick="switchTab('ALL')">Consolidated</button>`;
+  }
+  tabs.innerHTML = html;
+}
+
+function switchTab(role) {
+  activeTabRole = role;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent === role || (role==='ALL' && b.textContent==='Consolidated')));
+  renderGameState();
+}
+
+function buildIslandMap() {
+  const container = document.getElementById('island-map-svg');
+  if (container.querySelector('svg')) return;
   const islands = [
-    {name:'Transport', cx:225, cy:165, color:'#3498db'},
-    {name:'Mining',    cx:134, cy:110, color:'#e67e22'},
-    {name:'Agriculture',cx:225, cy:58, color:'#27ae60'},
-    {name:'Healthcare',cx:316, cy:110, color:'#e74c3c'},
-    {name:'Banking',   cx:316, cy:215, color:'#f1c40f'},
-    {name:'Education', cx:225, cy:268, color:'#9b59b6'},
+    {name:'Transport',  cx:225, cy:165, color:'#3498db'},
+    {name:'Mining',     cx:134, cy:110, color:'#e67e22'},
+    {name:'Agriculture',cx:225, cy:58,  color:'#27ae60'},
+    {name:'Healthcare', cx:316, cy:110, color:'#e74c3c'},
+    {name:'Banking',    cx:316, cy:215, color:'#f1c40f'},
+    {name:'Education',  cx:225, cy:268, color:'#9b59b6'},
     {name:'Manufacturing',cx:134,cy:215,color:'#1abc9c'},
   ];
-
-  let paths = '';
-  for (let i = 1; i < islands.length; i++) {
-    paths += `<line x1="${islands[0].cx}" y1="${islands[0].cy}"
-                    x2="${islands[i].cx}" y2="${islands[i].cy}"
-                    stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="4,4"/>`;
-  }
-
-  let nodes = islands.map(isl => `
-    <ellipse cx="${isl.cx}" cy="${isl.cy}" rx="42" ry="34"
-             fill="${isl.color}22" stroke="${isl.color}" stroke-width="1.5"/>
-    <text x="${isl.cx}" y="${isl.cy + 4}" text-anchor="middle"
-          fill="${isl.color}" font-size="10" font-weight="600">${isl.name}</text>
+  const lines = islands.slice(1).map(i =>
+    `<line x1="225" y1="165" x2="${i.cx}" y2="${i.cy}" stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="4,4"/>`
+  ).join('');
+  const nodes = islands.map(i => `
+    <ellipse cx="${i.cx}" cy="${i.cy}" rx="40" ry="32" fill="${i.color}22" stroke="${i.color}" stroke-width="1.5"/>
+    <text x="${i.cx}" y="${i.cy+4}" text-anchor="middle" fill="${i.color}" font-size="9" font-weight="700">${i.name}</text>
   `).join('');
-
-  container.innerHTML = `
-    <svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">
-      ${paths}${nodes}
-    </svg>
-  `;
+  container.innerHTML = `<svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">${lines}${nodes}</svg>`;
 }
 
 // ==================== INPUT PROMPTS ====================
-
 function showActionPrompt(msg) {
   const area = document.getElementById('prompt-area');
-  area.style.display = 'block';
+  area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
-  const btns = document.getElementById('prompt-buttons');
-  btns.innerHTML = msg.options.map(o => {
-    const cls = o.value === 'produce' ? 'highlight' : '';
-    return `<button class="${cls}" onclick="sendResponse('${o.value}')">${o.label}</button>`;
-  }).join('');
+  document.getElementById('prompt-btns').innerHTML = msg.options.map(o =>
+    `<button class="${o.value==='produce'?'highlight':''}" onclick="sendResponse('${o.value}')">${o.label}</button>`
+  ).join('');
   document.getElementById('prompt-input').innerHTML = '';
 }
 
 function showOptionPicker(msg) {
-  showOverlay(msg.prompt || 'Choose', msg.options.map(o =>
+  showDlg(msg.prompt || 'Choose', `<div class="opts">${msg.options.map(o =>
     `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
-  ).join(''));
+  ).join('')}</div>`);
 }
 
 function showPlayerPicker(msg) {
-  showOverlay(msg.prompt, msg.options.map(o =>
+  showDlg(msg.prompt, `<div class="opts">${msg.options.map(o =>
     `<button onclick="sendResponse('${o.id}')">${esc(o.name)} (${esc(o.roles)})</button>`
-  ).join(''));
+  ).join('')}</div>`);
 }
 
 function showQuantityInput(msg) {
-  showOverlay(msg.prompt, `
-    <input type="number" id="qty-input" min="${msg.min}" max="${msg.max}" value="${msg.min}" />
-    <button onclick="sendResponse(document.getElementById('qty-input').value)">OK</button>
+  showDlg(msg.prompt, `
+    <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
+    <button class="btn-primary" style="width:100%" onclick="sendResponse(document.getElementById('qty-in').value)">OK</button>
   `);
 }
 
 function showDollopInput(msg) {
-  showOverlay(msg.prompt, `
-    <input type="number" id="dp-input" min="0" max="${msg.max}" step="0.1" value="0" />
-    <button onclick="sendResponse(document.getElementById('dp-input').value)">OK</button>
+  showDlg(msg.prompt, `
+    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.1" value="0" style="width:100%;margin:.5rem 0"/>
+    <button class="btn-primary" style="width:100%" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
   `);
 }
 
 function showConfirm(msg) {
-  showOverlay(msg.prompt, `
-    <div style="display:flex;gap:0.5rem">
-      <button class="gold" onclick="sendResponse('true')">Yes</button>
-      <button class="secondary" onclick="sendResponse('false')">No</button>
+  showDlg(msg.prompt, `
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+      <button class="btn-gold" style="flex:1" onclick="sendResponse('true')">Yes</button>
+      <button class="btn-ghost" style="flex:1" onclick="sendResponse('false')">No</button>
     </div>
   `);
 }
 
 function showGameOver(msg) {
   const area = document.getElementById('prompt-area');
-  area.style.display = 'block';
-  document.getElementById('prompt-title').textContent = `Game Over — Winner: ${msg.winner}`;
-  document.getElementById('prompt-buttons').innerHTML = '';
+  area.classList.remove('hidden');
+  document.getElementById('prompt-title').textContent = `🏆 Game Over — Winner: ${msg.winner}`;
+  document.getElementById('prompt-btns').innerHTML = '';
   document.getElementById('prompt-input').innerHTML = `
-    <table class="comp-table" style="margin-top:0.5rem">
-      <thead><tr><th>#</th><th>Player</th><th>Role</th><th>Wealth</th></tr></thead>
-      <tbody>
-        ${msg.rankings.map((r, i) => `
-          <tr><td>${i+1}</td><td>${esc(r.name)}</td><td>${esc(r.roles)}</td>
-          <td style="color:var(--gold)">${r.wealth} Dp</td></tr>
-        `).join('')}
-      </tbody>
+    <table class="comp-table" style="margin-top:.5rem">
+      <thead><tr><th>#</th><th>Player</th><th>Role</th><th>Wealth (Dp)</th></tr></thead>
+      <tbody>${msg.rankings.map((r,i) => `
+        <tr><td>${i+1}</td><td>${esc(r.name)}</td><td>${esc(r.roles)}</td>
+        <td style="color:var(--gold)">${r.wealth} Dp</td></tr>
+      `).join('')}</tbody>
     </table>
   `;
 }
 
-function showOverlay(title, bodyHtml) {
-  document.getElementById('dialog-title').textContent = title;
-  document.getElementById('dialog-body').innerHTML = `<div class="options">${bodyHtml}</div>`;
-  document.getElementById('input-overlay').classList.add('active');
+function showDlg(title, bodyHtml) {
+  document.getElementById('dlg-title').textContent = title;
+  document.getElementById('dlg-body').innerHTML = bodyHtml;
+  document.getElementById('overlay').classList.add('active');
 }
 
 function hideOverlay() {
-  document.getElementById('input-overlay').classList.remove('active');
-  document.getElementById('prompt-area').style.display = 'none';
+  document.getElementById('overlay').classList.remove('active');
+  document.getElementById('prompt-area')?.classList.add('hidden');
 }
 
 // ==================== EVENT LOG ====================
-
 function addLog(text, cls = '') {
   const log = document.getElementById('event-log');
   const div = document.createElement('div');
   if (cls) div.className = cls;
-  else if (text.includes('[EVENT]') || text.includes('[WORKPLACE]')) div.className = 'event';
+  else if (/\[EVENT\]|\[WORKPLACE\]/.test(text)) div.className = 'ev';
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
 }
 
 // ==================== HELPERS ====================
+function v(id) { return document.getElementById(id)?.value || ''; }
 
 function esc(s) {
   const d = document.createElement('div');
@@ -852,9 +1165,17 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Init
-refreshRooms();
-setInterval(refreshRooms, 10000);
+async function apiFetch(url, method = 'GET', body = null) {
+  const opts = {method, headers: {}};
+  if (body) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+  const res = await fetch(API + url, opts);
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+
+// ==================== INIT ====================
+refreshPublicRooms();
+setInterval(refreshPublicRooms, 15000);
 </script>
 </body>
 </html>

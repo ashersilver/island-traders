@@ -36,6 +36,9 @@
 - [ ] Chat integration (in-game messaging)
 - [ ] Market orders (limit orders, standing offers)
 - [ ] Tournament mode (bracket play across multiple games)
+- [ ] Population migration: islands lose population to others with higher standard of living
+  - Standard of Living Index based on food per capita, insurance coverage, health services, etc.
+  - Net migration proportional to differential between islands
 
 ## Completed
 - [x] ForgeHaven product line differentiation (4 specialized product lines)

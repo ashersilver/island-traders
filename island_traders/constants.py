@@ -4,7 +4,9 @@ CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
 
-STARTING_DOLLOPS: float = 100.0
+STARTING_DOLLOPS: float = 100.0  # per-role baseline (7 roles × 100 = 700 total)
+TOTAL_STARTING_DOLLOPS: float = 700.0
+TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 
 # Bootstrap inventory so roles with input dependencies can produce on turn 1.
 # Miner gets 1 Freight so the Miner↔Transporter circular dependency is bootstrapped.
