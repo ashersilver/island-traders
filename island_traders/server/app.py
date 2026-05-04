@@ -25,6 +25,14 @@ from ..models.resource import ResourceType
 from ..constants import SEASONS, CURRENCY_SYMBOL
 from .ws_adapter import WebSocketIOAdapter
 
+try:
+    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import HTMLResponse, JSONResponse
+except ImportError:
+    FastAPI = WebSocket = WebSocketDisconnect = None
+    StaticFiles = HTMLResponse = JSONResponse = None
+
 logger = logging.getLogger("island_traders.server")
 
 # ---------------------------------------------------------------------------
@@ -300,12 +308,8 @@ class GameManager:
 # FastAPI application
 # ---------------------------------------------------------------------------
 
-def create_app() -> Any:
-    try:
-        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-        from fastapi.staticfiles import StaticFiles
-        from fastapi.responses import HTMLResponse, JSONResponse
-    except ImportError:
+def create_app() -> FastAPI:
+    if FastAPI is None:
         raise ImportError(
             "FastAPI and uvicorn are required for the game server. "
             "Install with: pip install fastapi uvicorn[standard] websockets"
@@ -394,6 +398,8 @@ def create_app() -> Any:
 
     @app.websocket("/ws/{room_id}/{player_id}")
     async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
+        await websocket.accept()
+
         room = manager.rooms.get(room_id)
         if not room:
             await websocket.close(code=4004, reason="Room not found")
@@ -403,8 +409,6 @@ def create_app() -> Any:
         if not lp:
             await websocket.close(code=4004, reason="Player not in room")
             return
-
-        await websocket.accept()
         lp.connected = True
         manager.register_ws(room_id, player_id, websocket)
 
@@ -461,7 +465,7 @@ def main():
         raise SystemExit(1)
 
     app = create_app()
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port, ws="wsproto")
 
 
 if __name__ == "__main__":
