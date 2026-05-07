@@ -4,20 +4,36 @@ CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
 
-STARTING_DOLLOPS: float = 100.0  # per-role baseline (7 roles × 100 = 700 total)
-TOTAL_STARTING_DOLLOPS: float = 700.0
+STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 total)
+TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 
-# Bootstrap inventory so roles with input dependencies can produce on turn 1.
-# Miner gets 1 Freight so the Miner↔Transporter circular dependency is bootstrapped.
+# Bootstrap inventory: each island starts with —
+#   (a) one season's worth of its outputs, ready to sell in the opening round
+#   (b) one season's worth of its production inputs, so it can produce round 2
+# Anything beyond that must be purchased on the market.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    "Farmer":        {"Ore": 1, "Oil": 2},        # FarmMachinery input + fuel
-    "Miner":         {"Oil": 2, "Freight": 1},
-    "Transporter":   {"Oil": 3, "Ore": 1},         # TransportEquipment input
-    "Educator":      {"CapitalEquipment": 2, "Finance": 1},
-    "Banker":        {"Knowledge": 1, "CapitalEquipment": 1},
-    "Manufacturer":  {"Ore": 4, "Oil": 3},
-    "Doctor":        {"Knowledge": 2, "Ore": 1},   # MedicalDevices input
+    # Farmer: Spring outputs to sell + Spring inputs to produce next round
+    "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
+                      "FarmMachinery": 1, "Oil": 2},                  # fuel buffer, not a season-proof stockpile
+    # Miner: partial output to sell + inputs to produce (Oil serves both)
+    "Miner":         {"Ore": 3, "Oil": 4,                            # to sell (Ore 3, Oil 3) + Oil 1 to produce
+                      "Freight": 1, "MiningEquipment": 1},            # to produce
+    # Transporter: cargo + seats to sell + Oil & Food to run services
+    "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
+                      "Oil": 3, "Food": 1},                           # fuel-heavy role gets a larger opening buffer
+    # Educator: Knowledge to sell + inputs to run the university
+    "Educator":      {"Knowledge": 2,                                 # to sell
+                      "CapitalEquipment": 1, "Finance": 1},           # to produce
+    # Banker: Finance to sell + inputs to run the bank
+    "Banker":        {"Finance": 2,                                   # to sell
+                      "Knowledge": 1, "CapitalEquipment": 1},         # to produce
+    # Manufacturer: FarmMachinery (default opening line) to sell + inputs to produce
+    "Manufacturer":  {"FarmMachinery": 2,                             # to sell
+                      "Ore": 2, "Oil": 2},                            # to produce; heavier lines still need more
+    # Doctor: services to sell + inputs to operate
+    "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
+                      "Knowledge": 1, "MedicalDevices": 1},           # to produce
 }
 
 # Dollops per unit at balanced supply/demand
@@ -38,15 +54,19 @@ BASE_PRICES: dict[str, float] = {
     "MiningEquipment":     42.0,   # drills, excavators, ore separators
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  65.0,   # vehicles, ships, cranes (no freight surcharge)
+    # Transporter services
+    "PassengerSeats":      15.0,   # charter flight / passenger berth (per seat)
+    # Educator IP
+    "Patents":             80.0,   # one-time productivity boost (–20% input cost on chosen output)
 }
 
 # Units produced per season before event modifiers
 # Farmer output is defined by FARMER_SEASONAL_CONVERSION instead.
 # Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
-    "Miner":         {"Ore": 5, "Oil": 3},
-    "Transporter":   {"Freight": 6},
-    "Educator":      {"Knowledge": 4},
+    "Miner":         {"Ore": 5, "Oil": 5},
+    "Transporter":   {"Freight": 6, "PassengerSeats": 4},  # cargo + passenger services
+    "Educator":      {"Knowledge": 4, "Patents": 1},       # 1 Patent/season baseline
     "Banker":        {"Finance": 3},
     "Doctor":        {"HealthServices": 4, "Vaccine": 1},
 }
@@ -56,7 +76,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
-    "Transporter":   {"Oil": 2, "TransportEquipment": 1},     # fuel + fleet maintenance
+    "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + provisions
     "Educator":      {"CapitalEquipment": 1, "Finance": 1},   # equipment + operating budget
     "Banker":        {"Knowledge": 1, "CapitalEquipment": 1}, # expertise + infrastructure
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
@@ -197,13 +217,19 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # Profession breakdown for starting workforce.
 # Each entry is a list of (profession_name, count) pairs.
 # Remaining workers up to STARTING_WORKFORCE total are added as Unskilled.
+#
+# Default mix per requirements/production-capacity-model.md §5:
+#   1 Manager + 2 Technicians + 3 Workers (= 6 starting workforce)
+# Doctor uses a custom mix (1 Doctor + 1 Nurse Manager + 3 Medical Orderlies + 1 Aide)
+# but is currently encoded simply as 2 Doctors + 4 Nurses; revisit when Apprenticeship
+# pipeline is implemented.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 3)],
-    "Miner":         [("Miner", 2), ("OilExtractionWorker", 1)],
-    "Transporter":   [("Engineer", 2)],
-    "Educator":      [("Professor", 2)],
-    "Banker":        [("Banker", 2)],
-    "Manufacturer":  [("AssemblyWorker", 2)],
+    "Farmer":        [("Farmer", 1), ("Mechanic", 1), ("Veterinarian", 1)],
+    "Miner":         [("Miner", 1), ("OilExtractionWorker", 1), ("Mechanic", 1)],
+    "Transporter":   [("Engineer", 1), ("Mechanic", 1)],
+    "Educator":      [("Professor", 1)],
+    "Banker":        [("Banker", 1)],
+    "Manufacturer":  [("Engineer", 1), ("AssemblyWorker", 1), ("Mechanic", 1)],
     "Doctor":        [("Doctor", 2), ("Nurse", 4)],    # exactly 6, no unskilled remainder
 }
 
@@ -223,13 +249,15 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 
 # Profession names that qualify as "skilled" for each island's labour calculation.
 # All active workers whose profession is NOT in this list count toward the unskilled slot.
+# This is the legacy two-tier classification — see WorkerBand for the new three-band
+# (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "Veterinarian"],
-    "Miner":        ["Miner", "OilExtractionWorker", "RefinerySpecialist"],
-    "Transporter":  ["Engineer"],
+    "Farmer":       ["Farmer", "Veterinarian", "Mechanic"],
+    "Miner":        ["Miner", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
+    "Transporter":  ["Engineer", "Mechanic"],
     "Educator":     ["Professor"],
     "Banker":       ["Banker"],
-    "Manufacturer": ["AssemblyWorker", "Engineer"],
+    "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
     "Doctor":       ["Doctor", "Nurse"],
 }
 
@@ -277,6 +305,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "RefinerySpecialist":   2,
     "Banker":               2,
     "Professor":            4,   # 1 per season × 4 seasons
+    "Mechanic":             4,   # multi-island Technician (Apprenticeship pipeline)
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).

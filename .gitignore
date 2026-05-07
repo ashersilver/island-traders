@@ -1,5 +1,6 @@
 .claude/
 .venv/
+.DS_Store
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -9,3 +10,8 @@ build/
 .pytest_cache/
 simulation_results/
 printables/
+
+# Planning / scratch spreadsheets — contents should be transcribed into requirements/*.md
+*.xlsx
+*.xlsm
+*.xls

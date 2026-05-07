@@ -19,6 +19,8 @@ class ResourceType(str, Enum):
     MINING_EQUIPMENT     = "MiningEquipment"
     MEDICAL_DEVICES      = "MedicalDevices"
     TRANSPORT_EQUIPMENT  = "TransportEquipment"
+    PASSENGER_SEATS      = "PassengerSeats"
+    PATENTS              = "Patents"
 
 
 class InsufficientResourceError(Exception):

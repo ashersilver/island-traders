@@ -1,0 +1,420 @@
+"""
+Capital equipment catalogue and per-output production recipes.
+
+Tabular data driving the production capacity model. Edit here to tune:
+  - which items each role can buy in the Investing Phase / mid-game,
+  - how much each output unit costs in inputs and labour.
+
+Numbers are first-pass drafts from `requirements/production-capacity-model.md`.
+"""
+from __future__ import annotations
+
+from .models.capacity import CapitalItem, ProductionRecipe
+
+
+# ---------------------------------------------------------------------------
+# Capital equipment catalogue — buyable items per role
+# ---------------------------------------------------------------------------
+
+CAPITAL_CATALOGUE: list[CapitalItem] = [
+    # ----- Farmer ----------------------------------------------------------
+    CapitalItem(
+        item_id="farmer.tractor",
+        name="Tractor",
+        role="Farmer",
+        cost=60.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Food": 5}},
+        description="+5 Food capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.harvester",
+        name="Harvester",
+        role="Farmer",
+        cost=90.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Food": 3}, "labour_relief": {"Technician": 1}},
+        description="+3 Food, –1 Technician need",
+    ),
+    CapitalItem(
+        item_id="farmer.fishing_boat",
+        name="Fishing Boat",
+        role="Farmer",
+        cost=50.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Fish": 4}},
+        description="+4 Fish capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.storage_building",
+        name="Storage Building",
+        role="Farmer",
+        cost=40.0,
+        delivery_seasons=0,
+        effects={"inventory_cap": 10},
+        description="+10 inventory cap",
+    ),
+
+    # ----- Miner -----------------------------------------------------------
+    CapitalItem(
+        item_id="miner.excavator",
+        name="Excavator",
+        role="Miner",
+        cost=70.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Ore": 4}},
+        description="+4 Ore capacity",
+    ),
+    CapitalItem(
+        item_id="miner.crusher",
+        name="Crusher",
+        role="Miner",
+        cost=50.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Ore": 2}, "input_relief": {"Ore": {"Oil": 0.2}}},
+        description="+2 Ore, –0.2 Oil per Ore",
+    ),
+    CapitalItem(
+        item_id="miner.oil_rig",
+        name="Oil Rig",
+        role="Miner",
+        cost=110.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Oil": 4}},
+        description="+4 Oil capacity",
+    ),
+    CapitalItem(
+        item_id="miner.refinery",
+        name="Refinery",
+        role="Miner",
+        cost=100.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Oil": 2}, "enables_profession": "RefinerySpecialist"},
+        description="+2 Oil, enables RefinerySpecialist multiplier",
+    ),
+
+    # ----- Transporter -----------------------------------------------------
+    CapitalItem(
+        item_id="transporter.cargo_ship",
+        name="Cargo Ship",
+        role="Transporter",
+        cost=80.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Freight": 6}},
+        description="+6 Freight capacity",
+    ),
+    CapitalItem(
+        item_id="transporter.cargo_plane",
+        name="Cargo Plane",
+        role="Transporter",
+        cost=130.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Freight": 4}, "fast": True},
+        description="+4 Freight (fast)",
+    ),
+    CapitalItem(
+        item_id="transporter.passenger_liner",
+        name="Passenger Liner",
+        role="Transporter",
+        cost=90.0,
+        delivery_seasons=0,
+        effects={"capacity": {"PassengerSeats": 5}},
+        description="+5 PassengerSeats",
+    ),
+    CapitalItem(
+        item_id="transporter.passenger_plane",
+        name="Passenger Plane",
+        role="Transporter",
+        cost=140.0,
+        delivery_seasons=2,
+        effects={"capacity": {"PassengerSeats": 5}, "fast": True},
+        description="+5 PassengerSeats (fast)",
+    ),
+
+    # ----- Educator --------------------------------------------------------
+    CapitalItem(
+        item_id="educator.lecture_hall",
+        name="Lecture Hall",
+        role="Educator",
+        cost=50.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Knowledge": 4}, "education_slots": 2},
+        description="+4 Knowledge, +2 Education slots",
+    ),
+    CapitalItem(
+        item_id="educator.library",
+        name="Library",
+        role="Educator",
+        cost=40.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Knowledge": 2, "Patents": 1}},
+        description="+2 Knowledge, +1 Patent",
+    ),
+    CapitalItem(
+        item_id="educator.research_lab",
+        name="Research Lab",
+        role="Educator",
+        cost=100.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Patents": 3}, "research_stock_per_season": 2},
+        description="+3 Patent capacity, generates Research stock",
+    ),
+    CapitalItem(
+        item_id="educator.computer_cluster",
+        name="Computer Cluster",
+        role="Educator",
+        cost=80.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Patents": 1}, "input_relief": {"Knowledge": {"CapitalEquipment": 0.2}}},
+        description="+1 Patent, –0.2 CapitalEquipment per Knowledge",
+    ),
+    CapitalItem(
+        item_id="educator.apprenticeship_programme",
+        name="Apprenticeship Programme",
+        role="Educator",
+        cost=60.0,
+        delivery_seasons=0,
+        effects={"apprenticeship_slots": 3},
+        description="+3 Apprenticeship slots (separate from Education)",
+    ),
+
+    # ----- Banker ----------------------------------------------------------
+    CapitalItem(
+        item_id="banker.vault",
+        name="Vault",
+        role="Banker",
+        cost=60.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Finance": 4}},
+        description="+4 Finance capacity",
+    ),
+    CapitalItem(
+        item_id="banker.trading_floor",
+        name="Trading Floor",
+        role="Banker",
+        cost=70.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Finance": 3, "InsurancePolicies": 1}},
+        description="+3 Finance, +1 InsurancePolicy",
+    ),
+    CapitalItem(
+        item_id="banker.underwriting_desk",
+        name="Underwriting Desk",
+        role="Banker",
+        cost=50.0,
+        delivery_seasons=0,
+        effects={"capacity": {"InsurancePolicies": 3}},
+        description="+3 InsurancePolicies capacity",
+    ),
+    CapitalItem(
+        item_id="banker.reinsurance_treaty",
+        name="Reinsurance Treaty",
+        role="Banker",
+        cost=100.0,
+        delivery_seasons=2,
+        effects={"fatality_payout_multiplier": 0.5},
+        description="–50% fatality payout cost",
+    ),
+
+    # ----- Manufacturer ----------------------------------------------------
+    CapitalItem(
+        item_id="manufacturer.foundry",
+        name="Foundry",
+        role="Manufacturer",
+        cost=80.0,
+        delivery_seasons=0,
+        effects={"unlocks_lines": ["FarmMachinery", "MiningEquipment"]},
+        description="enables FarmMachinery + MiningEquipment lines",
+    ),
+    CapitalItem(
+        item_id="manufacturer.assembly_line",
+        name="Assembly Line",
+        role="Manufacturer",
+        cost=70.0,
+        delivery_seasons=0,
+        effects={"line_throughput_bonus": 1},
+        description="+1 unit/season on any line",
+    ),
+    CapitalItem(
+        item_id="manufacturer.precision_workshop",
+        name="Precision Workshop",
+        role="Manufacturer",
+        cost=100.0,
+        delivery_seasons=2,
+        effects={"unlocks_lines": ["MedicalDevices"]},
+        description="enables MedicalDevices line",
+    ),
+    CapitalItem(
+        item_id="manufacturer.shipyard",
+        name="Shipyard",
+        role="Manufacturer",
+        cost=120.0,
+        delivery_seasons=2,
+        effects={"unlocks_lines": ["TransportEquipment"]},
+        description="enables TransportEquipment line",
+    ),
+
+    # ----- Doctor ----------------------------------------------------------
+    CapitalItem(
+        item_id="doctor.hospital_ward",
+        name="Hospital Ward",
+        role="Doctor",
+        cost=60.0,
+        delivery_seasons=0,
+        effects={"capacity": {"HealthServices": 4}},
+        description="+4 HealthServices capacity",
+    ),
+    CapitalItem(
+        item_id="doctor.operating_theatre",
+        name="Operating Theatre",
+        role="Doctor",
+        cost=100.0,
+        delivery_seasons=2,
+        effects={"capacity": {"HealthServices": 2, "Vaccine": 1}},
+        description="+2 HealthServices, +1 Vaccine",
+    ),
+    CapitalItem(
+        item_id="doctor.vaccine_lab",
+        name="Vaccine Lab",
+        role="Doctor",
+        cost=110.0,
+        delivery_seasons=2,
+        effects={"capacity": {"Vaccine": 2}},
+        description="+2 Vaccine capacity",
+    ),
+    CapitalItem(
+        item_id="doctor.cold_chain_storage",
+        name="Cold Chain Storage",
+        role="Doctor",
+        cost=40.0,
+        delivery_seasons=0,
+        effects={"vaccine_persistence": True},
+        description="Vaccine doesn't expire between seasons",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Per-unit production recipes
+# ---------------------------------------------------------------------------
+
+PRODUCTION_RECIPES: list[ProductionRecipe] = [
+    # ----- Farmer ----------------------------------------------------------
+    ProductionRecipe(
+        role="Farmer", output="Food",
+        inputs={"Oil": 3.0, "Fish": 1.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="3 Oil + 1 Fish (animal stock) per unit of Food",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Fish",
+        inputs={"Oil": 2.0, "Food": 1.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="2 Oil + 1 Food (worker subsistence) per unit of Fish",
+    ),
+
+    # ----- Miner -----------------------------------------------------------
+    ProductionRecipe(
+        role="Miner", output="Ore",
+        inputs={"Oil": 0.5, "Freight": 0.5},
+        manager_per_unit=0.1, technician_per_unit=0.5, worker_per_unit=1.0,
+    ),
+    ProductionRecipe(
+        role="Miner", output="Oil",
+        inputs={"Freight": 0.5},
+        manager_per_unit=0.1, technician_per_unit=0.5, worker_per_unit=0.5,
+    ),
+
+    # ----- Transporter -----------------------------------------------------
+    ProductionRecipe(
+        role="Transporter", output="Freight",
+        inputs={"Oil": 0.5},
+        manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
+    ),
+    ProductionRecipe(
+        role="Transporter", output="PassengerSeats",
+        inputs={"Oil": 0.4, "Food": 0.25},
+        manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
+    ),
+
+    # ----- Educator --------------------------------------------------------
+    ProductionRecipe(
+        role="Educator", output="Knowledge",
+        inputs={"CapitalEquipment": 0.25, "Finance": 0.25},
+        manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
+        description="1 Professor required per unit of Knowledge",
+    ),
+    ProductionRecipe(
+        role="Educator", output="Patents",
+        inputs={"CapitalEquipment": 0.5, "Finance": 0.5},
+        manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
+        description="2 Professors required per Patent (Research stock also needed)",
+    ),
+
+    # ----- Banker ----------------------------------------------------------
+    ProductionRecipe(
+        role="Banker", output="Finance",
+        inputs={"Knowledge": 0.5, "CapitalEquipment": 0.5},
+        manager_per_unit=1.0, technician_per_unit=0.25, worker_per_unit=0.0,
+        money_per_unit=5.0,
+        description="5 Dp capital reserve per unit of Finance",
+    ),
+    ProductionRecipe(
+        role="Banker", output="InsurancePolicies",
+        inputs={"Knowledge": 0.5, "CapitalEquipment": 0.25},
+        manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.0,
+        money_per_unit=8.0,
+        description="8 Dp hedge cost per InsurancePolicy",
+    ),
+
+    # ----- Manufacturer ----------------------------------------------------
+    # Manufacturer recipes are role-driven via MANUFACTURER_PRODUCT_LINES, but
+    # we also expose canonical recipes for the four lines so the capacity
+    # model can reason about them uniformly.
+    ProductionRecipe(
+        role="Manufacturer", output="FarmMachinery",
+        inputs={"Ore": 2.0, "Oil": 1.0, "Freight": 2.0},
+        manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
+    ),
+    ProductionRecipe(
+        role="Manufacturer", output="MiningEquipment",
+        inputs={"Ore": 3.0, "Oil": 2.0, "Freight": 3.0},
+        manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=1.0,
+    ),
+    ProductionRecipe(
+        role="Manufacturer", output="MedicalDevices",
+        inputs={"Ore": 1.0, "Oil": 1.0, "Freight": 1.0},
+        manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
+    ),
+    ProductionRecipe(
+        role="Manufacturer", output="TransportEquipment",
+        inputs={"Ore": 2.0, "Oil": 2.0},
+        manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
+    ),
+
+    # ----- Doctor ----------------------------------------------------------
+    ProductionRecipe(
+        role="Doctor", output="HealthServices",
+        inputs={"Knowledge": 0.25, "MedicalDevices": 0.25},
+        manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
+    ),
+    ProductionRecipe(
+        role="Doctor", output="Vaccine",
+        inputs={"Knowledge": 0.5, "MedicalDevices": 1.0},
+        manager_per_unit=1.0, technician_per_unit=0.0, worker_per_unit=0.0,
+    ),
+]
+
+
+# Mandatory minimum default investment per role.
+# Pre-selected in the Investing Phase; player may override but the screen
+# warns if they deselect items leaving them unable to produce any output.
+MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
+    "Farmer":       ["farmer.tractor", "farmer.fishing_boat"],
+    "Miner":        ["miner.excavator", "miner.oil_rig"],
+    "Transporter":  ["transporter.cargo_ship", "transporter.passenger_liner"],
+    "Educator":     ["educator.lecture_hall", "educator.library"],
+    "Banker":       ["banker.vault", "banker.underwriting_desk"],
+    "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line"],
+    "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
+}

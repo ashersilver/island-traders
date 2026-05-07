@@ -102,6 +102,21 @@ class ProductionEngine:
         for role in player.roles:
             for r, qty in self._role_inputs(role.name, season_name, product_line).items():
                 totals[r] = totals.get(r, 0) + qty
+
+        # Apply patent boost: average multiplier across all produced outputs.
+        # Each active patent on an output reduces the buyer's input cost by 20%
+        # (capped at 3 patents = 60% reduction per output).  We apply the
+        # average across the role's outputs to all inputs uniformly — patents
+        # on any output yield some benefit, full benefit when all outputs are
+        # patented.
+        produced = [r for r in player.all_produced_resources()
+                    if r != ResourceType.PATENTS]
+        if produced and player.active_patents:
+            multipliers = [player.patent_input_multiplier(r.value) for r in produced]
+            avg_mult = sum(multipliers) / len(multipliers)
+            if avg_mult < 1.0:
+                totals = {r: max(0, int(round(qty * avg_mult)))
+                          for r, qty in totals.items()}
         return totals
 
     def _freight_surcharge(self, product_line: str | None, qty: int) -> int:

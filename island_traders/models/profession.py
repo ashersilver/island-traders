@@ -8,6 +8,13 @@ but they operate at the lowest efficiency plateau.
 Professions are trained at the University (Education Island).  Each profession
 has an annual quota limiting how many can be trained per game year; Professors
 additionally have a per-season cap.
+
+Workers are also classified into one of three **bands** — see WorkerBand:
+  - MANAGER:    university-trained (Education pipeline; Doctor=2 seasons,
+                Nurse=1 season, others=2 seasons)
+  - TECHNICIAN: apprenticeship-trained (separate Educator slot pool; worker
+                stays on home island during the apprenticeship)
+  - WORKER:     hired directly from the island population (no formal training)
 """
 from __future__ import annotations
 from enum import Enum
@@ -26,17 +33,126 @@ class Profession(str, Enum):
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
     PROFESSOR            = "Professor"
+    MECHANIC             = "Mechanic"          # NEW — Technician band, multi-island
+
+
+class WorkerBand(str, Enum):
+    """Three-tier classification of all workers, regardless of profession."""
+    MANAGER    = "Manager"      # university-educated
+    TECHNICIAN = "Technician"   # apprenticeship-trained
+    WORKER     = "Worker"       # untrained / hired from population
+
+
+# Each profession's band classification.
+# Update here if a profession is added or its tier changes.
+PROFESSION_BAND: dict[Profession, WorkerBand] = {
+    Profession.UNSKILLED:           WorkerBand.WORKER,
+    Profession.DOCTOR:              WorkerBand.MANAGER,
+    Profession.NURSE:               WorkerBand.MANAGER,    # 1-season Education
+    Profession.ENGINEER:            WorkerBand.MANAGER,
+    Profession.FARMER:              WorkerBand.MANAGER,
+    Profession.VETERINARIAN:        WorkerBand.TECHNICIAN,
+    Profession.ASSEMBLY_WORKER:     WorkerBand.TECHNICIAN,
+    Profession.MINER:               WorkerBand.MANAGER,    # mining engineer / geologist
+    Profession.OIL_EXTRACTION:      WorkerBand.TECHNICIAN,
+    Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
+    Profession.BANKER:              WorkerBand.MANAGER,
+    Profession.PROFESSOR:           WorkerBand.MANAGER,
+    Profession.MECHANIC:            WorkerBand.TECHNICIAN,
+}
+
+
+def band_of(profession: Profession | str) -> WorkerBand:
+    """Return the WorkerBand for a profession (accepts the enum or its str value)."""
+    if isinstance(profession, str):
+        try:
+            profession = Profession(profession)
+        except ValueError:
+            return WorkerBand.WORKER
+    return PROFESSION_BAND.get(profession, WorkerBand.WORKER)
+
+
+# Per-island display titles for each band.
+# Each entry is keyed by role name -> {band: list of titles shown to the player}.
+# The first title in each list is the "primary" label used when summarising counts.
+BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
+    "Farmer": {
+        WorkerBand.MANAGER:    ["Farmer"],
+        WorkerBand.TECHNICIAN: ["Farming Foreman", "Veterinarian", "Mechanic"],
+        WorkerBand.WORKER:     ["Farmhand"],
+    },
+    "Miner": {
+        WorkerBand.MANAGER:    ["Mining Engineer", "Geologist"],
+        WorkerBand.TECHNICIAN: ["Mining Foreman", "Refiner", "Mechanic"],
+        WorkerBand.WORKER:     ["Pit Worker"],
+    },
+    "Transporter": {
+        WorkerBand.MANAGER:    ["Engineer"],
+        WorkerBand.TECHNICIAN: ["Pilot", "Logistics Foreman", "Mechanic"],
+        WorkerBand.WORKER:     ["Stevedore"],
+    },
+    "Educator": {
+        WorkerBand.MANAGER:    ["Professor"],
+        WorkerBand.TECHNICIAN: ["Lecturer", "Tutor", "Trainer"],
+        WorkerBand.WORKER:     ["Admin"],
+    },
+    "Banker": {
+        WorkerBand.MANAGER:    ["Banker"],
+        WorkerBand.TECHNICIAN: ["Analyst", "Banking Clerk"],
+        WorkerBand.WORKER:     ["Receptionist"],
+    },
+    "Manufacturer": {
+        WorkerBand.MANAGER:    ["Engineer"],
+        WorkerBand.TECHNICIAN: ["Factory Foreman", "Assembly Tech", "Mechanic"],
+        WorkerBand.WORKER:     ["Assembler"],
+    },
+    "Doctor": {
+        WorkerBand.MANAGER:    ["Doctor", "Nurse"],
+        WorkerBand.TECHNICIAN: ["Medical Orderly"],
+        WorkerBand.WORKER:     ["Aide"],
+    },
+}
+
+
+def primary_title(role_name: str, band: WorkerBand) -> str:
+    """Primary display label for a (role, band) pair. Falls back to band name."""
+    role_titles = BAND_TITLES.get(role_name, {})
+    titles = role_titles.get(band, [])
+    return titles[0] if titles else band.value
+
+
+# Education pipeline duration in seasons (per Manager profession).
+# Per requirements: Doctor 2, Nurse 1, others 2 by default.
+EDUCATION_SEASONS: dict[Profession, int] = {
+    Profession.DOCTOR:    2,
+    Profession.NURSE:     1,
+    Profession.ENGINEER:  2,
+    Profession.FARMER:    2,
+    Profession.MINER:     2,
+    Profession.BANKER:    2,
+    Profession.PROFESSOR: 2,
+}
+
+# Apprenticeship pipeline duration in seasons (per Technician profession).
+# Default: 2 seasons for all (worker stays on home island during training).
+APPRENTICESHIP_SEASONS: dict[Profession, int] = {
+    Profession.VETERINARIAN:        2,
+    Profession.ASSEMBLY_WORKER:     2,
+    Profession.OIL_EXTRACTION:      2,
+    Profession.REFINERY_SPECIALIST: 2,
+    Profession.MECHANIC:            2,
+}
 
 
 # Which professions are primarily associated with each island role.
 # Used to filter available training options for each player.
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
-    "Farmer":        [Profession.FARMER, Profession.VETERINARIAN],
-    "Miner":         [Profession.MINER, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER],
-    "Transporter":   [Profession.ENGINEER],
+    "Farmer":        [Profession.FARMER, Profession.VETERINARIAN, Profession.MECHANIC],
+    "Miner":         [Profession.MINER, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC],
+    "Transporter":   [Profession.ENGINEER, Profession.MECHANIC],
     "Educator":      [Profession.PROFESSOR],
     "Banker":        [Profession.BANKER],
-    "Manufacturer":  [Profession.ASSEMBLY_WORKER, Profession.ENGINEER],
+    "Manufacturer":  [Profession.ASSEMBLY_WORKER, Profession.ENGINEER, Profession.MECHANIC],
     "Doctor":        [Profession.DOCTOR, Profession.NURSE],
 }
 
@@ -54,4 +170,5 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.REFINERY_SPECIALIST: "Refinery Specialist",
     Profession.BANKER:              "Banker (specialist)",
     Profession.PROFESSOR:           "Professor",
+    Profession.MECHANIC:            "Mechanic",
 }

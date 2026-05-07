@@ -10,6 +10,7 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
+from ..models.loan import LoanLedger, LoanStatus
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
@@ -30,6 +31,10 @@ class TurnAction(Enum):
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
     SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
     BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
+    OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
+    TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
+    VIEW_LOANS         = "view_loans"          # view outstanding loans
+    APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -55,18 +60,31 @@ class TurnManager:
         market: Market,
         io_adapter,
         training: TrainingRegistry | None = None,
+        loan_ledger: LoanLedger | None = None,
         rng=None,
     ):
         import random as _random
+        import threading as _threading
         self.players = players
         self.production = production_engine
         self.trading = trading_engine
         self.market = market
         self.io = io_adapter
         self.training = training or TrainingRegistry()
+        self.loan_ledger = loan_ledger or LoanLedger()
         self._ai = AIStrategy()
         self._damage_counters: dict[int, int] = {}
         self._rng: _random.Random = rng if rng is not None else _random.Random()
+        # Simultaneous-play hooks: when set, run_season() spawns one thread
+        # per human player instead of running them sequentially. engine_lock
+        # is exposed for future hardening of shared-state mutations
+        # (market, trading, loans). For this first cut we rely on the GIL
+        # and blocking-IO serialisation to keep things sane.
+        self.parallel_mode: bool = False
+        self.engine_lock: _threading.RLock = _threading.RLock()
+        # Optional callback fired with player.player_id when their turn thread
+        # completes (used by the server to track ready/done state).
+        self.on_player_turn_complete = None
 
     def run_season(
         self,
@@ -75,7 +93,7 @@ class TurnManager:
         event_results: dict[int, EventResult],
     ) -> list[TurnResult]:
         season_name = SEASONS[season_index]
-        sym = CURRENCY_SYMBOL
+        self.market.set_season(year, season_index)
         self.io.print(f"\n{'='*50}")
         self.io.print(f"  Year {year + 1}  —  {season_name}")
         self.io.print(f"{'='*50}")
@@ -89,27 +107,108 @@ class TurnManager:
             if report.has_events:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
-        results = []
-        for player in self.players:
-            event = event_results.get(player.player_id, EventResult("Normal Operations"))
-            if not event.is_normal:
-                self.io.print(f"\n[EVENT] {player.name}: {event.describe()}")
-            if event.damage_seasons > 0:
-                self._damage_counters[player.player_id] = (
-                    self._damage_counters.get(player.player_id, 0) + event.damage_seasons
-                )
-            if event.price_shock_resource and event.price_shock_multiplier != 1.0:
-                self.market.apply_price_shock(
-                    event.price_shock_resource,
-                    event.price_shock_multiplier,
-                    duration_seasons=event.damage_seasons or 1,
-                )
-            result = self.execute_turn(player, event, year, season_index)
-            results.append(result)
+        self._process_loan_repayments(year, season_index)
+
+        if self.parallel_mode:
+            results = self._run_season_parallel(year, season_index, event_results)
+        else:
+            results = self._run_season_sequential(year, season_index, event_results)
 
         self.market.snapshot_prices(year, season_index)
         self.market.reset_period_signals()
         self.market.tick_shocks()
+        return results
+
+    def _apply_event(self, player: Player, event: EventResult) -> None:
+        """Pre-turn event application (announce, damage counters, price shocks)."""
+        if not event.is_normal:
+            self.io.print(f"\n[EVENT] {player.name}: {event.describe()}")
+        if event.damage_seasons > 0:
+            self._damage_counters[player.player_id] = (
+                self._damage_counters.get(player.player_id, 0) + event.damage_seasons
+            )
+        if event.price_shock_resource and event.price_shock_multiplier != 1.0:
+            self.market.apply_price_shock(
+                event.price_shock_resource,
+                event.price_shock_multiplier,
+                duration_seasons=event.damage_seasons or 1,
+            )
+
+    def _run_season_sequential(
+        self, year: int, season_index: int,
+        event_results: dict[int, EventResult],
+    ) -> list[TurnResult]:
+        results = []
+        for player in self.players:
+            event = event_results.get(player.player_id, EventResult("Normal Operations"))
+            self._apply_event(player, event)
+            results.append(self.execute_turn(player, event, year, season_index))
+        return results
+
+    def _run_season_parallel(
+        self, year: int, season_index: int,
+        event_results: dict[int, EventResult],
+    ) -> list[TurnResult]:
+        """Run human turns concurrently, AI turns sequentially first.
+
+        AI turns are deterministic and fast — running them up-front means
+        their market activity is visible to humans immediately when the
+        season opens. Human turns then run on per-player threads; each
+        thread blocks on its own player-scoped IO adapter prompts.
+        """
+        import threading as _threading
+
+        results: list[TurnResult] = []
+        results_lock = _threading.Lock()
+
+        # 1. AI turns first (sequential — fast and deterministic).
+        for player in self.players:
+            if player.is_human:
+                continue
+            event = event_results.get(player.player_id, EventResult("Normal Operations"))
+            self._apply_event(player, event)
+            r = self.execute_turn(player, event, year, season_index)
+            results.append(r)
+            cb = self.on_player_turn_complete
+            if cb:
+                try:
+                    cb(player.player_id)
+                except Exception:
+                    pass
+
+        # 2. Apply events for humans up-front (so they see them immediately)
+        humans = [p for p in self.players if p.is_human]
+        for player in humans:
+            event = event_results.get(player.player_id, EventResult("Normal Operations"))
+            self._apply_event(player, event)
+
+        # 3. Spawn one thread per human player.
+        threads: list[_threading.Thread] = []
+        for player in humans:
+            event = event_results.get(player.player_id, EventResult("Normal Operations"))
+
+            def _run(p=player, e=event):
+                try:
+                    r = self.execute_turn(p, e, year, season_index)
+                    with results_lock:
+                        results.append(r)
+                except Exception as exc:   # noqa: BLE001
+                    self.io.print(f"[ERROR] turn for {p.name} failed: {exc}")
+                finally:
+                    cb = self.on_player_turn_complete
+                    if cb:
+                        try:
+                            cb(p.player_id)
+                        except Exception:
+                            pass
+
+            t = _threading.Thread(target=_run, name=f"turn-{player.name}", daemon=True)
+            threads.append(t)
+            t.start()
+
+        # 4. Wait for every human turn thread to complete.
+        for t in threads:
+            t.join()
         return results
 
     def execute_turn(
@@ -182,6 +281,14 @@ class TurnManager:
                 self._action_sell_insurance(player, result, year, season_index)
             elif action == TurnAction.BUY_INSURANCE:
                 self._action_buy_insurance(player, result, year, season_index)
+            elif action == TurnAction.OFFER_LOAN:
+                self._action_offer_loan(player, result, year, season_index)
+            elif action == TurnAction.TAKE_LOAN:
+                self._action_take_loan(player, result, year, season_index)
+            elif action == TurnAction.VIEW_LOANS:
+                self._action_view_loans(player)
+            elif action == TurnAction.APPLY_PATENT:
+                self._action_apply_patent(player, result)
 
     def _choose_product_line_human(self) -> str:
         """Prompt the human Manufacturer player to choose a product line."""
@@ -699,22 +806,94 @@ class TurnManager:
 
     def _action_market_buy(self, player: Player, result: TurnResult) -> None:
         sym = CURRENCY_SYMBOL
-        available = [r for r in ResourceType if self.market.supply.get(r, 0) > 0]
-        if not available:
-            self.io.print("  Market has no supply available.")
-            return
-        rtype = self.io.choose_resource("Buy which resource?", available)
-        max_qty = self.market.supply.get(rtype, 0)
-        qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, max_qty)
-        quote = self.trading.get_quote(rtype, qty)
-        self.io.print(f"  Cost: {quote:.2f} {sym}")
-        if self.io.confirm("Confirm buy?"):
-            try:
-                paid = self.trading.market_buy(player, rtype, qty)
-                self.io.print(f"  Bought {qty}x {rtype.value} for {paid:.2f} {sym}")
-                result.actions_taken.append(f"buy:{qty}x{rtype.value}")
-            except Exception as e:
-                self.io.print(f"  Failed: {e}")
+        summary = self.market.market_summary()
+        offered = {
+            ResourceType(k): v for k, v in summary.items()
+            if v.get("ask_quantity", v.get("quantity", 0)) > 0
+        }
+        if hasattr(self.io, 'market_buy_bulk'):
+            payload = self.io.market_buy_bulk(player, summary)
+            if not payload:
+                return
+            if "buy" in payload or "bids" in payload:
+                orders = payload.get("buy", {}) or {}
+                bids = payload.get("bids", {}) or {}
+            else:
+                orders = payload
+                bids = {}
+            for rtype_str, qty in orders.items():
+                if qty <= 0:
+                    continue
+                rtype = ResourceType(rtype_str)
+                try:
+                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    self.io.print(
+                        f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}"
+                    )
+                    result.actions_taken.append(f"buy:{bought}x{rtype.value}")
+                except Exception as e:
+                    self.io.print(f"  Buy {rtype.value} failed: {e}")
+            for rtype_str, bid_data in bids.items():
+                try:
+                    rtype = ResourceType(rtype_str)
+                    qty = int(bid_data.get("quantity", 0))
+                    price = float(bid_data.get("price", 0))
+                    if qty <= 0 or price <= 0:
+                        continue
+                    bid = self.market.post_bid(player, rtype, price, qty)
+                    self.io.print(
+                        f"  Bid posted for {qty}x {rtype.value} at "
+                        f"{bid.price_per_unit:.2f} {sym}/unit"
+                    )
+                    result.actions_taken.append(
+                        f"bid:{qty}x{rtype.value}@{bid.price_per_unit:.2f}"
+                    )
+                except Exception as e:
+                    self.io.print(f"  Bid {rtype_str} failed: {e}")
+        else:
+            if not offered and not self.io.confirm("No asks are available. Place a bid instead?"):
+                return
+            if not offered or self.io.confirm("Place a bid instead of buying from asks?"):
+                rtype = self.io.choose_resource("Bid for which resource?", list(ResourceType))
+                max_qty = 99
+                qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, max_qty)
+                ref_price = self.market.current_price(rtype)
+                price = self.io.ask_dollop_amount(
+                    f"Your bid price per unit (ref: {ref_price:.2f})?", player.dollops
+                )
+                try:
+                    bid = self.market.post_bid(player, rtype, price, qty)
+                    self.io.print(
+                        f"  Bid posted for {qty}x {rtype.value} at "
+                        f"{bid.price_per_unit:.2f} {sym}/unit"
+                    )
+                    result.actions_taken.append(
+                        f"bid:{qty}x{rtype.value}@{bid.price_per_unit:.2f}"
+                    )
+                except Exception as e:
+                    self.io.print(f"  Bid failed: {e}")
+                return
+            rtype = self.io.choose_resource(
+                "Buy which resource?",
+                [ResourceType(k) for k, v in summary.items()
+                 if v.get("ask_quantity", v.get("quantity", 0)) > 0],
+            )
+            offers = self.market.available_offers(rtype)
+            total_avail = sum(o.remaining for o in offers)
+            best = offers[0] if offers else None
+            if best:
+                self.io.print(
+                    f"  Best price: {best.price_per_unit:.2f} {sym}/unit  "
+                    f"({total_avail} available)"
+                )
+            qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, total_avail)
+            if self.io.confirm("Confirm buy?"):
+                try:
+                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    self.io.print(f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}")
+                    result.actions_taken.append(f"buy:{bought}x{rtype.value}")
+                except Exception as e:
+                    self.io.print(f"  Failed: {e}")
 
     def _action_market_sell(self, player: Player, result: TurnResult) -> None:
         sym = CURRENCY_SYMBOL
@@ -725,15 +904,38 @@ class TurnManager:
         rtype = self.io.choose_resource("Sell which resource?", list(has.keys()))
         max_qty = has[rtype]
         qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, max_qty)
-        quote = self.trading.get_quote(rtype, qty)
-        self.io.print(f"  You'll receive: {quote:.2f} {sym}")
-        if self.io.confirm("Confirm sell?"):
-            try:
-                earned = self.trading.market_sell(player, rtype, qty)
-                self.io.print(f"  Sold {qty}x {rtype.value} for {earned:.2f} {sym}")
-                result.actions_taken.append(f"sell:{qty}x{rtype.value}")
-            except Exception as e:
-                self.io.print(f"  Failed: {e}")
+        best_bid = self.market.best_bid(rtype)
+        if best_bid:
+            total_bid_qty = sum(b.remaining for b in self.market.available_bids(rtype))
+            self.io.print(
+                f"  Best bid: {best_bid.price_per_unit:.2f} {sym}/unit "
+                f"({total_bid_qty} wanted)"
+            )
+            if qty <= total_bid_qty and self.io.confirm("Sell immediately into bids?"):
+                try:
+                    paid, sold = self.market.sell_to_bids(player, rtype, qty, self.players)
+                    self.io.print(f"  Sold {sold}x {rtype.value} for {paid:.2f} {sym}")
+                    result.actions_taken.append(f"sell_bid:{sold}x{rtype.value}")
+                except Exception as e:
+                    self.io.print(f"  Failed: {e}")
+                return
+        ref_price = self.market.current_price(rtype)
+        self.io.print(f"  Reference price: {ref_price:.2f} {sym}/unit")
+        price = self.io.ask_dollop_amount(
+            f"Your asking price per unit (ref: {ref_price:.2f})?", ref_price * 5
+        )
+        if price <= 0:
+            self.io.print("  Cancelled — price must be positive.")
+            return
+        try:
+            offer = self.market.post_offer(player, rtype, price, qty)
+            self.io.print(
+                f"  Listed {qty}x {rtype.value} at {price:.2f} {sym}/unit "
+                f"(total {offer.total_cost:.2f} {sym})"
+            )
+            result.actions_taken.append(f"sell:{qty}x{rtype.value}@{price:.2f}")
+        except Exception as e:
+            self.io.print(f"  Failed: {e}")
 
     def _action_propose_deal(self, player: Player, result: TurnResult) -> None:
         sym = CURRENCY_SYMBOL
@@ -742,6 +944,9 @@ class TurnManager:
             self.io.print("  No other players to deal with.")
             return
         target = self.io.choose_player("Deal with which player?", others)
+        if target is None:
+            self.io.print("  Deal cancelled.")
+            return
         has = [r for r in ResourceType if player.inventory.get(r) > 0]
         offer_r = self.io.choose_resource("Offer which resource?", has) if has else None
         offer_qty = (
@@ -757,6 +962,12 @@ class TurnManager:
         sweetener = self.io.ask_dollop_amount(
             f"Dollop sweetener (positive=you pay, negative=you receive)?", player.dollops
         )
+        if not offer_r and not req_r and sweetener == 0:
+            self.io.print("  Deal cancelled — nothing offered or requested.")
+            return
+        if (offer_qty <= 0 and req_qty <= 0 and sweetener == 0):
+            self.io.print("  Deal cancelled — nothing offered or requested.")
+            return
         try:
             deal = self.trading.propose_deal(
                 player, target, offer_r, offer_qty, req_r, req_qty, sweetener
@@ -823,3 +1034,217 @@ class TurnManager:
             lines.append("  │")
         lines[-1] = "  └" + "─" * 56 + "┘"
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Loans
+    # ------------------------------------------------------------------
+
+    def _process_loan_repayments(self, year: int, season: int) -> None:
+        sym = CURRENCY_SYMBOL
+        player_map = {p.player_id: p for p in self.players}
+        due = self.loan_ledger.due_loans(year, season)
+        for loan in due:
+            borrower = player_map.get(loan.borrower_id)
+            lender = player_map.get(loan.lender_id)
+            if not borrower or not lender:
+                loan.status = LoanStatus.DEFAULTED
+                continue
+            amount = loan.repayment_amount
+            if borrower.dollops >= amount:
+                borrower.dollops -= amount
+                lender.dollops += amount
+                loan.status = LoanStatus.REPAID
+                self.io.print(
+                    f"\n[LOAN] {borrower.name} repaid {amount:.1f} {sym} to {lender.name} "
+                    f"(principal {loan.principal:.1f} + interest {loan.interest_amount:.1f})"
+                )
+            else:
+                paid = borrower.dollops
+                borrower.dollops = 0
+                lender.dollops += paid
+                loan.status = LoanStatus.DEFAULTED
+                shortfall = amount - paid
+                self.io.print(
+                    f"\n[LOAN DEFAULT] {borrower.name} could not repay {amount:.1f} {sym} "
+                    f"to {lender.name}. Paid {paid:.1f} {sym}, shortfall {shortfall:.1f} {sym}."
+                )
+
+    def _find_banker(self) -> Player | None:
+        for p in self.players:
+            if any(r.name == "Banker" for r in p.roles):
+                return p
+        return None
+
+    def _action_offer_loan(self, player: Player, result: TurnResult,
+                           year: int, season_index: int) -> None:
+        sym = CURRENCY_SYMBOL
+        if not any(r.name == "Banker" for r in player.roles):
+            self.io.print("  Only the Banker island can offer loans.")
+            return
+        others = [p for p in self.players if p.player_id != player.player_id]
+        if not others:
+            self.io.print("  No other players to lend to.")
+            return
+        target = self.io.choose_player("Offer loan to which player?", others)
+        principal = self.io.ask_dollop_amount(
+            f"Loan principal (max {player.dollops:.1f} {sym})?", player.dollops
+        )
+        if principal <= 0:
+            self.io.print("  Cancelled — principal must be positive.")
+            return
+        if principal > player.dollops:
+            self.io.print(f"  You only have {player.dollops:.1f} {sym} available.")
+            return
+        rate_pct = self.io.ask_dollop_amount("Interest rate %? (e.g. 10 for 10%)", 100)
+        if rate_pct < 0:
+            self.io.print("  Cancelled — rate must be non-negative.")
+            return
+        rate = rate_pct / 100.0
+        repay = round(principal * (1 + rate), 1)
+        self.io.print(
+            f"  Offering {principal:.1f} {sym} to {target.name} "
+            f"at {rate_pct:.0f}% — repayment {repay:.1f} {sym} after 1 year."
+        )
+        if target.is_human:
+            accepted = self.io.confirm(
+                f"{target.name}: accept loan of {principal:.1f} {sym} "
+                f"at {rate_pct:.0f}% (repay {repay:.1f} {sym})?"
+            )
+        else:
+            accepted = rate <= 0.15
+        if accepted:
+            loan = self.loan_ledger.create_loan(
+                borrower_id=target.player_id,
+                lender_id=player.player_id,
+                principal=principal,
+                interest_rate=rate,
+                issued_year=year,
+                issued_season=season_index,
+            )
+            player.dollops -= principal
+            target.dollops += principal
+            self.io.print(
+                f"  Loan #{loan.loan_id} issued. {target.name} received {principal:.1f} {sym}."
+            )
+            result.actions_taken.append(f"loan:offered:{principal:.1f}")
+        else:
+            self.io.print(f"  {target.name} declined the loan.")
+
+    def _action_take_loan(self, player: Player, result: TurnResult,
+                          year: int, season_index: int) -> None:
+        sym = CURRENCY_SYMBOL
+        banker = self._find_banker()
+        if not banker:
+            self.io.print("  No Banker island in the game.")
+            return
+        if banker.player_id == player.player_id:
+            self.io.print("  You are the Banker — use 'Offer Loan' instead.")
+            return
+        principal = self.io.ask_dollop_amount(
+            f"How much to borrow (Banker has {banker.dollops:.1f} {sym})?",
+            banker.dollops,
+        )
+        if principal <= 0:
+            self.io.print("  Cancelled.")
+            return
+        if principal > banker.dollops:
+            self.io.print(f"  Banker only has {banker.dollops:.1f} {sym} available.")
+            return
+        if banker.is_human:
+            rate_pct = self.io.ask_dollop_amount(
+                f"Banker: set interest rate % for {player.name}'s loan of {principal:.1f} {sym}?",
+                100
+            )
+            if rate_pct < 0:
+                self.io.print("  Banker declined.")
+                return
+            accepted = True
+        else:
+            rate_pct = 10.0
+            accepted = True
+            self.io.print(f"  Banker AI offers {rate_pct:.0f}% interest.")
+        rate = rate_pct / 100.0
+        repay = round(principal * (1 + rate), 1)
+        confirm = self.io.confirm(
+            f"Borrow {principal:.1f} {sym} at {rate_pct:.0f}%? "
+            f"(repay {repay:.1f} {sym} in 1 year)"
+        )
+        if not confirm:
+            self.io.print("  Cancelled.")
+            return
+        loan = self.loan_ledger.create_loan(
+            borrower_id=player.player_id,
+            lender_id=banker.player_id,
+            principal=principal,
+            interest_rate=rate,
+            issued_year=year,
+            issued_season=season_index,
+        )
+        banker.dollops -= principal
+        player.dollops += principal
+        self.io.print(
+            f"  Loan #{loan.loan_id}: borrowed {principal:.1f} {sym} from {banker.name} "
+            f"at {rate_pct:.0f}% (repay {repay:.1f} {sym} by "
+            f"Y{loan.maturity_year+1} S{loan.maturity_season+1})."
+        )
+        result.actions_taken.append(f"loan:taken:{principal:.1f}")
+
+    def _action_apply_patent(self, player: Player, result: TurnResult) -> None:
+        """Activate a Patent on one of the player's outputs.
+
+        Each Patent reduces input cost by 20% on the chosen output. Cap of 3
+        active patents per output.
+        """
+        if player.inventory.get(ResourceType.PATENTS) <= 0:
+            self.io.print("  No Patents in inventory — buy one from the Educator.")
+            return
+        produced = player.all_produced_resources()
+        produced = [r for r in produced if r != ResourceType.PATENTS]
+        if not produced:
+            self.io.print("  Your roles don't produce anything that benefits from a Patent.")
+            return
+        target = self.io.choose_resource(
+            "Apply Patent to which output?", produced
+        )
+        if target is None:
+            return
+        already = player.active_patent_count(target.value)
+        if already >= player.PATENT_MAX_PER_OUTPUT:
+            self.io.print(
+                f"  Cap reached: {target.value} already has {already}/"
+                f"{player.PATENT_MAX_PER_OUTPUT} active patents."
+            )
+            return
+        ok = player.apply_patent(target.value)
+        if ok:
+            mult = player.patent_input_multiplier(target.value)
+            reduction = round((1 - mult) * 100)
+            self.io.print(
+                f"  Patent activated on {target.value} — input cost now "
+                f"{round(mult * 100)}% (–{reduction}%)."
+            )
+            result.actions_taken.append(f"apply_patent:{target.value}")
+        else:
+            self.io.print("  Could not activate patent.")
+
+    def _action_view_loans(self, player: Player) -> None:
+        sym = CURRENCY_SYMBOL
+        player_map = {p.player_id: p for p in self.players}
+        loans = self.loan_ledger.active_loans_for(player.player_id)
+        if not loans:
+            self.io.print("  No outstanding loans.")
+            return
+        self.io.print("\n  Outstanding Loans:")
+        for loan in loans:
+            borrower = player_map.get(loan.borrower_id)
+            lender = player_map.get(loan.lender_id)
+            b_name = borrower.name if borrower else "?"
+            l_name = lender.name if lender else "?"
+            role = "Borrower" if loan.borrower_id == player.player_id else "Lender"
+            self.io.print(
+                f"    #{loan.loan_id} [{role}] "
+                f"{b_name} ← {loan.principal:.1f} {sym} from {l_name} "
+                f"at {loan.interest_rate*100:.0f}% "
+                f"(repay {loan.repayment_amount:.1f} {sym} "
+                f"Y{loan.maturity_year+1} S{loan.maturity_season+1})"
+            )

@@ -48,6 +48,11 @@ def test_propose_deal_insufficient_offer_raises(engine, farmer, banker):
         engine.propose_deal(farmer, banker, ResourceType.FOOD, 10, ResourceType.CAPITAL_EQUIPMENT, 1)
 
 
+def test_propose_empty_deal_raises(engine, farmer, banker):
+    with pytest.raises(InvalidDealError):
+        engine.propose_deal(farmer, banker, None, 0, None, 0)
+
+
 def test_accept_deal_transfers_atomically(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 3)
     banker.receive_resources(ResourceType.CAPITAL_EQUIPMENT, 2)

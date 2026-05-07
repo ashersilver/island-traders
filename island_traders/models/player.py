@@ -34,6 +34,88 @@ class Player:
     # Grows each year via year_end_births().  New people are NOT automatic
     # workers — players must recruit them via the Recruit action.
     population: int = 100
+    # Capital equipment owned by this player, keyed by CapitalItem.item_id.
+    # Populated during the Investing Phase and via mid-game purchases.
+    # See `island_traders.constants_capacity.CAPITAL_CATALOGUE`.
+    capital_inventory: dict[str, int] = field(default_factory=dict)
+    # Capital items purchased mid-game that are still in transit.
+    # Each entry: {"item_id": str, "arrives_at_tick": int (year*4 + season_index)}.
+    capital_in_transit: list[dict] = field(default_factory=list)
+    # Active patents this player has bought, keyed by output resource name.
+    # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
+    # Per requirements: max 3 active patents per output, –20% input cost each.
+    active_patents: dict[str, list[dict]] = field(default_factory=dict)
+
+    def add_capital(self, item_id: str, count: int = 1) -> None:
+        """Add `count` of a capital item to the inventory (e.g. on delivery)."""
+        self.capital_inventory[item_id] = self.capital_inventory.get(item_id, 0) + count
+
+    def remove_capital(self, item_id: str, count: int = 1) -> int:
+        """Remove up to `count` of a capital item (e.g. destroyed by event).
+        Returns the actual count removed."""
+        have = self.capital_inventory.get(item_id, 0)
+        n = min(have, count)
+        if n > 0:
+            self.capital_inventory[item_id] = have - n
+            if self.capital_inventory[item_id] == 0:
+                del self.capital_inventory[item_id]
+        return n
+
+    def capital_count(self, item_id: str) -> int:
+        return self.capital_inventory.get(item_id, 0)
+
+    def deliver_in_transit(self, current_tick: int) -> list[str]:
+        """Move items whose arrival tick has passed into capital_inventory.
+        Returns the list of delivered item_ids (for UI / log purposes)."""
+        delivered: list[str] = []
+        remaining: list[dict] = []
+        for entry in self.capital_in_transit:
+            if entry["arrives_at_tick"] <= current_tick:
+                self.add_capital(entry["item_id"], 1)
+                delivered.append(entry["item_id"])
+            else:
+                remaining.append(entry)
+        self.capital_in_transit = remaining
+        return delivered
+
+    # ------------------------------------------------------------------ Patents
+
+    PATENT_BOOST_PER_PATENT: float = 0.20    # 20 % input cost reduction
+    PATENT_MAX_PER_OUTPUT:   int   = 3       # cap stack at 3
+
+    def apply_patent(self, output_name: str) -> bool:
+        """Consume 1 Patent from inventory and activate it on `output_name`.
+
+        Returns True on success.  Returns False if no Patent in inventory or
+        the per-output cap is reached.
+        """
+        from .resource import ResourceType
+        if self.active_patent_count(output_name) >= self.PATENT_MAX_PER_OUTPUT:
+            return False
+        try:
+            self.inventory = self.inventory.subtract(ResourceType.PATENTS, 1)
+        except Exception:
+            return False
+        active = self.active_patents.setdefault(output_name, [])
+        active.append({
+            "patent_id": f"p{len(active) + 1}",
+            "boost":     self.PATENT_BOOST_PER_PATENT,
+        })
+        return True
+
+    def active_patent_count(self, output_name: str) -> int:
+        return len(self.active_patents.get(output_name, []))
+
+    def patent_input_multiplier(self, output_name: str) -> float:
+        """Aggregate input-cost multiplier for an output.
+
+        Each active patent contributes a (1 - PATENT_BOOST_PER_PATENT) factor.
+        Capped at PATENT_MAX_PER_OUTPUT — so the floor is (1 - 3 * 0.2) = 0.4
+        (60 % reduction).  Multiplicative: 0 / 0.8 / 0.64 / 0.512 if multiplied,
+        but the spec calls for additive 20 % each, so we use (1 - n * 0.2).
+        """
+        n = min(self.active_patent_count(output_name), self.PATENT_MAX_PER_OUTPUT)
+        return max(0.4, 1.0 - n * self.PATENT_BOOST_PER_PATENT)
 
     @property
     def available_unskilled(self) -> int:
@@ -113,11 +195,17 @@ class Player:
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
 
-    def total_wealth(self, prices: dict[ResourceType, float]) -> float:
-        return self.dollops + self.inventory.total_value(prices)
+    def total_wealth(self, prices: dict[ResourceType, float],
+                     loan_ledger=None) -> float:
+        assets = self.dollops + self.inventory.total_value(prices)
+        if loan_ledger:
+            assets -= loan_ledger.outstanding_debt(self.player_id)
+            assets += loan_ledger.loans_receivable(self.player_id)
+        return assets
 
-    def record_year_wealth(self, prices: dict[ResourceType, float]) -> None:
-        self.wealth_history.append(self.total_wealth(prices))
+    def record_year_wealth(self, prices: dict[ResourceType, float],
+                           loan_ledger=None) -> None:
+        self.wealth_history.append(self.total_wealth(prices, loan_ledger))
 
     def role_names(self) -> str:
         return ", ".join(r.name for r in self.roles)
