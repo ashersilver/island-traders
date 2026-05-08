@@ -1538,6 +1538,9 @@ def create_app() -> FastAPI:
                 state = manager.get_game_state(room_id, player_id)
                 if state:
                     await websocket.send_text(json.dumps(state))
+                engine_pid = room.lobby_to_engine_id.get(player_id)
+                if room.io_adapter and engine_pid is not None:
+                    room.io_adapter.replay_pending_prompt(engine_pid)
 
             while True:
                 raw = await websocket.receive_text()

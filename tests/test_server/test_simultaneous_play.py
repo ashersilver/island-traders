@@ -52,6 +52,35 @@ def test_per_player_events_are_independent():
     assert results.get(1) == "b"
 
 
+def test_pending_prompt_can_be_replayed_after_reconnect():
+    sent: list[tuple[int, dict]] = []
+    io = WebSocketIOAdapter(
+        "g1b",
+        broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sent.append((0, m))},
+    )
+    io.begin_season()
+
+    result = {}
+
+    def waiter():
+        io.set_active_player(0)
+        result["value"] = io._send_and_wait({"type": "choose_action"}, timeout=2)
+
+    t = threading.Thread(target=waiter, daemon=True)
+    t.start()
+    time.sleep(0.1)
+
+    assert io.replay_pending_prompt(0) is True
+    assert [m["type"] for _, m in sent] == ["choose_action", "choose_action"]
+    assert sent[-1][1]["replayed"] is True
+
+    io.receive_response(0, "end_turn")
+    t.join(timeout=1)
+    assert result["value"] == "end_turn"
+    assert io.replay_pending_prompt(0) is False
+
+
 def test_interrupt_all_unblocks_every_pending_prompt():
     """Season-timer expiry must unblock all waiting threads with None."""
     io = WebSocketIOAdapter(

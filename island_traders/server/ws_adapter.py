@@ -43,6 +43,7 @@ class WebSocketIOAdapter(IOAdapter):
         self._player_events: dict[int, threading.Event] = {}
         self._player_responses: dict[int, object] = {}
         self._player_locks: dict[int, threading.Lock] = {}
+        self._player_pending_msgs: dict[int, dict] = {}
         # Per-player "ready/end turn" flag — when set, the next choose_action
         # for that player returns END_TURN immediately (used by the Ready
         # button to short-circuit any further prompts even if the user is
@@ -106,6 +107,7 @@ class WebSocketIOAdapter(IOAdapter):
         for pid, ev in list(self._player_events.items()):
             with self._player_locks[pid]:
                 self._player_responses[pid] = None
+                self._player_pending_msgs.pop(pid, None)
                 ev.set()
 
     # ---- core send/wait ----
@@ -130,12 +132,15 @@ class WebSocketIOAdapter(IOAdapter):
             self._player_responses[pid] = None
 
         msg.setdefault("player_id", pid)
+        with self._player_locks[pid]:
+            self._player_pending_msgs[pid] = dict(msg)
         self._send_to(pid, msg)
 
         self._player_events[pid].wait(timeout=timeout)
         with self._player_locks[pid]:
             value = self._player_responses[pid]
             self._player_responses[pid] = None
+            self._player_pending_msgs.pop(pid, None)
 
         if self.on_action_complete and msg.get("type") != "choose_action":
             try:
@@ -151,7 +156,20 @@ class WebSocketIOAdapter(IOAdapter):
         self._ensure_player(player_id)
         with self._player_locks[player_id]:
             self._player_responses[player_id] = value
+            self._player_pending_msgs.pop(player_id, None)
             self._player_events[player_id].set()
+
+    def replay_pending_prompt(self, player_id: int) -> bool:
+        """Re-send the current unresolved prompt after a client reconnects."""
+        self._ensure_player(player_id)
+        with self._player_locks[player_id]:
+            msg = self._player_pending_msgs.get(player_id)
+            if not msg:
+                return False
+            replay = dict(msg)
+            replay["replayed"] = True
+        self._send_to(player_id, replay)
+        return True
 
     # ---- IOAdapter interface ----
 
