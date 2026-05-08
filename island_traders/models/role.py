@@ -37,7 +37,7 @@ ROLES: dict[str, Role] = {
     "Educator": Role(
         name="Educator",
         island="Education & Training Island",
-        produces=(ResourceType.KNOWLEDGE,),
+        produces=(ResourceType.KNOWLEDGE, ResourceType.PATENTS),
         needs=(ResourceType.CAPITAL_EQUIPMENT, ResourceType.FINANCE),
         description="Trains the workforce and advances knowledge across the archipelago.",
     ),

@@ -117,7 +117,6 @@ button:active{transform:scale(.97)}
 .room-code-box .copy-hint{color:var(--dim);font-size:.75rem}
 
 /* ── AUCTION ── */
-#screen-auction{display:none}
 .auction-wrap{max-width:900px;margin:0 auto;padding:1.5rem 1rem}
 .auction-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem;flex-wrap:wrap;gap:.5rem}
 .auction-header h1{font-size:1.2rem;color:var(--heading)}
@@ -127,6 +126,12 @@ button:active{transform:scale(.97)}
 }
 .timer-box .timer-val{font-size:1.3rem;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;min-width:2.5ch;text-align:right}
 .timer-box .timer-lbl{color:var(--dim);font-size:.78rem}
+.timer-box.flash{animation:timer-flash 1s ease-in-out infinite}
+.timer-box.flash .timer-val{color:#ff6b6b}
+@keyframes timer-flash{0%,100%{background:var(--panel)}50%{background:rgba(255,107,107,.18)}}
+#ready-btn.is-ready{background:var(--accent);color:#fff}
+.player-ready-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--dim);margin-right:.35rem;vertical-align:middle}
+.player-ready-dot.ready{background:#88ddaa}
 .budget-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
 .budget-bar .budget-label{color:var(--dim);font-size:.82rem}
 .budget-bar .budget-val{color:var(--gold);font-weight:700;font-size:1rem}
@@ -169,7 +174,7 @@ button:active{transform:scale(.97)}
 .bid-msg{color:var(--green);font-size:.8rem;margin-top:.4rem;min-height:1.2em}
 
 /* ── GAME DASHBOARD ── */
-#screen-game{display:none;height:100vh;width:100vw;overflow:hidden}
+#screen-game{height:100vh;width:100vw;overflow:hidden}
 .game-grid{
   display:grid;height:100vh;
   grid-template-columns:280px 1fr 300px;
@@ -195,7 +200,13 @@ button:active{transform:scale(.97)}
   gap:.5rem;min-height:48px;
 }
 .g-hdr .title{font-size:1rem;font-weight:700;color:var(--gold);white-space:nowrap}
-.g-hdr .season{font-size:.82rem;color:var(--accent)}
+.season-badge{
+  display:flex;align-items:center;gap:.5rem;
+  background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);
+  padding:.3rem .9rem;
+}
+.season-badge .season-year{font-size:.85rem;font-weight:700;color:var(--heading)}
+.season-badge .season-name{font-size:.85rem;font-weight:700;color:var(--accent)}
 .g-hdr .wealth{color:var(--gold);font-weight:700;font-size:.9rem}
 
 /* tabs */
@@ -236,6 +247,13 @@ button:active{transform:scale(.97)}
 .mkt-row .res{color:var(--text)}
 .mkt-row .price{color:var(--gold);font-weight:600}
 .mkt-row .supply{color:var(--dim);font-size:.72rem}
+.market-mini{width:100%;border-collapse:collapse;font-size:.72rem;table-layout:fixed}
+.market-mini th{color:var(--dim);font-weight:500;text-align:right;padding:.14rem .1rem;border-bottom:1px solid var(--border)}
+.market-mini th:first-child,.market-mini td:first-child{text-align:left}
+.market-mini td{text-align:right;padding:.16rem .1rem;border-bottom:1px solid #0a1220;white-space:nowrap}
+.market-mini .bid{color:var(--green);font-weight:600}
+.market-mini .ask{color:var(--gold);font-weight:600}
+.icon-btn{background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:4px;min-width:1.45rem;height:1.35rem;padding:0;font-size:.85rem}
 
 .comp-table{width:100%;border-collapse:collapse;font-size:.79rem}
 .comp-table th{color:var(--dim);font-weight:500;padding:.25rem .35rem;border-bottom:1px solid var(--border);text-align:left}
@@ -261,7 +279,7 @@ button:active{transform:scale(.97)}
 .overlay.active{display:flex}
 .dialog{
   background:var(--panel);border:1px solid var(--accent);border-radius:10px;
-  padding:1.5rem;min-width:300px;max-width:90vw;
+  padding:1.5rem;min-width:300px;max-width:90vw;max-height:90vh;overflow:auto;
 }
 .dialog h3{color:var(--heading);margin-bottom:1rem;font-size:1rem}
 .dialog .opts{display:flex;flex-direction:column;gap:.3rem}
@@ -361,6 +379,44 @@ button:active{transform:scale(.97)}
         <label class="toggle"><input type="checkbox" id="c-allhuman"><span class="toggle-slider"></span></label>
       </div>
     </div>
+    <div class="card">
+      <h2>Economy &amp; Timers</h2>
+      <div class="form-row">
+        <label title="Dollops each player starts the game with (after auction bids and investing spend)">Starting Capital (Dp)</label>
+        <input id="c-capital" type="number" value="700" min="100" max="99999" step="100" style="width:6rem"/>
+      </div>
+      <div class="form-row">
+        <label title="How long the role auction lasts">Auction Timer (sec)</label>
+        <select id="c-auction-timer">
+          <option value="30">30 s</option>
+          <option value="60" selected>60 s</option>
+          <option value="120">2 min</option>
+          <option value="180">3 min</option>
+          <option value="300">5 min</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label title="Per-season time limit. 0 = no timer (Ready button only)">Season Timer (sec)</label>
+        <select id="c-season-timer">
+          <option value="0">None (Ready only)</option>
+          <option value="60">60 s</option>
+          <option value="120" selected>2 min</option>
+          <option value="180">3 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label title="Pre-season window where players review the market before acting. 0 = skip">Pre-Season Window (sec)</label>
+        <select id="c-preseason-timer">
+          <option value="0">None (skip)</option>
+          <option value="15">15 s</option>
+          <option value="30" selected>30 s</option>
+          <option value="60">60 s</option>
+          <option value="120">2 min</option>
+        </select>
+      </div>
+    </div>
     <button class="btn-gold" style="width:100%;padding:.75rem" onclick="createRoom()">Create Room →</button>
   </div>
 </div>
@@ -435,7 +491,7 @@ button:active{transform:scale(.97)}
     <div class="auction-header">
       <div>
         <h1>Role Auction</h1>
-        <div style="color:var(--dim);font-size:.82rem;margin-top:.2rem">Bid for your island. Highest bid wins. One role per player.</div>
+        <div style="color:var(--dim);font-size:.82rem;margin-top:.2rem">Bid for one or more islands. Highest bid wins each role independently — you can hold multiple if you outbid the others.</div>
       </div>
       <div class="timer-box">
         <div class="timer-lbl">Time left</div>
@@ -460,26 +516,73 @@ button:active{transform:scale(.97)}
       <div class="bid-actions">
         <button class="btn-primary" onclick="submitBid()">Place Bid</button>
         <button class="btn-ghost" onclick="withdrawBid()">Withdraw Bid</button>
-        <button class="btn-ghost btn-sm" onclick="closeBidPanel()" style="margin-left:auto">Close</button>
+        <button class="btn-ghost btn-sm" onclick="closeBidPanel()" style="margin-left:auto">Cancel</button>
       </div>
       <div class="bid-msg" id="bid-msg"></div>
     </div>
     <div id="auction-result-overlay" class="hidden" style="margin-top:1rem;background:var(--panel);border:1px solid var(--green);border-radius:var(--radius);padding:1.2rem">
       <h2 style="color:var(--green);margin-bottom:.8rem">Auction Complete!</h2>
       <div id="auction-result-content"></div>
-      <div style="margin-top:.8rem;color:var(--dim);font-size:.82rem">Game starting in <span id="result-countdown">5</span>s…</div>
+      <button class="btn-gold" style="margin-top:1rem;font-size:1rem;padding:.7rem 2.4rem;border-radius:50px" onclick="continueToGame()">Continue →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== INVESTING PHASE ===================== -->
+<div id="screen-investing" class="hidden">
+  <div class="auction-wrap">
+    <div class="auction-header">
+      <div>
+        <h1>Investing Phase</h1>
+        <div style="color:var(--dim);font-size:.82rem;margin-top:.2rem">
+          Buy capital equipment to set up your production capacity.
+          Items marked <em>2-season delivery</em> arrive in the future when bought mid-game; here in the
+          Investing Phase they're available immediately.
+        </div>
+      </div>
+      <div class="timer-box">
+        <div class="timer-lbl">Time left</div>
+        <div class="timer-val" id="invest-timer-val">180</div>
+        <div class="timer-lbl">s</div>
+      </div>
+    </div>
+    <div class="budget-bar">
+      <div class="budget-label">Your budget:</div>
+      <div class="budget-val" id="invest-budget-display">— Dp</div>
+      <div class="budget-label">Spent:</div>
+      <div class="budget-val" id="invest-spent-display">0 Dp</div>
+      <div class="budget-label">Remaining:</div>
+      <div class="budget-val" id="invest-remaining-display">— Dp</div>
+    </div>
+    <div id="invest-warning" class="hidden" style="background:#3a1d1d;color:#ff8a8a;padding:.5rem .8rem;border-radius:var(--radius);margin:.6rem 0;font-size:.85rem"></div>
+    <div id="invest-roles" style="display:flex;flex-direction:column;gap:1rem;margin-top:.8rem"></div>
+    <div style="display:flex;gap:.8rem;margin-top:1.2rem;align-items:center">
+      <button class="btn-gold" id="invest-submit-btn" style="font-size:1rem;padding:.7rem 2.4rem;border-radius:50px" onclick="submitInvestment(true)">Ready — Lock In</button>
+      <button class="btn-ghost" onclick="submitInvestment(false)">Save Draft</button>
+      <span id="invest-status" style="color:var(--dim);font-size:.82rem;margin-left:auto"></span>
     </div>
   </div>
 </div>
 
 <!-- ===================== GAME DASHBOARD ===================== -->
-<div id="screen-game">
+<div id="screen-game" class="hidden">
   <div class="game-grid">
     <div class="g-hdr">
       <span class="title">⚓ Island Traders</span>
+      <div class="season-badge" id="season-badge">
+        <span class="season-year" id="hdr-year">Year 1</span>
+        <span class="season-name" id="hdr-season">Spring</span>
+      </div>
       <div class="island-tabs" id="island-tabs"><!-- tabs injected --></div>
       <div style="display:flex;align-items:center;gap:.6rem">
-        <span class="season" id="season-display">—</span>
+        <div id="season-timer-box" class="timer-box hidden" title="Season timer — turn ends when this hits 0 or every player is Ready">
+          <span class="timer-lbl">Season</span>
+          <span class="timer-val" id="season-timer-val">—</span>
+        </div>
+        <button id="ready-btn" class="btn-gold btn-sm hidden"
+                onclick="toggleReady()" title="Click when you've finished your actions this season">
+          <span id="ready-btn-label">Ready ✓</span>
+        </button>
         <span class="wealth" id="hdr-wealth">—</span>
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
       </div>
@@ -501,6 +604,15 @@ button:active{transform:scale(.97)}
       <div class="section">
         <h3>Inventory</h3>
         <div id="s-inventory">—</div>
+      </div>
+      <div class="section">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Production Capacity
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showConstraintPopup()" title="Show production constraints">⚠</button>
+        </h3>
+        <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
+        <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
       <div class="section">
         <h3>Insurance</h3>
@@ -525,8 +637,11 @@ button:active{transform:scale(.97)}
 
     <div class="g-info">
       <div class="section">
-        <h3>Market Prices</h3>
-        <div id="market-panel">—</div>
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>Market</span>
+          <button class="icon-btn" title="Open market board" onclick="showMarketBoardPopup()">⌕</button>
+        </h3>
+        <div id="market-panel" onclick="showMarketBoardPopup()" style="cursor:pointer">—</div>
       </div>
     </div>
 
@@ -544,7 +659,13 @@ button:active{transform:scale(.97)}
 
 <script>
 // ==================== STATE ====================
-const API = window.location.origin;
+const SERVER_ORIGIN = window.location.protocol === 'file:'
+  ? 'http://127.0.0.1:8001'
+  : window.location.origin;
+const WS_ORIGIN = window.location.protocol === 'file:'
+  ? 'ws://127.0.0.1:8001'
+  : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+const API = SERVER_ORIGIN;
 let ws = null;
 let myPlayerId = null;
 let myPlayerIdx = null;
@@ -559,6 +680,29 @@ let myBids = {};  // role -> amount
 let timerInterval = null;
 let auctionTimerEnd = 0;
 let activeTabRole = null;
+let builtTabsForRoles = null; // serialised role list used to build the current tab bar
+// Simultaneous-play state
+let seasonTimerEnd = 0;       // Date.now() ms; 0 = no active season timer
+let seasonTimerInterval = null;
+let seasonReadySet = new Set();    // lobby player ids that clicked Ready
+let seasonDoneSet = new Set();     // lobby player ids whose turn thread finished
+let seasonActiveHumans = new Set();// lobby player ids of active humans this season
+let imReady = false;
+
+const ROLE_ISLAND_NAMES = {
+  'Farmer':       'Agriculture, Fisheries & Foods',
+  'Miner':        'Mining & Oil',
+  'Transporter':  'Transportation & Shipping',
+  'Educator':     'Education & Training',
+  'Banker':       'Banking',
+  'Manufacturer': 'Manufacturing',
+  'Doctor':       'Healthcare',
+};
+// Investing Phase state
+let investData = null;          // { budget, roles, catalogue:[], mandatory:[], selections:[] }
+let investSelected = new Set(); // currently checked item_ids
+let investTimerEnd = 0;
+let investTimerInterval = null;
 
 const ROLE_COLORS = {
   Farmer:'#27ae60', Miner:'#e67e22', Transporter:'#3498db',
@@ -571,11 +715,17 @@ const AVATAR_LETTERS = {
 
 // ==================== NAVIGATION ====================
 function showScreen(name) {
-  ['landing','create','join','waiting','auction','game'].forEach(s => {
+  ['landing','create','join','waiting','auction','investing','game'].forEach(s => {
     const el = document.getElementById('screen-' + s);
     if (el) el.classList.toggle('hidden', s !== name);
   });
   if (name === 'join') refreshPublicRooms();
+  // Reset tab state whenever we (re)enter the game screen so tabs rebuild fresh
+  if (name === 'game') {
+    builtTabsForRoles = null;
+    activeTabRole = null;
+    document.getElementById('island-tabs').innerHTML = '';
+  }
 }
 
 // ==================== CREATE ROOM ====================
@@ -586,13 +736,25 @@ async function createRoom() {
   const numYears = +v('c-years');
   const isPublic = document.getElementById('c-public').checked;
   const requireAllHuman = document.getElementById('c-allhuman').checked;
+  const startingCapital = +(v('c-capital') || 700);
+  const auctionTimer = +(v('c-auction-timer') || 60);
+  const seasonTimer = +(v('c-season-timer') || 120);
+  const preSeasonTimer = +(v('c-preseason-timer') || 30);
 
-  const room = await apiFetch('/api/rooms', 'POST', {
-    name: roomName, max_players: maxPlayers, num_years: numYears,
-    creator_name: name, is_public: isPublic, require_all_human: requireAllHuman,
-  });
-  myPlayerId = room.players[0].player_id;
-  enterWaiting(room);
+  try {
+    const room = await apiFetch('/api/rooms', 'POST', {
+      name: roomName, max_players: maxPlayers, num_years: numYears,
+      creator_name: name, is_public: isPublic, require_all_human: requireAllHuman,
+      starting_capital: startingCapital,
+      auction_timer_seconds: auctionTimer,
+      season_timer_seconds: seasonTimer,
+      pre_season_timer_seconds: preSeasonTimer,
+    });
+    myPlayerId = room.players[0].player_id;
+    enterWaiting(room);
+  } catch(e) {
+    alert(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`);
+  }
 }
 
 // ==================== JOIN ROOM ====================
@@ -694,19 +856,23 @@ function copyCode() {
 }
 
 async function addAI() {
-  const aiNames = ['Atlas','Calypso','Iris','Helios','Poseidon','Artemis','Zephyr'];
-  const room = await apiFetch(`/api/rooms/${currentRoomId}`);
-  const idx = room.players.length % aiNames.length;
-  await apiFetch(`/api/rooms/${currentRoomId}/ai`, 'POST', {name: aiNames[idx] + ' AI'});
-  const updated = await apiFetch(`/api/rooms/${currentRoomId}`);
-  renderWaitingRoom(updated);
+  try {
+    const aiNames = ['Atlas','Calypso','Iris','Helios','Poseidon','Artemis','Zephyr'];
+    const room = await apiFetch(`/api/rooms/${currentRoomId}`);
+    const idx = room.players.length % aiNames.length;
+    await apiFetch(`/api/rooms/${currentRoomId}/ai`, 'POST', {name: aiNames[idx] + ' AI'});
+    const updated = await apiFetch(`/api/rooms/${currentRoomId}`);
+    renderWaitingRoom(updated);
+  } catch(e) {
+    alert('Failed to add AI player: ' + e.message);
+  }
 }
 
 async function startAuction() {
   try {
     await apiFetch(`/api/rooms/${currentRoomId}/auction/start`, 'POST');
   } catch(e) {
-    alert('Cannot start auction yet. You need at least 1 player.');
+    alert('Cannot start auction: ' + e.message);
   }
 }
 
@@ -862,20 +1028,301 @@ function showAuctionResult(msg) {
   html += '</div>';
   document.getElementById('auction-result-content').innerHTML = html;
 
-  let countdown = 5;
-  const cdEl = document.getElementById('result-countdown');
-  const cdInt = setInterval(() => {
-    countdown--;
-    if (cdEl) cdEl.textContent = countdown;
-    if (countdown <= 0) clearInterval(cdInt);
-  }, 1000);
+}
+
+function continueToGame() {
+  // If we're already in the Investing Phase, switch to that screen and wait
+  // for the per-player investing_start payload (it may have arrived already).
+  if (investData) {
+    showScreen('investing');
+    renderInvesting();
+    return;
+  }
+  if (gameState) {
+    renderGameState();
+    showScreen('game');
+    buildIslandMap();
+    return;
+  }
+  // Otherwise, wait briefly — server may be a beat behind.
+  requestState();
+  setTimeout(continueToGame, 500);
+}
+
+// ==================== INVESTING PHASE ====================
+
+function renderInvesting() {
+  if (!investData) return;
+  document.getElementById('invest-budget-display').textContent =
+    `${investData.budget.toFixed(1)} Dp`;
+  const rolesDiv = document.getElementById('invest-roles');
+  rolesDiv.innerHTML = '';
+
+  // Group catalogue items by role
+  const byRole = {};
+  for (const it of investData.catalogue) {
+    (byRole[it.role] = byRole[it.role] || []).push(it);
+  }
+  const mandatorySet = new Set(investData.mandatory || []);
+
+  for (const role of investData.roles) {
+    const items = byRole[role] || [];
+    const wrap = document.createElement('div');
+    wrap.style = 'background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1rem';
+    wrap.innerHTML = `<h3 style="margin:0 0 .6rem 0;color:var(--gold)">${esc(role)} Island — Capital Catalogue</h3>`;
+    const tbl = document.createElement('table');
+    tbl.style = 'width:100%;font-size:.88rem';
+    tbl.innerHTML = `<thead><tr style="text-align:left;color:var(--dim)">
+        <th style="padding:.3rem .4rem">Buy?</th>
+        <th style="padding:.3rem .4rem">Item</th>
+        <th style="padding:.3rem .4rem">Cost</th>
+        <th style="padding:.3rem .4rem">Delivery</th>
+        <th style="padding:.3rem .4rem">Effect</th>
+      </tr></thead><tbody></tbody>`;
+    const tbody = tbl.querySelector('tbody');
+    for (const it of items) {
+      const tr = document.createElement('tr');
+      tr.style = 'border-top:1px solid var(--border)';
+      const checked = investSelected.has(it.item_id) ? 'checked' : '';
+      const isMandatory = mandatorySet.has(it.item_id);
+      const mandTag = isMandatory ? '<span style="color:var(--gold);font-size:.7rem;margin-left:.4rem">★ default</span>' : '';
+      const deliv = it.delivery_seasons > 0 ? `${it.delivery_seasons} seasons` : 'immediate';
+      tr.innerHTML = `
+        <td style="padding:.4rem"><input type="checkbox" data-item="${esc(it.item_id)}" data-cost="${it.cost}" ${checked}></td>
+        <td style="padding:.4rem"><strong>${esc(it.name)}</strong>${mandTag}</td>
+        <td style="padding:.4rem">${it.cost.toFixed(0)} Dp</td>
+        <td style="padding:.4rem">${deliv}</td>
+        <td style="padding:.4rem;color:var(--dim)">${esc(it.description || '')}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    wrap.appendChild(tbl);
+    rolesDiv.appendChild(wrap);
+  }
+
+  // Wire up checkbox handlers + recompute totals
+  rolesDiv.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.item;
+      if (cb.checked) investSelected.add(id);
+      else investSelected.delete(id);
+      updateInvestingTotals();
+    });
+  });
+  updateInvestingTotals();
+}
+
+function updateInvestingTotals() {
+  if (!investData) return;
+  let spent = 0;
+  for (const it of investData.catalogue) {
+    if (investSelected.has(it.item_id)) spent += it.cost;
+  }
+  const remaining = investData.budget - spent;
+  document.getElementById('invest-spent-display').textContent = `${spent.toFixed(1)} Dp`;
+  document.getElementById('invest-remaining-display').textContent = `${remaining.toFixed(1)} Dp`;
+
+  const warn = document.getElementById('invest-warning');
+  const submitBtn = document.getElementById('invest-submit-btn');
+  if (remaining < 0) {
+    warn.classList.remove('hidden');
+    warn.textContent = `Over budget by ${(-remaining).toFixed(1)} Dp — deselect items before locking in.`;
+    submitBtn.disabled = true;
+  } else if (investSelected.size === 0) {
+    warn.classList.remove('hidden');
+    warn.textContent = `Warning: with no investments you cannot produce anything in Year 1.`;
+    submitBtn.disabled = false;
+  } else {
+    warn.classList.add('hidden');
+    submitBtn.disabled = false;
+  }
+}
+
+function submitInvestment(ready) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({
+    type: 'investment_submit',
+    item_ids: Array.from(investSelected),
+    ready: !!ready,
+  }));
+  if (ready) {
+    document.getElementById('invest-status').textContent =
+      'Locked in — waiting for other players…';
+    document.getElementById('invest-submit-btn').disabled = true;
+  } else {
+    document.getElementById('invest-status').textContent = 'Draft saved.';
+  }
+}
+
+// ==================== PRODUCTION CAPACITY PANEL ====================
+// Return a capacity object filtered to a single role's outputs + capital.
+// When role is null / 'ALL', returns the original unfiltered object.
+function filteredCapacity(capacity, role) {
+  if (!capacity || !role || role === 'ALL') return capacity;
+  return {
+    outputs:            (capacity.outputs || []).filter(o => o.role === role),
+    capital_owned:      (capacity.capital_owned || []).filter(o => o.role === role),
+    capital_in_transit: (capacity.capital_in_transit || []).filter(o => o.role === role),
+    band_counts:        capacity.band_counts,   // workforce is shared
+  };
+}
+
+function playerRoles(player) {
+  if (!player) return [];
+  if (Array.isArray(player.role_names)) return player.role_names;
+  if (Array.isArray(player.roles)) return player.roles;
+  if (typeof player.roles === 'string') {
+    return player.roles.split(',').map(r => r.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function renderCapacityPanel(capacity) {
+  const owned = capacity.capital_owned || [];
+  const inTransit = capacity.capital_in_transit || [];
+  const outputs = capacity.outputs || [];
+
+  // Capital portfolio (owned + in-transit)
+  const portEl = document.getElementById('s-capital-portfolio');
+  if (!owned.length && !inTransit.length) {
+    portEl.innerHTML = '<span style="color:var(--dim)">No capital — visit the market or wait until next Investing window</span>';
+  } else {
+    let html = '';
+    if (owned.length) {
+      html += owned.map(it =>
+        `<div class="mkt-row" title="${esc(it.description || '')}">
+           <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}</span>
+           <span class="price" style="color:var(--dim);font-size:.7rem">${esc(it.role)}</span>
+         </div>`
+      ).join('');
+    }
+    if (inTransit.length) {
+      html += '<div style="color:var(--dim);font-size:.7rem;margin-top:.3rem">In transit:</div>';
+      html += inTransit.map(it =>
+        `<div class="mkt-row" style="opacity:.6">
+           <span class="res">${esc(it.name || it.item_id)}</span>
+           <span class="price" style="font-size:.7rem">arrives tick ${it.arrives_at_tick}</span>
+         </div>`
+      ).join('');
+    }
+    portEl.innerHTML = html;
+  }
+
+  // Per-output max producible + binding constraint
+  const outEl = document.getElementById('s-capacity-outputs');
+  if (!outputs.length) {
+    outEl.innerHTML = '';
+    return;
+  }
+  outEl.innerHTML = outputs.map(o => {
+    const max = (o.max_producible === null || o.max_producible === undefined)
+                  ? '∞' : o.max_producible;
+    const colour = o.binding === 'inputs'    ? '#ff8a8a'
+                 : o.binding === 'workforce' ? '#ffcc66'
+                 : o.binding === 'equipment' ? '#88aaff'
+                 : 'var(--dim)';
+    return `<div class="mkt-row" title="Binding constraint: ${o.binding}">
+              <span class="res">${esc(o.output)}</span>
+              <span class="price" style="color:${colour}">max ${max}</span>
+            </div>`;
+  }).join('');
+}
+
+// ==================== CONSTRAINT POPUP ====================
+function showConstraintPopup() {
+  if (!gameState) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me || !me.capacity) return;
+  const cap = filteredCapacity(me.capacity, activeTabRole);
+  const outputs = cap.outputs || [];
+  const roleLabel = (!activeTabRole || activeTabRole === 'ALL')
+    ? 'All Islands'
+    : (ROLE_ISLAND_NAMES[activeTabRole] || activeTabRole);
+
+  let body = '';
+  if (!outputs.length) {
+    body = '<p style="color:var(--dim)">No production recipes available for this island.</p>';
+  } else {
+    body = outputs.map(o => {
+      const lines = [];
+      const max = (o.max_producible === null || o.max_producible === undefined)
+                    ? '∞' : o.max_producible;
+      const pCount = o.patents_active || 0;
+      const pTag = pCount > 0
+        ? ` <span style="color:#88ddaa;font-size:.7rem;margin-left:.4rem">★ ${pCount} patent${pCount > 1 ? 's' : ''} active (input cost ×${o.patent_input_mult})</span>`
+        : '';
+      lines.push(`<h4 style="margin:.6rem 0 .3rem 0">${esc(o.output)} — max ${max}/season${pTag}</h4>`);
+      lines.push(`<div style="font-size:.85rem;margin-bottom:.4rem">
+                    Binding: <strong style="color:#ffcc66">${esc(o.binding)}</strong>
+                    &nbsp;|&nbsp; Equipment: ${o.equipment_cap} &nbsp;
+                    Workforce: ${o.workforce_cap === null ? '∞' : o.workforce_cap} &nbsp;
+                    Inputs: ${o.input_cap === null ? '∞' : o.input_cap}
+                  </div>`);
+      const inputsShort = o.inputs_short || {};
+      const wfShort     = o.workforce_short || {};
+      if (Object.keys(inputsShort).length) {
+        lines.push('<div style="font-size:.82rem;color:#ff8a8a">Inputs needed to lift cap:</div>');
+        lines.push('<ul style="margin:.2rem 0 .4rem 1rem;font-size:.82rem">' +
+          Object.entries(inputsShort)
+            .map(([r, q]) => `<li>+${q} ${esc(r)} (market price: ${marketPriceOf(r)} Dp/unit)</li>`)
+            .join('') + '</ul>');
+      }
+      if (Object.keys(wfShort).length) {
+        lines.push('<div style="font-size:.82rem;color:#ffcc66">Workforce needed:</div>');
+        lines.push('<ul style="margin:.2rem 0 .4rem 1rem;font-size:.82rem">' +
+          Object.entries(wfShort)
+            .map(([band, q]) => `<li>+${q} ${esc(band)}</li>`)
+            .join('') + '</ul>');
+      }
+      if (o.binding === 'equipment') {
+        lines.push('<div style="font-size:.82rem;color:#88aaff">Equipment is the bottleneck — consider buying more capital next turn.</div>');
+      }
+      return `<div style="border-bottom:1px solid var(--border);padding-bottom:.4rem">${lines.join('')}</div>`;
+    }).join('');
+  }
+
+  document.getElementById('dlg-title').textContent = `Production Constraints — ${roleLabel}`;
+  document.getElementById('dlg-body').innerHTML = body
+    + '<div style="margin-top:1rem;text-align:right">'
+    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
+  document.getElementById('overlay').classList.add('active');
+}
+
+function marketPriceOf(resourceName) {
+  if (!gameState || !gameState.market) return '—';
+  const info = gameState.market[resourceName];
+  return info ? (info.price || info.formula_price || '—') : '—';
+}
+
+function closeOverlay() {
+  document.getElementById('overlay').classList.remove('active');
+}
+
+function startInvestTimer(seconds) {
+  clearInterval(investTimerInterval);
+  investTimerEnd = Date.now() + seconds * 1000;
+  const tick = () => {
+    const remaining = Math.max(0, Math.round((investTimerEnd - Date.now()) / 1000));
+    const el = document.getElementById('invest-timer-val');
+    if (el) {
+      el.textContent = remaining;
+      // Flash red when ≤ 60s remaining
+      if (remaining <= 60 && remaining > 0) {
+        el.style.color = (remaining % 2 === 0) ? '#ff5555' : '#ffaaaa';
+      } else {
+        el.style.color = '';
+      }
+    }
+    if (remaining <= 0) clearInterval(investTimerInterval);
+  };
+  tick();
+  investTimerInterval = setInterval(tick, 500);
 }
 
 // ==================== WEBSOCKET ====================
 function connectWS() {
   if (!currentRoomId || !myPlayerId) return;
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}/ws/${currentRoomId}/${myPlayerId}`);
+  ws = new WebSocket(`${WS_ORIGIN}/ws/${currentRoomId}/${myPlayerId}`);
   ws.onmessage = e => handleMessage(JSON.parse(e.data));
   ws.onclose = () => {
     addLog('Connection lost. Reconnecting in 3s…', 'err');
@@ -915,8 +1362,56 @@ function handleMessage(msg) {
     case 'auction_failed':
       addLog('Auction failed: ' + msg.message, 'err');
       break;
+    case 'investing_phase':
+      // Lightweight status message for observers
+      addLog(`Investing Phase started — ${msg.timer_seconds}s to invest.`);
+      break;
+    case 'investing_start':
+      investData = {
+        budget:    msg.budget,
+        roles:     msg.roles || [],
+        catalogue: msg.catalogue || [],
+        mandatory: msg.mandatory || [],
+      };
+      investSelected = new Set(msg.selections || msg.mandatory || []);
+      // If user is still on the auction-result overlay, leave them there;
+      // they'll click "Continue →" to enter investing.  Otherwise switch now.
+      if (document.getElementById('screen-auction').classList.contains('hidden')) {
+        showScreen('investing');
+        renderInvesting();
+      }
+      startInvestTimer(msg.timer_seconds || 180);
+      break;
+    case 'investing_update':
+      document.getElementById('invest-status').textContent =
+        `${msg.submitted_count}/${msg.human_count} players ready.`;
+      break;
+    case 'investing_resolved':
+      addLog('Investing phase complete. Starting Year 1…', 'ok');
+      investData = null;
+      investSelected.clear();
+      clearInterval(investTimerInterval);
+      // Switch to the game screen now so the next game_state broadcast
+      // can render into it.  (If we stay on screen-investing, the
+      // game_state handler bails out and we get stuck.)
+      showScreen('game');
+      buildIslandMap();
+      if (gameState) renderGameState();
+      break;
+    case 'investment_ack':
+      // Server confirmation; nothing to render unless there's an error.
+      if (msg.error) addLog('Investment error: ' + msg.error, 'err');
+      break;
     case 'game_state':
       gameState = msg;
+      // Don't auto-jump to the game screen while the user is still on the
+      // auction-result overlay or the Investing Phase screen.
+      if (!document.getElementById('screen-auction').classList.contains('hidden')) {
+        break;
+      }
+      if (!document.getElementById('screen-investing').classList.contains('hidden')) {
+        break;
+      }
       renderGameState();
       if (document.getElementById('screen-game').classList.contains('hidden')) {
         showScreen('game');
@@ -944,6 +1439,25 @@ function handleMessage(msg) {
     case 'ask_dollop_amount':
       showDollopInput(msg);
       break;
+    case 'market_buy_bulk':
+      showMarketBuyPopup(msg);
+      break;
+    case 'season_start':
+      onSeasonStart(msg);
+      break;
+      case 'ready_update':
+      onReadyUpdate(msg);
+      break;
+    case 'season_resolved':
+      onSeasonResolved(msg);
+      break;
+    case 'season_timeout':
+      addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
+      break;
+    case 'ready_ack':
+      // Server confirmation; nothing to render unless error.
+      if (msg.error) addLog('Ready error: ' + msg.error, 'err');
+      break;
     case 'game_over':
       showGameOver(msg);
       break;
@@ -968,86 +1482,240 @@ function renderGameState() {
   if (!gameState) return;
 
   if (myPlayerIdx === null) {
-    apiFetch(`/api/rooms/${currentRoomId}`).then(room => {
-      myPlayerIdx = room.players.findIndex(p => p.player_id === myPlayerId);
-      renderGameState();
-    });
-    return;
+    myPlayerIdx = gameState.players.findIndex(p => p.lobby_player_id === myPlayerId);
+    if (myPlayerIdx < 0) {
+      addLog('You are connected as a spectator; no island is assigned to this player.', 'info');
+      return;
+    }
   }
 
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
 
-  // Build tabs if needed
+  // Season/Year header
+  if (gameState.year) document.getElementById('hdr-year').textContent = 'Year ' + gameState.year;
+  if (gameState.season) document.getElementById('hdr-season').textContent = gameState.season;
+
+  // Build / rebuild tabs if player's roles changed
   buildIslandTabs(gameState.players);
 
-  const tabRole = activeTabRole || (me.roles && me.roles[0]);
-  const displayPlayer = tabRole === 'ALL'
-    ? null  // consolidated view — future enhancement
-    : me;
+  const roles = playerRoles(me);
+  const tabRole = activeTabRole || roles[0] || null;
+  const isConsolidated = tabRole === 'ALL';
 
-  if (displayPlayer) {
-    document.getElementById('tab-island-name').textContent = tabRole || 'My Island';
-    document.getElementById('s-role').textContent = Array.isArray(me.roles) ? me.roles.join(', ') : me.roles;
-    document.getElementById('s-dollops').textContent = me.dollops + ' Dp';
-    document.getElementById('s-loans').textContent = '0 Dp'; // loans not yet implemented
-    document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
-    document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
-    document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
-    document.getElementById('s-capacity').textContent = me.production_capacity + '%';
-    document.getElementById('s-pop').textContent = me.population;
-    document.getElementById('hdr-wealth').textContent = me.wealth + ' Dp';
+  // Determine which island name to show
+  const islandLabel = isConsolidated
+    ? 'All Islands (Consolidated)'
+    : (ROLE_ISLAND_NAMES[tabRole] || tabRole || 'My Island');
 
-    const inv = me.inventory || {};
-    document.getElementById('s-inventory').innerHTML = Object.entries(inv)
-      .filter(([,q]) => q > 0)
-      .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
-      .join('') || '<span style="color:var(--dim)">Empty</span>';
+  document.getElementById('tab-island-name').textContent = islandLabel;
+  document.getElementById('s-role').textContent = isConsolidated
+    ? roles.join(', ')
+    : (tabRole || '—');
+  document.getElementById('s-dollops').textContent = me.dollops + ' Dp';
+  document.getElementById('s-loans').textContent = (me.loans_outstanding || 0) + ' Dp';
+  document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
+  document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+  document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
+  document.getElementById('s-capacity').textContent = me.production_capacity + '%';
+  document.getElementById('s-pop').textContent = me.population;
+  document.getElementById('hdr-wealth').textContent = me.wealth + ' Dp';
 
-    const pols = me.policies || [];
-    document.getElementById('s-insurance').innerHTML = pols.length
-      ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
-      : '<span style="color:var(--dim)">None</span>';
-  }
+  const inv = me.inventory || {};
+  document.getElementById('s-inventory').innerHTML = Object.entries(inv)
+    .filter(([,q]) => q > 0)
+    .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
+    .join('') || '<span style="color:var(--dim)">Empty</span>';
 
-  // Competitors table
-  document.getElementById('comp-tbody').innerHTML = gameState.players.map((p, i) => `
+  const pols = me.policies || [];
+  document.getElementById('s-insurance').innerHTML = pols.length
+    ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
+    : '<span style="color:var(--dim)">None</span>';
+
+  // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
+  renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+
+  // Competitors table — with ready dot for active humans this season
+  document.getElementById('comp-tbody').innerHTML = gameState.players.map((p, i) => {
+    const lobbyPid = p.lobby_player_id;
+    const isActiveHuman = lobbyPid && seasonActiveHumans.has(lobbyPid);
+    const isReady = lobbyPid && (seasonReadySet.has(lobbyPid) || seasonDoneSet.has(lobbyPid));
+    const dot = isActiveHuman
+      ? `<span class="player-ready-dot${isReady ? ' ready' : ''}" title="${isReady ? 'Ready' : 'Still acting'}"></span>`
+      : '';
+    return `
     <tr class="${i === myPlayerIdx ? 'me' : ''}">
-      <td>${esc(p.name)}${i === myPlayerIdx ? ' ★' : ''}</td>
-      <td>${esc(Array.isArray(p.roles) ? p.roles.join(', ') : p.roles)}</td>
+      <td>${dot}${esc(p.name)}${i === myPlayerIdx ? ' ★' : ''}</td>
+      <td>${esc(playerRoles(p).join(', '))}</td>
       <td style="color:var(--gold)">${p.wealth}</td>
       <td>${p.dollops}</td>
       <td>${p.workforce_active}/${p.workforce_count}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
-  // Market
+  // Market — compact two-sided order book
   if (gameState.market) {
-    document.getElementById('market-panel').innerHTML = Object.entries(gameState.market)
-      .map(([r, d]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${d.price} Dp</span><span class="supply">×${d.supply}</span></div>`)
-      .join('');
+    document.getElementById('market-panel').innerHTML = renderMarketTable(gameState.market, true);
   }
+}
+
+function fmtMarketPrice(v) {
+  return (typeof v === 'number' && isFinite(v)) ? `${v.toFixed(2)} Dp` : '—';
+}
+
+function renderMarketTable(market, compact = false) {
+  const rows = Object.entries(market || {}).map(([r, d]) => {
+    const bidQty = d.bid_quantity ?? 0;
+    const askQty = d.ask_quantity ?? d.quantity ?? 0;
+    return `<tr>
+      <td>${esc(r)}</td>
+      <td class="bid">${fmtMarketPrice(d.bid_price)}</td>
+      <td>${bidQty || '—'}</td>
+      <td class="ask">${fmtMarketPrice(d.ask_price ?? d.best_price)}</td>
+      <td>${askQty || '—'}</td>
+    </tr>`;
+  }).join('');
+  const cls = compact ? 'market-mini' : 'comp-table';
+  return `<table class="${cls}">
+    <thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderBarterMarket() {
+  const barter = gameState?.barter_market || {};
+  const deals = barter.deals || [];
+  const needs = barter.needs || [];
+  const dealRows = deals.length ? deals.map(d => {
+    const warnings = d.warnings && d.warnings.length
+      ? `<div style="margin-top:.15rem;color:var(--red);font-size:.72rem">${esc(d.warnings.join('; '))}</div>`
+      : '';
+    return `
+      <tr><td>${esc(d.from)}</td><td>${esc(d.offer)}${warnings}</td><td>${esc(d.request)}</td><td>${esc(d.to)}</td></tr>
+    `;
+  }).join('') : '<tr><td colspan="4" style="color:var(--dim)">No proposed barter deals.</td></tr>';
+  const needRows = needs.length ? needs.map(n => `
+    <tr><td>${esc(n.player)}</td><td>${esc(n.roles)}</td><td>${esc(n.needs.join(', '))}</td></tr>
+  `).join('') : '<tr><td colspan="3" style="color:var(--dim)">No visible unmet role needs.</td></tr>';
+  return `
+    <h4 style="margin:.7rem 0 .3rem;color:var(--accent);font-size:.78rem;text-transform:uppercase">Proposed Deals</h4>
+    <table class="comp-table"><thead><tr><th>From</th><th>Offers</th><th>Wants</th><th>To</th></tr></thead><tbody>${dealRows}</tbody></table>
+    <h4 style="margin:.8rem 0 .3rem;color:var(--accent);font-size:.78rem;text-transform:uppercase">Visible Needs</h4>
+    <table class="comp-table"><thead><tr><th>Player</th><th>Role</th><th>Needs</th></tr></thead><tbody>${needRows}</tbody></table>
+  `;
+}
+
+function showMarketBoardPopup() {
+  if (!gameState) return;
+  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket()
+    + '<div style="margin-top:1rem;text-align:right">'
+    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
+  showDlg('Market Board', html);
 }
 
 function buildIslandTabs(players) {
   const me = players[myPlayerIdx];
   if (!me) return;
-  const tabs = document.getElementById('island-tabs');
-  if (tabs.childElementCount > 0) return; // already built
 
-  const roles = Array.isArray(me.roles) ? me.roles : [me.roles];
-  activeTabRole = roles[0];
-  let html = roles.map(r => `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" onclick="switchTab('${r}')">${r}</button>`).join('');
+  const roles = playerRoles(me);
+  const rolesKey = roles.join(',');
+  // Rebuild only when roles change (e.g. player wins extra roles mid-game)
+  if (builtTabsForRoles === rolesKey) return;
+  builtTabsForRoles = rolesKey;
+
+  // If activeTabRole is no longer in the new role list, reset it
+  if (!roles.includes(activeTabRole)) activeTabRole = roles[0] || null;
+
+  const tabs = document.getElementById('island-tabs');
+  let html = roles.map(r =>
+    `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" onclick="switchTab('${r}')">${r}</button>`
+  ).join('');
   if (roles.length > 1) {
-    html += `<button class="tab-btn" onclick="switchTab('ALL')">Consolidated</button>`;
+    html += `<button class="tab-btn${activeTabRole === 'ALL' ? ' active' : ''}" onclick="switchTab('ALL')">Consolidated</button>`;
   }
   tabs.innerHTML = html;
 }
 
 function switchTab(role) {
   activeTabRole = role;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.textContent === role || (role==='ALL' && b.textContent==='Consolidated')));
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active',
+      b.textContent === role || (role === 'ALL' && b.textContent === 'Consolidated'))
+  );
   renderGameState();
+}
+
+// ==================== SIMULTANEOUS PLAY ====================
+function onSeasonStart(msg) {
+  // Reset per-season state and start the timer countdown.
+  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
+  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  seasonActiveHumans = new Set(msg.active_humans || []);
+  seasonReadySet = new Set();
+  seasonDoneSet = new Set();
+  imReady = false;
+  const secs = +msg.timer_seconds || 0;
+  seasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+
+  const box = document.getElementById('season-timer-box');
+  const btn = document.getElementById('ready-btn');
+  // Only show Ready button + timer if I'm an active human this season
+  const showForMe = seasonActiveHumans.has(myPlayerId);
+  box.classList.toggle('hidden', !showForMe || secs <= 0);
+  btn.classList.toggle('hidden', !showForMe);
+  btn.classList.remove('is-ready');
+  document.getElementById('ready-btn-label').textContent = 'Ready ✓';
+  if (showForMe && secs > 0) startSeasonTimer();
+  addLog(`▶ ${msg.season} (Year ${msg.year}) begins — ${secs}s timer.`, 'info');
+}
+
+function onReadyUpdate(msg) {
+  seasonReadySet = new Set(msg.ready || []);
+  seasonDoneSet  = new Set(msg.done  || []);
+  seasonActiveHumans = new Set(msg.active || []);
+  // If the server says I'm Ready, reflect it in the button state.
+  imReady = seasonReadySet.has(myPlayerId);
+  const btn = document.getElementById('ready-btn');
+  btn.classList.toggle('is-ready', imReady);
+  document.getElementById('ready-btn-label').textContent = imReady ? 'Ready ✓ (click to undo)' : 'Ready ✓';
+  // Re-render player table to show ready dots
+  if (gameState) renderGameState();
+}
+
+function onSeasonResolved(msg) {
+  seasonTimerEnd = 0;
+  stopSeasonTimer();
+  document.getElementById('season-timer-box').classList.add('hidden');
+  document.getElementById('ready-btn').classList.add('hidden');
+  imReady = false;
+  addLog(`✓ ${msg.season} resolved.`, 'info');
+}
+
+function startSeasonTimer() {
+  stopSeasonTimer();
+  seasonTimerInterval = setInterval(updateSeasonTimerUI, 250);
+  updateSeasonTimerUI();
+}
+function stopSeasonTimer() {
+  if (seasonTimerInterval) { clearInterval(seasonTimerInterval); seasonTimerInterval = null; }
+}
+function updateSeasonTimerUI() {
+  const remain = Math.max(0, Math.round((seasonTimerEnd - Date.now()) / 1000));
+  document.getElementById('season-timer-val').textContent = remain + 's';
+  const box = document.getElementById('season-timer-box');
+  // Flash warning under 60 s
+  box.classList.toggle('flash', remain > 0 && remain <= 60);
+  if (remain <= 0) stopSeasonTimer();
+}
+
+function toggleReady() {
+  imReady = !imReady;
+  const btn = document.getElementById('ready-btn');
+  btn.classList.toggle('is-ready', imReady);
+  document.getElementById('ready-btn-label').textContent = imReady ? 'Ready ✓ (click to undo)' : 'Ready ✓';
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'ready', ready: imReady}));
+  }
 }
 
 function buildIslandMap() {
@@ -1083,37 +1751,63 @@ function showActionPrompt(msg) {
   document.getElementById('prompt-input').innerHTML = '';
 }
 
+// Standard cancel button for any modal — sends null to the server, which
+// the IO adapter treats as "no choice" (defaults / aborts the action chain).
+const CANCEL_BTN_HTML =
+  '<button class="btn-ghost" style="flex:1" onclick="cancelDlg()">Cancel</button>';
+
+function cancelDlg() {
+  sendResponse(null);
+  // Hide the dialog overlay if it's open (sendResponse usually does this
+  // implicitly when the next prompt arrives, but cancel should feel instant).
+  document.getElementById('overlay').classList.remove('active');
+}
+
 function showOptionPicker(msg) {
-  showDlg(msg.prompt || 'Choose', `<div class="opts">${msg.options.map(o =>
+  const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
-  ).join('')}</div>`);
+  ).join('');
+  showDlg(msg.prompt || 'Choose',
+    `<div class="opts">${opts}</div>
+     <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
 function showPlayerPicker(msg) {
-  showDlg(msg.prompt, `<div class="opts">${msg.options.map(o =>
+  const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.id}')">${esc(o.name)} (${esc(o.roles)})</button>`
-  ).join('')}</div>`);
+  ).join('');
+  showDlg(msg.prompt,
+    `<div class="opts">${opts}</div>
+     <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
 function showQuantityInput(msg) {
   showDlg(msg.prompt, `
     <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
-    <button class="btn-primary" style="width:100%" onclick="sendResponse(document.getElementById('qty-in').value)">OK</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('qty-in').value)">OK</button>
+      ${CANCEL_BTN_HTML}
+    </div>
   `);
 }
 
 function showDollopInput(msg) {
   showDlg(msg.prompt, `
     <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.1" value="0" style="width:100%;margin:.5rem 0"/>
-    <button class="btn-primary" style="width:100%" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
+      ${CANCEL_BTN_HTML}
+    </div>
   `);
 }
 
 function showConfirm(msg) {
+  // Yes / No / Cancel — Cancel sends null (distinct from explicit "No")
   showDlg(msg.prompt, `
     <div style="display:flex;gap:.5rem;margin-top:.5rem">
       <button class="btn-gold" style="flex:1" onclick="sendResponse('true')">Yes</button>
       <button class="btn-ghost" style="flex:1" onclick="sendResponse('false')">No</button>
+      ${CANCEL_BTN_HTML}
     </div>
   `);
 }
@@ -1132,6 +1826,71 @@ function showGameOver(msg) {
       `).join('')}</tbody>
     </table>
   `;
+}
+
+function showMarketBuyPopup(msg) {
+  const market = msg.market || {};
+  const budget = msg.budget || 0;
+  const entries = Object.entries(market);
+  let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
+  html += '<table class="comp-table" style="width:100%"><thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th><th>Buy</th><th>New Bid</th></tr></thead><tbody>';
+  for (const [res, d] of entries) {
+    const askQty = d.ask_quantity ?? d.quantity ?? 0;
+    const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
+    const bidQty = d.bid_quantity ?? 0;
+    const bidPrice = d.bid_price;
+    html += `<tr>
+      <td>${esc(res)}</td>
+      <td style="color:var(--green)">${fmtMarketPrice(bidPrice)}</td>
+      <td>${bidQty || '—'}</td>
+      <td style="color:var(--gold)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+      <td>${askQty || '—'}</td>
+      <td><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} style="width:54px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+      <td style="white-space:nowrap"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" style="width:44px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/> @ <input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${d.formula_price || 0}" style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
+  html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
+  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(null)">Cancel</button></div>';
+  html += '</div>';
+  showDlg('Market Buy', html);
+  document.querySelectorAll('.mkt-qty-in').forEach(inp => {
+    inp.addEventListener('input', updateMarketBuyTotals);
+  });
+}
+
+function updateMarketBuyTotals() {
+  let total = 0;
+  document.querySelectorAll('.mkt-qty-in').forEach(inp => {
+    const qty = Math.max(0, Math.min(parseInt(inp.value) || 0, parseInt(inp.dataset.max)));
+    const cost = qty * parseFloat(inp.dataset.price);
+    total += cost;
+    const costCell = document.querySelector(`.mkt-cost[data-res="${inp.dataset.res}"]`);
+    if (costCell) costCell.textContent = cost > 0 ? cost.toFixed(2) : '0';
+  });
+  const el = document.getElementById('mkt-total');
+  if (el) el.textContent = total.toFixed(1) + ' Dp';
+}
+
+function submitMarketBuy() {
+  const orders = {};
+  const bids = {};
+  document.querySelectorAll('.mkt-qty-in').forEach(inp => {
+    const qty = Math.max(0, Math.min(parseInt(inp.value) || 0, parseInt(inp.dataset.max)));
+    if (qty > 0) orders[inp.dataset.res] = qty;
+  });
+  document.querySelectorAll('.mkt-bid-qty').forEach(inp => {
+    const qty = Math.max(0, parseInt(inp.value) || 0);
+    const priceInput = document.querySelector(`.mkt-bid-price[data-res="${inp.dataset.res}"]`);
+    const price = priceInput ? Math.max(0, parseFloat(priceInput.value) || 0) : 0;
+    if (qty > 0 && price > 0) bids[inp.dataset.res] = { quantity: qty, price };
+  });
+  if (Object.keys(orders).length === 0 && Object.keys(bids).length === 0) {
+    sendResponse(null);
+  } else {
+    sendResponse(JSON.stringify({ buy: orders, bids }));
+  }
 }
 
 function showDlg(title, bodyHtml) {
@@ -1168,7 +1927,12 @@ function esc(s) {
 async function apiFetch(url, method = 'GET', body = null) {
   const opts = {method, headers: {}};
   if (body) { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
-  const res = await fetch(API + url, opts);
+  let res;
+  try {
+    res = await fetch(API + url, opts);
+  } catch(e) {
+    throw new Error(`Cannot reach ${API}. Start the server, then try again.`);
+  }
   if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || res.statusText); }
   return res.json();
 }

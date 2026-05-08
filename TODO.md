@@ -2,6 +2,22 @@
 
 ## In Progress
 
+### Production Capacity Model & Investing Phase
+See [`requirements/production-capacity-model.md`](requirements/production-capacity-model.md) for full spec.
+- [ ] Worker bands (Manager / Technician / Worker) with per-island titles
+- [ ] Investing Phase between auction and Year 1 Spring
+- [ ] Per-output capital catalogue + per-unit input requirements
+- [ ] Production Capacity sidebar panel
+- [ ] Production Constraint Popup (inputs / workforce / capital)
+- [ ] Patents (Educator output, permanent boost, capped at 3 active per output)
+- [ ] Apprenticeship pipeline (separate slot pool from Education)
+- [ ] Education pipeline (Doctor 2 seasons, Nurse 1 season, other Managers 2)
+- [ ] Mechanic profession (–20% per Mechanic, capped at –60%)
+- [ ] Equipment Insurance (Banker product, market-rate replacement payout)
+- [ ] AI auction bidding (per-role heuristic + 2nd round)
+- [ ] Simultaneous-play architecture (timer + Ready button replaces End Turn)
+- [ ] Season timer with 60-second flash warning
+
 ### Lobby & Game Start Redesign
 - [ ] Redesigned start screen (visual polish, intuitive flow)
 - [ ] Create game: public or private option
@@ -30,7 +46,10 @@
 - [ ] PDF export via reportlab (stretch goal)
 
 ### Feature Roadmap (from design review)
-- [ ] Loans system (Banker offers loans with interest)
+- [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan with island as collateral). See requirements/production-capacity-model.md §16.
+- [ ] Roleless players — role aftermarket (secondary sales between players) + on-call bank deposits (depositors expand Banker's lending capacity). See requirements/production-capacity-model.md §17.
+- [ ] Brokerage services: Banker negotiates deals between islands for a commission
+- [x] Loans system (Banker offers bullet bonds — 1 year term, repaid at maturity with interest)
 - [ ] Contracts & Futures (forward agreements between players)
 - [ ] Infrastructure Investment (upgrade production capacity)
 - [ ] Chat integration (in-game messaging)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from .profession import Profession
+from .profession import Profession, WorkerBand, band_of
 
 
 # Efficiency caps per training level (0=Unskilled, 1=Basic, 2=Skilled, 3=Expert)
@@ -111,6 +111,29 @@ class Workforce:
 
     def count_profession(self, profession: str) -> int:
         return len(self.workers_by_profession(profession))
+
+    # ------------------------------------------------------------------ Band helpers
+
+    def workers_by_band(self, band: WorkerBand) -> list[Worker]:
+        """All active workers whose profession sits in the given WorkerBand."""
+        return [w for w in self.active_workers if band_of(w.profession) == band]
+
+    def count_by_band(self, band: WorkerBand) -> int:
+        return len(self.workers_by_band(band))
+
+    def band_summary(self) -> dict[str, int]:
+        """Active-worker counts keyed by band name (Manager / Technician / Worker)."""
+        out = {b.value: 0 for b in WorkerBand}
+        for w in self.active_workers:
+            out[band_of(w.profession).value] += 1
+        return out
+
+    def has_mechanic(self) -> bool:
+        """True if at least one active Mechanic is on staff."""
+        return self.count_profession(Profession.MECHANIC.value) > 0
+
+    def mechanic_count(self) -> int:
+        return self.count_profession(Profession.MECHANIC.value)
 
     def workforce_fill_rate(self, required: int) -> float:
         if required <= 0:

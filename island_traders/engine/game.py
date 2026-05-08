@@ -6,6 +6,7 @@ from pathlib import Path
 from ..models.player import Player
 from ..models.market import Market
 from ..models.deal import DealLedger
+from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession
@@ -62,6 +63,7 @@ class Game:
         self.players: list[Player] = []
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
+        self.loan_ledger: LoanLedger | None = None
         self.training: TrainingRegistry | None = None
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
@@ -70,6 +72,7 @@ class Game:
     def setup(self) -> None:
         self.market = Market()
         self.ledger = DealLedger()
+        self.loan_ledger = LoanLedger()
         self.training = TrainingRegistry()
 
         num_players = len(self.config.player_specs)
@@ -135,7 +138,8 @@ class Game:
         production = ProductionEngine()
         trading = TradingEngine(self.market, self.ledger)
         self.turn_manager = TurnManager(
-            self.players, production, trading, self.market, self.io, self.training
+            self.players, production, trading, self.market, self.io, self.training,
+            self.loan_ledger,
         )
 
     def run(self) -> GameSummary:
@@ -146,15 +150,29 @@ class Game:
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters
                 )
+                # Optional hooks — set by the server to install/clear the
+                # per-season Ready timer in simultaneous-play mode.
+                cb = getattr(self, "before_season", None)
+                if cb:
+                    try:
+                        cb(year, season_index)
+                    except Exception:
+                        pass
                 self.turn_manager.run_season(year, season_index, event_results)
+                cb = getattr(self, "after_season", None)
+                if cb:
+                    try:
+                        cb(year, season_index)
+                    except Exception:
+                        pass
                 self._auto_save(year, season_index + 1)
 
             prices = self.market.current_prices()
-            wealthies = [p.total_wealth(prices) for p in self.players]
+            wealthies = [p.total_wealth(prices, self.loan_ledger) for p in self.players]
             max_wealth = max(wealthies) if wealthies else 1.0
 
             for player, wealth in zip(self.players, wealthies):
-                player.record_year_wealth(prices)
+                player.record_year_wealth(prices, self.loan_ledger)
                 wealth_ratio = wealth / max_wealth if max_wealth > 0 else 0.0
                 birth_rate = BASE_BIRTH_RATE * max(0.0, 1.0 - wealth_ratio)
                 new_people = max(0, round(player.population * birth_rate))
@@ -190,7 +208,7 @@ class Game:
     def compute_summary(self) -> GameSummary:
         prices = self.market.current_prices()
         rankings = sorted(
-            [(p, p.total_wealth(prices)) for p in self.players],
+            [(p, p.total_wealth(prices, self.loan_ledger)) for p in self.players],
             key=lambda x: x[1],
             reverse=True,
         )
@@ -204,12 +222,12 @@ class Game:
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float]) -> str:
         sym = CURRENCY_SYMBOL
         lines = [f"\n{'*'*50}", f"  End of Year {year + 1} — Leaderboard", f"{'*'*50}"]
-        ranked = sorted(self.players, key=lambda p: p.total_wealth(prices), reverse=True)
+        ranked = sorted(self.players, key=lambda p: p.total_wealth(prices, self.loan_ledger), reverse=True)
         for i, p in enumerate(ranked, 1):
             ws = p.workforce.summary()
             lines.append(
                 f"  {i}. {p.name} ({p.role_names()}) — "
-                f"{p.total_wealth(prices):.1f} {sym}  "
+                f"{p.total_wealth(prices, self.loan_ledger):.1f} {sym}  "
                 f"[workers: {ws['active']}/{ws['total']}, pop: {p.population}, "
                 f"eff: {ws['avg_efficiency_pct']}%]"
             )
@@ -247,6 +265,7 @@ class Game:
             "players": [self._serialise_player(p) for p in self.players],
             "market": self._serialise_market(),
             "training": self._serialise_training(),
+            "loan_ledger": self._serialise_loans(),
             "damage_counters": {
                 str(k): v for k, v in self.turn_manager._damage_counters.items()
             } if self.turn_manager else {},
@@ -264,6 +283,9 @@ class Game:
             "population": p.population,
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
             "wealth_history": p.wealth_history,
+            "capital_inventory": dict(p.capital_inventory),
+            "capital_in_transit": list(p.capital_in_transit),
+            "active_patents": {k: list(v) for k, v in p.active_patents.items()},
             "workforce": {
                 "next_id": p.workforce._next_id,
                 "workers": [
@@ -320,6 +342,26 @@ class Game:
             ],
         }
 
+    def _serialise_loans(self) -> dict:
+        return {
+            "next_id": self.loan_ledger._next_id,
+            "loans": [
+                {
+                    "loan_id": l.loan_id,
+                    "borrower_id": l.borrower_id,
+                    "lender_id": l.lender_id,
+                    "principal": l.principal,
+                    "interest_rate": l.interest_rate,
+                    "issued_year": l.issued_year,
+                    "issued_season": l.issued_season,
+                    "maturity_year": l.maturity_year,
+                    "maturity_season": l.maturity_season,
+                    "status": l.status.value,
+                }
+                for l in self.loan_ledger.all_loans()
+            ],
+        }
+
     @classmethod
     def load(cls, path: str, io_adapter) -> "Game":
         from ..models.market import PriceShock, PriceSnapshot
@@ -349,6 +391,9 @@ class Game:
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
+                capital_inventory=dict(pd.get("capital_inventory", {})),
+                capital_in_transit=list(pd.get("capital_in_transit", [])),
+                active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
             )
             for r_str, qty in pd.get("inventory", {}).items():
                 p.receive_resources(ResourceType(r_str), qty)
@@ -385,6 +430,23 @@ class Game:
         ]
 
         game.ledger = DealLedger()
+        game.loan_ledger = LoanLedger()
+        ld = data.get("loan_ledger", {})
+        game.loan_ledger._next_id = ld.get("next_id", 0)
+        for loan_d in ld.get("loans", []):
+            loan = Loan(
+                loan_id=loan_d["loan_id"],
+                borrower_id=loan_d["borrower_id"],
+                lender_id=loan_d["lender_id"],
+                principal=loan_d["principal"],
+                interest_rate=loan_d["interest_rate"],
+                issued_year=loan_d["issued_year"],
+                issued_season=loan_d["issued_season"],
+                maturity_year=loan_d["maturity_year"],
+                maturity_season=loan_d["maturity_season"],
+                status=LoanStatus(loan_d["status"]),
+            )
+            game.loan_ledger.loans.append(loan)
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
@@ -421,7 +483,8 @@ class Game:
         production = ProductionEngine()
         trading = TradingEngine(game.market, game.ledger)
         game.turn_manager = TurnManager(
-            game.players, production, trading, game.market, io_adapter, game.training
+            game.players, production, trading, game.market, io_adapter, game.training,
+            game.loan_ledger,
         )
         game.turn_manager._damage_counters = {
             int(k): v for k, v in data.get("damage_counters", {}).items()

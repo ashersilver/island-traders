@@ -1,16 +1,21 @@
 """
 WebSocket IO adapter — bridges the synchronous game engine to async WebSocket clients.
 
-The game engine calls IOAdapter methods synchronously (print, choose_action, confirm, etc.).
-This adapter translates each call into a WebSocket message sent to the active player's client
-and blocks (via an asyncio Event) until the client responds.
+Concurrent per-player design:
+  Each human player runs their own turn on its own thread. Per-player threads
+  call IOAdapter methods to prompt the user; each call routes to that player's
+  own threading.Event so prompts to different players don't interfere.
 
-The game loop runs in a background thread; each IO call posts a message to the WebSocket
-send queue and waits on a response future.
+  The "active player" is tracked in thread-local state, set when each player's
+  turn begins. Action handlers that prompt without passing a player_id reuse
+  the TLS active player.
+
+  `interrupt_all(reason)` is used by the season timer to force-unblock every
+  pending prompt with a sentinel response (None), causing each player's turn
+  loop to exit cleanly via the action handlers' None-fallbacks and an
+  END_TURN return from any pending choose_action.
 """
 from __future__ import annotations
-import asyncio
-import json
 import threading
 from ..cli.prompts import IOAdapter
 from ..models.resource import ResourceType
@@ -18,63 +23,169 @@ from ..engine.turn import TurnAction
 
 
 class WebSocketIOAdapter(IOAdapter):
-    """
-    Replaces the CLI IOAdapter for online play.
+    """Per-player, thread-safe IO adapter for online play.
 
-    Communication protocol:
-    - Server → Client: JSON messages with "type" field
-    - Client → Server: JSON messages with "type": "response" + payload
+    Communication protocol (server → client):
+        print, choose_action, choose_resource, choose_quantity, choose_player,
+        confirm, choose_profession, ask_dollop_amount, market_buy_bulk,
+        game_state, season_start, season_timer, season_resolved, ready_update.
 
-    Message types sent:
-        print        — display text to all connected clients
-        choose_action — present action menu to active player, await choice
-        choose_resource — present resource picker, await choice
-        choose_quantity — present numeric input, await int
-        choose_player — present player picker, await choice
-        confirm      — present yes/no, await bool
-        choose_profession — present profession picker, await choice
-        ask_dollop_amount — present amount input, await float
-        game_state   — full game state snapshot (broadcast)
+    Client → server: {type:"response", value:<...>} routed via receive_response.
     """
 
     def __init__(self, game_id: str, broadcast_fn, player_send_fns: dict[int, object]):
         self._game_id = game_id
         self._broadcast = broadcast_fn
+        # player_idx (engine Player.player_id, an int) → send fn
         self._player_send_fns = player_send_fns
-        self._response_event = threading.Event()
-        self._response_value = None
-        self._active_player_id: int | None = None
-        self._lock = threading.Lock()
+
+        # Per-player synchronisation primitives
+        self._player_events: dict[int, threading.Event] = {}
+        self._player_responses: dict[int, object] = {}
+        self._player_locks: dict[int, threading.Lock] = {}
+        self._player_pending_msgs: dict[int, dict] = {}
+        # Per-player "ready/end turn" flag — when set, the next choose_action
+        # for that player returns END_TURN immediately (used by the Ready
+        # button to short-circuit any further prompts even if the user is
+        # currently mid-action).
+        self._player_ready_flags: set[int] = set()
+
+        # Thread-local "active player" — set by choose_action() at the start
+        # of each player's prompt-chain so subsequent choose_resource/quantity/
+        # confirm/etc. calls inside that thread route to the right player.
+        self._tls = threading.local()
+
+        # Season-level interrupt flag — when set, _send_and_wait returns None
+        # immediately rather than blocking. Cleared at the start of each season.
+        self._interrupted = False
+
         self._log: list[str] = []
+        self.on_action_complete = None
+
+    # ---- per-player primitives ----
+
+    def _ensure_player(self, pid: int) -> None:
+        if pid not in self._player_events:
+            self._player_events[pid] = threading.Event()
+            self._player_responses[pid] = None
+            self._player_locks[pid] = threading.Lock()
+
+    def _active_pid(self) -> int | None:
+        return getattr(self._tls, "active_player_id", None)
 
     def set_active_player(self, player_id: int) -> None:
-        self._active_player_id = player_id
+        """Set the active player for THIS thread (TLS)."""
+        self._tls.active_player_id = player_id
+        self._ensure_player(player_id)
 
-    def _send_to_active(self, msg: dict) -> None:
-        pid = self._active_player_id
+    # ---- season-level interrupt ----
+
+    def begin_season(self) -> None:
+        """Reset interrupt + ready flags at the start of a new season."""
+        self._interrupted = False
+        self._player_ready_flags.clear()
+
+    def mark_player_ready(self, player_id: int) -> None:
+        """Mark a player as Ready; their next choose_action returns END_TURN."""
+        self._player_ready_flags.add(player_id)
+        # Also unblock anything they're currently waiting on with a sentinel
+        # so the in-flight prompt completes quickly.
+        self.receive_response(player_id, "end_turn")
+
+    def unmark_player_ready(self, player_id: int) -> None:
+        """Clear a player's Ready flag (e.g. they un-click Ready)."""
+        self._player_ready_flags.discard(player_id)
+
+    def interrupt_all(self) -> None:
+        """Unblock every pending player prompt with a None response.
+
+        Called when the season timer fires. Each waiting thread will see
+        None and fall through to default/empty behaviour (and choose_action
+        returns END_TURN, which exits the action loop).
+        """
+        self._interrupted = True
+        for pid, ev in list(self._player_events.items()):
+            with self._player_locks[pid]:
+                self._player_responses[pid] = None
+                self._player_pending_msgs.pop(pid, None)
+                ev.set()
+
+    # ---- core send/wait ----
+
+    def _send_to(self, pid: int, msg: dict) -> None:
         send_fn = self._player_send_fns.get(pid)
         if send_fn:
             send_fn(msg)
 
-    def _send_and_wait(self, msg: dict) -> object:
-        with self._lock:
-            self._response_event.clear()
-            self._response_value = None
-        self._send_to_active(msg)
-        self._response_event.wait(timeout=300)
-        return self._response_value
+    def _send_and_wait(self, msg: dict, timeout: float = 300) -> object:
+        pid = self._active_pid()
+        if pid is None:
+            # No active player on this thread — fall back to defaults.
+            return None
+        self._ensure_player(pid)
 
-    def receive_response(self, value: object) -> None:
-        with self._lock:
-            self._response_value = value
-            self._response_event.set()
+        if self._interrupted:
+            return None
+
+        with self._player_locks[pid]:
+            self._player_events[pid].clear()
+            self._player_responses[pid] = None
+
+        msg.setdefault("player_id", pid)
+        with self._player_locks[pid]:
+            self._player_pending_msgs[pid] = dict(msg)
+        self._send_to(pid, msg)
+
+        self._player_events[pid].wait(timeout=timeout)
+        with self._player_locks[pid]:
+            value = self._player_responses[pid]
+            self._player_responses[pid] = None
+            self._player_pending_msgs.pop(pid, None)
+
+        if self.on_action_complete and msg.get("type") != "choose_action":
+            try:
+                self.on_action_complete()
+            except Exception:
+                pass
+        return value
+
+    def receive_response(self, player_id: int, value: object) -> None:
+        """Route an incoming WS response to the right player's event."""
+        if player_id is None:
+            return
+        self._ensure_player(player_id)
+        with self._player_locks[player_id]:
+            self._player_responses[player_id] = value
+            self._player_pending_msgs.pop(player_id, None)
+            self._player_events[player_id].set()
+
+    def replay_pending_prompt(self, player_id: int) -> bool:
+        """Re-send the current unresolved prompt after a client reconnects."""
+        self._ensure_player(player_id)
+        with self._player_locks[player_id]:
+            msg = self._player_pending_msgs.get(player_id)
+            if not msg:
+                return False
+            replay = dict(msg)
+            replay["replayed"] = True
+        self._send_to(player_id, replay)
+        return True
+
+    # ---- IOAdapter interface ----
 
     def print(self, text: str) -> None:
         self._log.append(text)
         self._broadcast({"type": "print", "text": text})
 
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
+        # Set TLS active player for this thread so subsequent prompts in this
+        # action chain route correctly.
         self.set_active_player(player.player_id)
+        # Honour the Ready flag — short-circuit straight to END_TURN.
+        if player.player_id in self._player_ready_flags:
+            return TurnAction.END_TURN
+        if self._interrupted:
+            return TurnAction.END_TURN
         options = [{"value": a.value, "label": a.value.replace("_", " ").title()} for a in available]
         resp = self._send_and_wait({
             "type": "choose_action",
@@ -139,7 +250,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
         })
         if resp is None:
-            return True
+            return False
         return str(resp).lower() in ("true", "y", "yes", "1")
 
     def choose_profession(self, prompt: str, available: list[str]) -> str:
@@ -166,3 +277,42 @@ class WebSocketIOAdapter(IOAdapter):
             return max(-max_dollops, min(val, max_dollops))
         except (ValueError, TypeError):
             return 0.0
+
+    def market_buy_bulk(self, player, market_summary: dict) -> dict[str, int] | None:
+        # Ensure the TLS active_player is set even when called outside the
+        # standard choose_action → action chain (paranoia for direct calls).
+        self.set_active_player(player.player_id)
+        resp = self._send_and_wait({
+            "type": "market_buy_bulk",
+            "player_name": player.name,
+            "player_id": player.player_id,
+            "budget": round(player.dollops, 1),
+            "market": market_summary,
+        })
+        if resp is None:
+            return None
+        def _normalise(parsed):
+            if not isinstance(parsed, dict):
+                return None
+            if "buy" in parsed or "bids" in parsed:
+                buys = {k: int(v) for k, v in (parsed.get("buy") or {}).items() if int(v) > 0}
+                bids = {}
+                for k, v in (parsed.get("bids") or {}).items():
+                    if not isinstance(v, dict):
+                        continue
+                    qty = int(v.get("quantity", 0))
+                    price = float(v.get("price", 0))
+                    if qty > 0 and price > 0:
+                        bids[k] = {"quantity": qty, "price": price}
+                return {"buy": buys, "bids": bids}
+            return {k: int(v) for k, v in parsed.items() if int(v) > 0}
+
+        if isinstance(resp, dict):
+            return _normalise(resp)
+        if isinstance(resp, str):
+            import json as _json
+            try:
+                return _normalise(_json.loads(resp))
+            except Exception:
+                return None
+        return None

@@ -41,6 +41,13 @@ class TradingEngine:
         request_qty: int,
         gold_sweetener: float = 0.0,
     ) -> DealProposal:
+        if (
+            (not offer_resource or offer_qty <= 0)
+            and (not request_resource or request_qty <= 0)
+            and gold_sweetener == 0
+        ):
+            raise InvalidDealError("Deal must offer, request, or pay something")
+
         # Validate proposer can cover their side
         if offer_resource and offer_qty > 0:
             if proposer.inventory.get(offer_resource) < offer_qty:
