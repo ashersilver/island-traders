@@ -14,7 +14,13 @@ from ..constants import (
 
 class AIStrategy:
     """
-    Greedy rule-based bot. Priority each turn:
+    Deterministic greedy rule-based bot for fast local play and simulations.
+
+    This is intentionally a heuristic player, not an LLM-backed human-like
+    player. Keep this path cheap, reproducible, and engine-local; see
+    requirements/llm-player-adapter.md for the proposed LLM player adapter.
+
+    Priority each turn:
     1. Buy missing production inputs from market if affordable.
     2. Produce if inputs satisfied.
     3. Sell produced resources if market price >= 80% of base price.
