@@ -38,14 +38,14 @@ def test_get_quote_no_state_change(engine, base_market):
 
 def test_propose_deal_creates_pending(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 3)
-    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 2, ResourceType.CAPITAL_EQUIPMENT, 1)
+    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 2, ResourceType.LABORATORY_EQUIPMENT, 1)
     assert deal.status == DealStatus.PENDING
     assert len(engine.ledger.deals) == 1
 
 
 def test_propose_deal_insufficient_offer_raises(engine, farmer, banker):
     with pytest.raises(InvalidDealError):
-        engine.propose_deal(farmer, banker, ResourceType.FOOD, 10, ResourceType.CAPITAL_EQUIPMENT, 1)
+        engine.propose_deal(farmer, banker, ResourceType.FOOD, 10, ResourceType.LABORATORY_EQUIPMENT, 1)
 
 
 def test_propose_empty_deal_raises(engine, farmer, banker):
@@ -55,20 +55,20 @@ def test_propose_empty_deal_raises(engine, farmer, banker):
 
 def test_accept_deal_transfers_atomically(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 3)
-    banker.receive_resources(ResourceType.CAPITAL_EQUIPMENT, 2)
-    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 3, ResourceType.CAPITAL_EQUIPMENT, 2)
+    banker.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 2)
+    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 3, ResourceType.LABORATORY_EQUIPMENT, 2)
     engine.accept_deal(deal, acceptor=banker, proposer=farmer)
     assert deal.status == DealStatus.ACCEPTED
     assert farmer.inventory.get(ResourceType.FOOD) == 0
-    assert farmer.inventory.get(ResourceType.CAPITAL_EQUIPMENT) == 2
-    assert banker.inventory.get(ResourceType.CAPITAL_EQUIPMENT) == 0
+    assert farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT) == 2
+    assert banker.inventory.get(ResourceType.LABORATORY_EQUIPMENT) == 0
     assert banker.inventory.get(ResourceType.FOOD) == 3
 
 
 def test_accept_deal_stale_resource_raises(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 3)
-    banker.receive_resources(ResourceType.CAPITAL_EQUIPMENT, 2)
-    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 3, ResourceType.CAPITAL_EQUIPMENT, 2)
+    banker.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 2)
+    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 3, ResourceType.LABORATORY_EQUIPMENT, 2)
     # Farmer sells food in the meantime
     farmer.give_resources(ResourceType.FOOD, 3)
     with pytest.raises(StaleResourceError):
@@ -77,7 +77,7 @@ def test_accept_deal_stale_resource_raises(engine, farmer, banker):
 
 def test_reject_deal_no_transfer(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 3)
-    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 2, ResourceType.CAPITAL_EQUIPMENT, 1)
+    deal = engine.propose_deal(farmer, banker, ResourceType.FOOD, 2, ResourceType.LABORATORY_EQUIPMENT, 1)
     engine.reject_deal(deal)
     assert deal.status == DealStatus.REJECTED
     assert farmer.inventory.get(ResourceType.FOOD) == 3

@@ -64,4 +64,30 @@ def test_ai_keeps_required_input_reserve_when_listing_outputs():
 
     assert miner.inventory.get(ResourceType.OIL) >= 1
     summary = market.market_summary()[ResourceType.OIL.value]
-    assert summary["ask_quantity"] == 7
+    assert summary["ask_quantity"] == 202
+
+
+def test_ai_produces_multiple_runs_when_inputs_available():
+    ai = AIStrategy()
+    market = Market()
+    miner = make_player(1, "Miner AI", ["Miner"])
+    miner.receive_resources(ResourceType.OIL, 5)
+    miner.receive_resources(ResourceType.FREIGHT, 2)
+    miner.receive_resources(ResourceType.MINING_EQUIPMENT, 2)
+
+    actions = ai.take_turn(
+        miner,
+        market,
+        [miner],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    assert any("160x Ore" in action and "400x Oil" in action for action in actions)
+    summary = market.market_summary()
+    assert summary[ResourceType.ORE.value]["ask_quantity"] == 160
+    assert summary[ResourceType.OIL.value]["ask_quantity"] == 402

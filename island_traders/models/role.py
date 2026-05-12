@@ -38,14 +38,14 @@ ROLES: dict[str, Role] = {
         name="Educator",
         island="Education & Training Island",
         produces=(ResourceType.KNOWLEDGE, ResourceType.PATENTS),
-        needs=(ResourceType.CAPITAL_EQUIPMENT, ResourceType.FINANCE),
+        needs=(ResourceType.LABORATORY_EQUIPMENT, ResourceType.FINANCE),
         description="Trains the workforce and advances knowledge across the archipelago.",
     ),
     "Banker": Role(
         name="Banker",
         island="Banking Island",
         produces=(ResourceType.FINANCE,),
-        needs=(ResourceType.KNOWLEDGE, ResourceType.CAPITAL_EQUIPMENT),
+        needs=(ResourceType.KNOWLEDGE,),
         description="Issues credit and financial services — capital flows where it is invited.",
     ),
     "Manufacturer": Role(
@@ -54,20 +54,21 @@ ROLES: dict[str, Role] = {
         produces=(
             ResourceType.FARM_MACHINERY,
             ResourceType.MINING_EQUIPMENT,
+            ResourceType.LABORATORY_EQUIPMENT,
             ResourceType.MEDICAL_DEVICES,
             ResourceType.TRANSPORT_EQUIPMENT,
         ),
         needs=(ResourceType.ORE, ResourceType.OIL),
         description=(
             "ForgeHaven runs four product lines — Farm Machinery, Mining Equipment, "
-            "Medical Devices, or Transportation Equipment. Choose one per season."
+            "Laboratory Equipment, Medical Devices, or Transportation Equipment. Choose one per season."
         ),
     ),
     "Doctor": Role(
         name="Doctor",
         island="Healthcare Island",
         produces=(ResourceType.HEALTH_SERVICES, ResourceType.VACCINE),
-        needs=(ResourceType.KNOWLEDGE, ResourceType.MEDICAL_DEVICES),
+        needs=(ResourceType.KNOWLEDGE, ResourceType.LABORATORY_EQUIPMENT),
         description="Provides health services and vaccines, keeping the workforce productive.",
     ),
 }

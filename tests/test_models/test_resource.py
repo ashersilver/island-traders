@@ -33,13 +33,13 @@ def test_bundle_subtract_raises_when_insufficient():
 
 
 def test_bundle_can_satisfy_true():
-    b = ResourceBundle({ResourceType.CAPITAL_EQUIPMENT: 3, ResourceType.OIL: 2})
-    assert b.can_satisfy({ResourceType.CAPITAL_EQUIPMENT: 1, ResourceType.OIL: 2})
+    b = ResourceBundle({ResourceType.LABORATORY_EQUIPMENT: 3, ResourceType.OIL: 2})
+    assert b.can_satisfy({ResourceType.LABORATORY_EQUIPMENT: 1, ResourceType.OIL: 2})
 
 
 def test_bundle_can_satisfy_false():
-    b = ResourceBundle({ResourceType.CAPITAL_EQUIPMENT: 1})
-    assert not b.can_satisfy({ResourceType.CAPITAL_EQUIPMENT: 2})
+    b = ResourceBundle({ResourceType.LABORATORY_EQUIPMENT: 1})
+    assert not b.can_satisfy({ResourceType.LABORATORY_EQUIPMENT: 2})
 
 
 def test_bundle_total_value():

@@ -11,6 +11,8 @@ from ..constants import (
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
 )
 
+AI_TARGET_PRODUCTION_RUNS = 2
+
 
 class AIStrategy:
     """
@@ -26,6 +28,9 @@ class AIStrategy:
     3. Sell produced resources if market price >= 80% of base price.
     Training is handled by TurnManager via _ai_educator_respond / _auto_arrange_transport.
     """
+
+    def __init__(self, target_production_runs: int = AI_TARGET_PRODUCTION_RUNS):
+        self.target_production_runs = max(1, target_production_runs)
 
     def _ai_offer_insurance(
         self,
@@ -120,16 +125,23 @@ class AIStrategy:
         if is_manufacturer:
             chosen_line = self._choose_product_line(player, market)
 
-        # 1. Buy missing production inputs from market offers
+        # 1. Buy missing production inputs from market offers. AI players are
+        # supply scaffolding for unclaimed islands, so they try to provision
+        # multiple runs when the market can support it.
         inputs_needed = player.all_required_inputs(season_name, chosen_line)
         for rtype, qty_needed in inputs_needed.items():
+            target_qty = qty_needed * self.target_production_runs
             have = player.inventory.get(rtype)
-            if have < qty_needed:
-                buy_qty = qty_needed - have
+            if have < target_qty:
+                buy_qty = target_qty - have
                 offers = market.available_offers(rtype)
                 avail = sum(o.remaining for o in offers)
-                if avail >= buy_qty and offers:
-                    est_cost = offers[0].price_per_unit * buy_qty
+                if avail > 0 and offers:
+                    buy_qty = min(buy_qty, avail)
+                    est_cost = sum(
+                        offer.price_per_unit * take
+                        for offer, take in self._planned_offer_fills(offers, buy_qty)
+                    )
                     if player.dollops >= est_cost:
                         try:
                             cost, bought = market.buy_from_offers(player, rtype, buy_qty)
@@ -140,14 +152,23 @@ class AIStrategy:
                         except Exception:
                             pass
 
-        # 3. Produce if possible
-        can, missing = production_engine.can_produce(player, event_result, season_name, chosen_line)
-        if can:
+        # 3. Produce as many runs as inputs allow, up to the AI run target.
+        produced_totals: dict[ResourceType, int] = {}
+        missing: dict[ResourceType, int] = {}
+        for _ in range(self.target_production_runs):
+            can, missing = production_engine.can_produce(
+                player, event_result, season_name, chosen_line
+            )
+            if not can:
+                break
             produced = production_engine.produce(player, event_result, season_name, chosen_line)
             if produced:
-                line_tag = f" [{MANUFACTURER_PRODUCT_LINES[chosen_line]['desc']}]" if chosen_line else ""
-                summary = ", ".join(f"{qty}x {r.value}" for r, qty in produced.items())
-                actions.append(f"[AI] {player.name} produced{line_tag}: {summary}")
+                for rtype, qty in produced.items():
+                    produced_totals[rtype] = produced_totals.get(rtype, 0) + qty
+        if produced_totals:
+            line_tag = f" [{MANUFACTURER_PRODUCT_LINES[chosen_line]['desc']}]" if chosen_line else ""
+            summary = ", ".join(f"{qty}x {r.value}" for r, qty in produced_totals.items())
+            actions.append(f"[AI] {player.name} produced{line_tag}: {summary}")
         elif missing:
             missing_str = ", ".join(f"{qty}x {r.value}" for r, qty in missing.items())
             actions.append(f"[AI] {player.name} cannot produce — missing: {missing_str}")
@@ -178,3 +199,13 @@ class AIStrategy:
                         pass
 
         return actions
+
+    def _planned_offer_fills(self, offers, qty: int):
+        remaining = qty
+        for offer in offers:
+            if remaining <= 0:
+                break
+            take = min(remaining, offer.remaining)
+            if take > 0:
+                yield offer, take
+                remaining -= take

@@ -1,76 +1,127 @@
 # Island Traders — Enhancement Tracker
 
+<!-- Sync policy:
+     GitHub issues are the canonical record for bugs and feature requests.
+     This file tracks development priority, grouping, and implementation state.
+     Completed items move to the Completed section below. -->
+
+---
+
+## Bugs (fix before new features)
+
+- [ ] **#2 — Action menu stops displaying for some players** *(multiplayer blocker)*
+      During concurrent play some players' action menus disappear. Likely a
+      TLS/thread race in ws_adapter — `set_active_player` called on wrong thread
+      or `_ensure_player` races, causing `_send_and_wait` to silently return None.
+      Reconnect/replay work may help but needs a dedicated investigation.
+
+## Verify
+
+- [ ] **#10 — Market Board modal cannot be dismissed**
+      Close button exists on this branch. Verify in a live game that it reliably
+      dismisses the modal and restores the current action flow, then close the issue.
+
+---
+
 ## In Progress
 
-### Production Capacity Model & Investing Phase
+### Production Capacity Model
 See [`requirements/production-capacity-model.md`](requirements/production-capacity-model.md) for full spec.
+
 - [ ] Worker bands (Manager / Technician / Worker) with per-island titles
-- [ ] Investing Phase between auction and Year 1 Spring
 - [ ] Per-output capital catalogue + per-unit input requirements
 - [ ] Production Capacity sidebar panel
-- [ ] Production Constraint Popup (inputs / workforce / capital)
-- [ ] Patents (Educator output, permanent boost, capped at 3 active per output)
-- [ ] Apprenticeship pipeline (separate slot pool from Education)
+- [ ] Production Constraint Popup — which cap (equipment / workforce / inputs) is binding and by how much
+- [ ] **#4 — What-If production table** — interactive spreadsheet-like calculator; if viable, "Enact" button triggers required purchases
+- [ ] Patents (Educator output; permanent +% boost; max 3 active per output)
+- [ ] Apprenticeship pipeline (separate slot pool from university education)
 - [ ] Education pipeline (Doctor 2 seasons, Nurse 1 season, other Managers 2)
-- [ ] Mechanic profession (–20% per Mechanic, capped at –60%)
-- [ ] Equipment Insurance (Banker product, market-rate replacement payout)
-- [ ] AI auction bidding (per-role heuristic + 2nd round)
-- [ ] Simultaneous-play architecture (timer + Ready button replaces End Turn)
-- [ ] Season timer with 60-second flash warning
+- [ ] Mechanic profession (–20% downtime per Mechanic, capped at –60%)
+- [ ] Equipment Insurance (Banker product; market-rate replacement payout on destruction event)
+- [ ] AI auction bidding (per-role heuristic + 2nd-round top-up)
+- [ ] Mid-game capital equipment purchases (2-season delivery for complex items)
+- [ ] Capital equipment leases (3-year lease, return or buy out at 5-year straight-line book value)
 
 ### AI Players
-See [`requirements/llm-player-adapter.md`](requirements/llm-player-adapter.md) for the proposed LLM-backed player design.
-- [ ] Keep the deterministic `AIStrategy` as the default heuristic bot for tests, local play, and simulation calibration
-- [ ] Introduce a strategy interface so heuristic and LLM players can share the same turn boundary
-- [ ] Add a structured game-state snapshot for LLM context
-- [ ] Add a structured action proposal schema validated by the engine before mutation
-- [ ] Add optional LLM player configuration for human-like negotiation and table chat
-- [ ] Add tests proving invalid LLM proposals cannot mutate game state
+See [`requirements/llm-player-adapter.md`](requirements/llm-player-adapter.md) for the LLM adapter design.
+Draft PR #12 documents the spec; implementation is the next step.
 
-### Lobby & Game Start Redesign
-- [ ] Redesigned start screen (visual polish, intuitive flow)
-- [ ] Create game: public or private option
-- [ ] Join game: browse public games, enter code, or receive invite
-- [ ] Players join with proportional starting wealth & population (based on player count)
-- [ ] Role auction phase: players bid Dollops for island roles
-- [ ] Unclaimed roles become AI-controlled
-- [ ] Game option: require all roles claimed by humans before start
+- [ ] `PlayerStrategy` protocol / base class (`take_turn(...)`) shared by heuristic and LLM players
+- [ ] `GameStateSnapshot` serializer (public + player-private context only)
+- [ ] `ActionProposal` schema covering all legal action types
+- [ ] Validation layer — rejects or repairs illegal proposals before engine sees them
+- [ ] `LLMPlayerStrategy` implementation behind optional configuration
+- [ ] Tests proving invalid LLM proposals cannot mutate game state
+- [ ] Keep `AIStrategy` as default heuristic for simulations and tests
+
+### Island Ledger & Ownership Model
+See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the full spec.
+*Prerequisite for financial model improvements, role resale, and Banker institutional pool.*
+
+- [ ] Island/role entity with its own inventory, working capital, and obligations
+- [ ] Separate player ownership cash from island working capital
+- [ ] Banker institutional cash pool (separate from player-owner personal cash)
+- [ ] Owner deposit accounts (auction surplus deposited with Bank at 5% p.a.)
+- [ ] Capital injection / withdrawal flow between player and island ledger
+- [ ] Ownership transfer (role resale) preserving island state
 
 ### Financial Model
-- [ ] Rename "Dollops" heading → "Working Capital" (suffix remains Dp)
-- [ ] Introduce Loans as a balance sheet item
-- [ ] Wealth = total assets at market value − loans outstanding
-- [ ] All monetary values show Dp suffix consistently
 
-### Dashboard
-- [ ] Tabbed view: one tab per island/role the player controls
-- [ ] Consolidated view when controlling multiple islands
+- [ ] **#6 — Loan roll-over** — renegotiate rate and term on a loan before or at maturity
+- [ ] **#5 — Insurance review** — view active policies, cancel or renegotiate at renewal
+- [ ] Rename "Dollops" heading → "Working Capital" (suffix `Dp` stays)
+- [ ] Wealth = total assets at market value − loans outstanding (balance sheet view)
+- [ ] All monetary values show `Dp` suffix consistently in UI
+
+### Dashboard & UX
+
+- [ ] **#1 — Pause game** — freeze all timers, broadcast `game_paused`; other players see a non-interactive overlay until host unpauses
+- [ ] **#3 — Action alerts / event subscriptions** — chips on the log panel to filter by event type; popup notification when a subscribed event fires. *(See also `inbox.md` event-filtering requirement.)*
+- [ ] **#7 — All-player summary on island layout** — overlay player values (wealth, output, workforce) on the island map SVG
+- [ ] **#8 — Intro screen** — animated board with hotspot tooltips explaining each island; requires island graphics assets
+- [ ] Event log: player-relevant lines are highlighted (done ✓ — verify in play)
+- [ ] Consolidated view when controlling multiple islands (tab + "Consolidated" already exists; verify multi-role aggregation is correct)
+
+---
 
 ## Backlog
 
 ### From CLAUDE.md
 - [ ] README.md (proper GitHub project readme)
 - [ ] RULES.md — fix Doctor workforce numbers (6 total: 2 Doctors + 4 Nurses)
-- [ ] Simulation recalibration after ForgeHaven + insurance changes
+- [ ] Simulation recalibration after ForgeHaven + insurance + capacity-model changes
 - [ ] PDF export via reportlab (stretch goal)
 
-### Feature Roadmap (from design review)
-- [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan with island as collateral). See requirements/production-capacity-model.md §16.
-- [ ] Roleless players — role aftermarket (secondary sales between players) + on-call bank deposits (depositors expand Banker's lending capacity). See requirements/production-capacity-model.md §17.
+### Feature Roadmap
+- [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan). See `requirements/production-capacity-model.md §16`.
+- [ ] Roleless players — role aftermarket (secondary sales) + on-call bank deposits expanding Banker lending capacity. See `requirements/production-capacity-model.md §17` and `requirements/island-ledger.md`.
 - [ ] Brokerage services: Banker negotiates deals between islands for a commission
-- [x] Loans system (Banker offers bullet bonds — 1 year term, repaid at maturity with interest)
 - [ ] Contracts & Futures (forward agreements between players)
-- [ ] Infrastructure Investment (upgrade production capacity)
-- [ ] Chat integration (in-game messaging)
+- [ ] Infrastructure Investment (upgrade production capacity mid-game)
+- [ ] In-game chat (WebSocket-backed messaging between players)
 - [ ] Market orders (limit orders, standing offers)
 - [ ] Tournament mode (bracket play across multiple games)
-- [ ] Population migration: islands lose population to others with higher standard of living
-  - Standard of Living Index based on food per capita, insurance coverage, health services, etc.
-  - Net migration proportional to differential between islands
+- [ ] Population migration: islands lose population to others with higher standard of living (Food per capita, insurance coverage, health services index)
+
+---
 
 ## Completed
-- [x] ForgeHaven product line differentiation (4 specialized product lines)
+
+- [x] Simultaneous-play architecture — per-player threading, season timer, Ready button
+- [x] Pre-season review window (timer + Ready-to-start short-circuit)
+- [x] Per-role island tabs in game dashboard
+- [x] Starting capital as a configurable game parameter (default 700 Dp)
+- [x] Pre-season / action-phase UI (banner overlay, phase-aware Ready button, player dots)
+- [x] Event log player-relevant line highlighting
+- [x] Role auction phase (AuctionState, timer, AI participation)
+- [x] Investing Phase between auction and Year 1 (InvestingState, capital catalogue)
+- [x] Public/private rooms + join code
+- [x] Proportional starting wealth based on player count
+- [x] Reconnect: replay pending prompts after client disconnect
+- [x] LLM player adapter spec documented (PR #12 — draft; implementation pending)
+- [x] ForgeHaven product line differentiation (4 specialised product lines)
 - [x] Banker insurance products (life + medical)
 - [x] Workplace risk system (injuries, fatalities, experience scaling)
 - [x] WebSocket game server + responsive dashboard
 - [x] Fix WebSocket 403 (future annotations + local imports)
+- [x] Loans system (Banker bullet bonds — 1-year term, repaid at maturity with interest)
