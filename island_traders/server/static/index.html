@@ -130,8 +130,27 @@ button:active{transform:scale(.97)}
 .timer-box.flash .timer-val{color:#ff6b6b}
 @keyframes timer-flash{0%,100%{background:var(--panel)}50%{background:rgba(255,107,107,.18)}}
 #ready-btn.is-ready{background:var(--accent);color:#fff}
+#ready-btn.pre-season-ready{background:#5a4a2a;border-color:#c8971a;color:#f4d780}
+#ready-btn.pre-season-ready.is-ready{background:#c8971a;color:#fff}
 .player-ready-dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--dim);margin-right:.35rem;vertical-align:middle}
 .player-ready-dot.ready{background:#88ddaa}
+/* Pre-season review banner */
+#pre-season-banner{
+  position:fixed;top:0;left:0;right:0;z-index:200;
+  background:linear-gradient(135deg,#1a120a 0%,#2a1d08 100%);
+  border-bottom:2px solid var(--gold);
+  padding:.65rem 1.5rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  flex-wrap:wrap;
+}
+#pre-season-banner.hidden{display:none}
+.psb-title{font-size:1rem;font-weight:700;color:var(--gold)}
+.psb-sub{font-size:.8rem;color:var(--dim);margin-top:.15rem}
+.psb-timer{font-size:1.5rem;font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;min-width:3ch;text-align:right}
+.psb-timer.flash{color:#ff6b6b;animation:timer-flash 1s ease-in-out infinite}
+.psb-ready-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--dim)}
+.psb-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--dim)}
+.psb-dot.ready{background:#88ddaa}
 .budget-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
 .budget-bar .budget-label{color:var(--dim);font-size:.82rem}
 .budget-bar .budget-val{color:var(--gold);font-weight:700;font-size:1rem}
@@ -172,6 +191,17 @@ button:active{transform:scale(.97)}
 .bid-input-row .dp-label{color:var(--dim);font-size:.9rem;white-space:nowrap}
 .bid-actions{display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap}
 .bid-msg{color:var(--green);font-size:.8rem;margin-top:.4rem;min-height:1.2em}
+.purchase-table{width:100%;border-collapse:collapse;font-size:.88rem;table-layout:fixed}
+.purchase-table th{color:var(--dim);font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;padding:.35rem .45rem;border-bottom:1px solid var(--border);vertical-align:bottom}
+.purchase-table td{padding:.45rem;border-top:1px solid var(--border);vertical-align:middle}
+.purchase-table .col-select{width:4.5rem;text-align:center}
+.purchase-table .col-item{text-align:left}
+.purchase-table .col-cost{width:6.5rem;text-align:right}
+.purchase-table .col-delivery{width:7.5rem;text-align:left}
+.purchase-table .col-effect{text-align:left}
+.purchase-table td.col-cost{color:var(--gold);font-variant-numeric:tabular-nums;font-weight:700}
+.purchase-table td.col-effect{color:var(--dim);font-size:.82rem;line-height:1.3}
+.purchase-table input[type=checkbox]{width:1rem;height:1rem;min-width:1rem;vertical-align:middle}
 
 /* ── GAME DASHBOARD ── */
 #screen-game{height:100vh;width:100vw;overflow:hidden}
@@ -207,6 +237,13 @@ button:active{transform:scale(.97)}
 }
 .season-badge .season-year{font-size:.85rem;font-weight:700;color:var(--heading)}
 .season-badge .season-name{font-size:.85rem;font-weight:700;color:var(--accent)}
+.game-code-pill{
+  display:flex;align-items:center;gap:.45rem;
+  background:rgba(231,192,93,.08);border:1px solid rgba(231,192,93,.45);
+  border-radius:var(--radius);padding:.28rem .7rem;white-space:nowrap
+}
+.game-code-pill span{font-size:.7rem;color:var(--dim);text-transform:uppercase;font-weight:700}
+.game-code-pill strong{font-size:.9rem;color:var(--gold);letter-spacing:.06em}
 .g-hdr .wealth{color:var(--gold);font-weight:700;font-size:.9rem}
 
 /* tabs */
@@ -228,6 +265,7 @@ button:active{transform:scale(.97)}
   font-family:'Fira Code','Cascadia Code',monospace;font-size:.74rem;line-height:1.6;color:var(--dim);
 }
 .g-log .ev{color:var(--gold)}
+.g-log .log-mine{background:rgba(10,189,227,.08);border-left:2px solid var(--accent);padding-left:.35rem;color:var(--heading)}
 .g-log .err{color:var(--red)}
 .g-log .info{color:var(--accent)}
 
@@ -253,6 +291,15 @@ button:active{transform:scale(.97)}
 .market-mini td{text-align:right;padding:.16rem .1rem;border-bottom:1px solid #0a1220;white-space:nowrap}
 .market-mini .bid{color:var(--green);font-weight:600}
 .market-mini .ask{color:var(--gold);font-weight:600}
+.market-board{border:1px solid var(--accent);border-radius:var(--radius);padding:.65rem;background:rgba(10,189,227,.04)}
+.market-board h4{margin:.65rem 0 .3rem;color:var(--accent);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
+.decision-list{display:grid;gap:.45rem}
+.decision-card{border:1px solid var(--border);border-radius:var(--radius);padding:.55rem .65rem;background:var(--panel);font-size:.82rem}
+.decision-card strong{color:var(--heading)}
+.decision-card .why{color:var(--dim);font-size:.76rem;margin-top:.2rem;line-height:1.35}
+.decision-card.good{border-color:rgba(39,174,96,.55)}
+.decision-card.warn{border-color:rgba(231,192,93,.55)}
+.decision-card.blocked{border-color:rgba(231,76,60,.55)}
 .icon-btn{background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:4px;min-width:1.45rem;height:1.35rem;padding:0;font-size:.85rem}
 
 .comp-table{width:100%;border-collapse:collapse;font-size:.79rem}
@@ -286,9 +333,45 @@ button:active{transform:scale(.97)}
 .dialog .opts button{text-align:left;background:var(--bg);border:1px solid var(--border);color:var(--text)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
+.constraint-line{border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;margin-bottom:.65rem;background:rgba(7,15,30,.42)}
+.constraint-line.blocked{border-color:rgba(252,92,101,.55)}
+.constraint-line.limited{border-color:rgba(246,185,59,.55)}
+.constraint-line.ready{border-color:rgba(38,222,129,.48)}
+.constraint-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.8rem;margin-bottom:.4rem}
+.constraint-output{color:var(--heading);font-weight:800;font-size:.95rem}
+.constraint-status{font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.constraint-line.blocked .constraint-status{color:var(--red)}
+.constraint-line.limited .constraint-status{color:var(--gold)}
+.constraint-line.ready .constraint-status{color:var(--green)}
+.constraint-caps{display:flex;flex-wrap:wrap;gap:.35rem;margin:.45rem 0}
+.constraint-cap{border:1px solid var(--border);border-radius:4px;padding:.18rem .42rem;font-size:.75rem;color:var(--dim)}
+.constraint-cap.binding{border-color:currentColor;color:var(--gold)}
+.constraint-note{font-size:.78rem;color:var(--dim);line-height:1.35;margin:.25rem 0}
+.constraint-shortfalls{display:grid;gap:.35rem;margin-top:.45rem}
+.constraint-shortfall{font-size:.8rem;line-height:1.35}
+.constraint-shortfall strong{color:var(--heading)}
+.constraint-shortfall.inputs{color:#ffabab}
+.constraint-shortfall.workforce{color:#ffd985}
+.constraint-shortfall.equipment{color:#aabbff}
 </style>
 </head>
 <body>
+
+<!-- Pre-season review banner (fixed top, shown over the game screen) -->
+<div id="pre-season-banner" class="hidden">
+  <div>
+    <div class="psb-title" id="psb-title">📋 Pre-Season Review</div>
+    <div class="psb-sub" id="psb-sub">Review last season's results before trading opens.</div>
+  </div>
+  <div id="psb-ready-row" class="psb-ready-row"><!-- player dots injected --></div>
+  <div style="display:flex;align-items:center;gap:.8rem">
+    <span class="psb-timer" id="psb-timer">—</span>
+    <button id="psb-ready-btn" class="btn-gold btn-sm"
+            onclick="toggleReady()" title="Click when you're ready to start trading">
+      <span id="psb-ready-label">Ready to Start ✓</span>
+    </button>
+  </div>
+</div>
 
 <!-- ===================== LANDING ===================== -->
 <div id="screen-landing">
@@ -573,6 +656,10 @@ button:active{transform:scale(.97)}
         <span class="season-year" id="hdr-year">Year 1</span>
         <span class="season-name" id="hdr-season">Spring</span>
       </div>
+      <div class="game-code-pill" title="Game code for rejoining">
+        <span>Game</span>
+        <strong id="hdr-game-code">------</strong>
+      </div>
       <div class="island-tabs" id="island-tabs"><!-- tabs injected --></div>
       <div style="display:flex;align-items:center;gap:.6rem">
         <div id="season-timer-box" class="timer-box hidden" title="Season timer — turn ends when this hits 0 or every player is Ready">
@@ -627,18 +714,24 @@ button:active{transform:scale(.97)}
         <div id="prompt-input" style="margin-top:.5rem"></div>
       </div>
       <div class="section">
+        <h3>Decision Hints</h3>
+        <div class="decision-list" id="decision-hints">
+          <span style="color:var(--dim);font-size:.82rem">Waiting for game state…</span>
+        </div>
+      </div>
+      <div class="section">
         <h3>All Players</h3>
         <table class="comp-table">
-          <thead><tr><th>Player</th><th>Role</th><th>Wealth (Dp)</th><th>Capital (Dp)</th><th>Workers</th></tr></thead>
+          <thead><tr><th>Player</th><th>Role</th><th>Wealth (Dp)</th><th>Capital (Dp)</th><th>Active</th><th>Mgr</th><th>Tech</th><th>Worker</th></tr></thead>
           <tbody id="comp-tbody"></tbody>
         </table>
       </div>
     </div>
 
     <div class="g-info">
-      <div class="section">
+      <div class="section market-board">
         <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-          <span>Market</span>
+          <span>Market Board</span>
           <button class="icon-btn" title="Open market board" onclick="showMarketBoardPopup()">⌕</button>
         </h3>
         <div id="market-panel" onclick="showMarketBoardPopup()" style="cursor:pointer">—</div>
@@ -768,7 +861,7 @@ async function joinByCode() {
     myPlayerId = data.player_id;
     enterWaiting(data.room);
   } catch(e) {
-    document.getElementById('j-code-error').textContent = 'Invalid or full room code.';
+    document.getElementById('j-code-error').textContent = e.message || 'Invalid or full room code.';
   }
 }
 
@@ -805,6 +898,7 @@ async function refreshPublicRooms() {
 function enterWaiting(room) {
   currentRoomId = room.room_id;
   currentRoom = room;
+  myPlayerIdx = null;
   renderWaitingRoom(room);
   showScreen('waiting');
   connectWS();
@@ -1071,13 +1165,13 @@ function renderInvesting() {
     wrap.style = 'background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1rem';
     wrap.innerHTML = `<h3 style="margin:0 0 .6rem 0;color:var(--gold)">${esc(role)} Island — Capital Catalogue</h3>`;
     const tbl = document.createElement('table');
-    tbl.style = 'width:100%;font-size:.88rem';
-    tbl.innerHTML = `<thead><tr style="text-align:left;color:var(--dim)">
-        <th style="padding:.3rem .4rem">Buy?</th>
-        <th style="padding:.3rem .4rem">Item</th>
-        <th style="padding:.3rem .4rem">Cost</th>
-        <th style="padding:.3rem .4rem">Delivery</th>
-        <th style="padding:.3rem .4rem">Effect</th>
+    tbl.className = 'purchase-table';
+    tbl.innerHTML = `<thead><tr>
+        <th class="col-select">Select</th>
+        <th class="col-item">Equipment</th>
+        <th class="col-cost">Price</th>
+        <th class="col-delivery">Available</th>
+        <th class="col-effect">Production effect</th>
       </tr></thead><tbody></tbody>`;
     const tbody = tbl.querySelector('tbody');
     for (const it of items) {
@@ -1088,11 +1182,11 @@ function renderInvesting() {
       const mandTag = isMandatory ? '<span style="color:var(--gold);font-size:.7rem;margin-left:.4rem">★ default</span>' : '';
       const deliv = it.delivery_seasons > 0 ? `${it.delivery_seasons} seasons` : 'immediate';
       tr.innerHTML = `
-        <td style="padding:.4rem"><input type="checkbox" data-item="${esc(it.item_id)}" data-cost="${it.cost}" ${checked}></td>
-        <td style="padding:.4rem"><strong>${esc(it.name)}</strong>${mandTag}</td>
-        <td style="padding:.4rem">${it.cost.toFixed(0)} Dp</td>
-        <td style="padding:.4rem">${deliv}</td>
-        <td style="padding:.4rem;color:var(--dim)">${esc(it.description || '')}</td>
+        <td class="col-select"><input type="checkbox" data-item="${esc(it.item_id)}" data-cost="${it.cost}" ${checked} title="Buy ${esc(it.name)}"></td>
+        <td class="col-item"><strong>${esc(it.name)}</strong>${mandTag}</td>
+        <td class="col-cost">${it.cost.toFixed(0)} Dp</td>
+        <td class="col-delivery">${deliv}</td>
+        <td class="col-effect">${esc(it.description || '')}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -1229,6 +1323,77 @@ function renderCapacityPanel(capacity) {
 }
 
 // ==================== CONSTRAINT POPUP ====================
+function fmtCap(v) {
+  return (v === null || v === undefined) ? '∞' : fmtQty(v);
+}
+
+function fmtQty(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');
+}
+
+function capValueFor(output, key) {
+  if (key === 'equipment') return output.equipment_cap;
+  if (key === 'workforce') return output.workforce_cap;
+  return output.input_cap;
+}
+
+function outputBlockers(output) {
+  if (Array.isArray(output.blockers) && output.blockers.length) return output.blockers;
+  return output.binding ? [output.binding] : [];
+}
+
+function constraintStatus(output) {
+  const max = output.max_producible;
+  if (max === 0) return {tone: 'blocked', label: `Blocked by ${outputBlockers(output).join(' + ')}`};
+  if (outputBlockers(output).length) return {tone: 'limited', label: `Limited by ${outputBlockers(output).join(' + ')}`};
+  return {tone: 'ready', label: 'Ready'};
+}
+
+function renderConstraintShortfalls(output) {
+  const parts = [];
+  const inputsShort = output.inputs_short || {};
+  const workforceShort = output.workforce_short || {};
+  const equipmentShort = output.equipment_short || {};
+
+  if (Object.keys(inputsShort).length) {
+    const entries = Object.entries(inputsShort).map(([resource, qty]) => {
+      const price = marketPriceOf(resource);
+      const priceText = price === '—' ? '' : ` at about ${fmtQty(price)} Dp/unit`;
+      return `+${fmtQty(qty)} ${esc(resource)}${priceText}`;
+    });
+    parts.push(`<div class="constraint-shortfall inputs"><strong>Inputs:</strong> ${entries.join(', ')}</div>`);
+  }
+
+  if (Object.keys(workforceShort).length) {
+    const entries = Object.entries(workforceShort)
+      .map(([band, qty]) => `+${fmtQty(qty)} ${esc(band)}`);
+    parts.push(`<div class="constraint-shortfall workforce"><strong>Workforce:</strong> ${entries.join(', ')}</div>`);
+  }
+
+  if (equipmentShort && Object.keys(equipmentShort).length) {
+    const needed = equipmentShort.needed_capacity ? `+${fmtQty(equipmentShort.needed_capacity)} capacity` : 'more capacity';
+    const options = equipmentShort.options || [];
+    if (options.length) {
+      const rendered = options.slice(0, 3).map(item => {
+        const count = item.count > 1 ? `${fmtQty(item.count)} × ` : '';
+        const arrival = item.delivery_seasons > 0 ? `, arrives in ${item.delivery_seasons} season${item.delivery_seasons === 1 ? '' : 's'}` : ', immediate';
+        const unlock = item.unlocks ? ' to unlock this line' : ` (${fmtQty(item.capacity_each)} cap each)`;
+        return `${count}${esc(item.name)}${unlock}: ${fmtQty(item.total_cost)} Dp${arrival}`;
+      });
+      parts.push(`<div class="constraint-shortfall equipment"><strong>Equipment:</strong> need ${needed}. ${rendered.join('; ')}</div>`);
+    } else {
+      parts.push(`<div class="constraint-shortfall equipment"><strong>Equipment:</strong> need ${needed}, but no matching catalogue item is available for this output.</div>`);
+    }
+  }
+
+  if (!parts.length) {
+    parts.push('<div class="constraint-note">No concrete shortfall is showing for the current cap. This line is ready at its listed max.</div>');
+  }
+  return `<div class="constraint-shortfalls">${parts.join('')}</div>`;
+}
+
 function showConstraintPopup() {
   if (!gameState) return;
   const me = gameState.players[myPlayerIdx];
@@ -1244,40 +1409,29 @@ function showConstraintPopup() {
     body = '<p style="color:var(--dim)">No production recipes available for this island.</p>';
   } else {
     body = outputs.map(o => {
-      const lines = [];
-      const max = (o.max_producible === null || o.max_producible === undefined)
-                    ? '∞' : o.max_producible;
+      const max = fmtCap(o.max_producible);
       const pCount = o.patents_active || 0;
       const pTag = pCount > 0
-        ? ` <span style="color:#88ddaa;font-size:.7rem;margin-left:.4rem">★ ${pCount} patent${pCount > 1 ? 's' : ''} active (input cost ×${o.patent_input_mult})</span>`
+        ? ` <span style="color:#88ddaa;font-size:.7rem">★ ${pCount} patent${pCount > 1 ? 's' : ''} active, input cost ×${fmtQty(o.patent_input_mult)}</span>`
         : '';
-      lines.push(`<h4 style="margin:.6rem 0 .3rem 0">${esc(o.output)} — max ${max}/season${pTag}</h4>`);
-      lines.push(`<div style="font-size:.85rem;margin-bottom:.4rem">
-                    Binding: <strong style="color:#ffcc66">${esc(o.binding)}</strong>
-                    &nbsp;|&nbsp; Equipment: ${o.equipment_cap} &nbsp;
-                    Workforce: ${o.workforce_cap === null ? '∞' : o.workforce_cap} &nbsp;
-                    Inputs: ${o.input_cap === null ? '∞' : o.input_cap}
-                  </div>`);
-      const inputsShort = o.inputs_short || {};
-      const wfShort     = o.workforce_short || {};
-      if (Object.keys(inputsShort).length) {
-        lines.push('<div style="font-size:.82rem;color:#ff8a8a">Inputs needed to lift cap:</div>');
-        lines.push('<ul style="margin:.2rem 0 .4rem 1rem;font-size:.82rem">' +
-          Object.entries(inputsShort)
-            .map(([r, q]) => `<li>+${q} ${esc(r)} (market price: ${marketPriceOf(r)} Dp/unit)</li>`)
-            .join('') + '</ul>');
-      }
-      if (Object.keys(wfShort).length) {
-        lines.push('<div style="font-size:.82rem;color:#ffcc66">Workforce needed:</div>');
-        lines.push('<ul style="margin:.2rem 0 .4rem 1rem;font-size:.82rem">' +
-          Object.entries(wfShort)
-            .map(([band, q]) => `<li>+${q} ${esc(band)}</li>`)
-            .join('') + '</ul>');
-      }
-      if (o.binding === 'equipment') {
-        lines.push('<div style="font-size:.82rem;color:#88aaff">Equipment is the bottleneck — consider buying more capital next turn.</div>');
-      }
-      return `<div style="border-bottom:1px solid var(--border);padding-bottom:.4rem">${lines.join('')}</div>`;
+      const status = constraintStatus(o);
+      const caps = ['equipment', 'workforce', 'inputs'].map(key => {
+        const cap = fmtCap(capValueFor(o, key));
+        const active = outputBlockers(o).includes(key) ? ' binding' : '';
+        return `<span class="constraint-cap${active}">${key}: ${cap}</span>`;
+      }).join('');
+      return `
+        <div class="constraint-line ${status.tone}">
+          <div class="constraint-head">
+            <div>
+              <div class="constraint-output">${esc(o.output)} <span style="color:var(--dim);font-weight:600">max ${max}/season</span></div>
+              ${pTag ? `<div class="constraint-note">${pTag}</div>` : ''}
+            </div>
+            <div class="constraint-status">${esc(status.label)}</div>
+          </div>
+          <div class="constraint-caps">${caps}</div>
+          ${renderConstraintShortfalls(o)}
+        </div>`;
     }).join('');
   }
 
@@ -1442,10 +1596,16 @@ function handleMessage(msg) {
     case 'market_buy_bulk':
       showMarketBuyPopup(msg);
       break;
+    case 'pre_season_start':
+      onPreSeasonStart(msg);
+      break;
+    case 'pre_season_end':
+      onPreSeasonEnd(msg);
+      break;
     case 'season_start':
       onSeasonStart(msg);
       break;
-      case 'ready_update':
+    case 'ready_update':
       onReadyUpdate(msg);
       break;
     case 'season_resolved':
@@ -1495,6 +1655,9 @@ function renderGameState() {
   // Season/Year header
   if (gameState.year) document.getElementById('hdr-year').textContent = 'Year ' + gameState.year;
   if (gameState.season) document.getElementById('hdr-season').textContent = gameState.season;
+  const gameCode = gameState.join_code || (currentRoom && currentRoom.join_code) || currentRoomId || '------';
+  const gameCodeEl = document.getElementById('hdr-game-code');
+  if (gameCodeEl) gameCodeEl.textContent = gameCode;
 
   // Build / rebuild tabs if player's roles changed
   buildIslandTabs(gameState.players);
@@ -1534,6 +1697,7 @@ function renderGameState() {
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+  renderDecisionHints(me, tabRole);
 
   // Competitors table — with ready dot for active humans this season
   document.getElementById('comp-tbody').innerHTML = gameState.players.map((p, i) => {
@@ -1550,13 +1714,87 @@ function renderGameState() {
       <td style="color:var(--gold)">${p.wealth}</td>
       <td>${p.dollops}</td>
       <td>${p.workforce_active}/${p.workforce_count}</td>
+      <td>${p.workforce_bands?.Manager ?? 0}</td>
+      <td>${p.workforce_bands?.Technician ?? 0}</td>
+      <td>${p.workforce_bands?.Worker ?? 0}</td>
     </tr>`;
   }).join('');
 
   // Market — compact two-sided order book
   if (gameState.market) {
-    document.getElementById('market-panel').innerHTML = renderMarketTable(gameState.market, true);
+    document.getElementById('market-panel').innerHTML =
+      renderMarketTable(gameState.market, true) + renderBarterMarket(true);
   }
+}
+
+function renderDecisionHints(player, role) {
+  const el = document.getElementById('decision-hints');
+  if (!el) return;
+  const cap = filteredCapacity(player.capacity || {}, role);
+  const outputs = cap.outputs || [];
+  const roleLabel = role === 'ALL' ? 'these islands' : (role || 'this island');
+  const hints = [];
+
+  for (const output of outputs) {
+    const max = output.max_producible;
+    const inputShort = output.inputs_short || {};
+    const workforceShort = output.workforce_short || {};
+    if ((max === null || max > 0) && output.binding !== 'inputs') {
+      hints.push({
+        tone: 'good',
+        title: `Produce ${output.output}`,
+        why: `${roleLabel} can currently make up to ${max === null ? 'unlimited' : max} this season.`
+      });
+      continue;
+    }
+    if (Object.keys(inputShort).length) {
+      const buys = Object.entries(inputShort).map(([resource, qty]) => {
+        const info = gameState.market?.[resource] || {};
+        const ask = info.ask_price ?? info.best_price ?? info.price;
+        const askQty = info.ask_quantity ?? info.quantity ?? 0;
+        const cost = typeof ask === 'number' ? ask * qty : null;
+        if (cost !== null && askQty >= qty && player.dollops >= cost) {
+          return `${qty} ${resource} available for ${cost.toFixed(1)} Dp`;
+        }
+        if (cost !== null && askQty > 0) {
+          return `${resource}: ${askQty} offered, ${cost.toFixed(1)} Dp needed for ${qty}`;
+        }
+        return `${qty} ${resource} needed`;
+      });
+      hints.push({
+        tone: 'blocked',
+        title: `Unblock ${output.output}`,
+        why: buys.join('; ')
+      });
+    } else if (Object.keys(workforceShort).length) {
+      hints.push({
+        tone: 'warn',
+        title: `Add workers for ${output.output}`,
+        why: Object.entries(workforceShort).map(([band, qty]) => `${qty} ${band}`).join(', ')
+      });
+    } else if (output.binding === 'equipment') {
+      hints.push({
+        tone: 'warn',
+        title: `Capital limits ${output.output}`,
+        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.'
+      });
+    }
+  }
+
+  if (!hints.length) {
+    hints.push({
+      tone: 'warn',
+      title: 'Check market and deals',
+      why: 'No direct production hint is available for the selected tab yet.'
+    });
+  }
+
+  el.innerHTML = hints.slice(0, 4).map(h => `
+    <div class="decision-card ${h.tone}">
+      <strong>${esc(h.title)}</strong>
+      <div class="why">${esc(h.why)}</div>
+    </div>
+  `).join('');
 }
 
 function fmtMarketPrice(v) {
@@ -1582,7 +1820,7 @@ function renderMarketTable(market, compact = false) {
   </table>`;
 }
 
-function renderBarterMarket() {
+function renderBarterMarket(compact = false) {
   const barter = gameState?.barter_market || {};
   const deals = barter.deals || [];
   const needs = barter.needs || [];
@@ -1597,11 +1835,12 @@ function renderBarterMarket() {
   const needRows = needs.length ? needs.map(n => `
     <tr><td>${esc(n.player)}</td><td>${esc(n.roles)}</td><td>${esc(n.needs.join(', '))}</td></tr>
   `).join('') : '<tr><td colspan="3" style="color:var(--dim)">No visible unmet role needs.</td></tr>';
+  const tableClass = compact ? 'market-mini' : 'comp-table';
   return `
-    <h4 style="margin:.7rem 0 .3rem;color:var(--accent);font-size:.78rem;text-transform:uppercase">Proposed Deals</h4>
-    <table class="comp-table"><thead><tr><th>From</th><th>Offers</th><th>Wants</th><th>To</th></tr></thead><tbody>${dealRows}</tbody></table>
-    <h4 style="margin:.8rem 0 .3rem;color:var(--accent);font-size:.78rem;text-transform:uppercase">Visible Needs</h4>
-    <table class="comp-table"><thead><tr><th>Player</th><th>Role</th><th>Needs</th></tr></thead><tbody>${needRows}</tbody></table>
+    <h4>Proposed Deals</h4>
+    <table class="${tableClass}"><thead><tr><th>From</th><th>Offers</th><th>Wants</th><th>To</th></tr></thead><tbody>${dealRows}</tbody></table>
+    <h4>Visible Needs</h4>
+    <table class="${tableClass}"><thead><tr><th>Player</th><th>Role</th><th>Needs</th></tr></thead><tbody>${needRows}</tbody></table>
   `;
 }
 
@@ -1646,8 +1885,59 @@ function switchTab(role) {
 }
 
 // ==================== SIMULTANEOUS PLAY ====================
+// Tracks whether we're in "pre_season" or "action" phase this season.
+let seasonPhase = 'action';
+let preSeasonTimerEnd = 0;
+let preSeasonTimerInterval = null;
+
+function onPreSeasonStart(msg) {
+  seasonPhase = 'pre_season';
+  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
+  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  seasonActiveHumans = new Set(msg.active_humans || []);
+  seasonReadySet = new Set();
+  seasonDoneSet  = new Set();
+  imReady = false;
+
+  const secs = +msg.timer_seconds || 0;
+  preSeasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+
+  const banner = document.getElementById('pre-season-banner');
+  const showForMe = seasonActiveHumans.has(myPlayerId);
+  document.getElementById('psb-title').textContent =
+      `📋 ${msg.season} (Year ${msg.year}) — Pre-Season Review`;
+  document.getElementById('psb-sub').textContent =
+      'Check the events and your position before trading opens.';
+  document.getElementById('psb-ready-label').textContent = 'Ready to Start ✓';
+  document.getElementById('psb-ready-btn').classList.remove('is-ready');
+
+  // Hide the action-phase header controls (still in pre-season)
+  document.getElementById('season-timer-box').classList.add('hidden');
+  document.getElementById('ready-btn').classList.add('hidden');
+
+  if (showForMe) {
+    banner.classList.remove('hidden');
+    _renderPreSeasonDots(seasonActiveHumans, seasonReadySet);
+    if (secs > 0) startPreSeasonTimer();
+  }
+  addLog(`📋 Pre-season review: ${msg.season} Year ${msg.year} (${secs}s).`, 'info');
+}
+
+function onPreSeasonEnd(msg) {
+  seasonPhase = 'action';
+  preSeasonTimerEnd = 0;
+  stopPreSeasonTimer();
+  document.getElementById('pre-season-banner').classList.add('hidden');
+  // action phase start message follows immediately from the server
+}
+
 function onSeasonStart(msg) {
-  // Reset per-season state and start the timer countdown.
+  // Reset per-season state and start the action-phase timer countdown.
+  // (Pre-season banner is already hidden via onPreSeasonEnd if there was one.)
+  seasonPhase = 'action';
+  document.getElementById('pre-season-banner').classList.add('hidden');
+  stopPreSeasonTimer();
+
   if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
   if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
   seasonActiveHumans = new Set(msg.active_humans || []);
@@ -1659,34 +1949,61 @@ function onSeasonStart(msg) {
 
   const box = document.getElementById('season-timer-box');
   const btn = document.getElementById('ready-btn');
-  // Only show Ready button + timer if I'm an active human this season
   const showForMe = seasonActiveHumans.has(myPlayerId);
   box.classList.toggle('hidden', !showForMe || secs <= 0);
   btn.classList.toggle('hidden', !showForMe);
-  btn.classList.remove('is-ready');
-  document.getElementById('ready-btn-label').textContent = 'Ready ✓';
+  btn.classList.remove('is-ready', 'pre-season-ready');
+  document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   if (showForMe && secs > 0) startSeasonTimer();
-  addLog(`▶ ${msg.season} (Year ${msg.year}) begins — ${secs}s timer.`, 'info');
+  addLog(`▶ ${msg.season} (Year ${msg.year}) action phase — ${secs > 0 ? secs + 's timer' : 'Ready-only mode'}.`, 'info');
 }
 
 function onReadyUpdate(msg) {
   seasonReadySet = new Set(msg.ready || []);
   seasonDoneSet  = new Set(msg.done  || []);
   seasonActiveHumans = new Set(msg.active || []);
-  // If the server says I'm Ready, reflect it in the button state.
+  const phase = msg.phase || seasonPhase;
+
+  // Sync ready state across both banners.
   imReady = seasonReadySet.has(myPlayerId);
-  const btn = document.getElementById('ready-btn');
-  btn.classList.toggle('is-ready', imReady);
-  document.getElementById('ready-btn-label').textContent = imReady ? 'Ready ✓ (click to undo)' : 'Ready ✓';
-  // Re-render player table to show ready dots
+
+  if (phase === 'pre_season') {
+    // Update pre-season banner dots + button label.
+    _renderPreSeasonDots(seasonActiveHumans, seasonReadySet);
+    const psBtn = document.getElementById('psb-ready-btn');
+    psBtn.classList.toggle('is-ready', imReady);
+    document.getElementById('psb-ready-label').textContent =
+        imReady ? 'Ready ✓ (click to undo)' : 'Ready to Start ✓';
+  } else {
+    // Action phase — update header ready button.
+    const btn = document.getElementById('ready-btn');
+    btn.classList.toggle('is-ready', imReady);
+    document.getElementById('ready-btn-label').textContent =
+        imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
+  }
   if (gameState) renderGameState();
+}
+
+function _renderPreSeasonDots(active, ready) {
+  const row = document.getElementById('psb-ready-row');
+  if (!row || !gameState) return;
+  const playerMap = {};
+  (gameState.players || []).forEach(p => { playerMap[p.lobby_player_id] = p.name; });
+  row.innerHTML = Array.from(active).map(pid => {
+    const isReady = ready.has(pid);
+    const name = playerMap[pid] || pid;
+    return `<span><span class="psb-dot${isReady ? ' ready' : ''}"></span>${name}</span>`;
+  }).join('');
 }
 
 function onSeasonResolved(msg) {
   seasonTimerEnd = 0;
+  preSeasonTimerEnd = 0;
   stopSeasonTimer();
+  stopPreSeasonTimer();
   document.getElementById('season-timer-box').classList.add('hidden');
   document.getElementById('ready-btn').classList.add('hidden');
+  document.getElementById('pre-season-banner').classList.add('hidden');
   imReady = false;
   addLog(`✓ ${msg.season} resolved.`, 'info');
 }
@@ -1703,16 +2020,39 @@ function updateSeasonTimerUI() {
   const remain = Math.max(0, Math.round((seasonTimerEnd - Date.now()) / 1000));
   document.getElementById('season-timer-val').textContent = remain + 's';
   const box = document.getElementById('season-timer-box');
-  // Flash warning under 60 s
   box.classList.toggle('flash', remain > 0 && remain <= 60);
   if (remain <= 0) stopSeasonTimer();
 }
 
+function startPreSeasonTimer() {
+  stopPreSeasonTimer();
+  preSeasonTimerInterval = setInterval(updatePreSeasonTimerUI, 250);
+  updatePreSeasonTimerUI();
+}
+function stopPreSeasonTimer() {
+  if (preSeasonTimerInterval) { clearInterval(preSeasonTimerInterval); preSeasonTimerInterval = null; }
+}
+function updatePreSeasonTimerUI() {
+  const remain = Math.max(0, Math.round((preSeasonTimerEnd - Date.now()) / 1000));
+  const el = document.getElementById('psb-timer');
+  el.textContent = remain + 's';
+  el.classList.toggle('flash', remain > 0 && remain <= 15);
+  if (remain <= 0) stopPreSeasonTimer();
+}
+
 function toggleReady() {
   imReady = !imReady;
-  const btn = document.getElementById('ready-btn');
-  btn.classList.toggle('is-ready', imReady);
-  document.getElementById('ready-btn-label').textContent = imReady ? 'Ready ✓ (click to undo)' : 'Ready ✓';
+  if (seasonPhase === 'pre_season') {
+    const psBtn = document.getElementById('psb-ready-btn');
+    psBtn.classList.toggle('is-ready', imReady);
+    document.getElementById('psb-ready-label').textContent =
+        imReady ? 'Ready ✓ (click to undo)' : 'Ready to Start ✓';
+  } else {
+    const btn = document.getElementById('ready-btn');
+    btn.classList.toggle('is-ready', imReady);
+    document.getElementById('ready-btn-label').textContent =
+        imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
+  }
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({type:'ready', ready: imReady}));
   }
@@ -1905,11 +2245,27 @@ function hideOverlay() {
 }
 
 // ==================== EVENT LOG ====================
+function _isPlayerRelevant(text) {
+  // Highlight lines that mention the current player's name or role.
+  if (myPlayerIdx === null || !gameState) return false;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return false;
+  const targets = [me.name, ...(me.role_names || [])].filter(Boolean);
+  return targets.some(t => text.includes(t));
+}
+
 function addLog(text, cls = '') {
   const log = document.getElementById('event-log');
   const div = document.createElement('div');
-  if (cls) div.className = cls;
-  else if (/\[EVENT\]|\[WORKPLACE\]/.test(text)) div.className = 'ev';
+  if (cls) {
+    div.className = cls;
+  } else if (/\[EVENT\]|\[WORKPLACE\]/.test(text)) {
+    div.className = 'ev';
+  }
+  // Secondary highlight if the line directly concerns this player.
+  if (!cls && _isPlayerRelevant(text)) {
+    div.classList.add('log-mine');
+  }
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;

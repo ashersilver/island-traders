@@ -35,6 +35,7 @@ class MarketOffer:
     quantity: int
     remaining: int
     season_key: tuple[int, int] = (0, 0)
+    _seller: Player | None = field(default=None, repr=False, compare=False)
 
     @property
     def total_cost(self) -> float:
@@ -52,6 +53,7 @@ class MarketBid:
     quantity: int
     remaining: int
     season_key: tuple[int, int] = (0, 0)
+    _buyer: Player | None = field(default=None, repr=False, compare=False)
 
     @property
     def total_cost(self) -> float:
@@ -152,10 +154,12 @@ class Market:
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
+            _seller=seller,
         )
         self._offers.append(offer)
         self._next_offer_id += 1
         self.post_supply(rtype, qty)
+        self._auto_match_offer(offer)
         return offer
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
@@ -178,11 +182,67 @@ class Market:
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
+            _buyer=buyer,
         )
         self._bids.append(bid)
         self._next_bid_id += 1
         self.post_demand(rtype, qty)
+        self._auto_match_bid(bid)
         return bid
+
+    def _auto_match_bid(self, bid: MarketBid) -> None:
+        """Immediately fill exact-price bids when one offer can satisfy them."""
+        buyer = bid._buyer
+        if buyer is None or bid.remaining <= 0:
+            return
+        for offer in self.available_offers(bid.resource):
+            if offer.seller_id == bid.buyer_id:
+                continue
+            if offer.price_per_unit != bid.price_per_unit:
+                continue
+            if bid.remaining > offer.remaining:
+                continue
+            seller = offer._seller
+            if seller is None:
+                continue
+            qty = bid.remaining
+            cost = round(bid.price_per_unit * qty, 2)
+            if buyer.dollops < cost:
+                continue
+            buyer.spend_dollops(cost)
+            buyer.receive_resources(bid.resource, qty)
+            seller.receive_dollops(cost)
+            offer.remaining -= qty
+            bid.remaining = 0
+            return
+
+    def _auto_match_offer(self, offer: MarketOffer) -> None:
+        """Immediately fill exact-price bids that fit inside this offer."""
+        seller = offer._seller
+        if seller is None or offer.remaining <= 0:
+            return
+        for bid in self.available_bids(offer.resource):
+            if bid.buyer_id == offer.seller_id:
+                continue
+            if bid.price_per_unit != offer.price_per_unit:
+                continue
+            if bid.remaining > offer.remaining:
+                continue
+            buyer = bid._buyer
+            if buyer is None:
+                continue
+            qty = bid.remaining
+            cost = round(offer.price_per_unit * qty, 2)
+            if buyer.dollops < cost:
+                bid.remaining = 0
+                continue
+            buyer.spend_dollops(cost)
+            buyer.receive_resources(offer.resource, qty)
+            seller.receive_dollops(cost)
+            offer.remaining -= qty
+            bid.remaining = 0
+            if offer.remaining == 0:
+                return
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
         return sorted(

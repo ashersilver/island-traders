@@ -44,13 +44,51 @@ def test_outage_blocks_production(farmer, outage_event):
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
-def test_banker_needs_knowledge_and_equipment(banker, normal_event):
+def test_banker_needs_knowledge(banker, normal_event):
     banker.receive_resources(ResourceType.KNOWLEDGE, 1)
-    banker.receive_resources(ResourceType.CAPITAL_EQUIPMENT, 1)
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
     assert ResourceType.FINANCE in produced
     assert produced[ResourceType.FINANCE] > 0
+
+
+def test_educator_needs_laboratory_equipment(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
+    educator.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
+    educator.receive_resources(ResourceType.FINANCE, 1)
+    produced = ProductionEngine().produce(educator, normal_event)
+
+    assert ResourceType.KNOWLEDGE in produced
+
+
+def test_doctor_needs_laboratory_equipment(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    doctor = Player(11, "Doctor", [ROLES["Doctor"]], 100.0, is_human=False)
+    doctor.receive_resources(ResourceType.KNOWLEDGE, 1)
+    doctor.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
+    produced = ProductionEngine().produce(doctor, normal_event)
+
+    assert ResourceType.HEALTH_SERVICES in produced
+
+
+def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    miner = Player(12, "Miner", [ROLES["Miner"]], 100.0, is_human=False)
+    miner.receive_resources(ResourceType.OIL, 1)
+    miner.receive_resources(ResourceType.FREIGHT, 1)
+    miner.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
+
+    produced = ProductionEngine().produce(miner, normal_event, season_name="Spring")
+
+    assert produced[ResourceType.ORE] == 80
+    assert produced[ResourceType.OIL] == 200
 
 
 def test_banker_cannot_produce_without_inputs(banker, normal_event):
@@ -62,20 +100,20 @@ def test_banker_cannot_produce_without_inputs(banker, normal_event):
 def test_bumper_harvest_increases_yield(farmer, bumper_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
-    # Spring: base Food=2, yield_modifier=1.8, bonus=2 → int(2*1.8)+2 = 3+2 = 5
+    # Spring: base Food=40, yield_modifier=1.8, bonus=2 → int(40*1.8)+2 = 72+2 = 74
     produced = engine.produce(farmer, bumper_event, season_name="Spring")
-    assert produced.get(ResourceType.FOOD, 0) == 5
+    assert produced.get(ResourceType.FOOD, 0) == 74
 
 
 def test_production_preview_does_not_mutate(farmer, normal_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
     before_dollops = farmer.dollops
-    before_equip = farmer.inventory.get(ResourceType.CAPITAL_EQUIPMENT)
+    before_equip = farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT)
     before_oil = farmer.inventory.get(ResourceType.OIL)
     engine.production_preview(farmer, normal_event)
     assert farmer.dollops == before_dollops
-    assert farmer.inventory.get(ResourceType.CAPITAL_EQUIPMENT) == before_equip
+    assert farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT) == before_equip
     assert farmer.inventory.get(ResourceType.OIL) == before_oil
 
 

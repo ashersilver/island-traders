@@ -52,13 +52,13 @@ ROLE_INFO = {
     "Transporter":  {"island": "Transportation & Shipping", "produces": "Freight",
                      "needs": "Transport Equipment, Oil", "color": "#3498db"},
     "Educator":     {"island": "Education & Training", "produces": "Knowledge",
-                     "needs": "Capital Equipment, Finance", "color": "#9b59b6"},
+                     "needs": "Laboratory Equipment, Finance", "color": "#9b59b6"},
     "Banker":       {"island": "Banking & Insurance", "produces": "Finance",
-                     "needs": "Knowledge, Capital Equipment", "color": "#f1c40f"},
-    "Manufacturer": {"island": "Manufacturing (ForgeHaven)", "produces": "Machinery, Equipment",
+                     "needs": "Knowledge", "color": "#f1c40f"},
+    "Manufacturer": {"island": "Manufacturing (ForgeHaven)", "produces": "Machinery, Lab Equipment",
                      "needs": "Ore, Oil, Freight", "color": "#1abc9c"},
     "Doctor":       {"island": "Healthcare", "produces": "Health Services, Vaccine",
-                     "needs": "Knowledge, Medical Devices", "color": "#e74c3c"},
+                     "needs": "Knowledge, Laboratory Equipment", "color": "#e74c3c"},
 }
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
@@ -188,6 +188,15 @@ class GameRoom:
     # Sentinel to stop multiple Ready clicks queueing END_TURN responses
     # after a player's turn loop has already exited.
     season_human_done: set[str] = field(default_factory=set)
+    # Pre-season window state.  "pre_season" while the review window is open;
+    # "action" once the action phase begins.  Cleared to "action" on game start.
+    season_phase: str = "action"
+    # Event set by submit_ready() (or timer) to unblock the game thread that
+    # is sleeping through the pre-season window.
+    _pre_season_done: threading.Event = field(
+        default_factory=threading.Event, repr=False
+    )
+    pre_season_end: float = 0.0  # epoch time the pre-season window closes
 
     def to_dict(self) -> dict:
         d = {
@@ -279,6 +288,21 @@ class GameManager:
         lp = LobbyPlayer(player_id=player_id, name=player_name)
         room.players.append(lp)
         self._broadcast_room_update(room)
+        return room, lp
+
+    def rejoin_room_by_name(self, room_id: str, player_name: str) -> tuple[GameRoom, LobbyPlayer] | None:
+        room = self.rooms.get(room_id)
+        if not room:
+            return None
+        normalized = player_name.strip().casefold()
+        if not normalized:
+            return None
+        lp = next(
+            (p for p in room.players if p.is_human and p.name.strip().casefold() == normalized),
+            None,
+        )
+        if not lp:
+            return None
         return room, lp
 
     def add_ai_player(self, room_id: str, name: str) -> LobbyPlayer | None:
@@ -996,33 +1020,90 @@ class GameManager:
                     on_hand=on_hand,
                 )
                 # Per-input shortfall (units needed to lift the input cap to
-                # the next bottleneck — equipment or workforce, whichever is
-                # higher).  Useful for the constraint popup ("buy 4 more Oil").
-                next_target = max(cap.equipment_cap, cap.workforce_cap)
+                # the next bottleneck). Useful for the constraint popup
+                # ("buy 4 more Oil").
+                workforce_cap = cap.workforce_cap
+                input_cap = cap.input_cap
+                input_target = min(
+                    cap.equipment_cap,
+                    workforce_cap if workforce_cap != float("inf") else cap.equipment_cap,
+                )
                 inputs_short: dict[str, float] = {}
-                if cap.input_cap < next_target:
+                if input_cap < input_target:
                     for resource, per_unit in boosted.inputs.items():
                         if per_unit <= 0:
                             continue
-                        need_total = per_unit * next_target
+                        need_total = per_unit * input_target
                         have = on_hand.get(resource, 0)
                         short = need_total - have
                         if short > 0:
                             inputs_short[resource] = round(short, 2)
+
                 # Workforce shortfall by band
                 workforce_short: dict[str, float] = {}
-                if cap.workforce_cap < min(cap.equipment_cap, cap.input_cap if cap.input_cap != float("inf") else cap.equipment_cap):
-                    target = min(cap.equipment_cap,
-                                 cap.input_cap if cap.input_cap != float("inf") else cap.equipment_cap)
+                workforce_target = min(
+                    cap.equipment_cap,
+                    input_cap if input_cap != float("inf") else cap.equipment_cap,
+                )
+                if workforce_cap < workforce_target:
                     for band in WorkerBand:
                         per_unit = recipe.labour_per_unit(band)
                         if per_unit <= 0:
                             continue
-                        need = per_unit * target
+                        need = per_unit * workforce_target
                         have = wf_by_band.get(band, 0)
                         short = need - have
                         if short > 0:
                             workforce_short[band.value] = round(short, 2)
+
+                # Equipment shortfall. Prefer concrete catalogue options over
+                # telling the player "buy capital" and making them hunt.
+                equipment_short: dict[str, object] = {}
+                equipment_target = min(
+                    workforce_cap if workforce_cap != float("inf") else input_cap,
+                    input_cap if input_cap != float("inf") else workforce_cap,
+                )
+                if equipment_target == float("inf"):
+                    equipment_target = 1
+                if cap.equipment_cap < equipment_target:
+                    needed_capacity = equipment_target - cap.equipment_cap
+                    options = []
+                    for item in CAPITAL_CATALOGUE:
+                        if item.role != recipe.role:
+                            continue
+                        capacity_each = item.effects.get("capacity", {}).get(recipe.output, 0)
+                        unlocks = recipe.output in item.effects.get("unlocks_lines", [])
+                        if capacity_each <= 0 and not unlocks:
+                            continue
+                        count_needed = 1 if unlocks else int(-(-needed_capacity // capacity_each))
+                        options.append({
+                            "item_id": item.item_id,
+                            "name": item.name,
+                            "count": count_needed,
+                            "capacity_each": capacity_each,
+                            "unlocks": unlocks,
+                            "cost_each": item.cost,
+                            "total_cost": round(item.cost * count_needed, 2),
+                            "delivery_seasons": item.delivery_seasons,
+                            "owned": p.capital_inventory.get(item.item_id, 0),
+                            "description": item.description,
+                        })
+                    equipment_short = {
+                        "needed_capacity": round(needed_capacity, 2),
+                        "target": round(equipment_target, 2),
+                        "options": options,
+                    }
+
+                caps = {
+                    "equipment": cap.equipment_cap,
+                    "workforce": workforce_cap,
+                    "inputs": input_cap,
+                }
+                max_producible = cap.max_producible
+                blockers = [
+                    name for name, value in caps.items()
+                    if value == max_producible
+                ]
                 outputs.append({
                     "output":         recipe.output,
                     "role":           recipe.role,
@@ -1034,8 +1115,10 @@ class GameManager:
                     "input_cap":      round(cap.input_cap, 2)
                                       if cap.input_cap != float("inf") else None,
                     "binding":        cap.binding_constraint,
+                    "blockers":       blockers,
                     "inputs_short":   inputs_short,
                     "workforce_short": workforce_short,
+                    "equipment_short": equipment_short,
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
                 })
@@ -1092,6 +1175,7 @@ class GameManager:
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
+                "workforce_bands": p.workforce.band_summary(),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
@@ -1199,6 +1283,8 @@ class GameManager:
         return {
             "type": "game_state",
             "room_id": room_id,
+            "join_code": room.join_code,
+            "room_name": room.name,
             "status": room.status,
             "year": current_year,
             "season": current_season,
@@ -1258,25 +1344,57 @@ class GameManager:
     # ---- Simultaneous-play: per-season Ready + Timer ----
 
     def _on_season_start(self, room_id: str, year: int, season_index: int) -> None:
-        """Reset per-season ready/timer state and broadcast season_start."""
+        """Reset per-season ready/timer state, run optional pre-season window,
+        then broadcast season_start for the action phase.
+
+        This method runs on the game thread (a daemon thread spawned by
+        _launch_game).  If pre_season_timer_seconds > 0 it BLOCKS that thread
+        until either every human clicks "Ready to start" or the timer fires —
+        giving everyone a review window before the action phase opens.
+        """
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
             return
 
-        room.io_adapter.begin_season()
-
-        # The set of humans who haven't yet completed their turn.
+        season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
         humans = {
             lp.player_id for lp in room.players
             if lp.is_human and lp.role_names
         }
+
+        # ── Pre-season review window ──────────────────────────────────────────
+        pre_secs = max(0, int(room.pre_season_timer_seconds))
+        if pre_secs > 0 and humans:
+            room.season_phase = "pre_season"
+            room.season_ready_set = set()
+            room.season_active_humans = humans
+            room._pre_season_done.clear()
+            room.pre_season_end = time.time() + pre_secs
+
+            self._thread_safe_broadcast(room_id, {
+                "type": "pre_season_start",
+                "year": year + 1,
+                "season": season_name,
+                "season_index": season_index,
+                "timer_seconds": pre_secs,
+                "active_humans": list(humans),
+            })
+
+            # Block the game thread until ready or timeout.
+            room._pre_season_done.wait(timeout=pre_secs)
+
+            room.pre_season_end = 0.0
+            self._thread_safe_broadcast(room_id, {"type": "pre_season_end"})
+
+        # ── Action phase ──────────────────────────────────────────────────────
+        room.io_adapter.begin_season()
+        room.season_phase = "action"
         room.season_active_humans = humans
         room.season_ready_set = set()
         room.season_human_done = set()
         secs = max(0, int(room.season_timer_seconds))
         room.season_timer_end = (time.time() + secs) if secs > 0 else 0.0
 
-        season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
         self._thread_safe_broadcast(room_id, {
             "type": "season_start",
             "year": year + 1,
@@ -1286,7 +1404,7 @@ class GameManager:
             "active_humans": list(humans),
         })
 
-        # Only install the timer if it's > 0 — Ready-only mode skips it.
+        # Only install the action-phase timer if it's > 0.
         if secs > 0 and self._loop:
             fut = asyncio.run_coroutine_threadsafe(
                 self._season_timer(room_id, secs), self._loop,
@@ -1323,20 +1441,32 @@ class GameManager:
 
     def _broadcast_ready_update(self, room: "GameRoom") -> None:
         """Tell every connected client who has clicked Ready / completed."""
+        # Choose the active timer based on current phase.
+        if room.season_phase == "pre_season" and room.pre_season_end:
+            timer_rem = max(0.0, round(room.pre_season_end - time.time(), 1))
+        elif room.season_timer_end:
+            timer_rem = max(0.0, round(room.season_timer_end - time.time(), 1))
+        else:
+            timer_rem = 0.0
         self._thread_safe_broadcast(room.room_id, {
             "type": "ready_update",
             "ready":   list(room.season_ready_set),
             "done":    list(room.season_human_done),
             "active":  list(room.season_active_humans),
-            "timer_remaining": max(0.0, round(room.season_timer_end - time.time(), 1))
-                               if room.season_timer_end else 0.0,
+            "phase":   room.season_phase,
+            "timer_remaining": timer_rem,
         })
 
     def submit_ready(self, room_id: str, lobby_player_id: str, ready: bool = True) -> dict:
-        """Mark a player as Ready (or unready) for the current season.
+        """Mark a player as Ready (or unready) for the current season phase.
 
-        When all active humans are Ready, the season-timer is cancelled and
-        every pending IO prompt is interrupted (force-ending each turn).
+        Pre-season phase: Ready means "I'm done reviewing; let's start trading."
+          When all active humans are ready, unblocks the game thread that is
+          sleeping through the pre-season window.
+
+        Action phase: Ready means "I'm done trading this season."
+          When all active humans are ready, the season-timer is cancelled and
+          every pending IO prompt is interrupted (force-ending each turn).
         """
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
@@ -1345,6 +1475,19 @@ class GameManager:
             return {"error": "Not an active human player this season"}
 
         engine_pid = room.lobby_to_engine_id.get(lobby_player_id)
+
+        if room.season_phase == "pre_season":
+            # Pre-season: collect readies; when all in, unblock the game thread.
+            if ready:
+                room.season_ready_set.add(lobby_player_id)
+            else:
+                room.season_ready_set.discard(lobby_player_id)
+            self._broadcast_ready_update(room)
+            if room.season_active_humans and room.season_ready_set >= room.season_active_humans:
+                room._pre_season_done.set()
+            return {"ok": True, "ready": ready}
+
+        # ── Action phase ──────────────────────────────────────────────────────
         if ready:
             room.season_ready_set.add(lobby_player_id)
             # Set the per-player Ready flag — even if they're mid-action
@@ -1435,8 +1578,14 @@ def create_app() -> FastAPI:
         if not room:
             return JSONResponse({"error": "Invalid room code"}, status_code=404)
         result = manager.join_room(room.room_id, name)
+        if not result and room.status != "waiting":
+            result = manager.rejoin_room_by_name(room.room_id, name)
         if not result:
-            return JSONResponse({"error": "Cannot join room"}, status_code=400)
+            if room.status == "waiting":
+                message = "Cannot join room"
+            else:
+                message = "Game is already running. Enter the same player name you used in this room to rejoin."
+            return JSONResponse({"error": message}, status_code=400)
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
