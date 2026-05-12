@@ -18,6 +18,15 @@ See [`requirements/production-capacity-model.md`](requirements/production-capaci
 - [ ] Simultaneous-play architecture (timer + Ready button replaces End Turn)
 - [ ] Season timer with 60-second flash warning
 
+### AI Players
+See [`requirements/llm-player-adapter.md`](requirements/llm-player-adapter.md) for the proposed LLM-backed player design.
+- [ ] Keep the deterministic `AIStrategy` as the default heuristic bot for tests, local play, and simulation calibration
+- [ ] Introduce a strategy interface so heuristic and LLM players can share the same turn boundary
+- [ ] Add a structured game-state snapshot for LLM context
+- [ ] Add a structured action proposal schema validated by the engine before mutation
+- [ ] Add optional LLM player configuration for human-like negotiation and table chat
+- [ ] Add tests proving invalid LLM proposals cannot mutate game state
+
 ### Lobby & Game Start Redesign
 - [ ] Redesigned start screen (visual polish, intuitive flow)
 - [ ] Create game: public or private option
