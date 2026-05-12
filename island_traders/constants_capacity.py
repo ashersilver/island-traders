@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from .models.capacity import CapitalItem, ProductionRecipe
 
+CAPACITY_PRODUCTIVITY_MULTIPLIER: int = 10
+
 
 # ---------------------------------------------------------------------------
 # Capital equipment catalogue — buyable items per role
@@ -24,8 +26,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Farmer",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"Food": 5}},
-        description="+5 Food capacity",
+        effects={"capacity": {"Food": 10}},
+        description="+10 Food capacity",
     ),
     CapitalItem(
         item_id="farmer.harvester",
@@ -33,8 +35,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Farmer",
         cost=90.0,
         delivery_seasons=2,
-        effects={"capacity": {"Food": 3}, "labour_relief": {"Technician": 1}},
-        description="+3 Food, –1 Technician need",
+        effects={"capacity": {"Food": 6}, "labour_relief": {"Technician": 1}},
+        description="+6 Food, -1 Technician need",
     ),
     CapitalItem(
         item_id="farmer.fishing_boat",
@@ -100,8 +102,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Transporter",
         cost=80.0,
         delivery_seasons=0,
-        effects={"capacity": {"Freight": 6}},
-        description="+6 Freight capacity",
+        effects={"capacity": {"Freight": 12}},
+        description="+12 Freight capacity",
     ),
     CapitalItem(
         item_id="transporter.cargo_plane",
@@ -109,8 +111,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Transporter",
         cost=130.0,
         delivery_seasons=2,
-        effects={"capacity": {"Freight": 4}, "fast": True},
-        description="+4 Freight (fast)",
+        effects={"capacity": {"Freight": 8}, "fast": True},
+        description="+8 Freight (fast)",
     ),
     CapitalItem(
         item_id="transporter.passenger_liner",
@@ -165,8 +167,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=80.0,
         delivery_seasons=2,
-        effects={"capacity": {"Patents": 1}, "input_relief": {"Knowledge": {"CapitalEquipment": 0.2}}},
-        description="+1 Patent, –0.2 CapitalEquipment per Knowledge",
+        effects={"capacity": {"Patents": 1}, "input_relief": {"Knowledge": {"LaboratoryEquipment": 0.2}}},
+        description="+1 Patent, -0.2 LaboratoryEquipment per Knowledge",
     ),
     CapitalItem(
         item_id="educator.apprenticeship_programme",
@@ -302,15 +304,15 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
         role="Farmer", output="Food",
-        inputs={"Oil": 3.0, "Fish": 1.0},
+        inputs={"Oil": 2.0},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="3 Oil + 1 Fish (animal stock) per unit of Food",
+        description="2 Oil per unit of Food",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 2.0, "Food": 1.0},
+        inputs={"Oil": 1.0},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="2 Oil + 1 Food (worker subsistence) per unit of Fish",
+        description="1 Oil per unit of Fish",
     ),
 
     # ----- Miner -----------------------------------------------------------
@@ -328,25 +330,25 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Transporter -----------------------------------------------------
     ProductionRecipe(
         role="Transporter", output="Freight",
-        inputs={"Oil": 0.5},
+        inputs={"Oil": 0.5, "Fish": 0.2},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
     ProductionRecipe(
         role="Transporter", output="PassengerSeats",
-        inputs={"Oil": 0.4, "Food": 0.25},
+        inputs={"Oil": 0.4, "Fish": 0.25},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
 
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
         role="Educator", output="Knowledge",
-        inputs={"CapitalEquipment": 0.25, "Finance": 0.25},
+        inputs={"LaboratoryEquipment": 0.25, "Finance": 0.25},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
         description="1 Professor required per unit of Knowledge",
     ),
     ProductionRecipe(
         role="Educator", output="Patents",
-        inputs={"CapitalEquipment": 0.5, "Finance": 0.5},
+        inputs={"LaboratoryEquipment": 0.5, "Finance": 0.5},
         manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
         description="2 Professors required per Patent (Research stock also needed)",
     ),
@@ -354,14 +356,14 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Banker ----------------------------------------------------------
     ProductionRecipe(
         role="Banker", output="Finance",
-        inputs={"Knowledge": 0.5, "CapitalEquipment": 0.5},
+        inputs={"Knowledge": 0.5},
         manager_per_unit=1.0, technician_per_unit=0.25, worker_per_unit=0.0,
         money_per_unit=5.0,
         description="5 Dp capital reserve per unit of Finance",
     ),
     ProductionRecipe(
         role="Banker", output="InsurancePolicies",
-        inputs={"Knowledge": 0.5, "CapitalEquipment": 0.25},
+        inputs={"Knowledge": 0.5},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.0,
         money_per_unit=8.0,
         description="8 Dp hedge cost per InsurancePolicy",
@@ -382,6 +384,11 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=1.0,
     ),
     ProductionRecipe(
+        role="Manufacturer", output="LaboratoryEquipment",
+        inputs={"Ore": 1.0, "Oil": 1.0, "Freight": 1.0},
+        manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
+    ),
+    ProductionRecipe(
         role="Manufacturer", output="MedicalDevices",
         inputs={"Ore": 1.0, "Oil": 1.0, "Freight": 1.0},
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
@@ -395,12 +402,12 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Doctor ----------------------------------------------------------
     ProductionRecipe(
         role="Doctor", output="HealthServices",
-        inputs={"Knowledge": 0.25, "MedicalDevices": 0.25},
+        inputs={"Knowledge": 0.25, "LaboratoryEquipment": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Doctor", output="Vaccine",
-        inputs={"Knowledge": 0.5, "MedicalDevices": 1.0},
+        inputs={"Knowledge": 0.5, "LaboratoryEquipment": 1.0},
         manager_per_unit=1.0, technician_per_unit=0.0, worker_per_unit=0.0,
     ),
 ]
@@ -418,3 +425,62 @@ MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line"],
     "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
 }
+
+
+def _multiply_capital_capacity(
+    catalogue: list[CapitalItem], multiplier: int
+) -> list[CapitalItem]:
+    scaled: list[CapitalItem] = []
+    for item in catalogue:
+        effects = dict(item.effects)
+        capacity = effects.get("capacity")
+        if capacity:
+            effects["capacity"] = {
+                output: amount * multiplier
+                for output, amount in capacity.items()
+            }
+            description = ", ".join(
+                f"+{amount * multiplier:g} {output} capacity"
+                for output, amount in capacity.items()
+            )
+        else:
+            description = item.description
+        scaled.append(CapitalItem(
+            item_id=item.item_id,
+            name=item.name,
+            role=item.role,
+            cost=item.cost,
+            delivery_seasons=item.delivery_seasons,
+            effects=effects,
+            description=description,
+        ))
+    return scaled
+
+
+def _multiply_recipe_productivity(
+    recipes: list[ProductionRecipe], multiplier: int
+) -> list[ProductionRecipe]:
+    scaled: list[ProductionRecipe] = []
+    for recipe in recipes:
+        scaled.append(ProductionRecipe(
+            role=recipe.role,
+            output=recipe.output,
+            inputs={
+                resource: amount / multiplier
+                for resource, amount in recipe.inputs.items()
+            },
+            manager_per_unit=recipe.manager_per_unit / multiplier,
+            technician_per_unit=recipe.technician_per_unit / multiplier,
+            worker_per_unit=recipe.worker_per_unit / multiplier,
+            money_per_unit=recipe.money_per_unit / multiplier,
+            description=recipe.description,
+        ))
+    return scaled
+
+
+CAPITAL_CATALOGUE = _multiply_capital_capacity(
+    CAPITAL_CATALOGUE, CAPACITY_PRODUCTIVITY_MULTIPLIER
+)
+PRODUCTION_RECIPES = _multiply_recipe_productivity(
+    PRODUCTION_RECIPES, CAPACITY_PRODUCTIVITY_MULTIPLIER
+)

@@ -591,9 +591,9 @@ const ISLANDS = [
     ring: '#7A9458',
     stats: { 'Food Output': 9, 'Fish Harvest': 8, Fertility: 7, Stability: 9 },
     produces: ['🌾 Food  4 / season', '🐟 Fish  3 / season'],
-    needs:    ['⚙️ Capital Equipment  1 / season'],
+    needs:    ['🚜 Farm Machinery  1 / season', '🛢️ Oil  1 / season'],
     actions: [
-      { icon: '🌾', label: 'Harvest Season', target: 'self', cost: '1 Capital Equipment' },
+      { icon: '🌾', label: 'Harvest Season', target: 'self', cost: '1 Farm Machinery + 1 Oil' },
       { icon: '🚢', label: 'Export Food Supply', target: 'any', cost: '—' },
       { icon: '💱', label: 'Market Sell Food & Fish', target: 'market', cost: '—' },
     ]
@@ -610,9 +610,9 @@ const ISLANDS = [
     ring: '#C4603C',
     stats: { 'Health Index': 9, 'Vaccine Output': 6, Research: 7, Population: 8 },
     produces: ['⚕️ Health Services  4 / season', '💉 Vaccine  1 / season'],
-    needs:    ['📚 Knowledge  1 / season', '⚙️ Capital Equipment  1 / season'],
+    needs:    ['📚 Knowledge  1 / season', '🔬 Laboratory Equipment  1 / season'],
     actions: [
-      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Knowledge + 1 Equip' },
+      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Knowledge + 1 Lab Equipment' },
       { icon: '💉', label: 'Distribute Vaccines', target: 'any', cost: '1 Vaccine / island' },
       { icon: '🔬', label: 'Joint Research with Scholara', target: 'education', cost: '—' },
     ]
@@ -641,17 +641,17 @@ const ISLANDS = [
     name: 'Forgehaven',
     type: 'Manufacturing',
     icon: '⚙️',
-    desc: 'Furnaces roar, wheels turn. Ore becomes goods and capital equipment.',
+    desc: 'Furnaces roar, wheels turn. Ore becomes specialised machinery and laboratory equipment.',
     cx: 268, cy: 430,
     rx: 62, ry: 52,
     grad: 'grad-manufacturing',
     ring: '#9E9B94',
     stats: { Output: 9, Labour: 8, Technology: 6, 'Energy Use': 7 },
-    produces: ['📦 Goods  3 / season', '⚙️ Capital Equipment  2 / season'],
+    produces: ['🔧 Machinery lines', '🔬 Laboratory Equipment'],
     needs:    ['⛏️ Ore  2 / season', '🛢️ Oil  1 / season', '🚢 Freight  1 / season'],
     actions: [
       { icon: '🏭', label: 'Produce Goods & Equipment', target: 'self', cost: '2 Ore + 1 Oil + 1 Freight' },
-      { icon: '⚙️', label: 'Export Capital Equipment', target: 'any', cost: '—' },
+      { icon: '🔬', label: 'Export Laboratory Equipment', target: 'any', cost: '—' },
       { icon: '🔧', label: 'Order Power Station (20 MW)', target: 'any', cost: '15 Goods + 5 Equip' },
     ]
   },
@@ -667,9 +667,9 @@ const ISLANDS = [
     ring: '#4A6E8C',
     stats: { Knowledge: 9, 'Training Slots': 8, Research: 7, Influence: 6 },
     produces: ['📚 Knowledge  4 / season'],
-    needs:    ['⚙️ Capital Equipment  1 / season'],
+    needs:    ['🔬 Laboratory Equipment  1 / season'],
     actions: [
-      { icon: '📚', label: 'Produce Knowledge', target: 'self', cost: '1 Capital Equipment' },
+      { icon: '📚', label: 'Produce Knowledge', target: 'self', cost: '1 Laboratory Equipment' },
       { icon: '🎓', label: 'Review Training Requests', target: 'self', cost: 'negotiated fee' },
       { icon: '🔬', label: 'Joint Research with Mericula', target: 'healthcare', cost: '—' },
     ]

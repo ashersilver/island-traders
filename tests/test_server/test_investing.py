@@ -214,6 +214,19 @@ def test_join_room_rejects_after_auction_starts():
     assert mgr.join_room(room.room_id, "Late Player") is None
 
 
+def test_rejoin_room_by_name_allows_existing_player_after_auction_starts():
+    mgr = GameManager()
+    room = mgr.create_room("Test", creator_name="Host")
+    original_id = room.players[0].player_id
+    assert mgr.start_auction(room.room_id)
+
+    rejoined = mgr.rejoin_room_by_name(room.room_id, "host")
+
+    assert rejoined is not None
+    _, lp = rejoined
+    assert lp.player_id == original_id
+
+
 def test_investing_resolution_waits_only_for_role_holding_humans():
     mgr = GameManager()
     room_id = _make_room(mgr, num_humans=2)
@@ -265,14 +278,14 @@ def test_player_capacity_returns_per_output_data():
         player_id=0, name="Test Farmer", roles=[ROLES["Farmer"]],
         dollops=100.0,
     )
-    # Capital: 1 Tractor (5 Food cap), 1 Fishing Boat (4 Fish cap)
+    # Capital: 1 Tractor (100 Food cap), 1 Fishing Boat (40 Fish cap)
     p.add_capital("farmer.tractor", 1)
     p.add_capital("farmer.fishing_boat", 1)
     # Workforce: 1 Manager + 1 Technician + 3 Workers
     p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
     p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
-    # Inputs: enough Oil + Fish but not Food
+    # Inputs: enough Oil for Food and Fish
     p.receive_resources(ResourceType.OIL, 30)
     p.receive_resources(ResourceType.FISH, 5)
 
@@ -294,6 +307,84 @@ def test_player_capacity_returns_per_output_data():
     assert bands["Manager"] == 1
     assert bands["Technician"] == 1
     assert bands["Worker"] == 3
+
+    food = next(o for o in cap["outputs"] if o["output"] == "Food")
+    assert food["binding"] == "workforce"
+    assert food["blockers"] == ["workforce"]
+    assert food["workforce_short"] == {"Technician": 3.0, "Worker": 7.0}
+
+    fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
+    assert fish["binding"] == "workforce"
+    assert fish["inputs_short"] == {}
+
+
+def test_player_capacity_surfaces_equipment_shortfall_options():
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+    from island_traders.models.profession import Profession
+    from island_traders.models.resource import ResourceType
+
+    p = Player(
+        player_id=0, name="Underbuilt Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0,
+    )
+    p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
+    p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    p.receive_resources(ResourceType.OIL, 30)
+    p.receive_resources(ResourceType.FISH, 5)
+
+    cap = GameManager()._player_capacity(p)
+    food = next(o for o in cap["outputs"] if o["output"] == "Food")
+
+    assert food["binding"] == "equipment"
+    assert food["blockers"] == ["equipment"]
+    assert food["equipment_short"]["needed_capacity"] == 25.0
+    assert food["equipment_short"]["options"][0]["item_id"] == "farmer.tractor"
+    assert food["equipment_short"]["options"][0]["count"] == 1
+
+
+def test_game_state_includes_worker_band_counts_for_each_player():
+    from types import SimpleNamespace
+
+    from island_traders.models.deal import DealLedger
+    from island_traders.models.loan import LoanLedger
+    from island_traders.models.market import Market
+    from island_traders.models.player import Player
+    from island_traders.models.profession import Profession
+    from island_traders.models.role import ROLES
+    from island_traders.server.app import GameRoom
+
+    mgr = GameManager()
+    room = GameRoom(
+        room_id="bands", name="Bands", max_players=2, num_years=1,
+        is_public=True, join_code="BANDS1",
+    )
+    room.status = "running"
+    room.players = [
+        LobbyPlayer(player_id="h1", name="Banker", role_names=["Banker"]),
+        LobbyPlayer(player_id="h2", name="Farmer", role_names=["Farmer"]),
+    ]
+    player = Player(0, "Banker", [ROLES["Banker"]], 100.0)
+    player.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
+    player.workforce.add_workers(2, training_level=1, profession=Profession.MECHANIC.value)
+    player.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    room.game = SimpleNamespace(
+        players=[player],
+        market=Market(),
+        ledger=DealLedger(),
+        loan_ledger=LoanLedger(),
+    )
+    room.lobby_to_engine_id = {"h1": 0}
+    mgr.rooms[room.room_id] = room
+
+    state = mgr.get_game_state(room.room_id, "h1")
+
+    assert state["players"][0]["workforce_bands"] == {
+        "Manager": 1,
+        "Technician": 2,
+        "Worker": 3,
+    }
 
 
 def test_submit_investment_updates_selections_and_ready_state():

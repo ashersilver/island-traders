@@ -52,7 +52,7 @@ The LLM player prompt/context should include:
     {
       "to_player_id": 2,
       "offer": {"Food": 4},
-      "request": {"CapitalEquipment": 1},
+      "request": {"LaboratoryEquipment": 1},
       "message": "I can cover your food needs this season if you can help me scale production."
     }
   ],

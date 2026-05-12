@@ -9,4 +9,9 @@ def test_oil_starting_buffers_reflect_role_demand():
 
 
 def test_miner_has_higher_oil_production_capacity():
-    assert BASE_PRODUCTION["Miner"]["Oil"] == 5
+    assert BASE_PRODUCTION["Miner"]["Oil"] == 200  # 20 * PRODUCER_PRODUCTIVITY_MULTIPLIER (10)
+
+
+def test_transporter_uses_fish_not_food_for_provisions():
+    assert STARTING_INVENTORY["Transporter"]["Fish"] == 1
+    assert "Food" not in STARTING_INVENTORY["Transporter"]

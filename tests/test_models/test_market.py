@@ -62,10 +62,10 @@ def test_execute_buy_insufficient_supply_raises():
 
 def test_execute_buy_insufficient_funds_raises():
     m = Market()
-    m.post_supply(ResourceType.CAPITAL_EQUIPMENT, 10)
+    m.post_supply(ResourceType.LABORATORY_EQUIPMENT, 10)
     buyer = make_player(0, "Banker", dollops=1.0)
     with pytest.raises(InsufficientFundsError):
-        m.execute_buy(buyer, ResourceType.CAPITAL_EQUIPMENT, 5)
+        m.execute_buy(buyer, ResourceType.LABORATORY_EQUIPMENT, 5)
 
 
 def test_execute_sell_increases_supply():
@@ -114,6 +114,54 @@ def test_market_summary_reports_bid_and_ask_books():
     assert summary["bid_quantity"] == 3
     assert summary["best_price"] == 12.5
     assert summary["quantity"] == 4
+
+
+def test_exact_bid_auto_resolves_against_existing_offer():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+
+    offer = m.post_offer(seller, ResourceType.FOOD, 12.5, 5)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 12.5, 3)
+
+    assert bid.remaining == 0
+    assert offer.remaining == 2
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert buyer.dollops == 162.5
+    assert seller.dollops == 237.5
+
+
+def test_exact_offer_auto_resolves_against_existing_bid():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+
+    bid = m.post_bid(buyer, ResourceType.FOOD, 12.5, 3)
+    offer = m.post_offer(seller, ResourceType.FOOD, 12.5, 5)
+
+    assert bid.remaining == 0
+    assert offer.remaining == 2
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert buyer.dollops == 162.5
+    assert seller.dollops == 237.5
+
+
+def test_bid_does_not_auto_resolve_when_quantity_exceeds_offer():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 2)
+
+    offer = m.post_offer(seller, ResourceType.FOOD, 12.5, 2)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 12.5, 3)
+
+    assert bid.remaining == 3
+    assert offer.remaining == 2
+    assert buyer.inventory.get(ResourceType.FOOD) == 0
+    assert buyer.dollops == 200.0
+    assert seller.dollops == 200.0
 
 
 def test_sell_to_bids_transfers_to_highest_bidder():

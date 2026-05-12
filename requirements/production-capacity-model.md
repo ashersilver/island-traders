@@ -26,8 +26,14 @@ and apprenticeships.
 
 A new phase between role bidding and Year 1 Spring.
 
-- Each player starts with **zero production capacity**. Their starting Dollops
-  balance is whatever they have left after winning their role at auction.
+- Each island starts with **zero purchased production capacity** and receives
+  **300 Dp of island working capital** in its island ledger. This is separate
+  from the owner's auction budget and bank deposits; see
+  `requirements/island-ledger.md`.
+- After bidding, any owner cash left from the auction budget is automatically
+  placed on deposit with the Bank at **5% p.a.** The Investing Phase budget for
+  an island is therefore its island working capital plus any explicit capital
+  injection or loan proceeds, not silently pooled owner cash.
 - Each role is presented a **catalogue of buyable capital equipment** (see §6).
 - A **mandatory minimum default investment** is pre-selected per role (enough
   to produce at least each output once). The player can override but the screen
@@ -35,9 +41,9 @@ A new phase between role bidding and Year 1 Spring.
 - Investments are **private** — players see only their own role's choices.
 - A **timer** runs (always — "unlimited" games use a very large value). The
   remaining time is displayed and **flashes when ≤ 60 s remaining**.
-- Mid-game purchases are allowed during normal turns. Complex equipment
-  (anything tagged "(2 seasons)" in the catalogue) takes **2 seasons to arrive**
-  after purchase.
+- Mid-game purchases and leases are allowed during normal turns. Complex
+  equipment (anything tagged "(2 seasons)" in the catalogue) takes **2 seasons
+  to arrive** after acquisition.
 
 ---
 
@@ -74,9 +80,14 @@ For each role, capacity is described by **two complementary tables**:
 **(a) Per-unit input requirements** — what 1 unit of each output costs in
 operating resources, Dollops (where applicable), and labour.
 
-**(b) Capital equipment catalogue** — the buyable items that gate parallel
-production capacity (the items players purchase in the Investing Phase or
-during normal turns).
+**(b) Capital equipment catalogue** — the physical asset category that gates
+parallel production capacity (the items islands purchase or lease in the
+Investing Phase or during normal turns). Capital equipment is not a single
+resource type.
+
+Capital equipment may be acquired by outright purchase or by a **3-year lease**.
+At lease end, the equipment is returned or bought out for book value. Book value
+uses straight-line depreciation over **5 years** from catalogue cost.
 
 ### Maximum producible (per output, per season)
 
@@ -113,15 +124,19 @@ differ but the mechanics are identical.
 
 ### Per-island worker titles
 
-| Island | Manager (university) | Technician (apprenticeship) | Worker |
-|---|---|---|---|
-| Farmer | Farmer | Farming Foreman, Mechanic | Farmhand |
-| Miner | Mining Engineer / Geologist | Mining Foreman, Refiner, Mechanic | Pit Worker |
-| Transporter | Engineer | Pilot, Logistics Foreman, Mechanic | Stevedore |
-| Educator | Professor | Lecturer / Tutor / Trainer | Admin |
-| Banker | Banker | Analyst, Banking Clerk | Receptionist |
-| Manufacturer | Engineer | Factory Foreman, Assembly Tech, Mechanic | Assembler |
-| Doctor | Doctor / Nurse | Medical Orderly | Aide |
+These titles are display/training vocabulary over the generic three-band
+mechanic. A role may have more than one title in a band when its island has
+distinct operating lines.
+
+| Island | Manager | Technician | Worker | Notes |
+|---|---|---|---|---|
+| Medical | Doctor; Researcher | Lab Technician; Nurse | Orderly | Laboratory and clinical work share the island. |
+| Mining | Mining Engineer; Extraction Engineer; Geologist | Technician; Drilling Specialist | Labourer | Top line is mining; second line is oil extraction. |
+| Farming | Farm Manager; Captain (fishing) | Foreman; Fishing Foreman | Farmhand; Fisherman | Top line is farming; second line is fishing. |
+| Banking | Banker; Actuary | Loan Officer; Broker | Clerk | Lending, insurance, and market services share staff. |
+| Manufacturing | Engineer | Tradesman | Factory Worker | Covers ForgeHaven product lines. |
+| Transportation | Captain; Pilot / Copilot | Petty Officer; Aircraft Service Technician | Sailor; Steward; Ground Crew | Sea and air operations share the island. |
+| Educator | Professor; Technical Director | Lecturer; Mentor | Worker; Apprentice | Top line is academic; second line is technical/apprenticeship. |
 
 **University grad seasons** (Education pipeline):
 - Doctor: 2 seasons
@@ -195,7 +210,7 @@ Notes: Transporter refines its own jet fuel from Oil. Food provisions services.
 **Outputs:** Knowledge, Patents *(see §7)*
 **Programmes (services, not tradeable resources):** Education, Apprenticeship
 
-| Output | CapitalEquipment | Finance | Research-stock | Manager | Technician | Worker |
+| Output | Lab / campus capital access | Finance | Research-stock | Manager | Technician | Worker |
 |---|---|---|---|---|---|---|
 | 1 Knowledge | 0.25 | 0.25 | gives multiplier | 1 (Professor) | 0.5 (Lecturer) | 0.5 |
 | 1 Patent | 0.5 | 0.5 | required input | 2 (Professor) | 1 (Researcher) | — |
@@ -205,7 +220,7 @@ Notes: Transporter refines its own jet fuel from Oil. Food provisions services.
 | Lecture Hall | 50 Dp | +4 Knowledge capacity, +N Education slots |
 | Library | 40 Dp | +2 Knowledge, +1 Patent |
 | Research Lab (2 seasons) | 100 Dp | +3 Patent capacity, +Research stock |
-| Computer Cluster (2 seasons) | 80 Dp | +1 Patent, –0.2 CapitalEquipment per output |
+| Computer Cluster (2 seasons) | 80 Dp | +1 Patent, –0.2 lab/campus capital access per output |
 | Apprenticeship Programme | 60 Dp | +N Apprenticeship slots (separate from Education) |
 
 **Research** is an internal lever, not a sellable resource: it accumulates
@@ -215,7 +230,7 @@ multiplies per-unit Knowledge yield + is consumed when producing Patents.
 ### 🏦 Banker
 **Outputs:** Finance, InsurancePolicies
 
-| Output | Money (Dp) | Knowledge | CapitalEquipment | Manager | Technician |
+| Output | Money (Dp) | Knowledge | Banking capital access | Manager | Technician |
 |---|---|---|---|---|---|
 | 1 Finance | 5 Dp | 0.5 | 0.5 | 1 (Banker) | 0.25 |
 | 1 InsurancePolicy | 8 Dp | 0.5 | 0.25 | 1 (Banker) | 0.5 (Analyst) |
@@ -437,22 +452,23 @@ They are not eliminated — they have two paths to keep playing:
 - Sellers can **list a role** on a "roles for sale" board with an asking
   price (or accept a private offer).
 - Buyer pays seller, role transfers — buyer inherits the role's capital
-  inventory and workforce. Treat this as transferring the entire island.
+  inventory, workforce, loans, leases, and obligations. Treat this as
+  transferring the entire island ledger.
 - **Open questions:**
-  - Does selling a role include the loans owed by the role's owner, or do
-    those stay with the seller? Default: loans stay with the original
-    borrower (separate ledger entries).
+  - Loans and obligations stay with the island. The buyer inherits them and
+    must see them clearly before confirming the purchase.
   - Does the buyer take over patents purchased on that island? Default: yes
     (they go with the role).
   - Minimum / maximum sale price rules? Default: free market, no caps.
 
 ### 17.2 Bank deposits ("call money")
 
-While roleless (or even alongside running an island), a player can park their
-Dollops in the Bank as **on-call deposits**:
+After the auction, unspent owner cash is automatically placed in the Bank as an
+owner deposit at **5% p.a.** Roleless players and island owners may also add
+further voluntary deposits:
 
-- Player and Banker negotiate a deposit **interest rate** (per-season or
-  annualised).
+- Owner deposits default to **5% p.a.** unless a later rule explicitly allows a
+  negotiated rate.
 - The Banker can **on-lend** these deposits — they expand the Banker's
   lending capacity beyond their own balance sheet.
 - Deposits are **on call**: depositor can withdraw at any time during their

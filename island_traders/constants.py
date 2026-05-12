@@ -8,6 +8,10 @@ STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 tot
 TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 
+# Production is intentionally board-game chunky: one production action should
+# create enough supply for the archipelago, not one sad little crate.
+PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
+
 # Bootstrap inventory: each island starts with —
 #   (a) one season's worth of its outputs, ready to sell in the opening round
 #   (b) one season's worth of its production inputs, so it can produce round 2
@@ -19,21 +23,21 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Miner: partial output to sell + inputs to produce (Oil serves both)
     "Miner":         {"Ore": 3, "Oil": 4,                            # to sell (Ore 3, Oil 3) + Oil 1 to produce
                       "Freight": 1, "MiningEquipment": 1},            # to produce
-    # Transporter: cargo + seats to sell + Oil & Food to run services
+    # Transporter: cargo + seats to sell + Oil & Fish to run services
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 3, "Food": 1},                           # fuel-heavy role gets a larger opening buffer
+                      "Oil": 3, "Fish": 1},                           # fuel-heavy role gets a larger opening buffer
     # Educator: Knowledge to sell + inputs to run the university
     "Educator":      {"Knowledge": 2,                                 # to sell
-                      "CapitalEquipment": 1, "Finance": 1},           # to produce
+                      "LaboratoryEquipment": 1, "Finance": 1},        # to produce
     # Banker: Finance to sell + inputs to run the bank
     "Banker":        {"Finance": 2,                                   # to sell
-                      "Knowledge": 1, "CapitalEquipment": 1},         # to produce
+                      "Knowledge": 1},                                # to produce
     # Manufacturer: FarmMachinery (default opening line) to sell + inputs to produce
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
                       "Ore": 2, "Oil": 2},                            # to produce; heavier lines still need more
     # Doctor: services to sell + inputs to operate
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Knowledge": 1, "MedicalDevices": 1},           # to produce
+                      "Knowledge": 1, "LaboratoryEquipment": 1},      # to produce
 }
 
 # Dollops per unit at balanced supply/demand
@@ -44,7 +48,7 @@ BASE_PRICES: dict[str, float] = {
     "Oil":                 20.0,
     "Freight":             12.0,
     "Knowledge":           18.0,
-    "CapitalEquipment":    28.0,
+    "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
     "HealthServices":      35.0,
     "Vaccine":             40.0,
@@ -64,11 +68,15 @@ BASE_PRICES: dict[str, float] = {
 # Farmer output is defined by FARMER_SEASONAL_CONVERSION instead.
 # Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
-    "Miner":         {"Ore": 5, "Oil": 5},
-    "Transporter":   {"Freight": 6, "PassengerSeats": 4},  # cargo + passenger services
-    "Educator":      {"Knowledge": 4, "Patents": 1},       # 1 Patent/season baseline
-    "Banker":        {"Finance": 3},
-    "Doctor":        {"HealthServices": 4, "Vaccine": 1},
+    "Miner":         {"Ore": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Oil": 20 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Transporter":   {"Freight": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Educator":      {"Knowledge": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Patents": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Doctor":        {"HealthServices": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Vaccine": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -76,11 +84,11 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
-    "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + provisions
-    "Educator":      {"CapitalEquipment": 1, "Finance": 1},   # equipment + operating budget
-    "Banker":        {"Knowledge": 1, "CapitalEquipment": 1}, # expertise + infrastructure
+    "Transporter":   {"Oil": 2, "Fish": 1},   # jet fuel (self-refined from Oil) + crew provisions
+    "Educator":      {"LaboratoryEquipment": 1, "Finance": 1}, # labs + operating budget
+    "Banker":        {"Knowledge": 1},                         # expertise + infrastructure
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
-    "Doctor":        {"Knowledge": 1, "MedicalDevices": 1},
+    "Doctor":        {"Knowledge": 1, "LaboratoryEquipment": 1},
 }
 
 # Per-season input→output table for the Farmer island.
@@ -89,19 +97,23 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 2, "Fish": 3},   # planting underway; good fishing
+        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
     },
     "Summer": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 3, "Fish": 5},   # peak fishing; crops growing
+        "outputs": {"Food": 6 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
     },
     "Autumn": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 7, "Fish": 2},   # bumper harvest; fishing winds down
+        "outputs": {"Food": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # bumper harvest; fishing winds down
     },
     "Winter": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 2, "Fish": 1},   # stores drawn down; minimal production
+        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # stores drawn down; minimal production
     },
 }
 
@@ -121,7 +133,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "FarmMachinery": {
         "inputs":           {"Ore": 2, "Oil": 1},
         "output":           "FarmMachinery",
-        "qty":              3,
+        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,   # AssemblyWorkers to weld and fit
         "unskilled":        3,   # general labour for sub-assembly
         "freight_per_unit": 2,   # large steel frames; shipped on flatbeds
@@ -130,16 +142,25 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "MiningEquipment": {
         "inputs":           {"Ore": 3, "Oil": 2},
         "output":           "MiningEquipment",
-        "qty":              2,
+        "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          3,   # Engineers to spec heavy drilling rigs
         "unskilled":        2,
         "freight_per_unit": 3,   # heaviest line; specialist transport
         "desc":             "Mining Equipment",
     },
+    "LaboratoryEquipment": {
+        "inputs":           {"Ore": 1, "Oil": 1},
+        "output":           "LaboratoryEquipment",
+        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "skilled":          3,
+        "unskilled":        1,
+        "freight_per_unit": 1,
+        "desc":             "Laboratory Equipment",
+    },
     "MedicalDevices": {
         "inputs":           {"Ore": 1, "Oil": 1},
         "output":           "MedicalDevices",
-        "qty":              3,
+        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
         "unskilled":        1,   # minimal general labour
         "freight_per_unit": 1,   # small, high-value items
@@ -148,7 +169,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "TransportEquipment": {
         "inputs":           {"Ore": 2, "Oil": 2},
         "output":           "TransportEquipment",
-        "qty":              2,
+        "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
