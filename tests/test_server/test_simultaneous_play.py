@@ -198,3 +198,58 @@ def test_turn_manager_parallel_mode_dispatch():
     assert results == []
     results = tm._run_season_sequential(0, 0, {})
     assert results == []
+
+
+def test_concurrent_ensure_player_does_not_create_duplicate_events():
+    """Regression: two threads calling _ensure_player simultaneously for the
+    same pid must not create separate Event/Lock objects (bug #2 root cause)."""
+    io = WebSocketIOAdapter(
+        "g7", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: None},
+    )
+    barrier = threading.Barrier(4)
+    errors = []
+
+    def _init_player():
+        try:
+            barrier.wait(timeout=2)
+            io._ensure_player(0)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=_init_player, daemon=True) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=2)
+
+    assert not errors
+    # Must have exactly one Event and one Lock, not duplicates.
+    assert isinstance(io._player_events[0], threading.Event)
+    assert isinstance(io._player_locks[0], threading.Lock)
+
+
+def test_response_during_send_and_wait_is_not_swallowed():
+    """If receive_response arrives immediately after _send_and_wait sends the
+    message, the response must not be lost (bug #2 split-lock regression)."""
+    sent = []
+    io = WebSocketIOAdapter(
+        "g8", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sent.append(m)},
+    )
+    io.begin_season()
+
+    result = {}
+
+    def waiter():
+        io.set_active_player(0)
+        result["value"] = io._send_and_wait({"type": "choose_action"}, timeout=2)
+
+    t = threading.Thread(target=waiter, daemon=True)
+    t.start()
+    time.sleep(0.05)  # let waiter reach the wait
+
+    # Simulate a near-instantaneous response (as if client responded immediately)
+    io.receive_response(0, "produce")
+    t.join(timeout=2)
+    assert result.get("value") == "produce"

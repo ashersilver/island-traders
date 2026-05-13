@@ -16,11 +16,14 @@ Concurrent per-player design:
   END_TURN return from any pending choose_action.
 """
 from __future__ import annotations
+import logging
 import threading
 from ..cli.prompts import IOAdapter
 from ..models.resource import ResourceType
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.turn import TurnAction
+
+logger = logging.getLogger("island_traders.ws_adapter")
 
 
 class WebSocketIOAdapter(IOAdapter):
@@ -39,6 +42,10 @@ class WebSocketIOAdapter(IOAdapter):
         self._broadcast = broadcast_fn
         # player_idx (engine Player.player_id, an int) → send fn
         self._player_send_fns = player_send_fns
+
+        # Global init lock — protects _ensure_player from concurrent creation
+        # of Event/Lock objects for the same player_id.
+        self._init_lock = threading.Lock()
 
         # Per-player synchronisation primitives
         self._player_events: dict[int, threading.Event] = {}
@@ -66,10 +73,16 @@ class WebSocketIOAdapter(IOAdapter):
     # ---- per-player primitives ----
 
     def _ensure_player(self, pid: int) -> None:
-        if pid not in self._player_events:
-            self._player_events[pid] = threading.Event()
-            self._player_responses[pid] = None
-            self._player_locks[pid] = threading.Lock()
+        # Fast path: already initialised (no lock needed).
+        if pid in self._player_events:
+            return
+        # Slow path: hold the init lock so two threads don't both create
+        # Event/Lock objects for the same pid (race that caused bug #2).
+        with self._init_lock:
+            if pid not in self._player_events:
+                self._player_events[pid] = threading.Event()
+                self._player_responses[pid] = None
+                self._player_locks[pid] = threading.Lock()
 
     def _active_pid(self) -> int | None:
         return getattr(self._tls, "active_player_id", None)
@@ -122,26 +135,38 @@ class WebSocketIOAdapter(IOAdapter):
         pid = self._active_pid()
         if pid is None:
             # No active player on this thread — fall back to defaults.
+            logger.warning("_send_and_wait called with no active player (TLS)")
             return None
         self._ensure_player(pid)
 
         if self._interrupted:
             return None
 
+        msg.setdefault("player_id", pid)
+
+        # Single lock acquisition: clear event, store pending msg, THEN send.
+        # Previously this was two separate `with` blocks, leaving a gap where
+        # interrupt_all() or receive_response() could fire between event.clear()
+        # and the message being stored — causing the response to be swallowed
+        # and the player's action menu to vanish (bug #2).
         with self._player_locks[pid]:
             self._player_events[pid].clear()
             self._player_responses[pid] = None
-
-        msg.setdefault("player_id", pid)
-        with self._player_locks[pid]:
             self._player_pending_msgs[pid] = dict(msg)
+
         self._send_to(pid, msg)
 
-        self._player_events[pid].wait(timeout=timeout)
+        signalled = self._player_events[pid].wait(timeout=timeout)
         with self._player_locks[pid]:
             value = self._player_responses[pid]
             self._player_responses[pid] = None
             self._player_pending_msgs.pop(pid, None)
+
+        if not signalled:
+            logger.warning(
+                "Player %d: _send_and_wait timed out after %.0fs for %s",
+                pid, timeout, msg.get("type", "?"),
+            )
 
         if self.on_action_complete and msg.get("type") != "choose_action":
             try:
@@ -184,8 +209,12 @@ class WebSocketIOAdapter(IOAdapter):
         self.set_active_player(player.player_id)
         # Honour the Ready flag — short-circuit straight to END_TURN.
         if player.player_id in self._player_ready_flags:
+            logger.debug("Player %d (%s): Ready flag set, returning END_TURN",
+                         player.player_id, player.name)
             return TurnAction.END_TURN
         if self._interrupted:
+            logger.debug("Player %d (%s): season interrupted, returning END_TURN",
+                         player.player_id, player.name)
             return TurnAction.END_TURN
         options = [{"value": a.value, "label": a.value.replace("_", " ").title()} for a in available]
         resp = self._send_and_wait({
@@ -195,10 +224,17 @@ class WebSocketIOAdapter(IOAdapter):
             "options": options,
         })
         if resp is None:
+            logger.warning("Player %d (%s): choose_action got None response — "
+                           "ending turn (interrupted=%s, ready=%s)",
+                           player.player_id, player.name,
+                           self._interrupted,
+                           player.player_id in self._player_ready_flags)
             return TurnAction.END_TURN
         try:
             return TurnAction(resp)
         except ValueError:
+            logger.warning("Player %d (%s): invalid action '%s', ending turn",
+                           player.player_id, player.name, resp)
             return TurnAction.END_TURN
 
     def choose_resource(self, prompt: str, available: list[ResourceType]) -> ResourceType:
