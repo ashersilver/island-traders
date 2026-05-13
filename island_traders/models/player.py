@@ -156,6 +156,25 @@ class Player:
     def active_policies(self, year: int, season_index: int) -> list[InsurancePolicy]:
         return [p for p in self.insurance_policies if p.is_valid(year, season_index)]
 
+    def cancel_insurance_policy(
+        self, policy_id: int, year: int, season_index: int
+    ) -> float:
+        """Cancel an active insurance policy (Issue #5).
+
+        Returns the pro-rata refund amount that should be credited to the
+        policy holder.  Caller is responsible for the cash transfer between
+        Banker and holder.  Returns 0.0 if the policy is unknown, already
+        inactive, or already expired.
+        """
+        policy = next(
+            (p for p in self.insurance_policies if p.policy_id == policy_id), None
+        )
+        if policy is None or not policy.active:
+            return 0.0
+        refund = policy.cancel_refund(year, season_index)
+        policy.active = False
+        return refund
+
     def all_produced_resources(self) -> list[ResourceType]:
         seen: set[ResourceType] = set()
         result = []

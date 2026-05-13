@@ -50,11 +50,12 @@ class LoanStatus(Enum):
     ACTIVE = "active"
     REPAID = "repaid"
     DEFAULTED = "defaulted"
+    ROLLED_OVER = "rolled_over"  # superseded by a new loan via rollover
 
 
 @dataclass
 class Loan:
-    """Bullet bond: borrow principal now, repay principal + interest after 4 seasons."""
+    """Bullet bond: borrow principal now, repay principal + interest after the term."""
     loan_id: int
     borrower_id: int
     lender_id: int
@@ -66,6 +67,9 @@ class Loan:
     maturity_season: int
     status: LoanStatus = LoanStatus.ACTIVE
     term_years: int = 1
+    # If this loan was created by rolling over a previous one, the original
+    # loan's id is recorded here for traceability.
+    rolled_over_from_loan_id: int | None = None
 
     @property
     def repayment_amount(self) -> float:
@@ -128,6 +132,46 @@ class LoanLedger:
             if l.status == LoanStatus.ACTIVE
             and (l.borrower_id == player_id or l.lender_id == player_id)
         ]
+
+    def rollover_loan(
+        self,
+        loan_id: int,
+        new_rate: float,
+        new_term_years: int,
+        year: int,
+        season: int,
+    ) -> Loan:
+        """Refinance an active loan into a new one (Issue #6).
+
+        The old loan is marked ROLLED_OVER and a new loan is created with
+        principal equal to the old loan's repayment_amount (principal + accrued
+        interest), at the new rate/term, issued at the current year/season.
+        No cash changes hands at rollover — the new loan's "advance" exactly
+        covers the old loan's repayment.
+
+        Raises ValueError if the loan is unknown, not ACTIVE, or the new term
+        is outside the supported 1-3 year range.
+        """
+        if new_term_years < 1 or new_term_years > 3:
+            raise ValueError(f"new_term_years must be 1-3, got {new_term_years}")
+        old = next((l for l in self.loans if l.loan_id == loan_id), None)
+        if old is None:
+            raise ValueError(f"No loan with id {loan_id}")
+        if old.status != LoanStatus.ACTIVE:
+            raise ValueError(f"Loan {loan_id} is {old.status.value}, cannot roll over")
+        new_principal = old.repayment_amount
+        old.status = LoanStatus.ROLLED_OVER
+        new_loan = self.create_loan(
+            borrower_id=old.borrower_id,
+            lender_id=old.lender_id,
+            principal=new_principal,
+            interest_rate=new_rate,
+            issued_year=year,
+            issued_season=season,
+            term_years=new_term_years,
+        )
+        new_loan.rolled_over_from_loan_id = old.loan_id
+        return new_loan
 
     def outstanding_debt(self, player_id: int) -> float:
         return sum(

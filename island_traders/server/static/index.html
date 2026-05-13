@@ -777,8 +777,12 @@ button:active{transform:scale(.97)}
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
       <div class="section">
-        <h3>Insurance</h3>
+        <h3>Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span></h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
+      </div>
+      <div class="section">
+        <h3>Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span></h3>
+        <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
       </div>
     </div>
 
@@ -1881,10 +1885,64 @@ function renderGameState() {
     .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
     .join('') || '<span style="color:var(--dim)">Empty</span>';
 
-  const pols = me.policies || [];
-  document.getElementById('s-insurance').innerHTML = pols.length
-    ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
-    : '<span style="color:var(--dim)">None</span>';
+  // Insurance: prefer structured `policies_detail`; fall back to plain strings.
+  const polsDetail = me.policies_detail || [];
+  if (polsDetail.length) {
+    document.getElementById('s-insurance').innerHTML = polsDetail.map(pol => {
+      const expiring = pol.seasons_remaining <= 1;
+      return (
+        `<div style="margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:4px;${expiring ? 'border-color:var(--gold);' : ''}">` +
+          `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+            `<strong>${esc(pol.policy_type.charAt(0).toUpperCase() + pol.policy_type.slice(1))} Insurance</strong>` +
+            `<span style="font-size:.7rem;color:${expiring ? 'var(--gold)' : 'var(--dim)'}">` +
+              `${pol.seasons_remaining} season${pol.seasons_remaining === 1 ? '' : 's'} left` +
+            `</span>` +
+          `</div>` +
+          `<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">` +
+            `Premium: ${pol.premium_paid.toFixed(1)} Dp &middot; ` +
+            `Expires Y${pol.expires_year} ${esc(pol.expires_season)} &middot; ` +
+            `<span title="Pro-rata refund if cancelled now">Cancel refund: ${pol.cancel_refund.toFixed(1)} Dp</span>` +
+          `</div>` +
+        `</div>`
+      );
+    }).join('');
+  } else {
+    const pols = me.policies || [];
+    document.getElementById('s-insurance').innerHTML = pols.length
+      ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
+      : '<span style="color:var(--dim)">None</span>';
+  }
+
+  // Loans detail (Issue #6): show structured info per active loan.
+  const loans = me.loans_detail || [];
+  const loansEl = document.getElementById('s-loans-detail');
+  if (loansEl) {
+    if (loans.length) {
+      loansEl.innerHTML = loans.map(loan => {
+        const isBorrower = loan.role === 'borrower';
+        const due = loan.seasons_to_maturity <= 1;
+        return (
+          `<div style="margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:4px;${due ? 'border-color:var(--gold);' : ''}">` +
+            `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+              `<strong>Loan #${loan.loan_id}</strong>` +
+              `<span style="font-size:.7rem;color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</span>` +
+            `</div>` +
+            `<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">` +
+              `${loan.principal.toFixed(1)} Dp @ ${(loan.interest_rate * 100).toFixed(1)}% &middot; ` +
+              `${loan.term_years}-year term<br>` +
+              `Repay <strong>${loan.repayment_amount.toFixed(1)} Dp</strong> &middot; ` +
+              `<span style="color:${due ? 'var(--gold)' : 'var(--dim)'}">` +
+                `matures Y${loan.maturity_year} ${esc(loan.maturity_season)} ` +
+                `(${loan.seasons_to_maturity} season${loan.seasons_to_maturity === 1 ? '' : 's'})` +
+              `</span>` +
+            `</div>` +
+          `</div>`
+        );
+      }).join('');
+    } else {
+      loansEl.innerHTML = '<span style="color:var(--dim)">No active loans</span>';
+    }
+  }
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));

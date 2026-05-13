@@ -1229,14 +1229,60 @@ class GameManager:
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
+                # Structured per-loan detail (Issue #6 — Loan rollover UI).
+                # Includes both borrower-side and lender-side active loans
+                # so the dashboard can show roles consistently.
+                "loans_detail": [
+                    {
+                        "loan_id": l.loan_id,
+                        "role": "borrower" if l.borrower_id == p.player_id else "lender",
+                        "principal": round(l.principal, 1),
+                        "interest_rate": l.interest_rate,
+                        "repayment_amount": round(l.repayment_amount, 1),
+                        "term_years": l.term_years,
+                        "issued_year": l.issued_year + 1,
+                        "issued_season": SEASONS[l.issued_season]
+                            if l.issued_season < len(SEASONS) else str(l.issued_season),
+                        "maturity_year": l.maturity_year + 1,
+                        "maturity_season": SEASONS[l.maturity_season]
+                            if l.maturity_season < len(SEASONS) else str(l.maturity_season),
+                        "seasons_to_maturity": max(0,
+                            (l.maturity_year - current_year_idx) * len(SEASONS)
+                            + (l.maturity_season - current_season_idx)),
+                        "counterparty_id": l.lender_id
+                            if l.borrower_id == p.player_id else l.borrower_id,
+                    }
+                    for l in game.loan_ledger.active_loans_for(p.player_id)
+                ],
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                # Plain descriptive strings for back-compat with older UI code
                 "policies": [
                     pol.describe() for pol in p.insurance_policies if pol.active
+                ],
+                # Structured per-policy detail (Issue #5 — Insurance review UI)
+                "policies_detail": [
+                    {
+                        "policy_id": pol.policy_id,
+                        "policy_type": pol.policy_type,
+                        "premium_paid": round(pol.premium_paid, 1),
+                        "purchased_tick": pol.purchased_tick,
+                        "expires_at_tick": pol.expires_at_tick,
+                        "expires_year": pol.expires_at_tick // len(SEASONS) + 1,
+                        "expires_season": SEASONS[pol.expires_at_tick % len(SEASONS)]
+                            if (pol.expires_at_tick % len(SEASONS)) < len(SEASONS)
+                            else "",
+                        "seasons_remaining":
+                            pol.seasons_remaining(current_year_idx, current_season_idx),
+                        "cancel_refund":
+                            pol.cancel_refund(current_year_idx, current_season_idx),
+                        "banker_player_id": pol.banker_player_id,
+                    }
+                    for pol in p.insurance_policies if pol.active
                 ],
             }
             lobby_player = next(

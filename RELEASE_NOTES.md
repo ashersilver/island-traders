@@ -5,6 +5,66 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/loans-and-insurance
+
+Branch: `claude/loans-and-insurance`
+Target: `pre-release`
+Closes: GitHub #5, #6
+
+#### Player-Facing Changes
+
+- **Loan roll-over (Issue #6).** New `Roll Over Loan` action in the player
+  action menu. The borrower picks an active loan, chooses a new term (1-3
+  years), and the Banker quotes a new rate. The old loan's repayment becomes
+  the new loan's principal — no cash moves at rollover, the new advance
+  exactly covers the old repayment. Useful at or before maturity to extend
+  obligations or to lock in a fresh rate quote.
+- **Insurance review & cancellation (Issue #5).** New `Manage Insurance`
+  action lists the player's active policies with seasons remaining and the
+  pro-rata refund amount. Cancellation deactivates the policy and the Banker
+  pays out a pro-rata refund (`premium × seasons_remaining / total_seasons`).
+- Loans and Insurance side panels in the dashboard now show structured
+  per-loan / per-policy detail: principal, rate, term, repayment amount,
+  maturity date, seasons remaining, and cancel refund.
+- Loans nearing maturity (≤1 season) and policies nearing expiry (≤1 season)
+  are highlighted in gold to flag the renewal decision.
+
+#### Engine
+
+- New `LoanStatus.ROLLED_OVER`.
+- New `Loan.rolled_over_from_loan_id` traceability field.
+- New `LoanLedger.rollover_loan(loan_id, new_rate, new_term_years, year,
+  season) -> Loan`. Refuses non-active loans or out-of-range terms.
+- New `InsurancePolicy.seasons_remaining()` and `cancel_refund()` methods.
+- New `Player.cancel_insurance_policy(policy_id, year, season) -> float` —
+  returns the refund amount; caller is responsible for the cash transfer.
+- New `TurnAction.ROLLOVER_LOAN` and `TurnAction.MANAGE_INSURANCE` with
+  full prompt-chain implementations in `engine/turn.py`. Funding-side loans
+  (lender_id == -1) are filtered out of rollover candidates.
+
+#### Server
+
+- `get_game_state` payload now includes `loans_detail` (structured per-loan
+  info: role, principal, rate, term, maturity, seasons-to-maturity) and
+  `policies_detail` (structured per-policy info: type, premium, expiry,
+  seasons-remaining, cancel-refund). The plain `policies` string list is
+  retained for back-compat.
+
+#### Tests
+
+- 15 new engine tests in `tests/test_engine/test_loan_rollover_and_insurance.py`:
+  ledger primitives, action-level end-to-end (rollover, cancel, confirm-no
+  cancellation), external bank funding-loan filtering, pro-rata math edge
+  cases, double-cancel guard.
+- 3 new server tests in `tests/test_server/test_game_state_loans_policies.py`
+  covering the structured payload shape.
+
+#### Verification
+
+- Test suite: `194 passed` (up from 176 baseline).
+
+---
+
 ### claude/pause-game
 
 Branch: `claude/pause-game`

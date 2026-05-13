@@ -34,9 +34,11 @@ class TurnAction(Enum):
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
     SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
     BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
+    MANAGE_INSURANCE   = "manage_insurance"    # any holder: review/cancel active policies (#5)
     PURCHASE_CAPITAL   = "purchase_capital"    # any player: buy named equipment from Manufacturer
     OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
     TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
+    ROLLOVER_LOAN      = "rollover_loan"       # borrower: refinance an active loan (#6)
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
     VIEW_MARKET        = "view_market"
@@ -294,12 +296,16 @@ class TurnManager:
                     self._action_sell_insurance(player, result, year, season_index)
                 elif action == TurnAction.BUY_INSURANCE:
                     self._action_buy_insurance(player, result, year, season_index)
+                elif action == TurnAction.MANAGE_INSURANCE:
+                    self._action_manage_insurance(player, result, year, season_index)
                 elif action == TurnAction.PURCHASE_CAPITAL:
                     self._action_purchase_capital(player, result, year, season_index)
                 elif action == TurnAction.OFFER_LOAN:
                     self._action_offer_loan(player, result, year, season_index)
                 elif action == TurnAction.TAKE_LOAN:
                     self._action_take_loan(player, result, year, season_index)
+                elif action == TurnAction.ROLLOVER_LOAN:
+                    self._action_rollover_loan(player, result, year, season_index)
                 elif action == TurnAction.VIEW_LOANS:
                     self._action_view_loans(player)
                 elif action == TurnAction.APPLY_PATENT:
@@ -1507,6 +1513,143 @@ class TurnManager:
             f"Y{loan.maturity_year+1} S{loan.maturity_season+1})."
         )
         result.actions_taken.append(f"loan:taken:{principal:.1f}")
+
+    def _action_rollover_loan(self, player: Player, result: TurnResult,
+                              year: int, season_index: int) -> None:
+        """Refinance an active loan where this player is the borrower (Issue #6).
+
+        Refinancing: the old loan's repayment becomes the new loan's principal,
+        rolled at a fresh banker_quote_rate for a new 1-3 year term.  No net
+        cash changes hands at rollover — the new advance exactly covers the
+        old repayment.
+        """
+        sym = CURRENCY_SYMBOL
+        my_loans = [
+            l for l in self.loan_ledger.active_loans_for(player.player_id)
+            if l.borrower_id == player.player_id and l.lender_id >= 0
+        ]
+        if not my_loans:
+            self.io.print("  No active loans to roll over.")
+            return
+
+        # Build a picker — let the player choose which loan to refinance.
+        # We use ResourceType-style choose_resource via a labelled list, but
+        # the simplest portable form is choose_quantity over the list index.
+        self.io.print("\n  Your active loans:")
+        for idx, loan in enumerate(my_loans, start=1):
+            seasons_to_maturity = (
+                (loan.maturity_year - year) * 4 + (loan.maturity_season - season_index)
+            )
+            self.io.print(
+                f"    {idx}. Loan #{loan.loan_id}: {loan.principal:.1f} {sym} @ "
+                f"{loan.interest_rate*100:.1f}% — repay {loan.repayment_amount:.1f} {sym} "
+                f"in {seasons_to_maturity} season(s) "
+                f"(matures Y{loan.maturity_year+1} S{loan.maturity_season+1})"
+            )
+        choice = self.io.choose_quantity(
+            "Roll over which loan? (number above)", 1, len(my_loans)
+        )
+        old = my_loans[choice - 1]
+
+        new_term_years = self.io.choose_quantity(
+            "New term in years (1-3)", 1, 3
+        )
+
+        new_rate = banker_quote_rate(
+            player, self.loan_ledger,
+            old.repayment_amount, new_term_years, year, season_index,
+        )
+        rate_pct = new_rate * 100
+        new_principal = old.repayment_amount
+        new_repay = round(new_principal * (1 + new_rate), 1)
+
+        funding_rate = posted_funding_rates(year, season_index)[new_term_years]
+        self.io.print(
+            f"\n  Banker quote for rollover of Loan #{old.loan_id}: "
+            f"new principal {new_principal:.1f} {sym} (= old repayment), "
+            f"rate {rate_pct:.1f}% (cost {funding_rate*100:.1f}%), "
+            f"term {new_term_years} year(s), repay {new_repay:.1f} {sym}."
+        )
+        if not self.io.confirm(
+            f"Confirm rollover: close Loan #{old.loan_id}, open new loan "
+            f"{new_principal:.1f} {sym} at {rate_pct:.1f}% for "
+            f"{new_term_years} year(s)?"
+        ):
+            self.io.print("  Rollover cancelled.")
+            return
+
+        try:
+            new_loan = self.loan_ledger.rollover_loan(
+                loan_id=old.loan_id,
+                new_rate=new_rate,
+                new_term_years=new_term_years,
+                year=year,
+                season=season_index,
+            )
+        except ValueError as exc:
+            self.io.print(f"  Rollover failed: {exc}")
+            return
+
+        self.io.print(
+            f"  Loan #{old.loan_id} rolled over → new Loan #{new_loan.loan_id} "
+            f"({new_principal:.1f} {sym} @ {rate_pct:.1f}%, "
+            f"matures Y{new_loan.maturity_year+1} S{new_loan.maturity_season+1})."
+        )
+        result.actions_taken.append(
+            f"loan:rollover:{old.loan_id}->#{new_loan.loan_id}"
+        )
+
+    def _action_manage_insurance(self, player: Player, result: TurnResult,
+                                 year: int, season_index: int) -> None:
+        """Review active insurance policies and cancel for a pro-rata refund (Issue #5).
+
+        The Banker pays the refund out of bank cash.  If no Banker player is
+        available (auctioned away or AI-only), the refund is treated as
+        external (cash is simply credited to the holder).
+        """
+        sym = CURRENCY_SYMBOL
+        actives = player.active_policies(year, season_index)
+        if not actives:
+            self.io.print("  No active insurance policies to manage.")
+            return
+
+        self.io.print("\n  Your active insurance policies:")
+        for idx, pol in enumerate(actives, start=1):
+            refund = pol.cancel_refund(year, season_index)
+            remaining = pol.seasons_remaining(year, season_index)
+            self.io.print(
+                f"    {idx}. {pol.describe()}  "
+                f"— {remaining} season(s) left, cancel refund {refund:.1f} {sym}"
+            )
+        choice = self.io.choose_quantity(
+            "Manage which policy? (number above)", 1, len(actives)
+        )
+        target = actives[choice - 1]
+
+        if not self.io.confirm(
+            f"Cancel {target.policy_type} insurance for a refund of "
+            f"{target.cancel_refund(year, season_index):.1f} {sym}?"
+        ):
+            self.io.print("  Cancellation aborted.")
+            return
+
+        refund = player.cancel_insurance_policy(target.policy_id, year, season_index)
+        # Debit the Banker (refund flows out of the Bank).  If no Banker, the
+        # refund is credited to the holder anyway (external bank).
+        banker = next(
+            (p for p in self.players if p.player_id == target.banker_player_id),
+            None,
+        )
+        if banker:
+            banker.dollops -= refund
+        player.receive_dollops(refund)
+        self.io.print(
+            f"  Cancelled {target.policy_type} policy. {player.name} received "
+            f"{refund:.1f} {sym} refund."
+        )
+        result.actions_taken.append(
+            f"insurance:cancelled:{target.policy_type}:{refund:.1f}"
+        )
 
     def _action_apply_patent(self, player: Player, result: TurnResult) -> None:
         """Activate a Patent on one of the player's outputs.
