@@ -68,8 +68,8 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 
 ### Financial Model
 
-- [ ] **#6 — Loan roll-over** — renegotiate rate and term on a loan before or at maturity
-- [ ] **#5 — Insurance review** — view active policies, cancel or renegotiate at renewal
+- [x] **#6 — Loan roll-over** — `ROLLOVER_LOAN` action; old loan ROLLED_OVER, new loan inherits repayment as principal at fresh banker_quote_rate
+- [x] **#5 — Insurance review** — `MANAGE_INSURANCE` action; pro-rata cancel refund (premium × seasons_remaining / total). Renewal via existing BUY_INSURANCE action.
 - [ ] Rename "Dollops" heading → "Working Capital" (suffix `Dp` stays)
 - [x] Wealth = total assets at market value + depreciated capital equipment book value + loans receivable − loans outstanding (balance sheet view)
 - [ ] All monetary values show `Dp` suffix consistently in UI
