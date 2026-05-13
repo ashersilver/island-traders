@@ -1395,9 +1395,12 @@ class GameManager:
         """Route a WS response message to the right engine player's event."""
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
+            logger.debug("handle_player_response: room %s not found or no io_adapter", room_id)
             return
         engine_pid = room.lobby_to_engine_id.get(lobby_player_id)
         if engine_pid is None:
+            logger.warning("handle_player_response: lobby_player_id %s has no engine mapping "
+                           "(room %s, phase %s)", lobby_player_id, room_id, room.season_phase)
             return
         room.io_adapter.receive_response(engine_pid, value)
 
