@@ -24,6 +24,7 @@ class TrainingCapacityError(Exception):
 
 class TrainingStatus(Enum):
     AWAITING_EDUCATOR   = "awaiting_educator"
+    COUNTERED           = "countered"
     AWAITING_TRANSPORT  = "awaiting_transport"
     DISPATCHED          = "dispatched"
     COMPLETED           = "completed"
@@ -47,14 +48,19 @@ class TrainingRequest:
     dispatched_season: int = -1
     return_year: int = -1
     return_season: int = -1
-    # "transporter" | "flight" | "cargo"
-    transport_mode: str = "transporter"
+    # "air_ticket" is the current rule: Educator supplies 1 PassengerSeats per
+    # trainee, with the return journey assumed. Older saved games may still
+    # contain "transporter" / "flight" / "cargo".
+    transport_mode: str = "air_ticket"
+    counter_message: str = ""
 
     def describe(self, player_names: dict[int, str]) -> str:
         sym = CURRENCY_SYMBOL
         req = player_names.get(self.requester_id, f"Player{self.requester_id}")
         edu = player_names.get(self.educator_id, f"Player{self.educator_id}")
-        if self.transport_mode == "flight":
+        if self.transport_mode == "air_ticket":
+            transport_str = f"{len(self.worker_ids)} air ticket(s), Educator supplied"
+        elif self.transport_mode == "flight":
             transport_str = f"Flight ({self.dollops_to_transporter:.0f} {sym})"
         elif self.transport_mode == "cargo":
             transport_str = "Cargo vessel (free, +1 season)"
@@ -69,6 +75,7 @@ class TrainingRequest:
             f"| Educator: {edu} ({self.dollops_to_educator:.0f} {sym})  "
             f"| Transport: {transport_str}  "
             f"| Status: {self.status.value}"
+            f"{'  | Message: ' + self.counter_message if self.counter_message else ''}"
         )
 
 
@@ -194,6 +201,25 @@ class TrainingRegistry:
         req.status = TrainingStatus.REJECTED
         return req
 
+    def educator_counter(
+        self, batch_id: int, dollops_to_educator: float, message: str = ""
+    ) -> TrainingRequest:
+        req = self._get(batch_id, TrainingStatus.AWAITING_EDUCATOR)
+        req.dollops_to_educator = dollops_to_educator
+        req.counter_message = message.strip()
+        req.status = TrainingStatus.COUNTERED
+        return req
+
+    def requester_accept_counter(self, batch_id: int) -> TrainingRequest:
+        req = self._get(batch_id, TrainingStatus.COUNTERED)
+        req.status = TrainingStatus.AWAITING_TRANSPORT
+        return req
+
+    def requester_reject_counter(self, batch_id: int) -> TrainingRequest:
+        req = self._get(batch_id, TrainingStatus.COUNTERED)
+        req.status = TrainingStatus.REJECTED
+        return req
+
     def arrange_transport(
         self, batch_id: int, transporter_id: int, dollop_amount: float | None = None
     ) -> TrainingRequest:
@@ -234,6 +260,13 @@ class TrainingRegistry:
             r for r in self._requests
             if r.educator_id == educator_id
             and r.status == TrainingStatus.AWAITING_EDUCATOR
+        ]
+
+    def countered_for_requester(self, requester_id: int) -> list[TrainingRequest]:
+        return [
+            r for r in self._requests
+            if r.requester_id == requester_id
+            and r.status == TrainingStatus.COUNTERED
         ]
 
     def pending_transport(self) -> list[TrainingRequest]:

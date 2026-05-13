@@ -83,6 +83,11 @@ class DealLedger:
         deal.status = DealStatus.REJECTED
         return deal
 
+    def expire(self, deal_id: int) -> DealProposal:
+        deal = self._get(deal_id)
+        deal.status = DealStatus.EXPIRED
+        return deal
+
     def pending_for_player(self, player_id: int) -> list[DealProposal]:
         return [d for d in self.deals if d.target_id == player_id and d.status == DealStatus.PENDING]
 

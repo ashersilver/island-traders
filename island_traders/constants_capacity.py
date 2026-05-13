@@ -73,8 +73,21 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Miner",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Ore": 2}, "input_relief": {"Ore": {"Oil": 0.2}}},
-        description="+2 Ore, –0.2 Oil per Ore",
+        effects={"capacity": {"Ore": 2, "Metal": 2}, "input_relief": {"Ore": {"Oil": 0.2}}},
+        description="+2 Ore, +2 Metal, –0.2 Oil per Ore",
+    ),
+    CapitalItem(
+        item_id="miner.enhanced_crusher_smelter",
+        name="Enhanced Crusher and Smelter",
+        role="Miner",
+        cost=140.0,
+        delivery_seasons=2,
+        effects={
+            "capacity": {"Metal": 6},
+            "metal_productivity_multiplier": 3.0,
+            "metal_oil_multiplier": 0.5,
+        },
+        description="+200% Metal productivity, -50% Oil per Metal",
     ),
     CapitalItem(
         item_id="miner.oil_rig",
@@ -225,8 +238,11 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Manufacturer",
         cost=80.0,
         delivery_seasons=0,
-        effects={"unlocks_lines": ["FarmMachinery", "MiningEquipment"]},
-        description="enables FarmMachinery + MiningEquipment lines",
+        effects={
+            "unlocks_lines": ["FarmMachinery", "MiningEquipment", "LaboratoryEquipment"],
+            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2, "LaboratoryEquipment": 3},
+        },
+        description="enables FarmMachinery, MiningEquipment + LaboratoryEquipment lines",
     ),
     CapitalItem(
         item_id="manufacturer.assembly_line",
@@ -234,7 +250,16 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Manufacturer",
         cost=70.0,
         delivery_seasons=0,
-        effects={"line_throughput_bonus": 1},
+        effects={
+            "line_throughput_bonus": 1,
+            "capacity": {
+                "FarmMachinery": 1,
+                "MiningEquipment": 1,
+                "LaboratoryEquipment": 1,
+                "MedicalDevices": 1,
+                "TransportEquipment": 1,
+            },
+        },
         description="+1 unit/season on any line",
     ),
     CapitalItem(
@@ -243,7 +268,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Manufacturer",
         cost=100.0,
         delivery_seasons=2,
-        effects={"unlocks_lines": ["MedicalDevices"]},
+        effects={"unlocks_lines": ["MedicalDevices"], "capacity": {"MedicalDevices": 3}},
         description="enables MedicalDevices line",
     ),
     CapitalItem(
@@ -252,7 +277,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Manufacturer",
         cost=120.0,
         delivery_seasons=2,
-        effects={"unlocks_lines": ["TransportEquipment"]},
+        effects={"unlocks_lines": ["TransportEquipment"], "capacity": {"TransportEquipment": 2}},
         description="enables TransportEquipment line",
     ),
 
@@ -326,6 +351,12 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         inputs={"Freight": 0.5},
         manager_per_unit=0.1, technician_per_unit=0.5, worker_per_unit=0.5,
     ),
+    ProductionRecipe(
+        role="Miner", output="Metal",
+        inputs={"Ore": 1.0, "Oil": 0.5},
+        manager_per_unit=0.1, technician_per_unit=0.5, worker_per_unit=1.0,
+        description="Smelt Metal from Ore and Oil",
+    ),
 
     # ----- Transporter -----------------------------------------------------
     ProductionRecipe(
@@ -375,27 +406,27 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # model can reason about them uniformly.
     ProductionRecipe(
         role="Manufacturer", output="FarmMachinery",
-        inputs={"Ore": 2.0, "Oil": 1.0, "Freight": 2.0},
+        inputs={"Metal": 2.0, "Oil": 1.0, "Freight": 2.0},
         manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
     ),
     ProductionRecipe(
         role="Manufacturer", output="MiningEquipment",
-        inputs={"Ore": 3.0, "Oil": 2.0, "Freight": 3.0},
+        inputs={"Metal": 3.0, "Oil": 2.0, "Freight": 3.0},
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=1.0,
     ),
     ProductionRecipe(
         role="Manufacturer", output="LaboratoryEquipment",
-        inputs={"Ore": 1.0, "Oil": 1.0, "Freight": 1.0},
+        inputs={"Metal": 1.0, "Oil": 1.0, "Freight": 1.0},
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Manufacturer", output="MedicalDevices",
-        inputs={"Ore": 1.0, "Oil": 1.0, "Freight": 1.0},
+        inputs={"Metal": 1.0, "Oil": 1.0, "Freight": 1.0},
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Manufacturer", output="TransportEquipment",
-        inputs={"Ore": 2.0, "Oil": 2.0},
+        inputs={"Metal": 2.0, "Oil": 2.0},
         manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
     ),
 
@@ -418,7 +449,7 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
 # warns if they deselect items leaving them unable to produce any output.
 MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Farmer":       ["farmer.tractor", "farmer.fishing_boat"],
-    "Miner":        ["miner.excavator", "miner.oil_rig"],
+    "Miner":        ["miner.excavator", "miner.crusher", "miner.oil_rig"],
     "Transporter":  ["transporter.cargo_ship", "transporter.passenger_liner"],
     "Educator":     ["educator.lecture_hall", "educator.library"],
     "Banker":       ["banker.vault", "banker.underwriting_desk"],

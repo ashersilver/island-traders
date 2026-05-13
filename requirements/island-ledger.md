@@ -161,6 +161,16 @@ A player who sells their only role becomes **roleless**. Roleless players retain
 their personal cash and can participate in the role aftermarket, deposit cash with
 the Banker (on-call deposits), or observe until they acquire a new role.
 
+### Post-auction human island guarantee
+
+If a human player exits the auction with no island, they may immediately buy
+one extra island from an AI player before Year 1 begins. This transfer uses the
+same island-ledger mechanics as a resale: inventory, equipment, workforce,
+loans, leases, patents, and obligations remain with the island.
+
+The AI sale price is defined in
+`requirements/production-capacity-model.md §19.1`.
+
 ---
 
 ## 5. UI implications

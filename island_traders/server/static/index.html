@@ -207,7 +207,7 @@ button:active{transform:scale(.97)}
 #screen-game{height:100vh;width:100vw;overflow:hidden}
 .game-grid{
   display:grid;height:100vh;
-  grid-template-columns:280px 1fr 300px;
+  grid-template-columns:280px 1fr 360px;
   grid-template-rows:48px 1fr 160px;
   grid-template-areas:"hdr hdr hdr" "side main info" "log log log";
   gap:2px;
@@ -221,8 +221,8 @@ button:active{transform:scale(.97)}
   }
   #screen-game{height:auto;overflow:auto}
 }
-@media(min-width:3000px){.game-grid{grid-template-columns:380px 1fr 400px}}
-@media(min-width:2560px) and (max-width:2999px){.game-grid{grid-template-columns:340px 1fr 360px}}
+@media(min-width:3000px){.game-grid{grid-template-columns:380px 1fr 480px}}
+@media(min-width:2560px) and (max-width:2999px){.game-grid{grid-template-columns:340px 1fr 432px}}
 
 .g-hdr{
   grid-area:hdr;background:var(--panel);border-bottom:1px solid var(--border);
@@ -244,7 +244,7 @@ button:active{transform:scale(.97)}
 }
 .game-code-pill span{font-size:.7rem;color:var(--dim);text-transform:uppercase;font-weight:700}
 .game-code-pill strong{font-size:.9rem;color:var(--gold);letter-spacing:.06em}
-.g-hdr .wealth{color:var(--gold);font-weight:700;font-size:.9rem}
+.g-hdr .wealth{color:var(--gold);font-weight:800;font-size:1rem;white-space:nowrap}
 
 /* tabs */
 .island-tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
@@ -257,7 +257,22 @@ button:active{transform:scale(.97)}
 .tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
 
 .g-side{grid-area:side;background:var(--panel);overflow-y:auto;padding:.75rem;border-right:1px solid var(--border)}
-.g-main{grid-area:main;background:var(--bg);overflow-y:auto;padding:.9rem;display:flex;flex-direction:column;gap:.75rem}
+.g-main{
+  grid-area:main;background:var(--bg);overflow-y:auto;padding:.9rem;
+  display:flex;flex-direction:column;gap:.75rem;position:relative;isolation:isolate
+}
+.g-main::after{
+  content:"";position:absolute;inset:0;z-index:1;
+  background:linear-gradient(180deg,rgba(4,9,15,.62),rgba(4,9,15,.86));
+  pointer-events:none
+}
+.island-art-bg{
+  position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-position:center;background-size:cover;background-repeat:no-repeat;
+  opacity:.34;filter:saturate(1.05) contrast(1.05);
+  transition:background-image .25s ease,opacity .25s ease
+}
+.g-main>.section,.g-main>.prompt-area{position:relative;z-index:2}
 .g-info{grid-area:info;background:var(--panel);overflow-y:auto;padding:.75rem;border-left:1px solid var(--border)}
 .g-log{
   grid-area:log;background:#04090f;border-top:1px solid var(--border);
@@ -280,6 +295,15 @@ button:active{transform:scale(.97)}
 .stat .val.gold{color:var(--gold)}
 .stat .val.green{color:var(--green)}
 .stat .val.red{color:var(--red)}
+.stat.net-wealth{
+  margin:.1rem 0 .45rem;
+  padding:.45rem .55rem;
+  border:1px solid rgba(231,192,93,.45);
+  border-radius:var(--radius);
+  background:rgba(231,192,93,.08);
+}
+.stat.net-wealth .lbl{font-size:.76rem;color:var(--gold);font-weight:800;text-transform:uppercase}
+.stat.net-wealth .val{font-size:1.35rem;font-weight:900;color:var(--gold)}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
 .mkt-row .res{color:var(--text)}
@@ -328,11 +352,20 @@ button:active{transform:scale(.97)}
   background:var(--panel);border:1px solid var(--accent);border-radius:10px;
   padding:1.5rem;min-width:300px;max-width:90vw;max-height:90vh;overflow:auto;
 }
+.dialog.market-dialog{width:min(1120px,96vw);max-width:96vw}
 .dialog h3{color:var(--heading);margin-bottom:1rem;font-size:1rem}
 .dialog .opts{display:flex;flex-direction:column;gap:.3rem}
 .dialog .opts button{text-align:left;background:var(--bg);border:1px solid var(--border);color:var(--text)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
+.market-buy-wrap{overflow:auto;border:1px solid var(--border);border-radius:6px}
+.market-buy-table{min-width:940px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:.8rem}
+.market-buy-table th,.market-buy-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:.42rem .5rem;vertical-align:middle}
+.market-buy-table th:last-child,.market-buy-table td:last-child{border-right:none}
+.market-buy-table tbody tr:last-child td{border-bottom:none}
+.market-buy-table th{background:rgba(10,189,227,.08);color:var(--heading);font-weight:700}
+.market-buy-table input{height:2rem;margin:0!important}
+.market-bid-cell{display:grid;grid-template-columns:70px auto 92px;align-items:center;gap:.35rem;white-space:nowrap}
 .constraint-line{border:1px solid var(--border);border-radius:var(--radius);padding:.75rem;margin-bottom:.65rem;background:rgba(7,15,30,.42)}
 .constraint-line.blocked{border-color:rgba(252,92,101,.55)}
 .constraint-line.limited{border-color:rgba(246,185,59,.55)}
@@ -679,10 +712,11 @@ button:active{transform:scale(.97)}
       <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
       <div class="section">
         <h3 id="tab-island-name">My Island</h3>
+        <div class="stat net-wealth"><span class="lbl">Net Wealth</span><span class="val" id="s-wealth">—</span></div>
         <div class="stat"><span class="lbl">Role</span><span class="val" id="s-role">—</span></div>
         <div class="stat"><span class="lbl">Working Capital</span><span class="val gold" id="s-dollops">—</span></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
-        <div class="stat"><span class="lbl">Net Wealth</span><span class="val gold" id="s-wealth">—</span></div>
+        <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers</span><span class="val" id="s-workers">—</span></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
@@ -707,7 +741,8 @@ button:active{transform:scale(.97)}
       </div>
     </div>
 
-    <div class="g-main">
+    <div class="g-main" id="game-main-panel">
+      <div class="island-art-bg" id="main-island-art"></div>
       <div class="prompt-area hidden" id="prompt-area">
         <h3 id="prompt-title">Waiting…</h3>
         <div class="action-btns" id="prompt-btns"></div>
@@ -729,6 +764,10 @@ button:active{transform:scale(.97)}
     </div>
 
     <div class="g-info">
+      <div class="section">
+        <h3>Funding Rates</h3>
+        <div id="funding-rates-panel" style="font-size:.82rem">—</div>
+      </div>
       <div class="section market-board">
         <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
           <span>Market Board</span>
@@ -783,13 +822,52 @@ let seasonActiveHumans = new Set();// lobby player ids of active humans this sea
 let imReady = false;
 
 const ROLE_ISLAND_NAMES = {
-  'Farmer':       'Agriculture, Fisheries & Foods',
-  'Miner':        'Mining & Oil',
-  'Transporter':  'Transportation & Shipping',
-  'Educator':     'Education & Training',
-  'Banker':       'Banking',
+  'Farmer':       'Agriculture and Fisheries',
+  'Miner':        'Mining and Exploration',
+  'Transporter':  'Transportation and Logistics',
+  'Educator':     'Education, Research and Training',
+  'Banker':       'Banking and Insurance',
+  'Manufacturer': 'Manufacturing',
+  'Doctor':       'Healthcare and Health Research',
+};
+const ROLE_SHORT_NAMES = {
+  'Farmer':       'Agriculture',
+  'Miner':        'Mining',
+  'Transporter':  'Transportation',
+  'Educator':     'Education',
+  'Banker':       'Finance',
   'Manufacturer': 'Manufacturing',
   'Doctor':       'Healthcare',
+};
+const ROLE_ART = {
+  Farmer: {
+    day: '/static/island-art/farmer-day.png',
+    night: '/static/island-art/farmer-night.png',
+  },
+  Miner: {
+    day: '/static/island-art/miner-day.png',
+    night: '/static/island-art/miner-night.png',
+  },
+  Transporter: {
+    day: '/static/island-art/transporter-day.png',
+    night: '/static/island-art/transporter-night.png',
+  },
+  Educator: {
+    day: '/static/island-art/educator-day.png',
+    night: '/static/island-art/educator-night.png',
+  },
+  Banker: {
+    day: '/static/island-art/banker-day.png',
+    night: '/static/island-art/banker-night.png',
+  },
+  Manufacturer: {
+    day: '/static/island-art/manufacturer-day.png',
+    night: '/static/island-art/manufacturer-night.png',
+  },
+  Doctor: {
+    day: '/static/island-art/doctor-day.png',
+    night: '/static/island-art/doctor-night.png',
+  },
 };
 // Investing Phase state
 let investData = null;          // { budget, roles, catalogue:[], mandatory:[], selections:[] }
@@ -802,9 +880,33 @@ const ROLE_COLORS = {
   Educator:'#9b59b6', Banker:'#f1c40f', Manufacturer:'#1abc9c', Doctor:'#e74c3c',
 };
 const AVATAR_LETTERS = {
-  Farmer:'F', Miner:'Mi', Transporter:'Tr', Educator:'Ed',
-  Banker:'B', Manufacturer:'Mn', Doctor:'Dr',
+  Farmer:'Ag', Miner:'Mi', Transporter:'Lo', Educator:'Ed',
+  Banker:'Fi', Manufacturer:'Mf', Doctor:'Hc',
 };
+const IDENTITY_NAME_KEY = 'islandTradersPlayerName';
+const IDENTITY_CODE_KEY = 'islandTradersRoomCode';
+
+function rememberIdentity(name, room) {
+  if (name) localStorage.setItem(IDENTITY_NAME_KEY, name);
+  const code = room && (room.join_code || room.room_id);
+  if (code) localStorage.setItem(IDENTITY_CODE_KEY, code);
+}
+
+function restoreIdentity() {
+  const savedName = localStorage.getItem(IDENTITY_NAME_KEY);
+  const savedCode = localStorage.getItem(IDENTITY_CODE_KEY);
+  if (savedName) {
+    const createName = document.getElementById('c-name');
+    const joinName = document.getElementById('j-name');
+    if (createName) createName.value = savedName;
+    if (joinName) joinName.value = savedName;
+  }
+  if (savedCode) {
+    const joinCode = document.getElementById('j-code');
+    if (joinCode) joinCode.value = savedCode;
+  }
+}
+restoreIdentity();
 
 // ==================== NAVIGATION ====================
 function showScreen(name) {
@@ -844,6 +946,7 @@ async function createRoom() {
       pre_season_timer_seconds: preSeasonTimer,
     });
     myPlayerId = room.players[0].player_id;
+    rememberIdentity(name, room);
     enterWaiting(room);
   } catch(e) {
     alert(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`);
@@ -859,6 +962,7 @@ async function joinByCode() {
   try {
     const data = await apiFetch('/api/rooms/join-by-code', 'POST', {code, name});
     myPlayerId = data.player_id;
+    rememberIdentity(name, data.room);
     enterWaiting(data.room);
   } catch(e) {
     document.getElementById('j-code-error').textContent = e.message || 'Invalid or full room code.';
@@ -870,6 +974,7 @@ async function joinRoomById(roomId) {
   try {
     const data = await apiFetch(`/api/rooms/${roomId}/join`, 'POST', {name});
     myPlayerId = data.player_id;
+    rememberIdentity(name, data.room);
     enterWaiting(data.room);
   } catch(e) {
     alert('Could not join room.');
@@ -989,7 +1094,7 @@ function buildRoleCards(roles) {
   grid.innerHTML = roles.map(r => `
     <div class="role-card" id="rc-${r.name}" onclick="selectRole('${r.name}')">
       <div class="rc-dot" style="background:${r.color};display:inline-block;border-radius:50%;width:10px;height:10px"></div>
-      <span class="rc-name">${r.name}</span>
+      <span class="rc-name">${esc(r.display_name || ROLE_ISLAND_NAMES[r.name] || r.name)}</span>
       <div class="rc-island">${r.island}</div>
       <div class="rc-produces">Produces: <strong>${r.produces}</strong></div>
       <div class="rc-produces" style="color:var(--dim)">Needs: ${r.needs}</div>
@@ -1113,7 +1218,7 @@ function showAuctionResult(msg) {
     const isMe = info.player_id === myPlayerId;
     const deduction = deductions[info.player_id] || 0;
     html += `<div style="background:${color}18;border:1px solid ${color}44;border-radius:6px;padding:.6rem;">
-      <div style="font-weight:700;color:${color}">${role}</div>
+      <div style="font-weight:700;color:${color}">${esc(roleDisplayName(role))}</div>
       <div style="font-size:.82rem;margin-top:.2rem">${esc(info.player_name)}${isMe ? ' ✦' : ''}</div>
       ${deduction > 0 ? `<div style="font-size:.75rem;color:var(--dim)">-${deduction.toFixed(1)} Dp bid</div>` : ''}
       ${info.is_human ? '' : '<div style="font-size:.72rem;color:var(--dim)">🤖 AI</div>'}
@@ -1163,7 +1268,7 @@ function renderInvesting() {
     const items = byRole[role] || [];
     const wrap = document.createElement('div');
     wrap.style = 'background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:1rem';
-    wrap.innerHTML = `<h3 style="margin:0 0 .6rem 0;color:var(--gold)">${esc(role)} Island — Capital Catalogue</h3>`;
+    wrap.innerHTML = `<h3 style="margin:0 0 .6rem 0;color:var(--gold)">${esc(roleDisplayName(role))} — Capital Catalogue</h3>`;
     const tbl = document.createElement('table');
     tbl.className = 'purchase-table';
     tbl.innerHTML = `<thead><tr>
@@ -1271,6 +1376,18 @@ function playerRoles(player) {
   return [];
 }
 
+function roleDisplayName(role) {
+  return ROLE_ISLAND_NAMES[role] || role || '';
+}
+
+function roleShortName(role) {
+  return ROLE_SHORT_NAMES[role] || roleDisplayName(role);
+}
+
+function displayRoles(roles, short=false) {
+  return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
+}
+
 function renderCapacityPanel(capacity) {
   const owned = capacity.capital_owned || [];
   const inTransit = capacity.capital_in_transit || [];
@@ -1291,11 +1408,11 @@ function renderCapacityPanel(capacity) {
       ).join('');
     }
     if (inTransit.length) {
-      html += '<div style="color:var(--dim);font-size:.7rem;margin-top:.3rem">In transit:</div>';
+      html += '<div style="color:var(--gold);font-size:.72rem;margin-top:.45rem;font-weight:700">On order / arriving:</div>';
       html += inTransit.map(it =>
-        `<div class="mkt-row" style="opacity:.6">
+        `<div class="mkt-row" style="opacity:.85" title="${esc(it.description || '')}">
            <span class="res">${esc(it.name || it.item_id)}</span>
-           <span class="price" style="font-size:.7rem">arrives tick ${it.arrives_at_tick}</span>
+           <span class="price" style="font-size:.7rem">${formatArrival(it)}</span>
          </div>`
       ).join('');
     }
@@ -1320,6 +1437,18 @@ function renderCapacityPanel(capacity) {
               <span class="price" style="color:${colour}">max ${max}</span>
             </div>`;
   }).join('');
+}
+
+function formatArrival(item) {
+  if (item.arrival_year && item.arrival_season) {
+    const remaining = Number(item.seasons_remaining);
+    if (Number.isFinite(remaining)) {
+      if (remaining <= 0) return `arrives now`;
+      return `arrives Y${item.arrival_year} ${item.arrival_season} (in ${remaining} season${remaining === 1 ? '' : 's'})`;
+    }
+    return `arrives Y${item.arrival_year} ${item.arrival_season}`;
+  }
+  return item.arrives_at_tick !== undefined ? `arrives tick ${item.arrives_at_tick}` : 'ordered';
 }
 
 // ==================== CONSTRAINT POPUP ====================
@@ -1402,7 +1531,7 @@ function showConstraintPopup() {
   const outputs = cap.outputs || [];
   const roleLabel = (!activeTabRole || activeTabRole === 'ALL')
     ? 'All Islands'
-    : (ROLE_ISLAND_NAMES[activeTabRole] || activeTabRole);
+    : roleDisplayName(activeTabRole);
 
   let body = '';
   if (!outputs.length) {
@@ -1490,6 +1619,8 @@ function sendResponse(value) {
     ws.send(JSON.stringify({type: 'response', value}));
   }
   hideOverlay();
+  setTimeout(requestState, 120);
+  setTimeout(requestState, 500);
 }
 
 function requestState() {
@@ -1593,6 +1724,9 @@ function handleMessage(msg) {
     case 'ask_dollop_amount':
       showDollopInput(msg);
       break;
+    case 'ask_text':
+      showTextInput(msg);
+      break;
     case 'market_buy_bulk':
       showMarketBuyPopup(msg);
       break;
@@ -1669,20 +1803,22 @@ function renderGameState() {
   // Determine which island name to show
   const islandLabel = isConsolidated
     ? 'All Islands (Consolidated)'
-    : (ROLE_ISLAND_NAMES[tabRole] || tabRole || 'My Island');
+    : (roleDisplayName(tabRole) || 'My Island');
 
   document.getElementById('tab-island-name').textContent = islandLabel;
+  updateMainIslandArt(tabRole, roles, gameState.season);
   document.getElementById('s-role').textContent = isConsolidated
-    ? roles.join(', ')
-    : (tabRole || '—');
+    ? displayRoles(roles)
+    : (roleDisplayName(tabRole) || '—');
   document.getElementById('s-dollops').textContent = me.dollops + ' Dp';
   document.getElementById('s-loans').textContent = (me.loans_outstanding || 0) + ' Dp';
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
+  document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
-  document.getElementById('hdr-wealth').textContent = me.wealth + ' Dp';
+  document.getElementById('hdr-wealth').textContent = 'Net Wealth ' + me.wealth + ' Dp';
 
   const inv = me.inventory || {};
   document.getElementById('s-inventory').innerHTML = Object.entries(inv)
@@ -1698,6 +1834,7 @@ function renderGameState() {
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
   renderDecisionHints(me, tabRole);
+  renderFundingRates();
 
   // Competitors table — with ready dot for active humans this season
   document.getElementById('comp-tbody').innerHTML = gameState.players.map((p, i) => {
@@ -1710,7 +1847,7 @@ function renderGameState() {
     return `
     <tr class="${i === myPlayerIdx ? 'me' : ''}">
       <td>${dot}${esc(p.name)}${i === myPlayerIdx ? ' ★' : ''}</td>
-      <td>${esc(playerRoles(p).join(', '))}</td>
+      <td>${esc(displayRoles(playerRoles(p), true))}</td>
       <td style="color:var(--gold)">${p.wealth}</td>
       <td>${p.dollops}</td>
       <td>${p.workforce_active}/${p.workforce_count}</td>
@@ -1727,12 +1864,51 @@ function renderGameState() {
   }
 }
 
+function artTimeOfDay(season) {
+  return (season === 'Autumn' || season === 'Winter') ? 'night' : 'day';
+}
+
+function updateMainIslandArt(tabRole, roles, season) {
+  const artEl = document.getElementById('main-island-art');
+  if (!artEl) return;
+  const role = tabRole === 'ALL' ? (roles[0] || null) : tabRole;
+  const art = role && ROLE_ART[role];
+  if (!art) {
+    artEl.style.backgroundImage = '';
+    artEl.style.opacity = '0';
+    return;
+  }
+  const mode = artTimeOfDay(season);
+  const url = art[mode] || art.day || art.night;
+  artEl.style.backgroundImage = `url("${url}")`;
+  artEl.style.opacity = tabRole === 'ALL' ? '.22' : '.34';
+}
+
+function renderFundingRates() {
+  const panel = document.getElementById('funding-rates-panel');
+  if (!panel) return;
+  const rates = gameState?.funding_rates || {};
+  const rows = [1, 2, 3].map(term => {
+    const rate = rates[String(term)];
+    const bankerRate = typeof rate === 'number' ? (rate + 2).toFixed(2) + '%' : '—';
+    return `<div class="mkt-row">
+      <span class="res">${term} year${term === 1 ? '' : 's'}</span>
+      <span class="price">${typeof rate === 'number' ? rate.toFixed(2) + '%' : '—'}</span>
+    </div>
+    <div style="font-size:.72rem;color:var(--dim);margin:-.05rem 0 .25rem">
+      Banker minimum quote: ${bankerRate}
+    </div>`;
+  }).join('');
+  panel.innerHTML = rows
+    + '<div style="font-size:.72rem;color:var(--dim);margin-top:.35rem">Rates are bank cost of funds; loan quotes add at least 2% plus borrower risk.</div>';
+}
+
 function renderDecisionHints(player, role) {
   const el = document.getElementById('decision-hints');
   if (!el) return;
   const cap = filteredCapacity(player.capacity || {}, role);
   const outputs = cap.outputs || [];
-  const roleLabel = role === 'ALL' ? 'these islands' : (role || 'this island');
+  const roleLabel = role === 'ALL' ? 'these islands' : (roleDisplayName(role) || 'this island');
   const hints = [];
 
   for (const output of outputs) {
@@ -1867,10 +2043,10 @@ function buildIslandTabs(players) {
 
   const tabs = document.getElementById('island-tabs');
   let html = roles.map(r =>
-    `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" onclick="switchTab('${r}')">${r}</button>`
+    `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" data-role="${r}" onclick="switchTab('${r}')">${esc(roleShortName(r))}</button>`
   ).join('');
   if (roles.length > 1) {
-    html += `<button class="tab-btn${activeTabRole === 'ALL' ? ' active' : ''}" onclick="switchTab('ALL')">Consolidated</button>`;
+    html += `<button class="tab-btn${activeTabRole === 'ALL' ? ' active' : ''}" data-role="ALL" onclick="switchTab('ALL')">Consolidated</button>`;
   }
   tabs.innerHTML = html;
 }
@@ -1878,8 +2054,7 @@ function buildIslandTabs(players) {
 function switchTab(role) {
   activeTabRole = role;
   document.querySelectorAll('.tab-btn').forEach(b =>
-    b.classList.toggle('active',
-      b.textContent === role || (role === 'ALL' && b.textContent === 'Consolidated'))
+    b.classList.toggle('active', b.dataset.role === role)
   );
   renderGameState();
 }
@@ -2141,6 +2316,16 @@ function showDollopInput(msg) {
   `);
 }
 
+function showTextInput(msg) {
+  showDlg(msg.prompt, `
+    <textarea id="txt-in" rows="4" style="width:100%;margin:.5rem 0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.55rem">${esc(msg.default || '')}</textarea>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('txt-in').value)">OK</button>
+      ${CANCEL_BTN_HTML}
+    </div>
+  `);
+}
+
 function showConfirm(msg) {
   // Yes / No / Cancel — Cancel sends null (distinct from explicit "No")
   showDlg(msg.prompt, `
@@ -2173,7 +2358,7 @@ function showMarketBuyPopup(msg) {
   const budget = msg.budget || 0;
   const entries = Object.entries(market);
   let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
-  html += '<table class="comp-table" style="width:100%"><thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th><th>Buy</th><th>New Bid</th></tr></thead><tbody>';
+  html += '<div class="market-buy-wrap"><table class="market-buy-table"><thead><tr><th style="width:190px">Commodity</th><th style="width:95px">Bid</th><th style="width:80px">Bid Qty</th><th style="width:95px">Ask</th><th style="width:80px">Ask Qty</th><th style="width:90px">Buy Qty</th><th style="width:250px">New Bid</th></tr></thead><tbody>';
   for (const [res, d] of entries) {
     const askQty = d.ask_quantity ?? d.quantity ?? 0;
     const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
@@ -2185,16 +2370,16 @@ function showMarketBuyPopup(msg) {
       <td>${bidQty || '—'}</td>
       <td style="color:var(--gold)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
       <td>${askQty || '—'}</td>
-      <td><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} style="width:54px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-      <td style="white-space:nowrap"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" style="width:44px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/> @ <input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${d.formula_price || 0}" style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+      <td><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+      <td><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${d.formula_price || 0}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
     </tr>`;
   }
-  html += '</tbody></table>';
+  html += '</tbody></table></div>';
   html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
   html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
   html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(null)">Cancel</button></div>';
   html += '</div>';
-  showDlg('Market Buy', html);
+  showDlg('Market Buy', html, 'market-dialog');
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
     inp.addEventListener('input', updateMarketBuyTotals);
   });
@@ -2233,7 +2418,9 @@ function submitMarketBuy() {
   }
 }
 
-function showDlg(title, bodyHtml) {
+function showDlg(title, bodyHtml, className = '') {
+  const dialog = document.getElementById('dialog');
+  dialog.className = className ? `dialog ${className}` : 'dialog';
   document.getElementById('dlg-title').textContent = title;
   document.getElementById('dlg-body').innerHTML = bodyHtml;
   document.getElementById('overlay').classList.add('active');

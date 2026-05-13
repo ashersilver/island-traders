@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from math import ceil
 from .role import Role
 from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
@@ -38,6 +39,9 @@ class Player:
     # Populated during the Investing Phase and via mid-game purchases.
     # See `island_traders.constants_capacity.CAPITAL_CATALOGUE`.
     capital_inventory: dict[str, int] = field(default_factory=dict)
+    # Acquisition ticks for owned capital, keyed by item_id. Tick = year*4 + season.
+    # Used for straight-line book value depreciation over 5 years.
+    capital_acquired_ticks: dict[str, list[int]] = field(default_factory=dict)
     # Capital items purchased mid-game that are still in transit.
     # Each entry: {"item_id": str, "arrives_at_tick": int (year*4 + season_index)}.
     capital_in_transit: list[dict] = field(default_factory=list)
@@ -46,9 +50,11 @@ class Player:
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
 
-    def add_capital(self, item_id: str, count: int = 1) -> None:
+    def add_capital(self, item_id: str, count: int = 1, acquired_tick: int = 0) -> None:
         """Add `count` of a capital item to the inventory (e.g. on delivery)."""
         self.capital_inventory[item_id] = self.capital_inventory.get(item_id, 0) + count
+        ticks = self.capital_acquired_ticks.setdefault(item_id, [])
+        ticks.extend([acquired_tick] * count)
 
     def remove_capital(self, item_id: str, count: int = 1) -> int:
         """Remove up to `count` of a capital item (e.g. destroyed by event).
@@ -57,6 +63,11 @@ class Player:
         n = min(have, count)
         if n > 0:
             self.capital_inventory[item_id] = have - n
+            ticks = self.capital_acquired_ticks.get(item_id, [])
+            if ticks:
+                del ticks[:n]
+                if not ticks:
+                    self.capital_acquired_ticks.pop(item_id, None)
             if self.capital_inventory[item_id] == 0:
                 del self.capital_inventory[item_id]
         return n
@@ -71,7 +82,7 @@ class Player:
         remaining: list[dict] = []
         for entry in self.capital_in_transit:
             if entry["arrives_at_tick"] <= current_tick:
-                self.add_capital(entry["item_id"], 1)
+                self.add_capital(entry["item_id"], 1, acquired_tick=current_tick)
                 delivered.append(entry["item_id"])
             else:
                 remaining.append(entry)
@@ -176,6 +187,18 @@ class Player:
                 totals[r] = totals.get(r, 0) + qty
         return totals
 
+    def population_food_fish_needs(self) -> dict[ResourceType, int]:
+        """Seasonal food demand from residents, with extra fish demand from higher incomes."""
+        population = max(0, self.population)
+        bands = self.workforce.band_summary()
+        educated_workers = bands.get("Manager", 0) + bands.get("Technician", 0)
+        food = max(1, ceil(population / 50)) if population else 0
+        fish = ceil(population / 100) + ceil(educated_workers / 8)
+        return {
+            ResourceType.FOOD: food,
+            ResourceType.FISH: max(0, fish),
+        }
+
     def has_resources(self, requirements: dict[ResourceType, int]) -> bool:
         return self.inventory.can_satisfy(requirements)
 
@@ -196,21 +219,49 @@ class Player:
         self.dollops += amount
 
     def total_wealth(self, prices: dict[ResourceType, float],
-                     loan_ledger=None) -> float:
+                     loan_ledger=None, capital_catalogue=None,
+                     current_tick: int = 0) -> float:
         assets = self.dollops + self.inventory.total_value(prices)
+        assets += self.capital_book_value(capital_catalogue, current_tick)
         if loan_ledger:
             assets -= loan_ledger.outstanding_debt(self.player_id)
             assets += loan_ledger.loans_receivable(self.player_id)
         return assets
 
+    def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:
+        if not capital_catalogue:
+            return 0.0
+        items = {item.item_id: item for item in capital_catalogue}
+        depreciation_ticks = 5 * 4
+        total = 0.0
+        for item_id, count in self.capital_inventory.items():
+            item = items.get(item_id)
+            if not item:
+                continue
+            ticks = list(self.capital_acquired_ticks.get(item_id, []))
+            if len(ticks) < count:
+                ticks.extend([0] * (count - len(ticks)))
+            for acquired_tick in ticks[:count]:
+                age = max(0, current_tick - acquired_tick)
+                remaining = max(0.0, (depreciation_ticks - age) / depreciation_ticks)
+                total += item.cost * remaining
+        return round(total, 2)
+
     def record_year_wealth(self, prices: dict[ResourceType, float],
-                           loan_ledger=None) -> None:
-        self.wealth_history.append(self.total_wealth(prices, loan_ledger))
+                           loan_ledger=None, capital_catalogue=None,
+                           current_tick: int = 0) -> None:
+        self.wealth_history.append(
+            self.total_wealth(prices, loan_ledger, capital_catalogue, current_tick)
+        )
 
     def role_names(self) -> str:
-        return ", ".join(r.name for r in self.roles)
+        return ", ".join(getattr(r, "display_name", r.name) for r in self.roles)
 
-    def inventory_report(self, prices: dict[ResourceType, float]) -> str:
+    def role_keys(self) -> list[str]:
+        return [r.name for r in self.roles]
+
+    def inventory_report(self, prices: dict[ResourceType, float], loan_ledger=None,
+                         capital_catalogue=None, current_tick: int = 0) -> str:
         sym = CURRENCY_SYMBOL
         lines = [
             f"=== INVENTORY: {self.name} ({self.role_names()}) ===",
@@ -247,7 +298,13 @@ class Player:
             for k, v in ws["by_tier"].items():
                 lines.append(f"  {k:<32} × {v}")
         lines.append("")
-        lines.append(f"Total Wealth: {self.total_wealth(prices):.1f} {sym}")
+        equipment_value = self.capital_book_value(capital_catalogue, current_tick)
+        if equipment_value:
+            lines.append(f"Equipment Book Value: {equipment_value:.1f} {sym}")
+        lines.append(
+            f"Net Wealth: "
+            f"{self.total_wealth(prices, loan_ledger, capital_catalogue, current_tick):.1f} {sym}"
+        )
         return "\n".join(lines)
 
     def __repr__(self) -> str:

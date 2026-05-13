@@ -27,8 +27,9 @@ from ..constants import (
     CURRENCY_SYMBOL,
     BASE_PRICES,
 )
+from ..constants_capacity import CAPITAL_CATALOGUE
 
-SAVE_VERSION = 4
+SAVE_VERSION = 5
 
 
 @dataclass
@@ -168,11 +169,17 @@ class Game:
                 self._auto_save(year, season_index + 1)
 
             prices = self.market.current_prices()
-            wealthies = [p.total_wealth(prices, self.loan_ledger) for p in self.players]
+            year_end_tick = year * len(SEASONS) + (len(SEASONS) - 1)
+            wealthies = [
+                p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick)
+                for p in self.players
+            ]
             max_wealth = max(wealthies) if wealthies else 1.0
 
             for player, wealth in zip(self.players, wealthies):
-                player.record_year_wealth(prices, self.loan_ledger)
+                player.record_year_wealth(
+                    prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick
+                )
                 wealth_ratio = wealth / max_wealth if max_wealth > 0 else 0.0
                 birth_rate = BASE_BIRTH_RATE * max(0.0, 1.0 - wealth_ratio)
                 new_people = max(0, round(player.population * birth_rate))
@@ -184,7 +191,7 @@ class Game:
                         f"{player.available_unskilled} recruitable)"
                     )
 
-            self.io.print(self._year_end_summary(year, prices))
+            self.io.print(self._year_end_summary(year, prices, year_end_tick))
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
@@ -207,8 +214,12 @@ class Game:
 
     def compute_summary(self) -> GameSummary:
         prices = self.market.current_prices()
+        final_tick = max(0, self.config.num_years * len(SEASONS) - 1)
         rankings = sorted(
-            [(p, p.total_wealth(prices, self.loan_ledger)) for p in self.players],
+            [
+                (p, p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, final_tick))
+                for p in self.players
+            ],
             key=lambda x: x[1],
             reverse=True,
         )
@@ -219,15 +230,22 @@ class Game:
             price_history=self.market.price_history,
         )
 
-    def _year_end_summary(self, year: int, prices: dict[ResourceType, float]) -> str:
+    def _year_end_summary(self, year: int, prices: dict[ResourceType, float],
+                          current_tick: int) -> str:
         sym = CURRENCY_SYMBOL
         lines = [f"\n{'*'*50}", f"  End of Year {year + 1} — Leaderboard", f"{'*'*50}"]
-        ranked = sorted(self.players, key=lambda p: p.total_wealth(prices, self.loan_ledger), reverse=True)
+        ranked = sorted(
+            self.players,
+            key=lambda p: p.total_wealth(
+                prices, self.loan_ledger, CAPITAL_CATALOGUE, current_tick
+            ),
+            reverse=True,
+        )
         for i, p in enumerate(ranked, 1):
             ws = p.workforce.summary()
             lines.append(
                 f"  {i}. {p.name} ({p.role_names()}) — "
-                f"{p.total_wealth(prices, self.loan_ledger):.1f} {sym}  "
+                f"{p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, current_tick):.1f} {sym}  "
                 f"[workers: {ws['active']}/{ws['total']}, pop: {p.population}, "
                 f"eff: {ws['avg_efficiency_pct']}%]"
             )
@@ -284,6 +302,9 @@ class Game:
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
             "wealth_history": p.wealth_history,
             "capital_inventory": dict(p.capital_inventory),
+            "capital_acquired_ticks": {
+                item_id: list(ticks) for item_id, ticks in p.capital_acquired_ticks.items()
+            },
             "capital_in_transit": list(p.capital_in_transit),
             "active_patents": {k: list(v) for k, v in p.active_patents.items()},
             "workforce": {
@@ -337,6 +358,7 @@ class Game:
                     "return_year": r.return_year,
                     "return_season": r.return_season,
                     "transport_mode": r.transport_mode,
+                    "counter_message": r.counter_message,
                 }
                 for r in self.training.all_requests()
             ],
@@ -356,6 +378,7 @@ class Game:
                     "issued_season": l.issued_season,
                     "maturity_year": l.maturity_year,
                     "maturity_season": l.maturity_season,
+                    "term_years": l.term_years,
                     "status": l.status.value,
                 }
                 for l in self.loan_ledger.all_loans()
@@ -392,6 +415,10 @@ class Game:
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
                 capital_inventory=dict(pd.get("capital_inventory", {})),
+                capital_acquired_ticks={
+                    item_id: list(ticks)
+                    for item_id, ticks in pd.get("capital_acquired_ticks", {}).items()
+                },
                 capital_in_transit=list(pd.get("capital_in_transit", [])),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
             )
@@ -445,6 +472,10 @@ class Game:
                 maturity_year=loan_d["maturity_year"],
                 maturity_season=loan_d["maturity_season"],
                 status=LoanStatus(loan_d["status"]),
+                term_years=loan_d.get(
+                    "term_years",
+                    max(1, loan_d["maturity_year"] - loan_d["issued_year"]),
+                ),
             )
             game.loan_ledger.loans.append(loan)
         game.training = TrainingRegistry()
@@ -468,6 +499,7 @@ class Game:
                 return_year=rd.get("return_year", -1),
                 return_season=rd.get("return_season", -1),
                 transport_mode=rd.get("transport_mode", "transporter"),
+                counter_message=rd.get("counter_message", ""),
             )
             game.training._requests.append(req)
 
