@@ -14,30 +14,31 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 
 # Bootstrap inventory: each island starts with —
 #   (a) one season's worth of its outputs, ready to sell in the opening round
-#   (b) one season's worth of its production inputs, so it can produce round 2
-# Anything beyond that must be purchased on the market.
+#   (b) TWO seasons' worth of its production inputs, enough to produce through
+#       Spring and Summer of Year 1 before needing to buy from other islands
+# This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    # Farmer: Spring outputs to sell + Spring inputs to produce next round
+    # Farmer: Spring outputs to sell + 2 seasons of inputs
     "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
-                      "FarmMachinery": 1, "Oil": 2},                  # fuel buffer, not a season-proof stockpile
-    # Miner: partial output to sell + inputs to produce (Oil serves both)
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 1 to produce
-                      "Freight": 1, "MiningEquipment": 1},            # to produce
-    # Transporter: cargo + seats to sell + Oil & Fish to run services
+                      "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
+    # Miner: partial output to sell + 2 seasons of inputs
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
+                      "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
+    # Transporter: cargo + seats to sell + 2 seasons of Oil & Fish
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 3, "Fish": 1},                           # fuel-heavy role gets a larger opening buffer
-    # Educator: Knowledge to sell + inputs to run the university
+                      "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
+    # Educator: Knowledge to sell + 2 seasons of inputs
     "Educator":      {"Knowledge": 2,                                 # to sell
-                      "LaboratoryEquipment": 1, "Finance": 1},        # to produce
-    # Banker: Finance to sell + inputs to run the bank
+                      "LaboratoryEquipment": 2, "Finance": 2},        # 2 seasons of each input
+    # Banker: Finance to sell + 2 seasons of inputs
     "Banker":        {"Finance": 2,                                   # to sell
-                      "Knowledge": 1},                                # to produce
-    # Manufacturer: FarmMachinery (default opening line) to sell + inputs to produce
+                      "Knowledge": 2},                                 # 2 seasons: 1 per season
+    # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
-                      "Metal": 2, "Oil": 2},                          # to produce; heavier lines still need more
-    # Doctor: services to sell + inputs to operate
+                      "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
+    # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Knowledge": 1, "LaboratoryEquipment": 1},      # to produce
+                      "Knowledge": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
 }
 
 # Dollops per unit at balanced supply/demand
