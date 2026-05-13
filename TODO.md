@@ -88,8 +88,8 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 ## Backlog
 
 ### From CLAUDE.md
-- [ ] README.md (proper GitHub project readme)
-- [ ] RULES.md — fix Doctor workforce numbers (6 total: 2 Doctors + 4 Nurses)
+- [x] README.md (proper GitHub project readme) — exists and up to date
+- [x] RULES.md — Doctor workforce numbers fixed (6 total: 2 Doctors + 4 Nurses)
 - [ ] Simulation recalibration after ForgeHaven + insurance + capacity-model changes
 - [ ] PDF export via reportlab (stretch goal)
 
