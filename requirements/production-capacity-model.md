@@ -522,6 +522,10 @@ left).
 
 ## 18. Future: Auction Margin Lending (Banker + IMF)
 
+> **Note**: Margin loans appear on the **island ledger**, not the player's
+> personal account. See `island-ledger.md §2` for the cash-flow model and
+> `island-ledger.md §3` for the Banker institutional pool mechanics.
+
 Allow players to borrow against their starting capital when bidding so they
 can outbid above their cash balance.
 
@@ -550,6 +554,13 @@ Outstanding design questions (defer to implementation):
 - Visibility: does the borrower see the IMF leg, or only the Banker loan?
 
 ## 19. Future: Roleless Players — Role Aftermarket + Bank Deposits
+
+> **Canonical reference**: Ownership transfers, island ledger semantics,
+> deposit accounts, and loan/lease obligations are defined in
+> [`requirements/island-ledger.md`](island-ledger.md). This section covers
+> only the *gameplay scenarios and pricing rules* specific to roleless players.
+> See `island-ledger.md §2–4` for the underlying cash-flow and transfer
+> mechanics.
 
 When the auction allows multiple-role wins (per the recent fix), it's possible
 for some players (especially in 7-human games) to end up with **zero roles**.
@@ -597,33 +608,22 @@ Open implementation details:
   up for sale.
 - Sellers can **list a role** on a "roles for sale" board with an asking
   price (or accept a private offer).
-- Buyer pays seller, role transfers — buyer inherits the role's capital
-  inventory, workforce, loans, leases, and obligations. Treat this as
-  transferring the entire island ledger.
-- **Open questions:**
-  - Loans and obligations stay with the island. The buyer inherits them and
-    must see them clearly before confirming the purchase.
-  - Does the buyer take over patents purchased on that island? Default: yes
-    (they go with the role).
-  - Minimum / maximum sale price rules? Default: free market, no caps.
+- Buyer pays seller; the entire island ledger transfers per
+  `island-ledger.md §4` (inventory, equipment, workforce, loans, leases,
+  patents, insurance, and obligations go with the island).
+- Pricing: free market, no caps (seller sets asking price, buyer confirms).
 
 ### 19.3 Bank deposits ("call money")
 
-After the auction, unspent owner cash is automatically placed in the Bank as an
-owner deposit at **5% p.a.** Roleless players and island owners may also add
-further voluntary deposits:
+> Deposit mechanics (5% p.a., automatic post-auction placement, on-call
+> withdrawal, Banker on-lending, forced-loan fallback) are defined in
+> `island-ledger.md §3`. This section covers only the roleless-player
+> gameplay implications.
 
-- Owner deposits default to **5% p.a.** unless a later rule explicitly allows a
-  negotiated rate.
-- The Banker can **on-lend** these deposits — they expand the Banker's
-  lending capacity beyond their own balance sheet.
-- Deposits are **on call**: depositor can withdraw at any time during their
-  next-round action window. (May earn no interest if held for a partial
-  season — TBD on accrual rules.)
-- If the Banker can't honour an immediate withdrawal because they've lent it
-  all out, the deposit becomes a forced loan from the depositor to the
-  Banker (at the agreed rate) until the Banker's loans repay — or the IMF
-  margin facility (§16) backstops it.
+Roleless players and island owners may deposit personal cash with the Bank.
+The deposit expands the Banker's lending capacity and earns the depositor
+interest. See `island-ledger.md §3` for terms, accrual rules, and
+withdrawal mechanics.
 
 ### 19.4 Implementation pieces required
 

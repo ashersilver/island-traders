@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.engine.production import ProductionEngine
 from island_traders.engine.trading import TradingEngine
