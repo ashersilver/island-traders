@@ -350,13 +350,17 @@ Adjust weights until win rates are roughly equal across all roles.
 
 ## Winning the Game
 
-At the end of the last year, each player's **total wealth** is calculated:
+At the end of the last year, each player's **net wealth** is calculated:
 
 ```
-Total Wealth = Dollops + (Units of each resource × current market price)
+Net Wealth = Dollops
+           + (Units of each resource × current market price)
+           + capital equipment book value
+           + loans receivable
+           - loans outstanding
 ```
 
-The player with the highest total wealth wins.
+Capital equipment book value uses straight-line depreciation over 5 years from catalogue cost. The player with the highest net wealth wins. Loans are counted at the full repayment amount due, including interest, so borrowed Dollops are not double-counted as free wealth.
 
 In the event of a tie, the player who made the most successful deals (accepted by the other party) wins. If still tied, share the victory.
 
@@ -417,7 +421,7 @@ The Chat Board is a **shared public record** visible to all players. It lists ev
 
 **Turn actions:** Produce · Market Buy · Market Sell · Propose Deal · Request Training · Review Training · Arrange Transport · Recruit Workers · Inventory · View Market · View Players · End Turn
 
-**Wealth formula:** Dollops + Σ(resource units × current price)
+**Wealth formula:** Dollops + Σ(resource units × current price) + depreciated equipment book value + loans receivable − loans outstanding
 
 **Production formula:** Base × Event Modifier × max(Base Capacity, Fill Rate × Avg Efficiency)
 

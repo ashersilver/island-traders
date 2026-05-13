@@ -119,7 +119,7 @@ def season_scorecard() -> str:
         lines.append(f"{s:<10} {'':22} {'':12} ____")
     lines += [
         "-" * 52,
-        "Year-end wealth (gold + resources): ___________",
+        "Year-end net wealth (Dollops + resources + receivables - loans): ___________",
         "",
         "Side deals made this year:",
         "  1. ____________________________________________",

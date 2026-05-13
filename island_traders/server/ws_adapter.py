@@ -19,6 +19,7 @@ from __future__ import annotations
 import threading
 from ..cli.prompts import IOAdapter
 from ..models.resource import ResourceType
+from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.turn import TurnAction
 
 
@@ -254,7 +255,13 @@ class WebSocketIOAdapter(IOAdapter):
         return str(resp).lower() in ("true", "y", "yes", "1")
 
     def choose_profession(self, prompt: str, available: list[str]) -> str:
-        options = [{"value": p, "label": p} for p in available]
+        def _label(profession: str) -> str:
+            try:
+                return PROFESSION_LABEL.get(Profession(profession), profession)
+            except ValueError:
+                return profession
+
+        options = [{"value": p, "label": _label(p)} for p in available]
         resp = self._send_and_wait({
             "type": "choose_profession",
             "prompt": prompt,
@@ -277,6 +284,16 @@ class WebSocketIOAdapter(IOAdapter):
             return max(-max_dollops, min(val, max_dollops))
         except (ValueError, TypeError):
             return 0.0
+
+    def ask_text(self, prompt: str, default: str = "") -> str:
+        resp = self._send_and_wait({
+            "type": "ask_text",
+            "prompt": prompt,
+            "default": default,
+        })
+        if resp is None:
+            return default
+        return str(resp).strip() or default
 
     def market_buy_bulk(self, player, market_summary: dict) -> dict[str, int] | None:
         # Ensure the TLS active_player is set even when called outside the

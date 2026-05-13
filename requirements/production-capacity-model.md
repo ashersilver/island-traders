@@ -339,7 +339,115 @@ and Insurance. Shows:
 
 ---
 
-## 11. Mechanic profession
+## 11. Product and Equipment Help
+
+Every product/resource and every capital-equipment item should have associated
+Help text available wherever it appears in the UI.
+
+The Help copy should be a short paragraph, not just a label. It should explain:
+
+- What the product or equipment does in game terms.
+- The pros of owning or producing it, including outputs it enables, capacity
+  it increases, revenue opportunities, or strategic advantages.
+- The cons/costs of owning or producing it, including required inputs,
+  workforce needs, delivery delays, depreciation, operating risk, or
+  standard-of-living side effects.
+- Any special logistics rules, such as commodity shipping delay or Freight
+  requirements.
+
+Implementation expectations:
+
+- Help should be stored as structured catalogue data rather than hard-coded in
+  the frontend.
+- Product Help should attach to `ResourceType` / product-line definitions.
+- Equipment Help should attach to `CapitalItem` definitions.
+- The UI can surface Help through tooltips, info buttons, or a detail modal,
+  but the wording should come from the shared catalogue data so CLI, server,
+  printables, and browser views stay consistent.
+
+Example:
+
+> Freight — Transport by Shipping Container. Used to move commodities and plant
+> between islands. Pros: unlocks shipping-heavy trades and equipment delivery.
+> Cons: must be bought or produced ahead of need, and shortages can block
+> commodity arrivals or Manufacturing equipment sales.
+
+---
+
+## 12. Future: Cross-Island Machinery Licences
+
+Any island may eventually buy any machinery from the Manufacturing Island, not
+only the machinery usually associated with that island's native role. Owning
+the machinery grants access to the same production recipe as the specialist
+island, but **does not grant the specialist's inputs, workforce, or social
+licence for free**.
+
+Rules to preserve:
+
+- Manufacturing remains the source of the machinery/capital item.
+- The buyer must still provide the recipe's normal operating inputs.
+- If the cross-island recipe depends on shipped commodity inputs, the
+  production clock includes that logistics delay. For example, a Bank island
+  refinery must buy and receive Oil before it can run, so Petrochemicals take
+  **one additional season** to produce.
+- The buyer must staff the machinery with the required worker bands and, where
+  relevant, specialist professions.
+- Cross-island production should appear as an additional production line on
+  the buyer's island, with its own capacity and constraints.
+- The standard of living on the buyer's island may fall when heavy or dirty
+  industry is added outside its normal economic base. That penalty should feed
+  into population satisfaction, salary pressure, and migration/perk demand.
+
+Example:
+
+- The Bank island buys an Oil Refinery from Manufacturing.
+- It can produce Petrochemicals using the same inputs as the normal refinery
+  line, but must buy Oil and employ an Engineer plus 4 Technicians to operate
+  it.
+- Because the Oil must be purchased and transported to the Bank island,
+  Petrochemicals complete one season later than a native, already-supplied
+  refinery line.
+- The Bank island's standard of living falls because refinery operations make
+  the island less attractive to high-income financial workers.
+- To retain staff, the Bank may need higher salaries and quality-of-life perks
+  such as a small clinic, better transport, or similar amenities.
+
+Implementation implications:
+
+- Capital items need an `unlocks_recipe` / `foreign_recipe` capability, not
+  only a role-scoped capacity effect.
+- Production capacity must support recipes owned by capital equipment rather
+  than only recipes implied by `Player.roles`.
+- Workforce requirements must distinguish generic bands from specialist
+  profession requirements.
+- Standard-of-living modifiers should become first-class inputs to wages,
+  recruitment, retention, and migration.
+
+Commodity and equipment logistics:
+
+- Purchased commodities such as Metal, Ore, Oil, Food, and Fish require
+  shipping and arrive in the following season.
+- Freight represents "Transport by Shipping Container" and should be labelled
+  that way in player-facing explanations.
+- Equipment purchases such as Mining Equipment include the Freight cost in the
+  quoted equipment price, but the Manufacturer must still acquire and consume
+  the Freight needed to move plant and machinery.
+- This means a capital sale can be blocked by the Manufacturer lacking Freight
+  even when the buyer can afford the equipment and the manufactured equipment
+  resource exists.
+
+Open design questions:
+
+1. Should cross-island production require a licence/patent from the specialist
+   island, or is the machinery purchase enough?
+2. How much output efficiency is lost when production happens outside its
+   native island cluster?
+3. Do quality-of-life perks offset pollution/congestion directly, or only
+   reduce salary pressure?
+
+---
+
+## 13. Mechanic profession
 
 A new Technician-tier profession that spans Farmer, Miner, Manufacturer,
 Transporter.
@@ -351,7 +459,7 @@ Transporter.
 
 ---
 
-## 12. Equipment Insurance
+## 14. Equipment Insurance
 
 A new insurance product sold by the Banker, alongside Life and Medical
 insurance.
@@ -366,7 +474,7 @@ insurance.
 
 ---
 
-## 13. Starting inventory pattern (already implemented)
+## 15. Starting inventory pattern (already implemented)
 
 Each island starts with:
 
@@ -378,7 +486,7 @@ Anything further must be purchased on the market. Implemented in
 
 ---
 
-## 14. AI auction bidding
+## 16. AI auction bidding
 
 AI players must participate in the role auction (not just take whatever's
 left).
@@ -391,7 +499,7 @@ left).
 
 ---
 
-## 15. Implementation order (proposed)
+## 17. Implementation order (proposed)
 
 1. Worker bands + per-island titles + starting mix (model + UI labels).
 2. Production capacity data structures (per-output capital item registry +
@@ -399,18 +507,20 @@ left).
 3. Investing Phase — server flow + UI panel + mandatory-minimum defaults +
    timer.
 4. Production Capacity sidebar panel + Constraint Popup.
-5. Patents (Educator output + buyer-side persistent boost + cap).
-6. Apprenticeship pipeline (separate slot pool + Lecturer/Trainer tier).
-7. Education pipeline (Manager training, season-cost variations: Doctor 2,
+5. Product/equipment Help catalogue + tooltip/modal UI.
+6. Patents (Educator output + buyer-side persistent boost + cap).
+7. Apprenticeship pipeline (separate slot pool + Lecturer/Trainer tier).
+8. Education pipeline (Manager training, season-cost variations: Doctor 2,
    Nurse 1, others 2).
-8. Mechanic profession + reliability boost.
-9. Equipment Insurance from Banker.
-10. AI auction bidding.
-11. Simultaneous-play architecture (timer + Ready button replaces End Turn).
+9. Mechanic profession + reliability boost.
+10. Equipment Insurance from Banker.
+11. Cross-island machinery licences + standard-of-living impact.
+12. AI auction bidding.
+13. Simultaneous-play architecture (timer + Ready button replaces End Turn).
 
 ---
 
-## 16. Future: Auction Margin Lending (Banker + IMF)
+## 18. Future: Auction Margin Lending (Banker + IMF)
 
 Allow players to borrow against their starting capital when bidding so they
 can outbid above their cash balance.
@@ -439,13 +549,49 @@ Outstanding design questions (defer to implementation):
   reserves?
 - Visibility: does the borrower see the IMF leg, or only the Banker loan?
 
-## 17. Future: Roleless Players — Role Aftermarket + Bank Deposits
+## 19. Future: Roleless Players — Role Aftermarket + Bank Deposits
 
 When the auction allows multiple-role wins (per the recent fix), it's possible
 for some players (especially in 7-human games) to end up with **zero roles**.
 They are not eliminated — they have two paths to keep playing:
 
-### 17.1 Role aftermarket (secondary sales)
+### 19.1 Post-auction human island guarantee
+
+If the island auction finishes and a **human** player has no island, they get
+an immediate chance to buy an island from an AI player that won extra islands.
+This is a safety valve before normal play begins, not a normal free-market
+resale.
+
+Rules:
+
+- The islandless human chooses one island from an AI player that controls more
+  than one island.
+- The AI must sell the selected extra island.
+- The human buyer inherits the island ledger: capital equipment, inventory,
+  workforce, loans, leases, obligations, and any other island state.
+- The sale price is calculated from the AI's auction price and starting wealth.
+
+Price formula:
+
+- Let `starting_wealth` be the player's starting wealth / auction budget.
+- Let `ai_price_paid` be the winning auction bid paid by the AI for that
+  island.
+- Let `base_floor = 20% of the human player's current wealth`.
+- If `ai_price_paid` is between **11% and 15%** of `starting_wealth`, the
+  auction-price formula is `2 × ai_price_paid`.
+- If `ai_price_paid` is **more than 15%** of `starting_wealth`, the
+  auction-price formula is `ai_price_paid × 1.05`.
+- Otherwise, the auction-price formula is `ai_price_paid`.
+- Final price = the higher of `base_floor` and the auction-price formula.
+
+Open implementation details:
+
+- Confirm whether "between 11% and 15%" is inclusive at both ends.
+- Confirm whether the AI can choose which of its extra islands are eligible,
+  or whether all non-primary AI islands must be available.
+- Confirm what happens if no AI player has an extra island.
+
+### 19.2 Role aftermarket (secondary sales)
 
 - Roleless players can **wait** for another player to put one of their roles
   up for sale.
@@ -461,7 +607,7 @@ They are not eliminated — they have two paths to keep playing:
     (they go with the role).
   - Minimum / maximum sale price rules? Default: free market, no caps.
 
-### 17.2 Bank deposits ("call money")
+### 19.3 Bank deposits ("call money")
 
 After the auction, unspent owner cash is automatically placed in the Bank as an
 owner deposit at **5% p.a.** Roleless players and island owners may also add
@@ -479,19 +625,19 @@ further voluntary deposits:
   Banker (at the agreed rate) until the Banker's loans repay — or the IMF
   margin facility (§16) backstops it.
 
-### 17.3 Implementation pieces required
+### 19.4 Implementation pieces required
 
 - New player state: `deposits: list[Deposit]` with `(banker_id, principal,
   rate, opened_tick)` records.
 - New TurnActions: `DEPOSIT_FUNDS`, `WITHDRAW_FUNDS`, `LIST_ROLE_FOR_SALE`,
-  `BUY_ROLE`.
+  `BUY_ROLE`, `BUY_AI_EXTRA_ISLAND`.
 - WS messages for the role aftermarket board.
 - UI: a "spectator dashboard" for roleless players showing the deposit
   position, the role listings board, and pending offers.
 - Banker dashboard gains a **deposit liabilities** section + deposit interest
   cost on their P&L.
 
-### 17.4 Open design questions
+### 19.5 Open design questions
 
 1. Can a player be both an island owner *and* a depositor (i.e. park spare
    cash in the bank for income)? Probably yes — keeps the mechanic open to
@@ -502,10 +648,13 @@ further voluntary deposits:
 4. Default risk: can the Banker default on deposits? If so, what's the
    resolution flow (fire-sale of bank capital? IMF backstop?).
 
-## 18. Open / TBD items
+## 20. Open / TBD items
 
 - Patent boost wording for UI ("–20% input cost on …")
 - Whether a player can take actions after pressing Ready
 - Apprenticeship slot capacity values per Educator capital item
 - Equipment Insurance: per-season vs. per-year billing cycle
 - Production calculator UX (extended feature, not blocking initial release)
+- Cross-island machinery: licence requirement, efficiency penalty, and perk
+  offsets for standard-of-living penalties
+- Final Help copy for each product/resource and capital-equipment item

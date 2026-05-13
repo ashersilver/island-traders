@@ -26,9 +26,11 @@ class Profession(str, Enum):
     NURSE                = "Nurse"
     ENGINEER             = "Engineer"
     FARMER               = "Farmer"
+    FARMING_TECHNICIAN   = "FarmingTechnician"
     VETERINARIAN         = "Veterinarian"
     ASSEMBLY_WORKER      = "AssemblyWorker"
     MINER                = "Miner"
+    MINING_TECHNICIAN    = "MiningTechnician"
     OIL_EXTRACTION       = "OilExtractionWorker"
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
@@ -51,9 +53,11 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.NURSE:               WorkerBand.MANAGER,    # 1-season Education
     Profession.ENGINEER:            WorkerBand.MANAGER,
     Profession.FARMER:              WorkerBand.MANAGER,
+    Profession.FARMING_TECHNICIAN:  WorkerBand.TECHNICIAN,
     Profession.VETERINARIAN:        WorkerBand.TECHNICIAN,
     Profession.ASSEMBLY_WORKER:     WorkerBand.TECHNICIAN,
     Profession.MINER:               WorkerBand.MANAGER,    # mining engineer / geologist
+    Profession.MINING_TECHNICIAN:   WorkerBand.TECHNICIAN,
     Profession.OIL_EXTRACTION:      WorkerBand.TECHNICIAN,
     Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
     Profession.BANKER:              WorkerBand.MANAGER,
@@ -78,12 +82,12 @@ def band_of(profession: Profession | str) -> WorkerBand:
 BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     "Farmer": {
         WorkerBand.MANAGER:    ["Farmer"],
-        WorkerBand.TECHNICIAN: ["Farming Foreman", "Veterinarian", "Mechanic"],
+        WorkerBand.TECHNICIAN: ["Farming Technician", "Farming Foreman", "Veterinarian", "Mechanic"],
         WorkerBand.WORKER:     ["Farmhand"],
     },
     "Miner": {
         WorkerBand.MANAGER:    ["Mining Engineer", "Geologist"],
-        WorkerBand.TECHNICIAN: ["Mining Foreman", "Refiner", "Mechanic"],
+        WorkerBand.TECHNICIAN: ["Mining Technician", "Mining Foreman", "Refiner", "Mechanic"],
         WorkerBand.WORKER:     ["Pit Worker"],
     },
     "Transporter": {
@@ -136,8 +140,10 @@ EDUCATION_SEASONS: dict[Profession, int] = {
 # Apprenticeship pipeline duration in seasons (per Technician profession).
 # Default: 2 seasons for all (worker stays on home island during training).
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
+    Profession.FARMING_TECHNICIAN:   2,
     Profession.VETERINARIAN:        2,
     Profession.ASSEMBLY_WORKER:     2,
+    Profession.MINING_TECHNICIAN:   2,
     Profession.OIL_EXTRACTION:      2,
     Profession.REFINERY_SPECIALIST: 2,
     Profession.MECHANIC:            2,
@@ -147,8 +153,8 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
 # Which professions are primarily associated with each island role.
 # Used to filter available training options for each player.
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
-    "Farmer":        [Profession.FARMER, Profession.VETERINARIAN, Profession.MECHANIC],
-    "Miner":         [Profession.MINER, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC],
+    "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.VETERINARIAN, Profession.MECHANIC],
+    "Miner":         [Profession.MINER, Profession.MINING_TECHNICIAN, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC],
     "Transporter":   [Profession.ENGINEER, Profession.MECHANIC],
     "Educator":      [Profession.PROFESSOR],
     "Banker":        [Profession.BANKER],
@@ -163,9 +169,11 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.NURSE:               "Nurse",
     Profession.ENGINEER:            "Engineer",
     Profession.FARMER:              "Farmer (specialist)",
+    Profession.FARMING_TECHNICIAN:  "Farming Technician",
     Profession.VETERINARIAN:        "Veterinarian",
     Profession.ASSEMBLY_WORKER:     "Assembly Worker",
     Profession.MINER:               "Miner (specialist)",
+    Profession.MINING_TECHNICIAN:   "Mining Technician",
     Profession.OIL_EXTRACTION:      "Oil Extraction Worker",
     Profession.REFINERY_SPECIALIST: "Refinery Specialist",
     Profession.BANKER:              "Banker (specialist)",

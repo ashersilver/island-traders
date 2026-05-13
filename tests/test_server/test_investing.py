@@ -227,6 +227,21 @@ def test_rejoin_room_by_name_allows_existing_player_after_auction_starts():
     assert lp.player_id == original_id
 
 
+def test_rejoin_room_by_name_preserves_existing_player_name_without_duplicate():
+    mgr = GameManager()
+    room = mgr.create_room("Test", creator_name="Ashley")
+    original_id = room.players[0].player_id
+    room.status = "running"
+
+    rejoined = mgr.rejoin_room_by_name(room.room_id, "ashley")
+
+    assert rejoined is not None
+    _, lp = rejoined
+    assert lp.player_id == original_id
+    assert lp.name == "Ashley"
+    assert [p.name for p in room.players] == ["Ashley"]
+
+
 def test_investing_resolution_waits_only_for_role_holding_humans():
     mgr = GameManager()
     room_id = _make_room(mgr, num_humans=2)
@@ -246,6 +261,26 @@ def test_investing_resolution_waits_only_for_role_holding_humans():
     assert result["ok"] is True
     assert room.status == "running"
     assert room.lobby_to_engine_id == {"h1": 0}
+
+
+def test_opening_investment_delayed_items_are_available_immediately():
+    mgr = GameManager()
+    room_id = _make_room(mgr, num_humans=1)
+    room = mgr.rooms[room_id]
+    room.players[0].role_names = ["Farmer"]
+
+    mgr._loop = None
+    mgr._start_investing(room_id, deductions={})
+    result = mgr.submit_investment(
+        room_id, "h1",
+        item_ids=["farmer.harvester"],
+        ready=True,
+    )
+
+    assert result["ok"] is True
+    player = room.game.players[0]
+    assert player.capital_count("farmer.harvester") == 1
+    assert player.capital_in_transit == []
 
 
 def test_investing_payload_supports_reconnect():
@@ -344,6 +379,29 @@ def test_player_capacity_surfaces_equipment_shortfall_options():
     assert food["equipment_short"]["options"][0]["count"] == 1
 
 
+def test_player_capacity_surfaces_capital_orders_with_arrival_timing():
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    p = Player(
+        player_id=0, name="Ordering Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0,
+    )
+    p.capital_in_transit.append({
+        "item_id": "farmer.harvester",
+        "arrives_at_tick": 2,
+    })
+
+    cap = GameManager()._player_capacity(p, current_tick=0)
+    order = cap["capital_in_transit"][0]
+
+    assert order["name"] == "Harvester"
+    assert order["role"] == "Farmer"
+    assert order["arrival_year"] == 1
+    assert order["arrival_season"] == "Autumn"
+    assert order["seasons_remaining"] == 2
+
+
 def test_game_state_includes_worker_band_counts_for_each_player():
     from types import SimpleNamespace
 
@@ -380,6 +438,7 @@ def test_game_state_includes_worker_band_counts_for_each_player():
 
     state = mgr.get_game_state(room.room_id, "h1")
 
+    assert state["funding_rates"] == {"1": 4.5, "2": 5.25, "3": 6.0}
     assert state["players"][0]["workforce_bands"] == {
         "Manager": 1,
         "Technician": 2,

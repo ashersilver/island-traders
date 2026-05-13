@@ -5,6 +5,7 @@ from ..models.deal import DealProposal
 from ..models.resource import ResourceType
 from ..engine.game import GameSummary
 from ..constants import BASE_PRICES, SEASONS, CURRENCY_SYMBOL
+from ..constants_capacity import CAPITAL_CATALOGUE
 
 
 class Display:
@@ -28,7 +29,8 @@ class Display:
         return "\n".join(lines)
 
     @staticmethod
-    def player_summary(player: Player, market: Market) -> str:
+    def player_summary(player: Player, market: Market, loan_ledger=None,
+                       current_tick: int = 0) -> str:
         sym = CURRENCY_SYMBOL
         prices = market.current_prices()
         inv_lines = []
@@ -53,7 +55,8 @@ class Display:
             f"\n  Player       : {player.name}\n"
             f"  Role(s)      :\n" + "\n".join(role_lines) + "\n"
             f"  Dollops      : {player.dollops:.2f} {sym}\n"
-            f"  Wealth       : {player.total_wealth(prices):.2f} {sym}\n"
+            f"  Net Wealth   : "
+            f"{player.total_wealth(prices, loan_ledger, CAPITAL_CATALOGUE, current_tick):.2f} {sym}\n"
             f"  Capacity     : {player.production_capacity*100:.0f}%\n"
             f"  Workforce    : {ws['active']}/{ws['total']} workers  "
             f"(eff {ws['avg_efficiency_pct']}%)\n"
@@ -61,13 +64,18 @@ class Display:
         )
 
     @staticmethod
-    def leaderboard(players: list[Player], market: Market) -> str:
+    def leaderboard(players: list[Player], market: Market, loan_ledger=None,
+                    current_tick: int = 0) -> str:
         sym = CURRENCY_SYMBOL
         prices = market.current_prices()
-        ranked = sorted(players, key=lambda p: p.total_wealth(prices), reverse=True)
+        ranked = sorted(
+            players,
+            key=lambda p: p.total_wealth(prices, loan_ledger, CAPITAL_CATALOGUE, current_tick),
+            reverse=True,
+        )
         lines = ["\n  ┌── LEADERBOARD ────────────────────────────────┐"]
         for i, p in enumerate(ranked, 1):
-            wealth = p.total_wealth(prices)
+            wealth = p.total_wealth(prices, loan_ledger, CAPITAL_CATALOGUE, current_tick)
             lines.append(
                 f"  │  {i}. {p.name:<14} {p.role_names():<18} {wealth:>7.1f}{sym}  │"
             )

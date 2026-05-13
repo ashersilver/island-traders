@@ -21,7 +21,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
                       "FarmMachinery": 1, "Oil": 2},                  # fuel buffer, not a season-proof stockpile
     # Miner: partial output to sell + inputs to produce (Oil serves both)
-    "Miner":         {"Ore": 3, "Oil": 4,                            # to sell (Ore 3, Oil 3) + Oil 1 to produce
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 1 to produce
                       "Freight": 1, "MiningEquipment": 1},            # to produce
     # Transporter: cargo + seats to sell + Oil & Fish to run services
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
@@ -34,7 +34,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Knowledge": 1},                                # to produce
     # Manufacturer: FarmMachinery (default opening line) to sell + inputs to produce
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
-                      "Ore": 2, "Oil": 2},                            # to produce; heavier lines still need more
+                      "Metal": 2, "Oil": 2},                          # to produce; heavier lines still need more
     # Doctor: services to sell + inputs to operate
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
                       "Knowledge": 1, "LaboratoryEquipment": 1},      # to produce
@@ -45,6 +45,7 @@ BASE_PRICES: dict[str, float] = {
     "Food":                10.0,
     "Fish":                 8.0,
     "Ore":                 15.0,
+    "Metal":               25.0,
     "Oil":                 20.0,
     "Freight":             12.0,
     "Knowledge":           18.0,
@@ -69,7 +70,8 @@ BASE_PRICES: dict[str, float] = {
 # Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Oil": 20 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Metal": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Oil": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     "Transporter":   {"Freight": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     "Educator":      {"Knowledge": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
@@ -122,7 +124,7 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
 # Keys match ResourceType values for the output resource.
 #
 # Each entry:
-#   inputs         – Ore and Oil consumed per production run
+#   inputs         – Metal and Oil consumed per production run
 #   output         – resource type produced (str matching ResourceType value)
 #   qty            – units produced per run (before event/workforce modifiers)
 #   skilled        – skilled workers required (AssemblyWorker or Engineer)
@@ -131,7 +133,7 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
 #   desc           – short human-readable label shown in CLI and export
 MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "FarmMachinery": {
-        "inputs":           {"Ore": 2, "Oil": 1},
+        "inputs":           {"Metal": 2, "Oil": 1},
         "output":           "FarmMachinery",
         "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,   # AssemblyWorkers to weld and fit
@@ -140,7 +142,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "desc":             "Tractors & Farm Machinery",
     },
     "MiningEquipment": {
-        "inputs":           {"Ore": 3, "Oil": 2},
+        "inputs":           {"Metal": 3, "Oil": 2},
         "output":           "MiningEquipment",
         "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          3,   # Engineers to spec heavy drilling rigs
@@ -149,7 +151,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "desc":             "Mining Equipment",
     },
     "LaboratoryEquipment": {
-        "inputs":           {"Ore": 1, "Oil": 1},
+        "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "LaboratoryEquipment",
         "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          3,
@@ -158,7 +160,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "desc":             "Laboratory Equipment",
     },
     "MedicalDevices": {
-        "inputs":           {"Ore": 1, "Oil": 1},
+        "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "MedicalDevices",
         "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
@@ -167,7 +169,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "desc":             "Medical & Dental Devices",
     },
     "TransportEquipment": {
-        "inputs":           {"Ore": 2, "Oil": 2},
+        "inputs":           {"Metal": 2, "Oil": 2},
         "output":           "TransportEquipment",
         "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,
@@ -245,8 +247,8 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # but is currently encoded simply as 2 Doctors + 4 Nurses; revisit when Apprenticeship
 # pipeline is implemented.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 1), ("Mechanic", 1), ("Veterinarian", 1)],
-    "Miner":         [("Miner", 1), ("OilExtractionWorker", 1), ("Mechanic", 1)],
+    "Farmer":        [("Farmer", 1), ("FarmingTechnician", 1), ("Veterinarian", 1)],
+    "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
     "Transporter":   [("Engineer", 1), ("Mechanic", 1)],
     "Educator":      [("Professor", 1)],
     "Banker":        [("Banker", 1)],
@@ -273,8 +275,8 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "Veterinarian", "Mechanic"],
-    "Miner":        ["Miner", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
+    "Farmer":       ["Farmer", "FarmingTechnician", "Veterinarian", "Mechanic"],
+    "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
     "Transporter":  ["Engineer", "Mechanic"],
     "Educator":     ["Professor"],
     "Banker":       ["Banker"],
@@ -319,9 +321,11 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Nurse":               10,
     "Engineer":             2,
     "Farmer":               2,
+    "FarmingTechnician":     4,
     "Veterinarian":         1,
     "AssemblyWorker":      10,
     "Miner":                2,
+    "MiningTechnician":     4,
     "OilExtractionWorker":  2,
     "RefinerySpecialist":   2,
     "Banker":               2,

@@ -25,6 +25,8 @@ def test_band_classifications():
 
     # Technicians: apprenticeship-trained
     assert band_of(Profession.MECHANIC)            == WorkerBand.TECHNICIAN
+    assert band_of(Profession.FARMING_TECHNICIAN)  == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MINING_TECHNICIAN)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.VETERINARIAN)        == WorkerBand.TECHNICIAN
     assert band_of(Profession.ASSEMBLY_WORKER)     == WorkerBand.TECHNICIAN
     assert band_of(Profession.OIL_EXTRACTION)      == WorkerBand.TECHNICIAN

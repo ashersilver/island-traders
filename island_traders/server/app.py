@@ -25,10 +25,13 @@ from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..models.resource import ResourceType
+from ..models.role import ROLES
+from ..models.loan import posted_funding_rates
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL,
     TOTAL_STARTING_POPULATION,
 )
+from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -45,19 +48,26 @@ ALL_ROLES = ["Farmer", "Miner", "Transporter", "Educator",
              "Banker", "Manufacturer", "Doctor"]
 
 ROLE_INFO = {
-    "Farmer":       {"island": "Agriculture, Fisheries & Foods", "produces": "Food, Fish",
+    "Farmer":       {"display_name": ROLES["Farmer"].display_name, "short_name": ROLES["Farmer"].short_name,
+                     "island": ROLES["Farmer"].island, "produces": "Food, Fish",
                      "needs": "Farm Machinery, Oil", "color": "#27ae60"},
-    "Miner":        {"island": "Mining & Oil", "produces": "Ore, Oil",
+    "Miner":        {"display_name": ROLES["Miner"].display_name, "short_name": ROLES["Miner"].short_name,
+                     "island": ROLES["Miner"].island, "produces": "Ore, Metal, Oil",
                      "needs": "Mining Equipment, Freight", "color": "#e67e22"},
-    "Transporter":  {"island": "Transportation & Shipping", "produces": "Freight",
+    "Transporter":  {"display_name": ROLES["Transporter"].display_name, "short_name": ROLES["Transporter"].short_name,
+                     "island": ROLES["Transporter"].island, "produces": "Freight",
                      "needs": "Transport Equipment, Oil", "color": "#3498db"},
-    "Educator":     {"island": "Education & Training", "produces": "Knowledge",
+    "Educator":     {"display_name": ROLES["Educator"].display_name, "short_name": ROLES["Educator"].short_name,
+                     "island": ROLES["Educator"].island, "produces": "Knowledge",
                      "needs": "Laboratory Equipment, Finance", "color": "#9b59b6"},
-    "Banker":       {"island": "Banking & Insurance", "produces": "Finance",
+    "Banker":       {"display_name": ROLES["Banker"].display_name, "short_name": ROLES["Banker"].short_name,
+                     "island": ROLES["Banker"].island, "produces": "Finance",
                      "needs": "Knowledge", "color": "#f1c40f"},
-    "Manufacturer": {"island": "Manufacturing (ForgeHaven)", "produces": "Machinery, Lab Equipment",
-                     "needs": "Ore, Oil, Freight", "color": "#1abc9c"},
-    "Doctor":       {"island": "Healthcare", "produces": "Health Services, Vaccine",
+    "Manufacturer": {"display_name": ROLES["Manufacturer"].display_name, "short_name": ROLES["Manufacturer"].short_name,
+                     "island": ROLES["Manufacturer"].island, "produces": "Machinery, Lab Equipment",
+                     "needs": "Metal, Oil, Freight", "color": "#1abc9c"},
+    "Doctor":       {"display_name": ROLES["Doctor"].display_name, "short_name": ROLES["Doctor"].short_name,
+                     "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
                      "needs": "Knowledge, Laboratory Equipment", "color": "#e74c3c"},
 }
 
@@ -191,6 +201,8 @@ class GameRoom:
     # Pre-season window state.  "pre_season" while the review window is open;
     # "action" once the action phase begins.  Cleared to "action" on game start.
     season_phase: str = "action"
+    current_year_index: int = 0
+    current_season_index: int = 0
     # Event set by submit_ready() (or timer) to unblock the game thread that
     # is sleeping through the pre-season window.
     _pre_season_done: threading.Event = field(
@@ -887,8 +899,9 @@ class GameManager:
         game.after_season  = lambda y, s: self._on_season_end(room_id, y, s)
 
         # Apply Investing Phase purchases to engine Players (after setup so the
-        # Player objects exist).  Items with delivery_seasons==0 land in
-        # capital_inventory immediately; complex items go to capital_in_transit.
+        # Player objects exist).  Opening investments are setup purchases, so
+        # even catalogue items with delivery_seasons > 0 are available
+        # immediately. Mid-game purchases can still use capital_in_transit.
         if capital_purchases:
             from ..constants_capacity import CAPITAL_CATALOGUE
             from ..models.capacity import find_item
@@ -901,13 +914,7 @@ class GameManager:
                     item = find_item(CAPITAL_CATALOGUE, iid)
                     if not item:
                         continue
-                    if item.delivery_seasons <= 0:
-                        p.add_capital(iid, 1)
-                    else:
-                        p.capital_in_transit.append({
-                            "item_id":         iid,
-                            "arrives_at_tick": item.delivery_seasons,
-                        })
+                    p.add_capital(iid, 1)
 
         def _broadcast_state():
             state = self.get_game_state(room_id)
@@ -975,7 +982,7 @@ class GameManager:
 
         return self._launch_game(room_id)
 
-    def _player_capacity(self, p) -> dict:
+    def _player_capacity(self, p, current_tick: int | None = None) -> dict:
         """Compute per-output max-producible + binding constraint for a player.
 
         Returns a dict shaped for direct UI consumption — the frontend renders
@@ -1004,6 +1011,19 @@ class GameManager:
                 if recipe.output in seen:
                     continue
                 seen.add(recipe.output)
+                if (
+                    recipe.role == "Miner"
+                    and recipe.output == ResourceType.METAL.value
+                    and p.capital_inventory.get("miner.enhanced_crusher_smelter", 0) > 0
+                ):
+                    from dataclasses import replace as _replace
+                    recipe = _replace(
+                        recipe,
+                        inputs={
+                            k: (v * 0.5 if k == ResourceType.OIL.value else v)
+                            for k, v in recipe.inputs.items()
+                        },
+                    )
                 # Apply patent boost to this output's input requirements
                 mult = p.patent_input_multiplier(recipe.output)
                 if mult < 1.0:
@@ -1028,6 +1048,8 @@ class GameManager:
                     cap.equipment_cap,
                     workforce_cap if workforce_cap != float("inf") else cap.equipment_cap,
                 )
+                if input_target == float("inf") or input_target <= 0:
+                    input_target = 1 if boosted.inputs else 0
                 inputs_short: dict[str, float] = {}
                 if input_cap < input_target:
                     for resource, per_unit in boosted.inputs.items():
@@ -1045,6 +1067,10 @@ class GameManager:
                     cap.equipment_cap,
                     input_cap if input_cap != float("inf") else cap.equipment_cap,
                 )
+                if workforce_target == float("inf") or workforce_target <= 0:
+                    workforce_target = 1 if any(
+                        recipe.labour_per_unit(band) > 0 for band in WorkerBand
+                    ) else 0
                 if workforce_cap < workforce_target:
                     for band in WorkerBand:
                         per_unit = recipe.labour_per_unit(band)
@@ -1063,7 +1089,7 @@ class GameManager:
                     workforce_cap if workforce_cap != float("inf") else input_cap,
                     input_cap if input_cap != float("inf") else workforce_cap,
                 )
-                if equipment_target == float("inf"):
+                if equipment_target == float("inf") or equipment_target <= 0:
                     equipment_target = 1
                 if cap.equipment_cap < equipment_target:
                     needed_capacity = equipment_target - cap.equipment_cap
@@ -1137,11 +1163,20 @@ class GameManager:
                 "description": item.description,
             })
         # Items still arriving
-        in_transit = list(p.capital_in_transit)
-        for entry in in_transit:
+        in_transit = []
+        for entry in p.capital_in_transit:
+            rendered = dict(entry)
             item = find_item(CAPITAL_CATALOGUE, entry.get("item_id", ""))
             if item:
-                entry["name"] = item.name
+                rendered["name"] = item.name
+                rendered["role"] = item.role
+                rendered["description"] = item.description
+            arrives_at = int(entry.get("arrives_at_tick", 0))
+            rendered["arrival_year"] = arrives_at // len(SEASONS) + 1
+            rendered["arrival_season"] = SEASONS[arrives_at % len(SEASONS)]
+            if current_tick is not None:
+                rendered["seasons_remaining"] = max(0, arrives_at - current_tick)
+            in_transit.append(rendered)
 
         return {
             "outputs":         outputs,
@@ -1161,6 +1196,10 @@ class GameManager:
         engine_to_lobby = {
             ep: lp for lp, ep in (room.lobby_to_engine_id or {}).items()
         }
+        current_year_idx = getattr(room, "current_year_index", 0)
+        current_season_idx = getattr(room, "current_season_index", 0)
+        current_tick = current_year_idx * len(SEASONS) + current_season_idx
+
         players_data = []
         for p in game.players:
             pd = {
@@ -1170,7 +1209,11 @@ class GameManager:
                 "roles": p.role_names(),
                 "role_names": [r.name for r in p.roles],
                 "dollops": round(p.dollops, 1),
-                "wealth": round(p.total_wealth(prices, game.loan_ledger), 1),
+                "wealth": round(
+                    p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick),
+                    1,
+                ),
+                "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
                 "workforce_count": p.workforce.count,
@@ -1195,7 +1238,7 @@ class GameManager:
                     for r in ResourceType if p.inventory.get(r) > 0
                 }
             # Production capacity panel + constraint data
-            pd["capacity"] = self._player_capacity(p)
+            pd["capacity"] = self._player_capacity(p, current_tick=current_tick)
             players_data.append(pd)
 
         mkt_summary = game.market.market_summary()
@@ -1268,6 +1311,19 @@ class GameManager:
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
+            for r, qty in p.population_food_fish_needs().items():
+                short = qty - p.inventory.get(r)
+                if short > 0:
+                    needs.append(f"{short} {r.value} for population")
+            if any(r.name == "Educator" for r in p.roles):
+                pending_tickets = sum(
+                    len(req.worker_ids)
+                    for req in game.training.pending_for_educator(p.player_id)
+                    if getattr(req, "transport_mode", "") == "air_ticket"
+                )
+                ticket_short = pending_tickets - p.inventory.get(ResourceType.PASSENGER_SEATS)
+                if ticket_short > 0:
+                    needs.append(f"{ticket_short} PassengerSeats for training travel")
             if needs:
                 barter_needs.append({
                     "player": p.name,
@@ -1275,10 +1331,8 @@ class GameManager:
                     "needs": needs,
                 })
 
-        last_snap = game.market.price_history[-1] if game.market.price_history else None
-        season_names = ["Spring", "Summer", "Autumn", "Winter"]
-        current_year = (last_snap.year if last_snap else 0) + 1
-        current_season = season_names[last_snap.season] if last_snap else "Spring"
+        current_year = current_year_idx + 1
+        current_season = SEASONS[current_season_idx]
 
         return {
             "type": "game_state",
@@ -1288,6 +1342,12 @@ class GameManager:
             "status": room.status,
             "year": current_year,
             "season": current_season,
+            "funding_rates": {
+                str(term): round(rate * 100, 2)
+                for term, rate in posted_funding_rates(
+                    current_year_idx, current_season_idx
+                ).items()
+            },
             "players": players_data,
             "market": market_data,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
@@ -1357,6 +1417,17 @@ class GameManager:
             return
 
         season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
+        room.current_year_index = year
+        room.current_season_index = season_index
+        current_tick = year * len(SEASONS) + season_index
+        if room.game:
+            for player in room.game.players:
+                delivered = player.deliver_in_transit(current_tick)
+                if delivered:
+                    names = ", ".join(delivered)
+                    room.io_adapter.print(
+                        f"  {player.name}'s ordered capital arrived: {names}"
+                    )
         humans = {
             lp.player_id for lp in room.players
             if lp.is_human and lp.role_names

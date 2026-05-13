@@ -93,6 +93,11 @@ class IOAdapter:
                 pass
             self.print(f"  Enter a number between {-max_dollops:.1f} and {max_dollops:.1f}.")
 
+    def ask_text(self, prompt: str, default: str = "") -> str:
+        suffix = f" [{default}]" if default else ""
+        raw = self.input(f"  {prompt}{suffix} > ").strip()
+        return raw or default
+
 
 class FakeIOAdapter(IOAdapter):
     """
@@ -132,3 +137,8 @@ class FakeIOAdapter(IOAdapter):
 
     def ask_dollop_amount(self, prompt, max_dollops):
         return 0.0
+
+    def ask_text(self, prompt, default=""):
+        if self._responses:
+            return self._responses.pop(0)
+        return default

@@ -1,6 +1,7 @@
 import pytest
 from island_traders.engine.production import ProductionEngine, InsufficientInputsError
 from island_traders.engine.events import EventResult
+from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 
 
@@ -88,7 +89,8 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     produced = ProductionEngine().produce(miner, normal_event, season_name="Spring")
 
     assert produced[ResourceType.ORE] == 80
-    assert produced[ResourceType.OIL] == 200
+    assert produced[ResourceType.METAL] == 40
+    assert produced[ResourceType.OIL] == 80
 
 
 def test_banker_cannot_produce_without_inputs(banker, normal_event):
@@ -136,6 +138,13 @@ def test_manufacturer_product_lines(manufacturer, normal_event):
         assert ResourceType(line["output"]) in produced, f"Line {line_key} produced nothing"
 
 
+def test_manufacturer_product_lines_require_metal_not_ore():
+    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
+
+    assert all("Metal" in line["inputs"] for line in MANUFACTURER_PRODUCT_LINES.values())
+    assert all("Ore" not in line["inputs"] for line in MANUFACTURER_PRODUCT_LINES.values())
+
+
 def test_manufacturer_without_line_uses_default(manufacturer, normal_event):
     """If no product_line supplied, defaults to first line (FarmMachinery)."""
     from island_traders.constants import MANUFACTURER_PRODUCT_LINES
@@ -145,3 +154,98 @@ def test_manufacturer_without_line_uses_default(manufacturer, normal_event):
     engine = ProductionEngine()
     produced = engine.produce(manufacturer, normal_event, season_name="Spring")
     assert ResourceType(first_line["output"]) in produced
+
+
+def test_manufacturer_freight_surcharge_uses_board_scale_quantity():
+    """Freight should not balloon when output quantities are simulation-scaled."""
+    from island_traders.constants import (
+        MANUFACTURER_PRODUCT_LINES,
+        PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    )
+
+    line = MANUFACTURER_PRODUCT_LINES["MiningEquipment"]
+    board_scale_qty = round(line["qty"] / PRODUCER_PRODUCTIVITY_MULTIPLIER)
+    engine = ProductionEngine()
+
+    assert engine._freight_surcharge("MiningEquipment", line["qty"]) == (
+        line["freight_per_unit"] * board_scale_qty
+    )
+
+
+def test_production_options_show_per_product_current_max(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    farmer = Player(20, "Selective Farmer", [ROLES["Farmer"]], 100.0, is_human=True)
+    farmer.add_capital("farmer.tractor")
+    farmer.add_capital("farmer.fishing_boat")
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
+    farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
+    farmer.receive_resources(ResourceType.OIL, 10)
+
+    options = ProductionEngine().production_options(farmer, normal_event, season_name="Spring")
+    by_output = {option["output"]: option for option in options}
+
+    assert by_output[ResourceType.FOOD]["max_qty"] == 25
+    assert by_output[ResourceType.FISH]["max_qty"] == 25
+
+
+def test_produce_product_makes_chosen_product_and_quantity_only(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    farmer = Player(21, "Selective Farmer", [ROLES["Farmer"]], 100.0, is_human=True)
+    farmer.add_capital("farmer.tractor")
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
+    farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
+    farmer.receive_resources(ResourceType.OIL, 10)
+
+    produced = ProductionEngine().produce_product(
+        farmer,
+        normal_event,
+        season_name="Spring",
+        role_name="Farmer",
+        output=ResourceType.FOOD,
+        qty=10,
+    )
+
+    assert produced == {ResourceType.FOOD: 10}
+    assert farmer.inventory.get(ResourceType.FOOD) == 10
+    assert farmer.inventory.get(ResourceType.FISH) == 0
+    assert farmer.inventory.get(ResourceType.OIL) == 8
+
+
+def test_enhanced_crusher_smelter_increases_metal_capacity_and_reduces_oil(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    miner = Player(22, "Selective Miner", [ROLES["Miner"]], 100.0, is_human=True)
+    miner.add_capital("miner.crusher")
+    miner.add_capital("miner.enhanced_crusher_smelter")
+    miner.workforce.add_workers(1, training_level=1, profession=Profession.MINER.value)
+    miner.workforce.add_workers(4, training_level=1, profession=Profession.MINING_TECHNICIAN.value)
+    miner.workforce.add_workers(10, training_level=0, profession=Profession.UNSKILLED.value)
+    miner.receive_resources(ResourceType.ORE, 20)
+    miner.receive_resources(ResourceType.OIL, 20)
+
+    engine = ProductionEngine()
+    options = engine.production_options(miner, normal_event, season_name="Spring")
+    metal_option = next(option for option in options if option["output"] == ResourceType.METAL)
+
+    assert metal_option["preview_qty"] == 120
+    assert metal_option["capacity_limit"] >= 80
+
+    produced = engine.produce_product(
+        miner,
+        normal_event,
+        season_name="Spring",
+        role_name="Miner",
+        output=ResourceType.METAL,
+        qty=40,
+    )
+
+    assert produced == {ResourceType.METAL: 40}
+    assert miner.inventory.get(ResourceType.ORE) == 16
+    assert miner.inventory.get(ResourceType.OIL) == 19
