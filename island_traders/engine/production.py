@@ -1,12 +1,17 @@
 from __future__ import annotations
+from dataclasses import replace
+from math import ceil, floor
 from ..models.player import Player
 from ..models.resource import ResourceType
 from ..engine.events import EventResult
 from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
-    LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS,
+    LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
 )
+from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
+from ..models.capacity import compute_capacity, recipe_for
+from ..models.profession import WorkerBand
 
 
 class InsufficientInputsError(Exception):
@@ -18,6 +23,32 @@ class InsufficientInputsError(Exception):
 
 
 class ProductionEngine:
+    def _has_enhanced_metal_equipment(self, player: Player) -> bool:
+        return player.capital_inventory.get("miner.enhanced_crusher_smelter", 0) > 0
+
+    def _metal_recipe_multiplier(self, player: Player) -> float:
+        return 3.0 if self._has_enhanced_metal_equipment(player) else 1.0
+
+    def _adjust_recipe_for_player(
+        self, recipe, player: Player
+    ):
+        if (
+            recipe.role == "Miner"
+            and recipe.output == ResourceType.METAL.value
+            and self._has_enhanced_metal_equipment(player)
+        ):
+            recipe = replace(
+                recipe,
+                inputs={
+                    resource: (amount * 0.5 if resource == ResourceType.OIL.value else amount)
+                    for resource, amount in recipe.inputs.items()
+                },
+            )
+        return recipe
+
+    def _role_player(self, player: Player, role) -> Player:
+        return replace(player, roles=[role])
+
     def _seasonal_workforce_required(self, player: Player, season_name: str) -> int:
         total = 0
         for role in player.roles:
@@ -123,7 +154,11 @@ class ProductionEngine:
         """Return Freight units consumed to ship produced goods (Manufacturer only)."""
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
             return 0
-        return MANUFACTURER_PRODUCT_LINES[product_line]["freight_per_unit"] * qty
+        freight_per_unit = MANUFACTURER_PRODUCT_LINES[product_line]["freight_per_unit"]
+        if freight_per_unit <= 0 or qty <= 0:
+            return 0
+        board_scale_qty = max(1, round(qty / PRODUCER_PRODUCTIVITY_MULTIPLIER))
+        return freight_per_unit * board_scale_qty
 
     def can_produce(
         self,
@@ -261,3 +296,162 @@ class ProductionEngine:
             result["product_line"] = product_line
             result["freight_surcharge"] = freight_surcharge
         return result
+
+    def _capacity_limit(self, player: Player, role_name: str, output: ResourceType) -> int | None:
+        recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
+        if not recipe:
+            return None
+        recipe = self._adjust_recipe_for_player(recipe, player)
+
+        mult = player.patent_input_multiplier(recipe.output)
+        if mult < 1.0:
+            recipe = replace(
+                recipe,
+                inputs={resource: amount * mult for resource, amount in recipe.inputs.items()},
+            )
+
+        bands = player.workforce.band_summary()
+        wf_by_band = {
+            WorkerBand.MANAGER: bands.get("Manager", 0),
+            WorkerBand.TECHNICIAN: bands.get("Technician", 0),
+            WorkerBand.WORKER: bands.get("Worker", 0),
+        }
+        on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
+        cap = compute_capacity(
+            recipe=recipe,
+            catalogue=CAPITAL_CATALOGUE,
+            owned=player.capital_inventory,
+            workforce=wf_by_band,
+            on_hand=on_hand,
+        )
+        if cap.max_producible == float("inf"):
+            return None
+        return max(0, floor(cap.max_producible))
+
+    def production_options(
+        self,
+        player: Player,
+        event_result: EventResult,
+        season_name: str = "Spring",
+    ) -> list[dict]:
+        """Return per-product production choices for this player right now."""
+        if event_result.outage:
+            return []
+
+        options: list[dict] = []
+        for role in player.roles:
+            line_keys = (
+                list(MANUFACTURER_PRODUCT_LINES)
+                if role.name == "Manufacturer"
+                else [None]
+            )
+            for product_line in line_keys:
+                role_player = self._role_player(player, role)
+                preview = self.production_preview(
+                    role_player, event_result, season_name, product_line
+                )
+                if preview.get("outage"):
+                    continue
+                for output, preview_qty in preview.get("outputs", {}).items():
+                    if preview_qty <= 0:
+                        continue
+                    if role.name == "Miner" and output == ResourceType.METAL:
+                        preview_qty = int(preview_qty * self._metal_recipe_multiplier(player))
+                    capacity_limit = self._capacity_limit(player, role.name, output)
+                    max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
+                    options.append({
+                        "role": role.name,
+                        "output": output,
+                        "product_line": product_line,
+                        "max_qty": max(0, int(max_qty)),
+                        "preview_qty": int(preview_qty),
+                        "capacity_limit": capacity_limit,
+                        "preview": preview,
+                    })
+        return [opt for opt in options if opt["max_qty"] > 0]
+
+    def _inputs_for_selected_output(
+        self,
+        player: Player,
+        role_name: str,
+        output: ResourceType,
+        qty: int,
+        preview_qty: int,
+        season_name: str,
+        product_line: str | None,
+    ) -> dict[ResourceType, int]:
+        recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
+        if recipe:
+            recipe = self._adjust_recipe_for_player(recipe, player)
+            mult = player.patent_input_multiplier(recipe.output)
+            return {
+                ResourceType(resource): ceil(amount * mult * qty)
+                for resource, amount in recipe.inputs.items()
+                if ceil(amount * mult * qty) > 0
+            }
+
+        role = next(r for r in player.roles if r.name == role_name)
+        role_player = self._role_player(player, role)
+        base_inputs = self._all_inputs(role_player, season_name, product_line)
+        if preview_qty <= 0 or qty <= 0:
+            return {}
+        ratio = min(1.0, qty / preview_qty)
+        inputs = {
+            r: ceil(amount * ratio)
+            for r, amount in base_inputs.items()
+            if ceil(amount * ratio) > 0
+        }
+        if role_name == "Manufacturer" and product_line:
+            freight = self._freight_surcharge(product_line, qty)
+            if freight:
+                inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight
+        return inputs
+
+    def produce_product(
+        self,
+        player: Player,
+        event_result: EventResult,
+        season_name: str,
+        role_name: str,
+        output: ResourceType,
+        qty: int,
+        product_line: str | None = None,
+    ) -> dict[ResourceType, int]:
+        if event_result.outage or qty <= 0:
+            return {}
+
+        options = self.production_options(player, event_result, season_name)
+        option = next(
+            (
+                opt for opt in options
+                if opt["role"] == role_name
+                and opt["output"] == output
+                and opt["product_line"] == product_line
+            ),
+            None,
+        )
+        if option is None:
+            raise InsufficientInputsError(role_name, {})
+        qty = min(qty, option["max_qty"])
+        inputs = self._inputs_for_selected_output(
+            player=player,
+            role_name=role_name,
+            output=output,
+            qty=qty,
+            preview_qty=option["preview_qty"],
+            season_name=season_name,
+            product_line=product_line,
+        )
+        missing = {
+            r: amount - player.inventory.get(r)
+            for r, amount in inputs.items()
+            if player.inventory.get(r) < amount
+        }
+        if missing:
+            raise InsufficientInputsError(role_name, missing)
+
+        for r, amount in inputs.items():
+            player.give_resources(r, amount)
+        player.receive_resources(output, qty)
+        player.workforce.apply_season_work()
+        return {output: qty}

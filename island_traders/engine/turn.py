@@ -10,14 +10,17 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
-from ..models.loan import LoanLedger, LoanStatus
+from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
+from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
-    FLIGHT_COST_FRACTION, CARGO_FREE_PASSENGERS, MANUFACTURER_PRODUCT_LINES,
+    MANUFACTURER_PRODUCT_LINES,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
+from ..constants_capacity import CAPITAL_CATALOGUE
+from ..models.capacity import items_for_role
 
 
 class TurnAction(Enum):
@@ -31,6 +34,7 @@ class TurnAction(Enum):
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
     SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
     BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
+    PURCHASE_CAPITAL   = "purchase_capital"    # any player: buy named equipment from Manufacturer
     OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
     TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
     VIEW_LOANS         = "view_loans"          # view outstanding loans
@@ -108,6 +112,7 @@ class TurnManager:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         self._process_loan_repayments(year, season_index)
+        self._post_population_food_demand()
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
@@ -244,51 +249,161 @@ class TurnManager:
         sym = CURRENCY_SYMBOL
         self.io.print(f"\n--- {player.name}'s turn ({player.role_names()}) ---")
         prices = self.market.current_prices()
+        current_tick = year * len(SEASONS) + season_index
         self.io.print(
             f"    Dollops: {player.dollops:.1f} {sym}  |  "
-            f"Wealth: {player.total_wealth(prices):.1f} {sym}  |  "
+            f"Net Wealth: "
+            f"{player.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, current_tick):.1f} {sym}  |  "
             f"Workers: {player.workforce.count} "
             f"({player.workforce.average_efficiency*100:.0f}% eff  |  "
             f"capacity: {player.production_capacity*100:.0f}%)"
         )
+        self._review_pending_deals(player, result)
+        self._review_training_counteroffers(player, result, season_name, year)
         while True:
             action = self.io.choose_action(player, list(TurnAction))
             if action == TurnAction.END_TURN:
                 break
-            elif action == TurnAction.INVENTORY:
-                self.io.print(player.inventory_report(self.market.current_prices()))
-            elif action == TurnAction.VIEW_MARKET:
-                self.io.print(self._format_market())
-            elif action == TurnAction.VIEW_PLAYERS:
-                self.io.print(self._format_players(player))
-            elif action == TurnAction.PRODUCE:
-                self._action_produce(player, event_result, result, season_name)
-            elif action == TurnAction.MARKET_BUY:
-                self._action_market_buy(player, result)
-            elif action == TurnAction.MARKET_SELL:
-                self._action_market_sell(player, result)
-            elif action == TurnAction.PROPOSE_DEAL:
-                self._action_propose_deal(player, result)
-            elif action == TurnAction.REQUEST_TRAINING:
-                self._action_request_training(player, result, season_name, year)
-            elif action == TurnAction.REVIEW_TRAINING:
-                self._action_review_training(player, result, season_name, year)
-            elif action == TurnAction.ARRANGE_TRANSPORT:
-                self._action_arrange_transport(player, result, season_name, year)
-            elif action == TurnAction.RECRUIT_WORKERS:
-                self._action_recruit_workers(player, result)
-            elif action == TurnAction.SELL_INSURANCE:
-                self._action_sell_insurance(player, result, year, season_index)
-            elif action == TurnAction.BUY_INSURANCE:
-                self._action_buy_insurance(player, result, year, season_index)
-            elif action == TurnAction.OFFER_LOAN:
-                self._action_offer_loan(player, result, year, season_index)
-            elif action == TurnAction.TAKE_LOAN:
-                self._action_take_loan(player, result, year, season_index)
-            elif action == TurnAction.VIEW_LOANS:
-                self._action_view_loans(player)
-            elif action == TurnAction.APPLY_PATENT:
-                self._action_apply_patent(player, result)
+            try:
+                if action == TurnAction.INVENTORY:
+                    self.io.print(player.inventory_report(
+                        self.market.current_prices(), self.loan_ledger,
+                        CAPITAL_CATALOGUE, current_tick
+                    ))
+                elif action == TurnAction.VIEW_MARKET:
+                    self.io.print(self._format_market())
+                elif action == TurnAction.VIEW_PLAYERS:
+                    self.io.print(self._format_players(player, year, season_index))
+                elif action == TurnAction.PRODUCE:
+                    self._action_produce(player, event_result, result, season_name)
+                elif action == TurnAction.MARKET_BUY:
+                    self._action_market_buy(player, result)
+                elif action == TurnAction.MARKET_SELL:
+                    self._action_market_sell(player, result)
+                elif action == TurnAction.PROPOSE_DEAL:
+                    self._action_propose_deal(player, result)
+                elif action == TurnAction.REQUEST_TRAINING:
+                    self._action_request_training(player, result, season_name, year)
+                elif action == TurnAction.REVIEW_TRAINING:
+                    self._action_review_training(player, result, season_name, year)
+                elif action == TurnAction.ARRANGE_TRANSPORT:
+                    self._action_arrange_transport(player, result, season_name, year)
+                elif action == TurnAction.RECRUIT_WORKERS:
+                    self._action_recruit_workers(player, result)
+                elif action == TurnAction.SELL_INSURANCE:
+                    self._action_sell_insurance(player, result, year, season_index)
+                elif action == TurnAction.BUY_INSURANCE:
+                    self._action_buy_insurance(player, result, year, season_index)
+                elif action == TurnAction.PURCHASE_CAPITAL:
+                    self._action_purchase_capital(player, result, year, season_index)
+                elif action == TurnAction.OFFER_LOAN:
+                    self._action_offer_loan(player, result, year, season_index)
+                elif action == TurnAction.TAKE_LOAN:
+                    self._action_take_loan(player, result, year, season_index)
+                elif action == TurnAction.VIEW_LOANS:
+                    self._action_view_loans(player)
+                elif action == TurnAction.APPLY_PATENT:
+                    self._action_apply_patent(player, result)
+            except Exception as exc:
+                self.io.print(f"  Action failed: {exc}")
+            finally:
+                if hasattr(self.io, "on_action_complete") and self.io.on_action_complete:
+                    self.io.on_action_complete()
+
+    def _post_population_food_demand(self) -> None:
+        """Post seasonal market demand from island populations without consuming stock yet."""
+        for player in self.players:
+            for resource, qty in player.population_food_fish_needs().items():
+                if qty > 0:
+                    self.market.post_demand(resource, qty)
+
+    def _manufactured_resource_for_capital_item(self, item) -> ResourceType:
+        role_map = {
+            "Farmer": ResourceType.FARM_MACHINERY,
+            "Miner": ResourceType.MINING_EQUIPMENT,
+            "Transporter": ResourceType.TRANSPORT_EQUIPMENT,
+            "Educator": ResourceType.LABORATORY_EQUIPMENT,
+            "Banker": ResourceType.LABORATORY_EQUIPMENT,
+            "Manufacturer": ResourceType.TRANSPORT_EQUIPMENT,
+            "Doctor": ResourceType.MEDICAL_DEVICES,
+        }
+        return role_map[item.role]
+
+    def _action_purchase_capital(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Buy a named capital item from the Manufacturing island's equipment output."""
+        available_items = []
+        seen: set[str] = set()
+        for role in player.roles:
+            for item in items_for_role(CAPITAL_CATALOGUE, role.name):
+                if item.item_id in seen:
+                    continue
+                seen.add(item.item_id)
+                available_items.append(item)
+        if not available_items:
+            self.io.print("  No capital equipment is available for your roles.")
+            return
+
+        manufacturers = [
+            p for p in self.players
+            if any(r.name == "Manufacturer" for r in p.roles)
+        ]
+        if not manufacturers:
+            self.io.print("  No Manufacturing island is available to build capital equipment.")
+            return
+
+        sym = CURRENCY_SYMBOL
+        self.io.print("\n  Capital equipment available from Manufacturing:")
+        for idx, item in enumerate(available_items, 1):
+            manufactured_resource = self._manufactured_resource_for_capital_item(item)
+            arrival = (
+                "arrives now"
+                if item.delivery_seasons == 0
+                else f"arrives in {item.delivery_seasons} season(s)"
+            )
+            self.io.print(
+                f"    {idx}. {item.name} ({item.role}) — {item.cost:.0f} {sym}; "
+                f"requires 1x {manufactured_resource.value}; {arrival}"
+            )
+
+        choice = self.io.choose_quantity("Choose capital item", 1, len(available_items))
+        item = available_items[choice - 1]
+        manufacturer = self.io.choose_player("Buy from which Manufacturer?", manufacturers)
+        manufactured_resource = self._manufactured_resource_for_capital_item(item)
+        if manufacturer.inventory.get(manufactured_resource) <= 0:
+            self.io.print(
+                f"  {manufacturer.name} has no {manufactured_resource.value} available "
+                f"to build {item.name}."
+            )
+            return
+        if manufacturer.player_id != player.player_id and player.dollops < item.cost:
+            self.io.print(f"  You need {item.cost:.0f} {sym} to buy {item.name}.")
+            return
+        if not self.io.confirm(
+            f"Buy {item.name} from {manufacturer.name} for {item.cost:.0f} {sym}?"
+        ):
+            return
+
+        manufacturer.give_resources(manufactured_resource, 1)
+        if manufacturer.player_id != player.player_id:
+            player.spend_dollops(item.cost)
+            manufacturer.receive_dollops(item.cost)
+        current_tick = year * len(SEASONS) + season_index
+        if item.delivery_seasons <= 0:
+            player.add_capital(item.item_id, acquired_tick=current_tick)
+            arrival = "delivered immediately"
+        else:
+            arrives_at = current_tick + item.delivery_seasons
+            player.capital_in_transit.append({
+                "item_id": item.item_id,
+                "arrives_at_tick": arrives_at,
+            })
+            arrival = f"arriving Year {arrives_at // len(SEASONS) + 1}, {SEASONS[arrives_at % len(SEASONS)]}"
+        self.io.print(
+            f"  Purchased {item.name}; consumed 1x {manufactured_resource.value}; {arrival}."
+        )
+        result.actions_taken.append(f"purchase_capital:{item.item_id}:{manufacturer.name}")
 
     def _choose_product_line_human(self) -> str:
         """Prompt the human Manufacturer player to choose a product line."""
@@ -313,41 +428,60 @@ class TurnManager:
     def _action_produce(
         self, player: Player, event_result: EventResult, result: TurnResult, season_name: str
     ) -> None:
-        is_manufacturer = any(r.name == "Manufacturer" for r in player.roles)
-        product_line: str | None = None
-
-        if is_manufacturer:
-            product_line = self._choose_product_line_human()
-
-        preview = self.production.production_preview(player, event_result, season_name, product_line)
-        self.io.print(f"  Event: {preview['event']}")
-        if preview["outage"]:
+        if event_result.outage:
+            self.io.print(f"  Event: {event_result.event_name}")
             self.io.print("  Production halted this season.")
             return
-        if not preview["can_produce"]:
-            missing = ", ".join(
-                f"{qty}x {r.value}" for r, qty in preview["missing_inputs"].items()
-            )
-            self.io.print(f"  Cannot produce — missing: {missing}")
+
+        options = self.production.production_options(player, event_result, season_name)
+        self.io.print(f"  Event: {event_result.event_name}")
+        if not options:
+            self.io.print("  Cannot produce anything right now — production is blocked by equipment, workforce, or inputs.")
             return
-        self.io.print(
-            f"  Workforce: {preview['workforce_count']} workers  "
-            f"(need {preview['workforce_required']}, fill {preview['fill_rate_pct']}%, "
-            f"eff {preview['avg_efficiency_pct']}%)  "
-            f"capacity floor: {preview['base_capacity_pct']}%  →  "
-            f"effective factor: {preview['effective_factor']:.2f}"
-        )
-        if product_line:
-            line_info = MANUFACTURER_PRODUCT_LINES[product_line]
-            freight_note = (
-                "" if line_info["freight_per_unit"] == 0
-                else f"  (freight surcharge: {preview.get('freight_surcharge', 0)} Freight)"
+
+        self.io.print("  Production choices:")
+        for idx, option in enumerate(options, 1):
+            output = option["output"].value
+            line = ""
+            if option["product_line"]:
+                line_info = MANUFACTURER_PRODUCT_LINES[option["product_line"]]
+                line = f" — {line_info['desc']}"
+            cap = option["capacity_limit"]
+            cap_note = "" if cap is None else f" (capacity cap {cap})"
+            self.io.print(
+                f"    {idx}. {option['role']}: {output}{line} "
+                f"— can produce up to {option['max_qty']} now{cap_note}"
             )
-            self.io.print(f"  Product line: {line_info['desc']}{freight_note}")
-        self.io.print(f"  Will produce: {preview['outputs']}")
+
+        choice = self.io.choose_quantity("Choose product to produce", 1, len(options))
+        option = options[choice - 1]
+        qty = self.io.choose_quantity(
+            f"How many {option['output'].value}? (max {option['max_qty']})",
+            1,
+            option["max_qty"],
+        )
+        inputs = self.production._inputs_for_selected_output(
+            player=player,
+            role_name=option["role"],
+            output=option["output"],
+            qty=qty,
+            preview_qty=option["preview_qty"],
+            season_name=season_name,
+            product_line=option["product_line"],
+        )
+        inputs_summary = ", ".join(f"{amount}x {r.value}" for r, amount in inputs.items()) or "no inputs"
+        self.io.print(f"  Producing {qty}x {option['output'].value} will consume: {inputs_summary}")
         if self.io.confirm("Produce?"):
-            produced = self.production.produce(player, event_result, season_name, product_line)
-            summary = ", ".join(f"{qty}x {r.value}" for r, qty in produced.items())
+            produced = self.production.produce_product(
+                player=player,
+                event_result=event_result,
+                season_name=season_name,
+                role_name=option["role"],
+                output=option["output"],
+                qty=qty,
+                product_line=option["product_line"],
+            )
+            summary = ", ".join(f"{amount}x {r.value}" for r, amount in produced.items())
             self.io.print(f"  Produced: {summary}")
             result.actions_taken.append(f"produce:{summary}")
 
@@ -414,44 +548,23 @@ class TurnManager:
 
         educator = self.io.choose_player("Which Educator?", educators)
         sym = CURRENCY_SYMBOL
-        dollops_educator = self.io.ask_dollop_amount(
-            f"Offer to Educator ({educator.name}) in {sym}?", player.dollops
-        )
-
-        # Choose transport mode
-        flight_cost = round(dollops_educator * FLIGHT_COST_FRACTION, 2)
         self.io.print(
-            f"\n  Transport options for {count} worker(s):\n"
-            f"    1. Charter flight  — {flight_cost:.0f} {sym} (20% of training fee), departs this season\n"
-            f"    2. Cargo vessel    — free for up to {CARGO_FREE_PASSENGERS}, arrives next season (+1 turn)\n"
-            f"    3. Hire Transporter — negotiate fee with Transporter player"
+            f"  Travel: Air ticket — Education supplies {count} PassengerSeats "
+            f"for {count} trainee(s); return travel is included."
         )
-        transport_choice = self.io.choose_quantity("Transport option [1/2/3]?", 1, 3)
-
-        if transport_choice == 1:
-            transport_mode = "flight"
-            dollops_transport = flight_cost
-            if player.dollops < dollops_educator + dollops_transport:
-                self.io.print("  Insufficient Dollops to cover educator + flight.")
-                return
-        elif transport_choice == 2:
-            transport_mode = "cargo"
-            if count > CARGO_FREE_PASSENGERS:
-                self.io.print(
-                    f"  Cargo vessels carry only {CARGO_FREE_PASSENGERS} passengers free. "
-                    f"You are sending {count} workers — consider a flight or Transporter instead."
-                )
-                return
-            dollops_transport = 0.0
-        else:
-            transport_mode = "transporter"
-            dollops_transport = self.io.ask_dollop_amount(
-                "Offer to Transporter for moving workers? (0 to arrange later)",
-                player.dollops - dollops_educator,
-            )
-            if player.dollops < dollops_educator + dollops_transport:
-                self.io.print("  Insufficient Dollops to cover both payments.")
-                return
+        self.io.print(
+            "  Sea travel would add one extra season, but the current rule uses "
+            "Educator-supplied air tickets for standard training."
+        )
+        ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
+        suggested_total = (20.0 * count) + (ticket_price * count)
+        dollops_educator = self.io.ask_dollop_amount(
+            f"Offer total training fee to Educator ({educator.name}) in {sym}? "
+            f"(suggested includes tickets: {suggested_total:.0f} {sym})",
+            player.dollops,
+        )
+        transport_mode = "air_ticket"
+        dollops_transport = 0.0
 
         try:
             req = self.training.propose(
@@ -473,16 +586,10 @@ class TurnManager:
         self.io.print(f"  Training request #{req.batch_id} submitted:")
         self.io.print(f"    {req.describe(player_names)}")
 
-        if transport_mode in ("flight", "cargo"):
-            self.io.print(
-                f"  Transport arranged ({transport_mode}). "
-                f"Awaiting {educator.name}'s approval."
-            )
-        else:
-            self.io.print(
-                f"  Awaiting {educator.name}'s approval. "
-                f"Workers depart once Educator and Transporter both agree."
-            )
+        self.io.print(
+            f"  Awaiting {educator.name}'s approval. "
+            f"{educator.name} must supply {count} PassengerSeats air ticket(s)."
+        )
         result.actions_taken.append(f"request_training:batch#{req.batch_id}")
 
         # AI Educator auto-responds immediately
@@ -494,7 +601,14 @@ class TurnManager:
     ) -> None:
         """Educator AI: accept if the Dollops offered cover a fair rate per worker."""
         fair_rate = 20.0 * len(req.worker_ids)
-        if req.dollops_to_educator >= fair_rate:
+        ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * len(req.worker_ids)
+        if req.dollops_to_educator >= fair_rate + ticket_cost:
+            if not self._ensure_training_air_tickets(educator, req):
+                self.io.print(
+                    f"  [AI] {educator.name} cannot approve training request #{req.batch_id}: "
+                    f"needs {len(req.worker_ids)} PassengerSeats air ticket(s)."
+                )
+                return
             self.training.educator_approve(req.batch_id)
             requester.spend_dollops(req.dollops_to_educator)
             educator.receive_dollops(req.dollops_to_educator)
@@ -502,10 +616,9 @@ class TurnManager:
                 f"  [AI] {educator.name} approved training request #{req.batch_id} "
                 f"(received {req.dollops_to_educator:.0f} Dp)."
             )
-            if req.transport_mode in ("flight", "cargo"):
-                # Transport already arranged — deduct flight cost and dispatch
-                if req.transport_mode == "flight" and req.dollops_to_transporter > 0:
-                    requester.spend_dollops(req.dollops_to_transporter)
+            if req.transport_mode == "air_ticket":
+                self._dispatch_training(requester, req, season_name, year)
+            elif req.transport_mode in ("flight", "cargo"):
                 self._dispatch_training(requester, req, season_name, year)
             else:
                 self._auto_arrange_transport(requester, req, season_name, year)
@@ -513,7 +626,7 @@ class TurnManager:
             self.training.educator_reject(req.batch_id)
             self.io.print(
                 f"  [AI] {educator.name} rejected training request #{req.batch_id}. "
-                f"Offer at least {fair_rate:.0f} Dp to get approval."
+                f"Offer at least {fair_rate + ticket_cost:.0f} Dp to cover training and tickets."
             )
 
     def _auto_arrange_transport(self, requester, req, season_name: str, year: int) -> None:
@@ -554,12 +667,139 @@ class TurnManager:
             f"Education Island. They will return next season with upgraded training."
         )
 
+    def _ensure_training_air_tickets(self, educator: Player, req) -> bool:
+        """Consume 1 PassengerSeats ticket per trainee from the Educator."""
+        needed = len(req.worker_ids)
+        if educator.inventory.get(ResourceType.PASSENGER_SEATS) < needed:
+            return False
+        educator.give_resources(ResourceType.PASSENGER_SEATS, needed)
+        return True
+
+    def _profession_label(self, profession: str) -> str:
+        try:
+            return PROFESSION_LABEL.get(Profession(profession), profession)
+        except ValueError:
+            return profession
+
+    def _format_training_return(self, req) -> str:
+        if req.return_year >= 0 and req.return_season >= 0:
+            return f"Year {req.return_year + 1}, {SEASONS[req.return_season]}"
+        if req.status == TrainingStatus.AWAITING_EDUCATOR:
+            return "pending Educator approval"
+        if req.status == TrainingStatus.COUNTERED:
+            return "pending requester approval"
+        if req.status == TrainingStatus.AWAITING_TRANSPORT:
+            return "pending transport"
+        return "not scheduled"
+
+    def _print_training_status_for_player(self, player: Player) -> None:
+        active = self.training.active_for_player(player.player_id)
+        if not active:
+            self.io.print("  No workers are currently in training or awaiting departure.")
+            return
+
+        self.io.print("  Current training pipeline:")
+        grouped: dict[tuple[str, str, TrainingStatus], int] = {}
+        for req in active:
+            key = (
+                self._profession_label(req.target_profession),
+                self._format_training_return(req),
+                req.status,
+            )
+            grouped[key] = grouped.get(key, 0) + len(req.worker_ids)
+
+        for (profession, return_text, status), count in sorted(grouped.items()):
+            self.io.print(
+                f"    {profession:<22} {count:>2} worker(s)  "
+                f"| return: {return_text}  | status: {status.value}"
+            )
+
+    def _training_request_details(self, req, player_names: dict[int, str], requester: Player | None = None) -> str:
+        sym = CURRENCY_SYMBOL
+        ticket_need = len(req.worker_ids) if req.transport_mode == "air_ticket" else 0
+        funds = f" | requester cash: {requester.dollops:.1f} {sym}" if requester else ""
+        msg = f" | message: {req.counter_message}" if req.counter_message else ""
+        return (
+            f"{req.describe(player_names)}\n"
+            f"    Workers: {len(req.worker_ids)}  | Profession: {self._profession_label(req.target_profession)}\n"
+            f"    Offered educator fee: {req.dollops_to_educator:.1f} {sym}{funds}\n"
+            f"    Travel: {ticket_need} PassengerSeats supplied by Education Island{msg}"
+        )
+
+    def _approve_training_request(
+        self,
+        educator: Player,
+        requester: Player,
+        req,
+        result: TurnResult,
+        season_name: str,
+        year: int,
+    ) -> bool:
+        if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req):
+            short = len(req.worker_ids) - educator.inventory.get(ResourceType.PASSENGER_SEATS)
+            self.io.print(
+                f"  Cannot approve yet — Education Island needs {short} more "
+                f"PassengerSeats air ticket(s). Buy tickets from the market first."
+            )
+            return False
+        requester.spend_dollops(req.dollops_to_educator)
+        educator.receive_dollops(req.dollops_to_educator)
+        if req.status == TrainingStatus.COUNTERED:
+            self.training.requester_accept_counter(req.batch_id)
+        else:
+            self.training.educator_approve(req.batch_id)
+        self.io.print(
+            f"  Approved. Received {req.dollops_to_educator:.0f} Dp from {requester.name}."
+        )
+        if req.transport_mode == "air_ticket":
+            self.io.print(
+                f"  Used {len(req.worker_ids)} PassengerSeats air ticket(s) for trainee travel."
+            )
+            self._dispatch_training(requester, req, season_name, year)
+        elif req.transport_mode in ("flight", "cargo"):
+            if req.transport_mode == "flight" and req.dollops_to_transporter > 0:
+                requester.spend_dollops(req.dollops_to_transporter)
+                self.io.print(
+                    f"  Flight booked — {req.dollops_to_transporter:.0f} Dp deducted from {requester.name}."
+                )
+            self._dispatch_training(requester, req, season_name, year)
+        else:
+            self._auto_arrange_transport(requester, req, season_name, year)
+        result.actions_taken.append(f"approved_training:batch#{req.batch_id}")
+        return True
+
+    def _review_training_counteroffers(
+        self, player: Player, result: TurnResult, season_name: str, year: int
+    ) -> None:
+        counters = self.training.countered_for_requester(player.player_id)
+        if not counters:
+            return
+        player_names = {p.player_id: p.name for p in self.players}
+        player_map = {p.player_id: p for p in self.players}
+        self.io.print(f"  You have {len(counters)} training counter-offer(s).")
+        for req in counters:
+            educator = player_map.get(req.educator_id)
+            if not educator:
+                self.training.requester_reject_counter(req.batch_id)
+                self.io.print(f"  Counter-offer #{req.batch_id} expired — Educator is no longer available.")
+                continue
+            self.io.print(f"\n  Counter-offer: {self._training_request_details(req, player_names, player)}")
+            if self.io.confirm("Accept this training counter-offer?"):
+                try:
+                    self._approve_training_request(educator, player, req, result, season_name, year)
+                except Exception as exc:
+                    self.io.print(f"  Could not accept counter-offer #{req.batch_id}: {exc}")
+            else:
+                self.training.requester_reject_counter(req.batch_id)
+                self.io.print(f"  Rejected training counter-offer #{req.batch_id}.")
+                result.actions_taken.append(f"rejected_training_counter:batch#{req.batch_id}")
+
     def _action_review_training(
         self, player: Player, result: TurnResult, season_name: str, year: int
     ) -> None:
         """Educator reviews pending training requests and approves or rejects them."""
         if not any(r.name == "Educator" for r in player.roles):
-            self.io.print("  Only the Educator can review training requests.")
+            self._print_training_status_for_player(player)
             return
         pending = self.training.pending_for_educator(player.player_id)
         if not pending:
@@ -568,29 +808,30 @@ class TurnManager:
         player_names = {p.player_id: p.name for p in self.players}
         player_map = {p.player_id: p for p in self.players}
         for req in pending:
-            self.io.print(f"\n  Request: {req.describe(player_names)}")
+            requester = player_map[req.requester_id]
+            self.io.print(f"\n  Request: {self._training_request_details(req, player_names, requester)}")
             if self.io.confirm("Approve this training request?"):
-                requester = player_map[req.requester_id]
-                requester.spend_dollops(req.dollops_to_educator)
-                player.receive_dollops(req.dollops_to_educator)
-                self.training.educator_approve(req.batch_id)
-                self.io.print(
-                    f"  Approved. Received {req.dollops_to_educator:.0f} Dp from {requester.name}."
-                )
-                if req.transport_mode in ("flight", "cargo"):
-                    if req.transport_mode == "flight" and req.dollops_to_transporter > 0:
-                        requester.spend_dollops(req.dollops_to_transporter)
-                        self.io.print(
-                            f"  Flight booked — {req.dollops_to_transporter:.0f} Dp deducted from {requester.name}."
-                        )
-                    self._dispatch_training(requester, req, season_name, year)
-                else:
-                    self._auto_arrange_transport(requester, req, season_name, year)
-                result.actions_taken.append(f"approved_training:batch#{req.batch_id}")
+                self._approve_training_request(player, requester, req, result, season_name, year)
             else:
-                self.training.educator_reject(req.batch_id)
-                self.io.print("  Rejected.")
-                result.actions_taken.append(f"rejected_training:batch#{req.batch_id}")
+                counter = self.io.ask_dollop_amount(
+                    "Counter price to Educator in Dp? (0 = reject request)",
+                    1_000_000.0,
+                )
+                if counter > 0:
+                    message = self.io.ask_text(
+                        "Message to requester",
+                        "I can train them at this revised price.",
+                    )
+                    self.training.educator_counter(req.batch_id, counter, message)
+                    self.io.print(
+                        f"  Countered request #{req.batch_id} at {counter:.0f} Dp. "
+                        f"{requester.name} will respond on their turn."
+                    )
+                    result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
+                else:
+                    self.training.educator_reject(req.batch_id)
+                    self.io.print("  Rejected.")
+                    result.actions_taken.append(f"rejected_training:batch#{req.batch_id}")
 
     def _action_arrange_transport(
         self, player: Player, result: TurnResult, season_name: str, year: int
@@ -640,8 +881,15 @@ class TurnManager:
             f"  Available unskilled recruits: {available} "
             f"(population {player.population}, employed {player.workforce.count})"
         )
-        count = self.io.choose_quantity("How many workers to recruit?", 1, available)
-        recruited = player.recruit_workers(count)
+        try:
+            count = self.io.choose_quantity("How many workers to recruit?", 1, available)
+            if count <= 0:
+                self.io.print("  Recruitment cancelled.")
+                return
+            recruited = player.recruit_workers(count)
+        except Exception as exc:
+            self.io.print(f"  Recruitment failed: {exc}")
+            return
         self.io.print(
             f"  Recruited {recruited} unskilled worker(s). "
             f"Workforce now: {player.workforce.count}"
@@ -993,6 +1241,40 @@ class TurnManager:
         except Exception as e:
             self.io.print(f"  Deal failed: {e}")
 
+    def _review_pending_deals(self, player: Player, result: TurnResult) -> None:
+        pending = self.trading.ledger.pending_for_player(player.player_id)
+        if not pending:
+            return
+
+        player_map = {p.player_id: p for p in self.players}
+        player_names = {p.player_id: p.name for p in self.players}
+        self.io.print(f"  You have {len(pending)} pending deal proposal(s).")
+        for deal in pending:
+            proposer = player_map.get(deal.proposer_id)
+            if proposer is None:
+                self.trading.ledger.expire(deal.deal_id)
+                self.io.print(f"  Deal #{deal.deal_id} expired — proposer is no longer available.")
+                result.actions_taken.append(f"deal:expired:{deal.deal_id}")
+                continue
+
+            summary = deal.summary(
+                player_names.get(deal.proposer_id, f"Player {deal.proposer_id}"),
+                player.name,
+            )
+            if self.io.confirm(f"{summary}\nAccept this deal?"):
+                try:
+                    self.trading.accept_deal(deal, acceptor=player, proposer=proposer)
+                    self.io.print(f"  Accepted deal #{deal.deal_id}.")
+                    result.actions_taken.append(f"deal:accepted:{deal.deal_id}")
+                except Exception as exc:
+                    self.trading.ledger.expire(deal.deal_id)
+                    self.io.print(f"  Deal #{deal.deal_id} expired — {exc}")
+                    result.actions_taken.append(f"deal:expired:{deal.deal_id}")
+            else:
+                self.trading.reject_deal(deal)
+                self.io.print(f"  Rejected deal #{deal.deal_id}.")
+                result.actions_taken.append(f"deal:rejected:{deal.deal_id}")
+
     def _format_market(self) -> str:
         sym = CURRENCY_SYMBOL
         lines = ["\n  Market Prices:"]
@@ -1002,11 +1284,12 @@ class TurnManager:
             lines.append(f"    {r.value:<18} {price:>7.2f} {sym}  supply:{supply}")
         return "\n".join(lines)
 
-    def _format_players(self, current: Player) -> str:
+    def _format_players(self, current: Player, year: int = 0, season_index: int = 0) -> str:
         """Show all players: roles, island, produces, capacity, Dollops, wealth, workers."""
         from ..models.role import ROLES
         sym = CURRENCY_SYMBOL
         prices = self.market.current_prices()
+        current_tick = year * len(SEASONS) + season_index
         lines = ["\n  ┌── ALL PLAYERS ─────────────────────────────────────────┐"]
         for p in self.players:
             marker = " ◀ YOU" if p.player_id == current.player_id else ""
@@ -1027,7 +1310,8 @@ class TurnManager:
             ws = p.workforce.summary()
             lines.append(
                 f"  │    Dollops: {p.dollops:.1f} {sym}  |  "
-                f"Wealth: {p.total_wealth(prices):.1f} {sym}  |  "
+                f"Net Wealth: "
+                f"{p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, current_tick):.1f} {sym}  |  "
                 f"Workers: {ws['active']}/{ws['total']}  |  "
                 f"Capacity: {p.production_capacity*100:.0f}%"
             )
@@ -1046,13 +1330,14 @@ class TurnManager:
         for loan in due:
             borrower = player_map.get(loan.borrower_id)
             lender = player_map.get(loan.lender_id)
-            if not borrower or not lender:
+            if not borrower or (not lender and loan.lender_id >= 0):
                 loan.status = LoanStatus.DEFAULTED
                 continue
             amount = loan.repayment_amount
             if borrower.dollops >= amount:
                 borrower.dollops -= amount
-                lender.dollops += amount
+                if lender.player_id != borrower.player_id:
+                    lender.dollops += amount
                 loan.status = LoanStatus.REPAID
                 self.io.print(
                     f"\n[LOAN] {borrower.name} repaid {amount:.1f} {sym} to {lender.name} "
@@ -1061,7 +1346,8 @@ class TurnManager:
             else:
                 paid = borrower.dollops
                 borrower.dollops = 0
-                lender.dollops += paid
+                if lender.player_id != borrower.player_id:
+                    lender.dollops += paid
                 loan.status = LoanStatus.DEFAULTED
                 shortfall = amount - paid
                 self.io.print(
@@ -1075,6 +1361,35 @@ class TurnManager:
                 return p
         return None
 
+    def _fund_bank_shortfall(
+        self,
+        banker: Player,
+        principal: float,
+        cost_rate: float,
+        term_years: int,
+        year: int,
+        season_index: int,
+    ) -> float:
+        """Borrow externally at the posted funding rate if the bank is short."""
+        shortfall = max(0.0, principal - banker.dollops)
+        if shortfall <= 0:
+            return 0.0
+        funding = self.loan_ledger.create_loan(
+            borrower_id=banker.player_id,
+            lender_id=-1,
+            principal=shortfall,
+            interest_rate=cost_rate,
+            issued_year=year,
+            issued_season=season_index,
+            term_years=term_years,
+        )
+        banker.receive_dollops(shortfall)
+        self.io.print(
+            f"  Bank borrowed {shortfall:.1f} {CURRENCY_SYMBOL} externally "
+            f"at {cost_rate*100:.1f}% (funding loan #{funding.loan_id})."
+        )
+        return shortfall
+
     def _action_offer_loan(self, player: Player, result: TurnResult,
                            year: int, season_index: int) -> None:
         sym = CURRENCY_SYMBOL
@@ -1087,28 +1402,30 @@ class TurnManager:
             return
         target = self.io.choose_player("Offer loan to which player?", others)
         principal = self.io.ask_dollop_amount(
-            f"Loan principal (max {player.dollops:.1f} {sym})?", player.dollops
+            f"Loan principal? (Bank cash {player.dollops:.1f} {sym}; can fund externally)",
+            1_000_000.0,
         )
         if principal <= 0:
             self.io.print("  Cancelled — principal must be positive.")
             return
-        if principal > player.dollops:
-            self.io.print(f"  You only have {player.dollops:.1f} {sym} available.")
-            return
-        rate_pct = self.io.ask_dollop_amount("Interest rate %? (e.g. 10 for 10%)", 100)
-        if rate_pct < 0:
-            self.io.print("  Cancelled — rate must be non-negative.")
-            return
+        term_years = self.io.choose_quantity("Loan term in years", 1, 3)
+        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        rate = banker_quote_rate(
+            target, self.loan_ledger, principal, term_years, year, season_index
+        )
+        rate_pct = rate * 100
         rate = rate_pct / 100.0
         repay = round(principal * (1 + rate), 1)
         self.io.print(
             f"  Offering {principal:.1f} {sym} to {target.name} "
-            f"at {rate_pct:.0f}% — repayment {repay:.1f} {sym} after 1 year."
+            f"at {rate_pct:.1f}% — bank cost {funding_rate*100:.1f}%, "
+            f"repayment {repay:.1f} {sym} after {term_years} year(s)."
         )
         if target.is_human:
             accepted = self.io.confirm(
                 f"{target.name}: accept loan of {principal:.1f} {sym} "
-                f"at {rate_pct:.0f}% (repay {repay:.1f} {sym})?"
+                f"at {rate_pct:.1f}% for {term_years} year(s) "
+                f"(repay {repay:.1f} {sym})?"
             )
         else:
             accepted = rate <= 0.15
@@ -1120,6 +1437,10 @@ class TurnManager:
                 interest_rate=rate,
                 issued_year=year,
                 issued_season=season_index,
+                term_years=term_years,
+            )
+            self._fund_bank_shortfall(
+                player, principal, funding_rate, term_years, year, season_index
             )
             player.dollops -= principal
             target.dollops += principal
@@ -1137,37 +1458,30 @@ class TurnManager:
         if not banker:
             self.io.print("  No Banker island in the game.")
             return
-        if banker.player_id == player.player_id:
-            self.io.print("  You are the Banker — use 'Offer Loan' instead.")
-            return
+        self_lending = banker.player_id == player.player_id
         principal = self.io.ask_dollop_amount(
-            f"How much to borrow (Banker has {banker.dollops:.1f} {sym})?",
-            banker.dollops,
+            f"How much to borrow? (Bank cash {banker.dollops:.1f} {sym}; can fund externally)",
+            1_000_000.0,
         )
         if principal <= 0:
             self.io.print("  Cancelled.")
             return
-        if principal > banker.dollops:
-            self.io.print(f"  Banker only has {banker.dollops:.1f} {sym} available.")
-            return
-        if banker.is_human:
-            rate_pct = self.io.ask_dollop_amount(
-                f"Banker: set interest rate % for {player.name}'s loan of {principal:.1f} {sym}?",
-                100
-            )
-            if rate_pct < 0:
-                self.io.print("  Banker declined.")
-                return
-            accepted = True
-        else:
-            rate_pct = 10.0
-            accepted = True
-            self.io.print(f"  Banker AI offers {rate_pct:.0f}% interest.")
+        term_years = self.io.choose_quantity("Loan term in years", 1, 3)
+        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        rate = banker_quote_rate(
+            player, self.loan_ledger, principal, term_years, year, season_index
+        )
+        rate_pct = rate * 100
+        self.io.print(
+            f"  Posted {term_years}-year funding rate: {funding_rate*100:.1f}%. "
+            f"Banker quote: {rate_pct:.1f}% "
+            f"(cost + minimum 2% spread plus borrower risk)."
+        )
         rate = rate_pct / 100.0
         repay = round(principal * (1 + rate), 1)
         confirm = self.io.confirm(
-            f"Borrow {principal:.1f} {sym} at {rate_pct:.0f}%? "
-            f"(repay {repay:.1f} {sym} in 1 year)"
+            f"Borrow {principal:.1f} {sym} at {rate_pct:.1f}% for {term_years} year(s)? "
+            f"(repay {repay:.1f} {sym})"
         )
         if not confirm:
             self.io.print("  Cancelled.")
@@ -1179,12 +1493,17 @@ class TurnManager:
             interest_rate=rate,
             issued_year=year,
             issued_season=season_index,
+            term_years=term_years,
         )
-        banker.dollops -= principal
+        if not self_lending:
+            self._fund_bank_shortfall(
+                banker, principal, funding_rate, term_years, year, season_index
+            )
+            banker.dollops -= principal
         player.dollops += principal
         self.io.print(
             f"  Loan #{loan.loan_id}: borrowed {principal:.1f} {sym} from {banker.name} "
-            f"at {rate_pct:.0f}% (repay {repay:.1f} {sym} by "
+            f"at {rate_pct:.1f}% for {term_years} year(s) (repay {repay:.1f} {sym} by "
             f"Y{loan.maturity_year+1} S{loan.maturity_season+1})."
         )
         result.actions_taken.append(f"loan:taken:{principal:.1f}")
@@ -1239,12 +1558,12 @@ class TurnManager:
             borrower = player_map.get(loan.borrower_id)
             lender = player_map.get(loan.lender_id)
             b_name = borrower.name if borrower else "?"
-            l_name = lender.name if lender else "?"
+            l_name = lender.name if lender else "External Bank"
             role = "Borrower" if loan.borrower_id == player.player_id else "Lender"
             self.io.print(
                 f"    #{loan.loan_id} [{role}] "
                 f"{b_name} ← {loan.principal:.1f} {sym} from {l_name} "
-                f"at {loan.interest_rate*100:.0f}% "
+                f"at {loan.interest_rate*100:.1f}% for {loan.term_years} year(s) "
                 f"(repay {loan.repayment_amount:.1f} {sym} "
                 f"Y{loan.maturity_year+1} S{loan.maturity_season+1})"
             )

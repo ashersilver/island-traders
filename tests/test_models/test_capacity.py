@@ -101,6 +101,21 @@ def test_compute_capacity_identifies_input_binding():
     assert result.max_producible == 30
 
 
+def test_manufacturer_opening_equipment_provides_capacity():
+    owned = {
+        "manufacturer.foundry": 1,
+        "manufacturer.assembly_line": 1,
+        "manufacturer.precision_workshop": 1,
+        "manufacturer.shipyard": 1,
+    }
+
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "FarmMachinery") > 0
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "MiningEquipment") > 0
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "LaboratoryEquipment") > 0
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "MedicalDevices") > 0
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "TransportEquipment") > 0
+
+
 def test_transporter_uses_fish_as_provisions():
     freight_recipe = recipe_for(PRODUCTION_RECIPES, "Transporter", "Freight")
     seats_recipe = recipe_for(PRODUCTION_RECIPES, "Transporter", "PassengerSeats")

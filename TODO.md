@@ -15,15 +15,13 @@
       or `_ensure_player` races, causing `_send_and_wait` to silently return None.
       Reconnect/replay work may help but needs a dedicated investigation.
 
-## Verify
-
-- [ ] **#10 — Market Board modal cannot be dismissed**
-      Close button exists on this branch. Verify in a live game that it reliably
-      dismisses the modal and restores the current action flow, then close the issue.
-
----
-
 ## In Progress
+
+### Release Process
+
+- [ ] Before merging this branch into `pre-release`, update `RELEASE_NOTES.md`
+      with tested changes, known issues, and verification notes.
+- [x] Document separate Claude Code worktree convention.
 
 ### Production Capacity Model
 See [`requirements/production-capacity-model.md`](requirements/production-capacity-model.md) for full spec.
@@ -32,6 +30,7 @@ See [`requirements/production-capacity-model.md`](requirements/production-capaci
 - [ ] Per-output capital catalogue + per-unit input requirements
 - [ ] Production Capacity sidebar panel
 - [ ] Production Constraint Popup — which cap (equipment / workforce / inputs) is binding and by how much
+- [ ] Product/equipment Help catalogue — every product and capital item has a shared Help paragraph covering purpose, pros/outputs, cons/inputs, logistics, and risks
 - [ ] **#4 — What-If production table** — interactive spreadsheet-like calculator; if viable, "Enact" button triggers required purchases
 - [ ] Patents (Educator output; permanent +% boost; max 3 active per output)
 - [ ] Apprenticeship pipeline (separate slot pool from university education)
@@ -39,8 +38,10 @@ See [`requirements/production-capacity-model.md`](requirements/production-capaci
 - [ ] Mechanic profession (–20% downtime per Mechanic, capped at –60%)
 - [ ] Equipment Insurance (Banker product; market-rate replacement payout on destruction event)
 - [ ] AI auction bidding (per-role heuristic + 2nd-round top-up)
-- [ ] Mid-game capital equipment purchases (2-season delivery for complex items)
+- [x] Mid-game capital equipment purchases from Manufacturing output (2-season delivery for complex items)
+- [x] Metal intermediate: Mining smelts Ore + Oil into Metal; enhanced crusher/smelter boosts Metal productivity and reduces Oil use
 - [ ] Capital equipment leases (3-year lease, return or buy out at 5-year straight-line book value)
+- [ ] Cross-island machinery licences — any island can buy non-native machinery from Manufacturing, operate the matching recipe if it supplies inputs/workforce, absorb standard-of-living/salary/perk impacts, and respect commodity/equipment shipping delays
 
 ### AI Players
 See [`requirements/llm-player-adapter.md`](requirements/llm-player-adapter.md) for the LLM adapter design.
@@ -70,7 +71,7 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] **#6 — Loan roll-over** — renegotiate rate and term on a loan before or at maturity
 - [ ] **#5 — Insurance review** — view active policies, cancel or renegotiate at renewal
 - [ ] Rename "Dollops" heading → "Working Capital" (suffix `Dp` stays)
-- [ ] Wealth = total assets at market value − loans outstanding (balance sheet view)
+- [x] Wealth = total assets at market value + depreciated capital equipment book value + loans receivable − loans outstanding (balance sheet view)
 - [ ] All monetary values show `Dp` suffix consistently in UI
 
 ### Dashboard & UX
@@ -93,8 +94,9 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] PDF export via reportlab (stretch goal)
 
 ### Feature Roadmap
-- [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan). See `requirements/production-capacity-model.md §16`.
-- [ ] Roleless players — role aftermarket (secondary sales) + on-call bank deposits expanding Banker lending capacity. See `requirements/production-capacity-model.md §17` and `requirements/island-ledger.md`.
+- [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan). See `requirements/production-capacity-model.md §18`.
+- [ ] Roleless players — role aftermarket (secondary sales) + on-call bank deposits expanding Banker lending capacity. See `requirements/production-capacity-model.md §19` and `requirements/island-ledger.md`.
+- [ ] Post-auction human island guarantee — islandless humans can buy an extra AI island at the formula price before Year 1 starts. See `requirements/production-capacity-model.md §19.1`.
 - [ ] Brokerage services: Banker negotiates deals between islands for a commission
 - [ ] Contracts & Futures (forward agreements between players)
 - [ ] Infrastructure Investment (upgrade production capacity mid-game)
@@ -125,3 +127,5 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [x] WebSocket game server + responsive dashboard
 - [x] Fix WebSocket 403 (future annotations + local imports)
 - [x] Loans system (Banker bullet bonds — 1-year term, repaid at maturity with interest)
+- [x] **#10 — Market Board modal can be dismissed** *(verified live)*
+- [x] Food/Fish demand signals scale with island population and educated workforce mix

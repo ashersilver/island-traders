@@ -4,6 +4,48 @@ from enum import Enum
 from ..constants import CURRENCY_SYMBOL
 
 
+def posted_funding_rates(year: int, season: int) -> dict[int, float]:
+    """Bank cost-of-funds curve for 1/2/3-year money.
+
+    Rates move through a simple economic cycle: cheap money early in the
+    cycle, tighter credit around the peak, then easing again.
+    """
+    cycle_modifiers = [-0.005, 0.0, 0.0125, 0.006]
+    cycle = (year + (season // 2)) % len(cycle_modifiers)
+    base = 0.05 + cycle_modifiers[cycle]
+    return {
+        1: round(base, 4),
+        2: round(base + 0.0075, 4),
+        3: round(base + 0.015, 4),
+    }
+
+
+def borrower_risk_premium(borrower, loan_ledger: "LoanLedger", principal: float) -> float:
+    """Small risk add-on above cost+spread based on borrower leverage."""
+    debt = loan_ledger.outstanding_debt(borrower.player_id)
+    premium = 0.0
+    if debt > 0:
+        premium += 0.01
+    if principal > borrower.dollops:
+        premium += 0.01
+    if debt > max(borrower.dollops, 1.0):
+        premium += 0.02
+    return round(premium, 4)
+
+
+def banker_quote_rate(
+    borrower,
+    loan_ledger: "LoanLedger",
+    principal: float,
+    term_years: int,
+    year: int,
+    season: int,
+) -> float:
+    rates = posted_funding_rates(year, season)
+    cost = rates.get(term_years, rates[1])
+    return round(cost + 0.02 + borrower_risk_premium(borrower, loan_ledger, principal), 4)
+
+
 class LoanStatus(Enum):
     ACTIVE = "active"
     REPAID = "repaid"
@@ -23,6 +65,7 @@ class Loan:
     maturity_year: int
     maturity_season: int
     status: LoanStatus = LoanStatus.ACTIVE
+    term_years: int = 1
 
     @property
     def repayment_amount(self) -> float:
@@ -40,6 +83,7 @@ class Loan:
         return (
             f"Loan #{self.loan_id}: {borrower_name} borrowed {self.principal:.1f} {sym} "
             f"from {lender_name} at {self.interest_rate*100:.0f}% "
+            f"for {self.term_years} year(s) "
             f"(repay {self.repayment_amount:.1f} {sym} in Y{self.maturity_year+1} "
             f"S{self.maturity_season+1}) [{self.status.value}]"
         )
@@ -58,8 +102,9 @@ class LoanLedger:
         interest_rate: float,
         issued_year: int,
         issued_season: int,
+        term_years: int = 1,
     ) -> Loan:
-        maturity_year = issued_year + 1
+        maturity_year = issued_year + term_years
         maturity_season = issued_season
         loan = Loan(
             loan_id=self._next_id,
@@ -71,6 +116,7 @@ class LoanLedger:
             issued_season=issued_season,
             maturity_year=maturity_year,
             maturity_season=maturity_season,
+            term_years=term_years,
         )
         self.loans.append(loan)
         self._next_id += 1
@@ -92,7 +138,9 @@ class LoanLedger:
     def loans_receivable(self, player_id: int) -> float:
         return sum(
             l.repayment_amount for l in self.loans
-            if l.status == LoanStatus.ACTIVE and l.lender_id == player_id
+            if l.status == LoanStatus.ACTIVE
+            and l.lender_id == player_id
+            and l.borrower_id != player_id
         )
 
     def due_loans(self, year: int, season: int) -> list[Loan]:
