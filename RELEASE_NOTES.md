@@ -5,6 +5,60 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/pause-game
+
+Branch: `claude/pause-game`
+Target: `pre-release`
+Closes: GitHub #1
+
+#### Player-Facing Changes
+
+- **Pause / Resume game (host only).** The room creator can pause the game at
+  any point during auction, investing, or running phases. While paused:
+  * All timers freeze (auction, investing, season-action, pre-season).
+  * A full-screen "Game Paused" overlay covers the screen for every client.
+  * Only the host sees the Resume button.
+  * Players can still click Ready while paused, but the game does not advance
+    until the host resumes.
+- On resume, every timer end-epoch is bumped forward by the pause duration so
+  no one loses time. If everyone clicked Ready while paused, the phase closes
+  immediately on resume.
+
+#### Server-Side
+
+- New `paused: bool` and `paused_at: float` fields on `GameRoom`.
+- New `request_pause(room_id, lobby_player_id, paused)` GameManager method,
+  host-only.
+- `_do_pause` cancels asyncio timer tasks (auction / investing / season);
+  `_do_resume` reschedules them with the remaining seconds and bumps
+  `*_timer_end` epochs forward.
+- Pre-season game-thread wait loop now polls in 0.5s slices and respects
+  `room.paused` — `pre_season_end` is bumped forward on resume so the wait
+  naturally extends.
+- `submit_ready` collects Ready presses during pause but does NOT fire
+  `interrupt_all` or `_pre_season_done.set` until resume.
+- WS protocol: client → `{type: "pause_request", paused: bool}`; server →
+  `game_paused` / `game_resumed` broadcasts; `pause_ack` reply.
+- Reconnecting clients receive `game_paused` if the game is currently paused.
+- `room.to_dict()` now includes `creator_id` (so clients know who's host) and
+  `paused`.
+
+#### Tests
+
+- New `tests/test_server/test_pause_game.py` — 12 tests covering host gating,
+  pause/resume round-trip, timer-end bumping for auction/investing/season/
+  pre-season, ready-during-pause queueing, quorum-on-resume short-circuit,
+  and asyncio timer-task cancellation.
+- Fixed `test_concurrent_ensure_player_does_not_create_duplicate_events`
+  isinstance check (`threading.Lock` is a factory function on Python 3.9, not
+  a class).
+
+#### Verification
+
+- Test suite: `176 passed`.
+
+---
+
 ### claude/fix-action-menu-bug2
 
 Branch: `claude/fix-action-menu-bug2`

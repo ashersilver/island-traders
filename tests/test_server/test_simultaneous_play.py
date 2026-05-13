@@ -226,7 +226,10 @@ def test_concurrent_ensure_player_does_not_create_duplicate_events():
     assert not errors
     # Must have exactly one Event and one Lock, not duplicates.
     assert isinstance(io._player_events[0], threading.Event)
-    assert isinstance(io._player_locks[0], threading.Lock)
+    # threading.Lock is a factory on some Pythons — verify it's a usable lock.
+    lock = io._player_locks[0]
+    assert lock is not None
+    assert hasattr(lock, "acquire") and hasattr(lock, "release")
 
 
 def test_response_during_send_and_wait_is_not_swallowed():

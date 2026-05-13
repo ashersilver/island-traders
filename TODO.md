@@ -76,7 +76,7 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 
 ### Dashboard & UX
 
-- [ ] **#1 — Pause game** — freeze all timers, broadcast `game_paused`; other players see a non-interactive overlay until host unpauses
+- [x] **#1 — Pause game** — host-only pause/resume; freezes all timers (auction/investing/season-action/pre-season); full-screen overlay; ready submissions queued during pause and processed on resume
 - [ ] **#3 — Action alerts / event subscriptions** — chips on the log panel to filter by event type; popup notification when a subscribed event fires. *(See also `inbox.md` event-filtering requirement.)*
 - [ ] **#7 — All-player summary on island layout** — overlay player values (wealth, output, workforce) on the island map SVG
 - [ ] **#8 — Intro screen** — animated board with hotspot tooltips explaining each island; requires island graphics assets
