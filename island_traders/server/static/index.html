@@ -151,6 +151,31 @@ button:active{transform:scale(.97)}
 .psb-ready-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--dim)}
 .psb-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--dim)}
 .psb-dot.ready{background:#88ddaa}
+
+/* Pause overlay (Issue #1) */
+.pause-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.78);
+  display:flex;align-items:center;justify-content:center;
+  z-index:9000;
+  backdrop-filter:blur(2px);
+}
+.pause-overlay.hidden{display:none}
+.pause-card{
+  background:linear-gradient(135deg,#1a120a 0%,#2a1d08 100%);
+  border:2px solid var(--gold);
+  border-radius:var(--radius);
+  padding:2rem 3rem;
+  text-align:center;
+  box-shadow:0 0 40px rgba(212,165,116,.3);
+  max-width:480px;
+}
+.pause-icon{font-size:3.5rem;color:var(--gold);margin-bottom:.6rem;line-height:1}
+.pause-title{font-size:1.8rem;font-weight:700;color:var(--gold);margin-bottom:.6rem}
+.pause-sub{font-size:.95rem;color:var(--dim);margin-bottom:1.4rem;line-height:1.4}
+.pause-card .btn-gold{font-size:1rem;padding:.7rem 1.8rem}
+.is-paused #pause-btn-label::before{content:"▶ ";}
+#pause-btn.is-paused #pause-btn-label{color:var(--gold)}
 .budget-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
 .budget-bar .budget-label{color:var(--dim);font-size:.82rem}
 .budget-bar .budget-val{color:var(--gold);font-weight:700;font-size:1rem}
@@ -703,8 +728,24 @@ button:active{transform:scale(.97)}
                 onclick="toggleReady()" title="Click when you've finished your actions this season">
           <span id="ready-btn-label">Ready ✓</span>
         </button>
+        <button id="pause-btn" class="btn-ghost btn-sm hidden"
+                onclick="togglePause()" title="Pause the game for everyone (host only)">
+          <span id="pause-btn-label">⏸ Pause</span>
+        </button>
         <span class="wealth" id="hdr-wealth">—</span>
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
+      </div>
+    </div>
+
+    <!-- Pause overlay — covers the entire game screen when paused -->
+    <div id="pause-overlay" class="pause-overlay hidden">
+      <div class="pause-card">
+        <div class="pause-icon">⏸</div>
+        <div class="pause-title">Game Paused</div>
+        <div class="pause-sub" id="pause-sub">The host has paused the game. Please wait…</div>
+        <button id="pause-overlay-resume" class="btn-gold hidden" onclick="togglePause()">
+          ▶ Resume Game
+        </button>
       </div>
     </div>
 
@@ -811,6 +852,8 @@ let selectedRole = null;
 let myBids = {};  // role -> amount
 let timerInterval = null;
 let auctionTimerEnd = 0;
+// Pause state (Issue #1)
+let isPaused = false;
 let activeTabRole = null;
 let builtTabsForRoles = null; // serialised role list used to build the current tab bar
 // Simultaneous-play state
@@ -1632,7 +1675,9 @@ function handleMessage(msg) {
   switch(msg.type) {
     case 'room_update':
       if (currentRoom && msg.room) {
+        currentRoom = msg.room;
         renderWaitingRoom(msg.room);
+        refreshPauseButton();
       }
       break;
     case 'auction_start':
@@ -1702,6 +1747,7 @@ function handleMessage(msg) {
         showScreen('game');
         buildIslandMap();
       }
+      refreshPauseButton();
       break;
     case 'print':
       addLog(msg.text);
@@ -1751,6 +1797,15 @@ function handleMessage(msg) {
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
       if (msg.error) addLog('Ready error: ' + msg.error, 'err');
+      break;
+    case 'game_paused':
+      onGamePaused(msg);
+      break;
+    case 'game_resumed':
+      onGameResumed(msg);
+      break;
+    case 'pause_ack':
+      if (msg.error) addLog('Pause error: ' + msg.error, 'err');
       break;
     case 'game_over':
       showGameOver(msg);
@@ -2231,6 +2286,57 @@ function toggleReady() {
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({type:'ready', ready: imReady}));
   }
+}
+
+// ─── Pause / Resume (Issue #1) ────────────────────────────────────────────
+function isHostPlayer() {
+  return currentRoom && currentRoom.creator_id && currentRoom.creator_id === myPlayerId;
+}
+
+function refreshPauseButton() {
+  // Show the header Pause button only to the host while the game is running.
+  const btn = document.getElementById('pause-btn');
+  if (!btn) return;
+  const show = isHostPlayer() && gameState && currentRoom && currentRoom.status !== 'finished';
+  btn.classList.toggle('hidden', !show);
+  btn.classList.toggle('is-paused', isPaused);
+  document.getElementById('pause-btn-label').textContent =
+      isPaused ? '▶ Resume' : '⏸ Pause';
+}
+
+function togglePause() {
+  if (!isHostPlayer()) return;
+  const next = !isPaused;
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'pause_request', paused: next}));
+  }
+}
+
+function onGamePaused(msg) {
+  isPaused = true;
+  if (currentRoom) currentRoom.paused = true;
+  const overlay = document.getElementById('pause-overlay');
+  overlay.classList.remove('hidden');
+  const sub = document.getElementById('pause-sub');
+  const resumeBtn = document.getElementById('pause-overlay-resume');
+  if (isHostPlayer()) {
+    sub.textContent = 'You paused the game. Click Resume when you\'re ready to continue.';
+    resumeBtn.classList.remove('hidden');
+  } else {
+    sub.textContent = 'The host has paused the game. Please wait…';
+    resumeBtn.classList.add('hidden');
+  }
+  refreshPauseButton();
+  addLog('⏸ Game paused by host.', 'info');
+}
+
+function onGameResumed(msg) {
+  isPaused = false;
+  if (currentRoom) currentRoom.paused = false;
+  document.getElementById('pause-overlay').classList.add('hidden');
+  refreshPauseButton();
+  const dur = msg && msg.pause_duration;
+  addLog('▶ Game resumed' + (dur ? ` (paused ${dur}s).` : '.'), 'info');
 }
 
 function buildIslandMap() {

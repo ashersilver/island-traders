@@ -210,10 +210,19 @@ class GameRoom:
     )
     pre_season_end: float = 0.0  # epoch time the pre-season window closes
 
+    # ── Pause/Resume (Issue #1) ───────────────────────────────────────────────
+    # When `paused` is True, all timers are frozen and the game thread sleeping
+    # through pre-season is held until resume.  Only the room creator (host)
+    # may toggle pause.  Ready submissions are still accepted but do not
+    # advance the game state until resume.
+    paused: bool = False
+    paused_at: float = 0.0  # epoch time the current pause began
+
     def to_dict(self) -> dict:
         d = {
             "room_id": self.room_id,
             "name": self.name,
+            "creator_id": self.creator_id,
             "max_players": self.max_players,
             "num_years": self.num_years,
             "is_public": self.is_public,
@@ -224,6 +233,7 @@ class GameRoom:
             "season_timer_seconds": self.season_timer_seconds,
             "pre_season_timer_seconds": self.pre_season_timer_seconds,
             "status": self.status,
+            "paused": self.paused,
             "player_count": len([p for p in self.players if p.is_human]),
             "players": [
                 {"player_id": p.player_id, "name": p.name,
@@ -366,10 +376,11 @@ class GameManager:
         })
 
         if self._loop:
-            asyncio.run_coroutine_threadsafe(
+            fut = asyncio.run_coroutine_threadsafe(
                 self._auction_timer(room_id, auction_secs),
                 self._loop,
             )
+            room.auction._timer_task = fut
             # Schedule AI bids spread across the auction window
             ai_players = [p for p in room.players if not p.is_human]
             if ai_players:
@@ -544,10 +555,11 @@ class GameManager:
                 auction.phase = "bidding"
                 auction.timer_end = time.time() + room.auction_timer_seconds
                 if self._loop:
-                    asyncio.run_coroutine_threadsafe(
+                    fut = asyncio.run_coroutine_threadsafe(
                         self._auction_timer(room_id, room.auction_timer_seconds),
                         self._loop,
                     )
+                    room.auction._timer_task = fut
                 return
 
         auction.assignments = {role: pid for role, pid in winners.items()}
@@ -676,10 +688,11 @@ class GameManager:
         })
 
         if self._loop:
-            asyncio.run_coroutine_threadsafe(
+            fut = asyncio.run_coroutine_threadsafe(
                 self._investing_timer(room_id, INVESTING_DURATION_SECONDS),
                 self._loop,
             )
+            room.investing._timer_task = fut
 
     def _investing_payload(self, room: GameRoom, lp: LobbyPlayer) -> dict | None:
         """Build the per-player Investing Phase payload, including reconnects."""
@@ -1404,6 +1417,146 @@ class GameManager:
             return
         room.io_adapter.receive_response(engine_pid, value)
 
+    # ---- Pause / Resume (Issue #1) ----
+
+    def request_pause(self, room_id: str, lobby_player_id: str, paused: bool) -> dict:
+        """Host-only request to pause or resume the game.
+
+        On pause:
+          * `room.paused` is set to True and `paused_at` records the time.
+          * All active asyncio timers (auction, investing, season-action) are
+            cancelled; their `*_timer_end` epochs are frozen.
+          * The pre-season wait loop (running on the game thread) sees
+            `room.paused` and holds until resume.
+          * `submit_ready` still accepts presses but does NOT advance the game
+            state (no interrupt_all, no _pre_season_done.set).
+          * Broadcasts `game_paused` to all clients.
+
+        On resume:
+          * Computes the pause duration.
+          * Bumps every frozen `*_timer_end` forward by that duration.
+          * Reschedules the asyncio timer task with the new remaining seconds.
+          * Clears `room.paused`.
+          * Broadcasts `game_resumed`.
+          * After resume the normal Ready-quorum / timer logic catches up.
+        """
+        room = self.rooms.get(room_id)
+        if not room:
+            return {"error": "Room not found"}
+        if lobby_player_id != room.creator_id:
+            return {"error": "Only the host can pause or resume the game"}
+        if room.status not in ("auction", "investing", "running"):
+            return {"error": f"Cannot pause from status '{room.status}'"}
+
+        if paused:
+            if room.paused:
+                return {"ok": True, "paused": True, "noop": True}
+            self._do_pause(room)
+            return {"ok": True, "paused": True}
+        else:
+            if not room.paused:
+                return {"ok": True, "paused": False, "noop": True}
+            self._do_resume(room)
+            return {"ok": True, "paused": False}
+
+    def _do_pause(self, room: GameRoom) -> None:
+        room.paused = True
+        room.paused_at = time.time()
+
+        # Freeze auction timer
+        if room.auction and room.auction._timer_task is not None:
+            try:
+                room.auction._timer_task.cancel()
+            except Exception:
+                pass
+            room.auction._timer_task = None
+
+        # Freeze investing timer
+        if room.investing and room.investing._timer_task is not None:
+            try:
+                room.investing._timer_task.cancel()
+            except Exception:
+                pass
+            room.investing._timer_task = None
+
+        # Freeze action-phase season timer
+        if room.season_timer_task is not None:
+            try:
+                room.season_timer_task.cancel()
+            except Exception:
+                pass
+            room.season_timer_task = None
+
+        # Pre-season timer is enforced inside the game thread's wait loop;
+        # it inspects `room.paused` on each iteration.  No task to cancel.
+
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "game_paused",
+            "at": room.paused_at,
+        })
+        logger.info("Room %s paused by host (status=%s, phase=%s)",
+                    room.room_id, room.status, room.season_phase)
+
+    def _do_resume(self, room: GameRoom) -> None:
+        now = time.time()
+        pause_duration = max(0.0, now - room.paused_at)
+
+        # Bump every frozen end-epoch forward by the pause duration so the
+        # remaining time picks up where it left off.
+        if room.auction and room.auction.timer_end > 0:
+            room.auction.timer_end += pause_duration
+            remaining = max(0.0, room.auction.timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._auction_timer(room.room_id, remaining), self._loop,
+                )
+                room.auction._timer_task = fut
+
+        if room.investing and room.investing.timer_end > 0:
+            room.investing.timer_end += pause_duration
+            remaining = max(0.0, room.investing.timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._investing_timer(room.room_id, remaining), self._loop,
+                )
+                room.investing._timer_task = fut
+
+        if room.season_timer_end > 0:
+            room.season_timer_end += pause_duration
+            remaining = max(0.0, room.season_timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._season_timer(room.room_id, int(remaining)), self._loop,
+                )
+                room.season_timer_task = fut
+
+        if room.pre_season_end > 0:
+            room.pre_season_end += pause_duration
+
+        room.paused = False
+        room.paused_at = 0.0
+
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "game_resumed",
+            "pause_duration": round(pause_duration, 2),
+        })
+        # Re-broadcast the in-season ready/timer state so clients see the
+        # bumped countdown immediately.
+        if room.status == "running" and room.season_phase in ("pre_season", "action"):
+            self._broadcast_ready_update(room)
+        logger.info("Room %s resumed by host after %.1fs paused",
+                    room.room_id, pause_duration)
+
+        # After resume, re-check the Ready quorum.  If everyone became Ready
+        # during the pause we close the phase now.
+        if (room.status == "running"
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
+            if room.season_phase == "action" and room.io_adapter:
+                room.io_adapter.interrupt_all()
+            elif room.season_phase == "pre_season":
+                room._pre_season_done.set()
+
     # ---- Simultaneous-play: per-season Ready + Timer ----
 
     def _on_season_start(self, room_id: str, year: int, season_index: int) -> None:
@@ -1454,8 +1607,19 @@ class GameManager:
                 "active_humans": list(humans),
             })
 
-            # Block the game thread until ready or timeout.
-            room._pre_season_done.wait(timeout=pre_secs)
+            # Block the game thread until everyone is Ready OR the timer
+            # naturally expires.  Polled in 0.5s slices so the loop can
+            # respect `room.paused` — when paused, `pre_season_end` is bumped
+            # forward by _do_resume() so the timeout is automatically extended.
+            while True:
+                if room._pre_season_done.is_set():
+                    break
+                now = time.time()
+                if not room.paused and now >= room.pre_season_end:
+                    break  # natural timeout
+                # Wait briefly; if the done-event fires, return immediately.
+                if room._pre_season_done.wait(timeout=0.5):
+                    break
 
             room.pre_season_end = 0.0
             self._thread_safe_broadcast(room_id, {"type": "pre_season_end"})
@@ -1557,7 +1721,11 @@ class GameManager:
             else:
                 room.season_ready_set.discard(lobby_player_id)
             self._broadcast_ready_update(room)
-            if room.season_active_humans and room.season_ready_set >= room.season_active_humans:
+            # While paused we collect readies but do NOT advance — the host
+            # must resume first.  _do_resume() re-checks the quorum.
+            if (not room.paused
+                    and room.season_active_humans
+                    and room.season_ready_set >= room.season_active_humans):
                 room._pre_season_done.set()
             return {"ok": True, "ready": ready}
 
@@ -1566,18 +1734,24 @@ class GameManager:
             room.season_ready_set.add(lobby_player_id)
             # Set the per-player Ready flag — even if they're mid-action
             # (e.g. inside a market buy dialog) the next choose_action will
-            # return END_TURN and exit the loop.
-            if engine_pid is not None and lobby_player_id not in room.season_human_done:
+            # return END_TURN and exit the loop.  Skip while paused so the
+            # in-flight prompt isn't unblocked until the host resumes.
+            if (engine_pid is not None
+                    and lobby_player_id not in room.season_human_done
+                    and not room.paused):
                 room.io_adapter.mark_player_ready(engine_pid)
         else:
             room.season_ready_set.discard(lobby_player_id)
-            if engine_pid is not None:
+            if engine_pid is not None and not room.paused:
                 room.io_adapter.unmark_player_ready(engine_pid)
 
         self._broadcast_ready_update(room)
 
         # All active humans Ready → close the season immediately.
-        if room.season_active_humans and room.season_ready_set >= room.season_active_humans:
+        # While paused, defer this until resume (see _do_resume).
+        if (not room.paused
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
             room.io_adapter.interrupt_all()
         return {"ok": True, "ready": ready}
 
@@ -1765,6 +1939,14 @@ def create_app() -> FastAPI:
                 if room.io_adapter and engine_pid is not None:
                     room.io_adapter.replay_pending_prompt(engine_pid)
 
+            # If the game is paused, let the reconnecting client know so it
+            # can show the paused overlay immediately.
+            if room.paused:
+                await websocket.send_text(json.dumps({
+                    "type": "game_paused",
+                    "at": room.paused_at,
+                }))
+
             while True:
                 raw = await websocket.receive_text()
                 try:
@@ -1804,6 +1986,13 @@ def create_app() -> FastAPI:
                     )
                     await websocket.send_text(json.dumps({
                         "type": "ready_ack", **result
+                    }))
+                elif msg_type == "pause_request":
+                    result = manager.request_pause(
+                        room_id, player_id, bool(msg.get("paused", True)),
+                    )
+                    await websocket.send_text(json.dumps({
+                        "type": "pause_ack", **result
                     }))
                 elif msg_type == "chat":
                     manager._thread_safe_broadcast(room_id, {
