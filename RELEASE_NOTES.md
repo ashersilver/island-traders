@@ -5,6 +5,65 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/workforce-min-manager-tech
+
+Branch: `claude/workforce-min-manager-tech`
+Target: `pre-release`
+
+#### Rules / Balance Changes
+
+- **Workforce baseline rule:** every island now starts with at least 1 Manager
+  and 2 Technicians.  Workforce totals adjusted where needed:
+  * Transporter: 4 (was 4) — composition replaced
+  * Educator: 4 (was 3) — bumped to fit the new technicians
+  * Banker: 4 (was 3) — bumped to fit the new technicians
+  * Doctor: 6 (unchanged) — mix changed (2 Doctors + 2 Nurses + 2 Medical Orderlies)
+
+#### New Professions
+
+- **Transporter:**
+  * `LogisticsManager` (Manager) — strategic transport leadership
+  * `FlightCrew` (Technician) — air freight ops
+  * `Seaman` (Technician) — sea freight ops
+  * `WarehouseManager` (Technician — ground-ops supervisor; named "Manager"
+    by industry convention but classified as Technician per the operational
+    tier)
+- **Educator:**
+  * `Lecturer` (Manager) — secondary faculty tier
+  * `Tutor` (Technician) — apprenticeship-trained teaching staff
+- **Banker:**
+  * `BankingAnalyst` (Technician)
+  * `BankingClerk` (Technician)
+- **Doctor:**
+  * `MedicalOrderly` (Technician) — backfills the missing technician tier
+    on the Healthcare island
+
+All new professions wired into:
+  * `PROFESSION_BAND`
+  * `BAND_TITLES` (Transporter / Educator / Banker titles refreshed)
+  * `EDUCATION_SEASONS` (Logistics Manager, Lecturer = 2)
+  * `APPRENTICESHIP_SEASONS` (all new technicians = 2)
+  * `ROLE_PROFESSIONS`
+  * `PROFESSION_LABEL`
+  * `SKILLED_PROFESSIONS`
+  * `STARTING_WORKERS_BY_PROFESSION`
+
+#### Tests
+
+- 5 new tests in `tests/test_models/test_profession_bands.py`:
+  * `test_new_transporter_professions_have_correct_bands`
+  * `test_new_technician_professions_for_educator_banker_doctor`
+  * `test_transporter_band_titles_use_new_profession_names`
+  * `test_every_island_starts_with_at_least_one_manager_and_two_technicians`
+    — the invariant test
+  * `test_every_profession_has_a_label`
+
+#### Verification
+
+- Test suite: `199 passed` (up from 194 baseline).
+
+---
+
 ### claude/loans-and-insurance
 
 Branch: `claude/loans-and-insurance`

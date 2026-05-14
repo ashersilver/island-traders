@@ -83,3 +83,72 @@ def test_workforce_band_helpers():
 
     assert wf.has_mechanic() is True
     assert wf.mechanic_count() == 2
+
+
+# ---------------------------------------------------------------------------
+# Transport-related professions (new — added with the ≥1M+2T workforce rule)
+# ---------------------------------------------------------------------------
+
+def test_new_transporter_professions_have_correct_bands():
+    """Logistics Manager is a Manager; Flight Crew, Seaman, Warehouse Manager
+    are all Technicians (Warehouse Manager despite the title — it's a ground-
+    ops supervisor in the operational tier)."""
+    assert band_of(Profession.LOGISTICS_MANAGER) == WorkerBand.MANAGER
+    assert band_of(Profession.FLIGHT_CREW)       == WorkerBand.TECHNICIAN
+    assert band_of(Profession.SEAMAN)            == WorkerBand.TECHNICIAN
+    assert band_of(Profession.WAREHOUSE_MANAGER) == WorkerBand.TECHNICIAN
+
+
+def test_new_technician_professions_for_educator_banker_doctor():
+    assert band_of(Profession.LECTURER)        == WorkerBand.MANAGER
+    assert band_of(Profession.TUTOR)           == WorkerBand.TECHNICIAN
+    assert band_of(Profession.BANKING_ANALYST) == WorkerBand.TECHNICIAN
+    assert band_of(Profession.BANKING_CLERK)   == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MEDICAL_ORDERLY) == WorkerBand.TECHNICIAN
+
+
+def test_transporter_band_titles_use_new_profession_names():
+    titles = BAND_TITLES["Transporter"]
+    assert "Logistics Manager" in titles[WorkerBand.MANAGER]
+    assert "Flight Crew"       in titles[WorkerBand.TECHNICIAN]
+    assert "Seaman"            in titles[WorkerBand.TECHNICIAN]
+    assert "Warehouse Manager" in titles[WorkerBand.TECHNICIAN]
+
+
+# ---------------------------------------------------------------------------
+# Invariant: every island starts with at least 1 Manager + 2 Technicians
+# ---------------------------------------------------------------------------
+
+def test_every_island_starts_with_at_least_one_manager_and_two_technicians():
+    """Workforce baseline rule — every role must have at least 1 Manager and
+    2 Technicians among its starting workers (unskilled remainder excluded)."""
+    from island_traders.constants import (
+        STARTING_WORKERS_BY_PROFESSION, STARTING_WORKFORCE,
+    )
+    for role, breakdown in STARTING_WORKERS_BY_PROFESSION.items():
+        managers = 0
+        technicians = 0
+        for prof_name, count in breakdown:
+            band = band_of(prof_name)
+            if band == WorkerBand.MANAGER:
+                managers += count
+            elif band == WorkerBand.TECHNICIAN:
+                technicians += count
+        assert managers >= 1, (
+            f"{role}: starts with {managers} Manager(s); rule requires ≥ 1"
+        )
+        assert technicians >= 2, (
+            f"{role}: starts with {technicians} Technician(s); rule requires ≥ 2"
+        )
+        # Sanity check: explicit professions can't exceed total workforce
+        explicit_total = sum(c for _, c in breakdown)
+        assert explicit_total <= STARTING_WORKFORCE[role], (
+            f"{role}: explicit {explicit_total} > STARTING_WORKFORCE "
+            f"{STARTING_WORKFORCE[role]}"
+        )
+
+
+def test_every_profession_has_a_label():
+    from island_traders.models.profession import PROFESSION_LABEL
+    for p in Profession:
+        assert p in PROFESSION_LABEL, f"{p} missing from PROFESSION_LABEL"

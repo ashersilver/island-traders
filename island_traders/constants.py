@@ -217,14 +217,15 @@ SEASONAL_YIELD: dict[str, dict[str, float]] = {
 }
 
 # Starting total workers per role (see STARTING_WORKERS_BY_PROFESSION for detail).
+# Invariant: every island starts with at least 1 Manager + 2 Technicians.
 STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
-    "Transporter":   4,
-    "Educator":      3,
-    "Banker":        3,
+    "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
+    "Educator":      4,   # 1 Professor + 2 Technicians (Tutor x2) + 1 Unskilled
+    "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
-    "Doctor":        6,    # 2 Doctors + 4 Nurses (scaled for board game)
+    "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
 }
 
 # Fraction of starting workers who begin with training_level >= 1.
@@ -250,11 +251,29 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     "Farmer":        [("Farmer", 1), ("FarmingTechnician", 1), ("Veterinarian", 1)],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
-    "Transporter":   [("Engineer", 1), ("Mechanic", 1)],
-    "Educator":      [("Professor", 1)],
-    "Banker":        [("Banker", 1)],
+    "Transporter":   [
+        ("LogisticsManager", 1),     # Manager
+        ("FlightCrew", 1),           # Technician
+        ("Seaman", 1),               # Technician
+        ("WarehouseManager", 1),     # Technician (ground ops supervisor)
+    ],
+    "Educator":      [
+        ("Professor", 1),            # Manager
+        ("Tutor", 2),                # Technicians
+        # +1 Unskilled remainder (Admin)
+    ],
+    "Banker":        [
+        ("Banker", 1),               # Manager
+        ("BankingAnalyst", 1),       # Technician
+        ("BankingClerk", 1),         # Technician
+        # +1 Unskilled remainder (Receptionist)
+    ],
     "Manufacturer":  [("Engineer", 1), ("AssemblyWorker", 1), ("Mechanic", 1)],
-    "Doctor":        [("Doctor", 2), ("Nurse", 4)],    # exactly 6, no unskilled remainder
+    "Doctor":        [
+        ("Doctor", 2),               # Manager
+        ("Nurse", 2),                # Manager (was 4)
+        ("MedicalOrderly", 2),       # Technician (new — meets ≥2T invariant)
+    ],
 }
 
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
@@ -278,11 +297,14 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
     "Farmer":       ["Farmer", "FarmingTechnician", "Veterinarian", "Mechanic"],
     "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
-    "Transporter":  ["Engineer", "Mechanic"],
-    "Educator":     ["Professor"],
-    "Banker":       ["Banker"],
+    "Transporter":  [
+        "LogisticsManager", "Engineer",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
+    ],
+    "Educator":     ["Professor", "Lecturer", "Tutor"],
+    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
     "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
-    "Doctor":       ["Doctor", "Nurse"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
 }
 
 # ---------------------------------------------------------------------------
