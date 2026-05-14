@@ -2060,9 +2060,14 @@ def create_app() -> FastAPI:
 
 def main():
     import argparse
+    import os
+    # Honour the PORT env var (used by autoPort-assigned preview ports and most
+    # PaaS providers).  Falls back to 8000 only if neither --port nor PORT is set.
+    default_port = int(os.environ.get("PORT", "8000"))
+    default_host = os.environ.get("HOST", "0.0.0.0")
     parser = argparse.ArgumentParser(description="Island Traders Game Server")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=default_host)
+    parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
 
