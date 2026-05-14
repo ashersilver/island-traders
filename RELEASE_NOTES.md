@@ -5,6 +5,79 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/sim-calibration
+
+Branch: `codex/sim-calibration`
+Target: `pre-release`
+
+Simulation calibration pass for the current `pre-release` economy.
+
+#### Baseline
+
+Ran:
+
+```bash
+.venv/bin/python -m island_traders.simulation.runner --games 1000 --seed 42 --output /tmp/island-traders-baseline
+```
+
+Current win rates:
+
+| Role | Wins | Win rate | Avg wealth |
+|---|---:|---:|---:|
+| Farmer | 12 | 1.2% | 112.1 Dp |
+| Miner | 0 | 0.0% | 49.9 Dp |
+| Transporter | 232 | 23.2% | 993.3 Dp |
+| Educator | 0 | 0.0% | 87.2 Dp |
+| Banker | 756 | 75.6% | 3770.6 Dp |
+| Manufacturer | 0 | 0.0% | 131.1 Dp |
+| Doctor | 0 | 0.0% | 89.1 Dp |
+
+#### Diagnosis
+
+Event-chart tuning alone is not enough to satisfy the calibration target
+(roughly 14% wins per role, with no role below 8% or above 22%).
+Sensitivity runs with extreme Banker / Transporter outage charts and boosted
+underdog yield modifiers still left Banker and Transporter structurally
+dominant, while Miner, Educator, and Doctor remained near 0%.
+
+The biggest blockers appear structural rather than event-probability driven:
+
+- Banker and Transporter generate high-value inventory from the current
+  AI-only economy loop and can remain competitive even under very harsh event
+  charts.
+- Several low-win roles are wealth-capped by input availability, turn-order
+  market flow, and resource valuation; multiplying their event yields did not
+  reliably turn into final wealth.
+- `damage_seasons` on outage events converts future turns into
+  `Infrastructure Damage` at 50% yield rather than extending the outage, so
+  "harsher" disaster tuning can accidentally preserve meaningful production.
+
+#### Runner tooling
+
+Added `--seeds` to the simulation runner so calibration can run comparable
+multi-seed batches without shell loops:
+
+```bash
+.venv/bin/python -m island_traders.simulation.runner --games 1000 --seeds 42,1,7,99
+```
+
+Each seed writes its own CSV pair using the configured output prefix plus
+`_seed_<seed>`, and stdout includes a compact cross-seed win-rate summary.
+
+#### Known follow-ups
+
+Coordinate before changing out-of-scope balance surfaces. Likely follow-up
+work needs to address the AI-only economy and/or production constants before
+event chart weights can be meaningfully calibrated:
+
+- Review Banker personal wealth from Finance production versus the planned
+  institutional cash-pool model.
+- Review Transporter output valuation and AI market behavior.
+- Add richer simulation diagnostics for per-role production, input shortages,
+  sales, retained inventory value, and insurance / loan income.
+
+---
+
 ### claude/fix-playtest-bugs
 
 Branch: `claude/fix-playtest-bugs`

@@ -1,4 +1,6 @@
-from island_traders.simulation.runner import SimulationRunner
+import pytest
+
+from island_traders.simulation.runner import SimulationRunner, _parse_seeds
 
 
 def test_simulation_runs_to_completion():
@@ -36,3 +38,12 @@ def test_simulation_deterministic_with_same_seed():
     r2 = SimulationRunner(num_games=5, num_years=1, seed=42).run()
     for role in r1.role_stats:
         assert r1.role_stats[role].wins == r2.role_stats[role].wins
+
+
+def test_parse_seeds_accepts_comma_separated_values():
+    assert _parse_seeds("42, 1,7") == [42, 1, 7]
+
+
+def test_parse_seeds_rejects_empty_values():
+    with pytest.raises(ValueError):
+        _parse_seeds(" , ")
