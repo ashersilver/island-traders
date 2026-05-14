@@ -84,6 +84,67 @@ to fall back to default values (`min_qty`, `available[0]`, etc.).  Result:
 
 ---
 
+### claude/rules-md-refresh
+
+Branch: `claude/rules-md-refresh`
+Target: `pre-release`
+
+Documentation-only refresh of `RULES.md` to match the current online rules
+(no code changes; tests unchanged at 219 passing).
+
+#### What was updated
+
+- **Seven Islands table** — produces/needs columns refreshed for Metal,
+  Farm Machinery, Mining Equipment, Lab Equipment, Patents, Passenger Seats,
+  and Insurance/Loans as Banker outputs.
+- **Starting Conditions table** — Dollops corrected to 700 (auction budget);
+  starting workforce updated to match `STARTING_WORKERS_BY_PROFESSION`,
+  including the new transport professions (Logistics Manager / Flight Crew /
+  Seaman / Warehouse Manager) and Educator / Banker / Doctor technician
+  backfills (Tutors, Banking Analyst & Clerk, Medical Orderlies).
+- **Your Turn actions table** — added Purchase Capital, Apply Patent, Sell /
+  Buy / Manage Insurance, Offer / Take / Roll Over Loan, View Loans.  Added
+  a callout box on simultaneous play, pre-season window, and host Pause.
+- **Production inputs table** — updated to current values (Farm Machinery,
+  Mining Equipment, Lab Equipment, Metal flow into Manufacturer, etc.).
+- **Base Prices table** — added Metal, Farm Machinery, Mining Equipment,
+  Medical Devices, Transport Equipment, Lab Equipment, Passenger Seats,
+  Patents.
+- **Worker Professions table** — full refresh listing every profession with
+  its band (Manager / Technician / Worker), with new entries in bold.
+- **Training Capacity table** — bands added.  *(The "future balance pass"
+  gap this section originally noted was subsequently closed by
+  `claude/fix-playtest-bugs`, which added `UNIVERSITY_CAPACITY` entries
+  for all 9 new professions.)*
+
+#### New sections added
+
+- **Setting Up: Auction, Island Guarantee, and Investing** (between
+  Starting Conditions and Structure of Play) — covers the sealed-bid role
+  auction, the §19.1 post-auction human island guarantee (with pricing
+  formula explainer), and the Investing Phase.
+- **Loans** (between Vaccines and Event Charts) — bullet-bond mechanics,
+  borrowing flow with banker quote rate, repayment / default, and Roll Over.
+- **Insurance** — Life and Medical products, Buy/Sell/Manage flows,
+  pro-rata cancellation refund formula, high-hazard role flag.
+- **Capital Equipment** subsection (under Production) — outright purchase,
+  mid-game Purchase Capital action, 2-season delivery delay for complex
+  items, 5-year straight-line depreciation, future lease pointer.
+- **Patents** subsection — Apply Patent action, –20% input cost per Patent,
+  cap 3 per output.
+
+#### Misc
+
+- Physical Contents list updated with the current resource and equipment
+  token set, band-aware worker tokens, and loan/insurance contract cards.
+- Export command updated to the installed `island-traders-export` entry
+  point.
+- Quick Reference fully refreshed (turn actions, setup phases, formulae,
+  resources, capital-equipment lines, workforce baseline, loan-rate
+  formula, insurance refund formula).
+
+---
+
 ### claude/post-auction-human-guarantee
 
 Branch: `claude/post-auction-human-guarantee`
