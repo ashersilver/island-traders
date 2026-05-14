@@ -5,6 +5,86 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/post-auction-human-guarantee
+
+Branch: `claude/post-auction-human-guarantee`
+Target: `pre-release`
+Implements: `requirements/production-capacity-model.md §19.1`
+
+#### Player-Facing Changes
+
+- **Post-auction human island guarantee.** If a human player ends the auction
+  with no island AND at least one AI player won two or more roles, a new
+  guarantee phase opens before Investing.  Islandless humans are walked
+  through sequentially (in join order) and offered every AI-extra island to
+  take, at a price set by the §19.1 formula.  Each buyer may accept one or
+  decline all.
+- The islandless buyer sees a panel listing every eligible AI-extra island
+  with its seller, the price they'd pay, and a tooltip explaining how the
+  price was calculated.  Spectators see "X is choosing whether to take an
+  AI island…" while the buyer decides.
+- After the human takes control of an AI island, the island state (inventory,
+  workforce, etc.) is preserved; the human can review and override the AI's
+  default Investing-Phase orders in the next phase.
+
+#### Pricing (§19.1)
+
+Final price = `max(formula, floor)` where:
+  * `floor` = 20% of buyer's current cash
+  * `formula` depends on `ratio = ai_paid / starting_budget`:
+    - `ratio in [11%, 15%]` (inclusive) → `2 × ai_paid`
+    - `ratio > 15%`                     → `1.05 × ai_paid`
+    - `ratio < 11%`                     → `ai_paid`
+
+#### Server-Side
+
+- New `IslandGuaranteeState` dataclass + `GameRoom.guarantee` field.
+- New `room.status = "guarantee"` between `auction` and `investing`.
+- New `room.ai_role_prices` captures per-role winning bid amounts so the
+  guarantee phase can quote prices.
+- New `compute_guarantee_price()` pure helper (testable in isolation).
+- New GameManager methods: `_should_run_island_guarantee`, `_build_offers_for`,
+  `_start_island_guarantee`, `_advance_island_guarantee`, `_finalize_island_guarantee`,
+  `submit_guarantee_choice`, plus `_guarantee_timer` (90s per buyer, default).
+- `_resolve_auction` now routes to the guarantee phase when conditions are met,
+  otherwise straight to investing as before.
+- WS protocol: `island_guarantee_state` (broadcast on entry / on each buyer's
+  turn), `guarantee_choice` (client → server `{accept, role}`),
+  `guarantee_ack`, `island_guarantee_resolved` (per buyer outcome),
+  `island_guarantee_complete` (phase finished).
+- Reconnect catch-up: clients connecting mid-guarantee receive the current
+  guarantee state immediately.
+
+#### UI
+
+- New "🏝 Island Guarantee" panel on the auction screen (appears after
+  auction-result-overlay is hidden).  Per-offer row with role, seller name,
+  price, breakdown line ("seller paid X / floor / band"), and Buy / Decline
+  buttons.  Unaffordable offers are dimmed.
+- "How is the price calculated?" inline explainer.
+
+#### Tests
+
+- 20 new tests in `tests/test_server/test_island_guarantee.py` covering:
+  * All three price bands + boundary inclusivity at 11% and 15%
+  * Floor-dominates-formula case
+  * Degenerate zero-starting-wealth input
+  * Trigger condition true/false
+  * Offer list building (all AI extras shown, affordability flags)
+  * Phase entry sets state correctly
+  * Accept path: role transfer, deductions updated
+  * Decline path: queue advances
+  * Not-your-turn rejection
+  * Unknown-role rejection
+  * Sequential buyers with two-AI scenarios
+  * Sole-AI-loses-extras-after-one-sale skip path
+
+#### Verification
+
+- Test suite: `219 passed` (up from 199 baseline).
+
+---
+
 ### claude/workforce-min-manager-tech
 
 Branch: `claude/workforce-min-manager-tech`

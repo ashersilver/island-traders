@@ -666,6 +666,20 @@ button:active{transform:scale(.97)}
       <div id="auction-result-content"></div>
       <button class="btn-gold" style="margin-top:1rem;font-size:1rem;padding:.7rem 2.4rem;border-radius:50px" onclick="continueToGame()">Continue →</button>
     </div>
+
+    <!-- Post-auction human island guarantee panel (§19.1) -->
+    <div id="guarantee-overlay" class="hidden" style="margin-top:1rem;background:var(--panel);border:2px solid var(--gold);border-radius:var(--radius);padding:1.4rem">
+      <h2 style="color:var(--gold);margin-bottom:.4rem">🏝 Island Guarantee</h2>
+      <div id="guarantee-sub" style="color:var(--dim);font-size:.85rem;margin-bottom:1rem"></div>
+      <div id="guarantee-timer" style="color:var(--dim);font-size:.75rem;margin-bottom:.6rem"></div>
+      <div id="guarantee-offers"></div>
+      <div id="guarantee-actions" style="margin-top:1rem;display:flex;gap:.6rem">
+        <button class="btn-ghost" onclick="submitGuaranteeChoice(false, null)">Decline All</button>
+      </div>
+      <div id="guarantee-spectator" class="hidden" style="color:var(--dim);font-size:.85rem;margin-top:.6rem">
+        Waiting for the islandless player to choose…
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1277,6 +1291,11 @@ function showAuctionResult(msg) {
 }
 
 function continueToGame() {
+  // If a post-auction island-guarantee phase is in progress, stay put —
+  // the overlay is already rendered and will resolve into investing on its own.
+  if (currentRoom && currentRoom.status === 'guarantee') {
+    return;
+  }
   // If we're already in the Investing Phase, switch to that screen and wait
   // for the per-player investing_start payload (it may have arrived already).
   if (investData) {
@@ -1294,6 +1313,122 @@ function continueToGame() {
   requestState();
   setTimeout(continueToGame, 500);
 }
+
+// ==================== ISLAND GUARANTEE (§19.1) ====================
+
+let guaranteeTimerInterval = null;
+
+function onIslandGuaranteeState(gs) {
+  const overlay = document.getElementById('guarantee-overlay');
+  overlay.classList.remove('hidden');
+  // Ensure the auction-result overlay isn't covering things
+  document.getElementById('auction-result-overlay').classList.add('hidden');
+
+  const isMyTurn = gs.current_buyer === myPlayerId;
+  const offersEl = document.getElementById('guarantee-offers');
+  const actionsEl = document.getElementById('guarantee-actions');
+  const spectatorEl = document.getElementById('guarantee-spectator');
+  const subEl = document.getElementById('guarantee-sub');
+  const offers = gs.offers || [];
+
+  // Find the buyer's display name (best effort)
+  const buyerLp = (currentRoom?.players || []).find(p => p.player_id === gs.current_buyer);
+  const buyerName = buyerLp ? buyerLp.name : 'a player';
+
+  if (isMyTurn && offers.length) {
+    subEl.innerHTML =
+      `You ended the auction without an island. ` +
+      `Choose one to take from an AI player that won extras — the AI must sell at the price shown below. ` +
+      `<a href="#" onclick="event.preventDefault();alert(GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
+    actionsEl.classList.remove('hidden');
+    spectatorEl.classList.add('hidden');
+    offersEl.innerHTML = offers.map(o => {
+      const bd = o.breakdown || {};
+      const bandLabel = {
+        low:  'below 11% band → AI paid (no premium)',
+        mid:  'in 11–15% band → 2× AI paid',
+        high: 'above 15% band → 1.05× AI paid',
+      }[bd.formula_band] || '';
+      const role = o.role;
+      const color = ROLE_COLORS[role] || '#aaa';
+      const affordableCls = o.affordable ? '' : 'opacity:.5;pointer-events:none';
+      return (
+        `<div style="margin-bottom:.6rem;padding:.7rem;border:1px solid ${color}55;border-radius:6px;${affordableCls}">` +
+          `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+            `<strong style="color:${color}">${esc(roleDisplayName(role) || role)} Island</strong>` +
+            `<button class="btn-gold btn-sm" onclick="submitGuaranteeChoice(true, '${esc(role)}')" ${o.affordable ? '' : 'disabled'}>` +
+              `Buy for ${o.price.toFixed(1)} Dp` +
+            `</button>` +
+          `</div>` +
+          `<div style="font-size:.75rem;color:var(--dim);margin-top:.3rem">` +
+            `Seller: ${esc(o.seller_name)} (paid ${bd.ai_paid} Dp) &middot; ` +
+            `floor (20% of your cash): ${bd.floor} Dp &middot; ${esc(bandLabel)}` +
+          `</div>` +
+        `</div>`
+      );
+    }).join('');
+  } else if (isMyTurn) {
+    subEl.innerHTML = 'No AI extras are currently available to you.';
+    offersEl.innerHTML = '';
+    actionsEl.classList.add('hidden');
+    spectatorEl.classList.remove('hidden');
+  } else {
+    subEl.innerHTML = `<strong>${esc(buyerName)}</strong> is choosing whether to take an AI island.`;
+    offersEl.innerHTML = '';
+    actionsEl.classList.add('hidden');
+    spectatorEl.classList.remove('hidden');
+  }
+
+  // Timer
+  if (guaranteeTimerInterval) clearInterval(guaranteeTimerInterval);
+  const endAt = Date.now() + (gs.timer_remaining || 0) * 1000;
+  const tick = () => {
+    const remain = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    document.getElementById('guarantee-timer').textContent =
+      remain > 0 ? `${remain}s remaining` : 'Time expired — moving on…';
+    if (remain <= 0) clearInterval(guaranteeTimerInterval);
+  };
+  guaranteeTimerInterval = setInterval(tick, 250);
+  tick();
+}
+
+function submitGuaranteeChoice(accept, role) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'guarantee_choice', accept, role}));
+  }
+}
+
+function onIslandGuaranteeResolved(msg) {
+  if (msg.result === 'accepted') {
+    const buyerLp = (currentRoom?.players || []).find(p => p.player_id === msg.buyer_player_id);
+    const buyerName = buyerLp ? buyerLp.name : 'A player';
+    addLog(
+      `🏝 ${buyerName} bought the ${roleDisplayName(msg.role) || msg.role} island for ${msg.price.toFixed(1)} Dp.`,
+      'ok'
+    );
+  } else if (msg.result === 'declined') {
+    const buyerLp = (currentRoom?.players || []).find(p => p.player_id === msg.buyer_player_id);
+    const buyerName = buyerLp ? buyerLp.name : 'A player';
+    addLog(`🏝 ${buyerName} declined the island guarantee offer.`, 'info');
+  }
+}
+
+function onIslandGuaranteeComplete(msg) {
+  if (guaranteeTimerInterval) clearInterval(guaranteeTimerInterval);
+  document.getElementById('guarantee-overlay').classList.add('hidden');
+  addLog('Island guarantee phase complete — proceeding to Investing.', 'info');
+}
+
+const GUARANTEE_PRICING_EXPLAINER =
+  "How the price is set:\n\n" +
+  "1. Let P be the AI's auction price for this island.\n" +
+  "2. Let S be the auction starting budget (700 Dp by default).\n" +
+  "3. Auction-price formula:\n" +
+  "     If P is between 11% and 15% of S  →  formula = 2 × P\n" +
+  "     If P is above 15% of S            →  formula = 1.05 × P\n" +
+  "     Otherwise (P < 11% of S)          →  formula = P\n" +
+  "4. Floor = 20% of your current cash.\n" +
+  "5. Final price = max(formula, floor).";
 
 // ==================== INVESTING PHASE ====================
 
@@ -1715,6 +1850,18 @@ function handleMessage(msg) {
         renderInvesting();
       }
       startInvestTimer(msg.timer_seconds || 180);
+      break;
+    case 'island_guarantee_state':
+      onIslandGuaranteeState(msg.guarantee);
+      break;
+    case 'island_guarantee_resolved':
+      onIslandGuaranteeResolved(msg);
+      break;
+    case 'island_guarantee_complete':
+      onIslandGuaranteeComplete(msg);
+      break;
+    case 'guarantee_ack':
+      if (msg.error) addLog('Guarantee error: ' + msg.error, 'err');
       break;
     case 'investing_update':
       document.getElementById('invest-status').textContent =

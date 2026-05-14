@@ -96,7 +96,7 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 ### Feature Roadmap
 - [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan). See `requirements/production-capacity-model.md §18`.
 - [ ] Roleless players — role aftermarket (secondary sales) + on-call bank deposits expanding Banker lending capacity. See `requirements/production-capacity-model.md §19` and `requirements/island-ledger.md`.
-- [ ] Post-auction human island guarantee — islandless humans can buy an extra AI island at the formula price before Year 1 starts. See `requirements/production-capacity-model.md §19.1`.
+- [x] Post-auction human island guarantee — sequential per-buyer phase between auction and investing; AI must sell, price = max(20% floor, banded formula); see `requirements/production-capacity-model.md §19.1`.
 - [ ] Brokerage services: Banker negotiates deals between islands for a commission
 - [ ] Contracts & Futures (forward agreements between players)
 - [ ] Infrastructure Investment (upgrade production capacity mid-game)
