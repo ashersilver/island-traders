@@ -35,7 +35,20 @@ class Profession(str, Enum):
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
     PROFESSOR            = "Professor"
-    MECHANIC             = "Mechanic"          # NEW — Technician band, multi-island
+    MECHANIC             = "Mechanic"          # Technician band, multi-island
+    # Transporter — new dedicated professions
+    LOGISTICS_MANAGER    = "LogisticsManager"  # Manager (Transporter)
+    FLIGHT_CREW          = "FlightCrew"        # Technician (Transporter)
+    SEAMAN               = "Seaman"            # Technician (Transporter)
+    WAREHOUSE_MANAGER    = "WarehouseManager"  # Technician (Transporter, ground ops)
+    # Educator — technician-tier teaching staff
+    LECTURER             = "Lecturer"          # Manager (Educator faculty)
+    TUTOR                = "Tutor"             # Technician (Educator)
+    # Banker — technician-tier clerical staff
+    BANKING_ANALYST      = "BankingAnalyst"    # Technician (Banker)
+    BANKING_CLERK        = "BankingClerk"      # Technician (Banker)
+    # Doctor — technician-tier medical support
+    MEDICAL_ORDERLY      = "MedicalOrderly"    # Technician (Doctor)
 
 
 class WorkerBand(str, Enum):
@@ -63,6 +76,19 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.BANKER:              WorkerBand.MANAGER,
     Profession.PROFESSOR:           WorkerBand.MANAGER,
     Profession.MECHANIC:            WorkerBand.TECHNICIAN,
+    # Transporter
+    Profession.LOGISTICS_MANAGER:   WorkerBand.MANAGER,
+    Profession.FLIGHT_CREW:         WorkerBand.TECHNICIAN,
+    Profession.SEAMAN:              WorkerBand.TECHNICIAN,
+    Profession.WAREHOUSE_MANAGER:   WorkerBand.TECHNICIAN,  # ground ops supervisor
+    # Educator
+    Profession.LECTURER:            WorkerBand.MANAGER,
+    Profession.TUTOR:               WorkerBand.TECHNICIAN,
+    # Banker
+    Profession.BANKING_ANALYST:     WorkerBand.TECHNICIAN,
+    Profession.BANKING_CLERK:       WorkerBand.TECHNICIAN,
+    # Doctor
+    Profession.MEDICAL_ORDERLY:     WorkerBand.TECHNICIAN,
 }
 
 
@@ -91,18 +117,18 @@ BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
         WorkerBand.WORKER:     ["Pit Worker"],
     },
     "Transporter": {
-        WorkerBand.MANAGER:    ["Engineer"],
-        WorkerBand.TECHNICIAN: ["Pilot", "Logistics Foreman", "Mechanic"],
+        WorkerBand.MANAGER:    ["Logistics Manager", "Engineer"],
+        WorkerBand.TECHNICIAN: ["Flight Crew", "Seaman", "Warehouse Manager", "Mechanic"],
         WorkerBand.WORKER:     ["Stevedore"],
     },
     "Educator": {
-        WorkerBand.MANAGER:    ["Professor"],
-        WorkerBand.TECHNICIAN: ["Lecturer", "Tutor", "Trainer"],
+        WorkerBand.MANAGER:    ["Professor", "Lecturer"],
+        WorkerBand.TECHNICIAN: ["Tutor", "Trainer"],
         WorkerBand.WORKER:     ["Admin"],
     },
     "Banker": {
         WorkerBand.MANAGER:    ["Banker"],
-        WorkerBand.TECHNICIAN: ["Analyst", "Banking Clerk"],
+        WorkerBand.TECHNICIAN: ["Banking Analyst", "Banking Clerk"],
         WorkerBand.WORKER:     ["Receptionist"],
     },
     "Manufacturer": {
@@ -128,25 +154,38 @@ def primary_title(role_name: str, band: WorkerBand) -> str:
 # Education pipeline duration in seasons (per Manager profession).
 # Per requirements: Doctor 2, Nurse 1, others 2 by default.
 EDUCATION_SEASONS: dict[Profession, int] = {
-    Profession.DOCTOR:    2,
-    Profession.NURSE:     1,
-    Profession.ENGINEER:  2,
-    Profession.FARMER:    2,
-    Profession.MINER:     2,
-    Profession.BANKER:    2,
-    Profession.PROFESSOR: 2,
+    Profession.DOCTOR:            2,
+    Profession.NURSE:             1,
+    Profession.ENGINEER:          2,
+    Profession.FARMER:             2,
+    Profession.MINER:              2,
+    Profession.BANKER:             2,
+    Profession.PROFESSOR:          2,
+    Profession.LOGISTICS_MANAGER:  2,
+    Profession.LECTURER:           2,
 }
 
 # Apprenticeship pipeline duration in seasons (per Technician profession).
 # Default: 2 seasons for all (worker stays on home island during training).
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
-    Profession.FARMING_TECHNICIAN:   2,
+    Profession.FARMING_TECHNICIAN:  2,
     Profession.VETERINARIAN:        2,
     Profession.ASSEMBLY_WORKER:     2,
     Profession.MINING_TECHNICIAN:   2,
     Profession.OIL_EXTRACTION:      2,
     Profession.REFINERY_SPECIALIST: 2,
     Profession.MECHANIC:            2,
+    # Transporter technicians
+    Profession.FLIGHT_CREW:         2,
+    Profession.SEAMAN:              2,
+    Profession.WAREHOUSE_MANAGER:   2,
+    # Educator technicians
+    Profession.TUTOR:               2,
+    # Banker technicians
+    Profession.BANKING_ANALYST:     2,
+    Profession.BANKING_CLERK:       2,
+    # Doctor technicians
+    Profession.MEDICAL_ORDERLY:     2,
 }
 
 
@@ -155,11 +194,15 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
     "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.VETERINARIAN, Profession.MECHANIC],
     "Miner":         [Profession.MINER, Profession.MINING_TECHNICIAN, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC],
-    "Transporter":   [Profession.ENGINEER, Profession.MECHANIC],
-    "Educator":      [Profession.PROFESSOR],
-    "Banker":        [Profession.BANKER],
+    "Transporter":   [
+        Profession.LOGISTICS_MANAGER, Profession.ENGINEER,
+        Profession.FLIGHT_CREW, Profession.SEAMAN, Profession.WAREHOUSE_MANAGER,
+        Profession.MECHANIC,
+    ],
+    "Educator":      [Profession.PROFESSOR, Profession.LECTURER, Profession.TUTOR],
+    "Banker":        [Profession.BANKER, Profession.BANKING_ANALYST, Profession.BANKING_CLERK],
     "Manufacturer":  [Profession.ASSEMBLY_WORKER, Profession.ENGINEER, Profession.MECHANIC],
-    "Doctor":        [Profession.DOCTOR, Profession.NURSE],
+    "Doctor":        [Profession.DOCTOR, Profession.NURSE, Profession.MEDICAL_ORDERLY],
 }
 
 # Human-readable label for display
@@ -179,4 +222,17 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.BANKER:              "Banker (specialist)",
     Profession.PROFESSOR:           "Professor",
     Profession.MECHANIC:            "Mechanic",
+    # Transporter
+    Profession.LOGISTICS_MANAGER:   "Logistics Manager",
+    Profession.FLIGHT_CREW:         "Flight Crew",
+    Profession.SEAMAN:              "Seaman",
+    Profession.WAREHOUSE_MANAGER:   "Warehouse Manager",
+    # Educator
+    Profession.LECTURER:            "Lecturer",
+    Profession.TUTOR:               "Tutor",
+    # Banker
+    Profession.BANKING_ANALYST:     "Banking Analyst",
+    Profession.BANKING_CLERK:       "Banking Clerk",
+    # Doctor
+    Profession.MEDICAL_ORDERLY:     "Medical Orderly",
 }
