@@ -21,6 +21,11 @@ from ..constants import (
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role
+# ActionCancelled is raised by IO adapters when the user explicitly cancels a
+# prompt chain; the main action loop catches it to abort the action cleanly.
+# Imported from .cli.signals (dependency-free) to avoid a circular import via
+# cli/prompts.py which itself imports TurnAction from this module.
+from ..cli.signals import ActionCancelled
 
 
 class TurnAction(Enum):
@@ -310,6 +315,12 @@ class TurnManager:
                     self._action_view_loans(player)
                 elif action == TurnAction.APPLY_PATENT:
                     self._action_apply_patent(player, result)
+            except ActionCancelled:
+                # User pressed Cancel mid-prompt-chain — abort cleanly without
+                # falling back to default values that would partially execute
+                # the action (e.g. training 1 worker by default when the user
+                # clearly meant "abandon this action").
+                self.io.print("  Action cancelled.")
             except Exception as exc:
                 self.io.print(f"  Action failed: {exc}")
             finally:
@@ -497,17 +508,22 @@ class TurnManager:
         """Player proposes to send workers to the Education Island for one season."""
         season_index = SEASONS.index(season_name)
 
-        # Build list of professions with remaining capacity
+        # Build list of professions with remaining capacity.  Also surface
+        # exhausted professions so the player can SEE why one isn't selectable
+        # (previously a profession just vanished from the menu after its
+        # annual cap was reached — confusing the user when, say, "Banker"
+        # disappeared after 2 graduates).
         capacity_map = self.training.capacity_summary(year, season_index)
         available_professions = [
             prof for prof, info in capacity_map.items() if info["remaining"] > 0
         ]
-        if not available_professions:
-            self.io.print("  University is fully booked for this year across all professions.")
-            return
+        exhausted_professions = [
+            prof for prof, info in capacity_map.items() if info["remaining"] <= 0
+        ]
 
-        # Show capacity and let player choose target profession
-        self.io.print("  University capacity remaining this year:")
+        # Show capacity report — both available and exhausted lines so the
+        # player can see the full picture.
+        self.io.print("  University capacity this year:")
         for prof in available_professions:
             info = capacity_map[prof]
             seasonal_note = (
@@ -517,6 +533,16 @@ class TurnManager:
                 f"    {prof:<24}  {info['remaining']:>2} slot(s) left "
                 f"(of {info['annual_cap']} annual){seasonal_note}"
             )
+        for prof in exhausted_professions:
+            info = capacity_map[prof]
+            self.io.print(
+                f"    {prof:<24}   FULL — {info['trained']}/{info['annual_cap']} "
+                f"already requested this year"
+            )
+
+        if not available_professions:
+            self.io.print("  University is fully booked for this year across all professions.")
+            return
 
         target_profession = self.io.choose_profession(
             "Train workers into which profession?", available_professions

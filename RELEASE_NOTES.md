@@ -5,6 +5,85 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/fix-playtest-bugs
+
+Branch: `claude/fix-playtest-bugs`
+Target: `pre-release`
+
+Three bugs surfaced during live playtesting on `pre-release`.
+
+#### Bug 1 — Post-auction guarantee UI hung after purchase
+
+After the islandless buyer clicked Buy on an AI extra, the guarantee panel
+hid but the user stayed on the auction screen.  The investing screen never
+opened automatically.  Eventually the game proceeded (the server had moved
+on) but the player was left staring at a blank screen until they refreshed.
+
+**Fix:** `onIslandGuaranteeComplete` now proactively switches the user to
+the investing screen.  If `investData` has already arrived it renders
+immediately; otherwise the existing `investing_start` handler renders when
+the data lands.
+
+#### Bug 2 — Training menu lost Banker (and other) options too eagerly
+
+Two issues:
+1. The new technician professions added with the workforce baseline rule
+   (Logistics Manager, Flight Crew, Seaman, Warehouse Manager, Lecturer,
+   Tutor, Banking Analyst, Banking Clerk, Medical Orderly) had no entries
+   in `UNIVERSITY_CAPACITY`, so they didn't appear in the Request Training
+   menu at all.
+2. When a profession exhausted its annual cap the menu silently dropped it,
+   so the user couldn't see WHY their option had disappeared (felt buggy).
+
+**Fix:**
+- Extended `UNIVERSITY_CAPACITY` with caps for all 9 new professions
+  (reasonable defaults: Manager-tier 2/yr, Technician-tier 4-8/yr).
+- `_action_request_training` now prints exhausted professions with a `FULL
+  — X/Y already requested this year` line so the user understands the
+  capacity state.
+
+#### Bug 3 — Cancel button still executed a partial action
+
+Pressing Cancel on a prompt chain (e.g. Request Training) caused the engine
+to fall back to default values (`min_qty`, `available[0]`, etc.).  Result:
+"I pressed Cancel and it still trained 1 doctor."
+
+**Fix:** Plumbed an explicit cancel signal end-to-end:
+- New `cli/signals.py` with `CANCEL_SENTINEL` constant and
+  `ActionCancelled` exception (lives in its own module to avoid the
+  circular import between `cli/prompts` and `engine/turn`).
+- Client `cancelDlg()` now sends `CANCEL_SENTINEL` instead of `null`.  Two
+  other "treat as cancel" spots in the dashboard (market-buy modal cancel,
+  empty market-buy submit) updated to match.
+- `WebSocketIOAdapter` checks the sentinel at the top of every prompt
+  method (`_check_cancel`) and raises `ActionCancelled`.  A plain `None`
+  response (timeout / interrupt) still falls back to the default — only an
+  explicit Cancel raises.
+- `engine/turn.py` main action loop catches `ActionCancelled` and prints
+  "Action cancelled" — no partial execution.
+
+#### Tests
+
+- 9 new tests in `tests/test_engine/test_action_cancellation.py`:
+  * Each of the 7 WS-adapter prompt methods raises `ActionCancelled` on the
+    sentinel.
+  * `choose_quantity` returns the min on plain `None` (timeout fallback
+    preserved, NOT cancelled).
+  * End-to-end-ish: a cancelling IO in the training action handler results
+    in no training request being created.
+- 5 new tests in `tests/test_engine/test_training_menu.py`:
+  * All 9 new professions have `UNIVERSITY_CAPACITY` entries.
+  * Every Profession (other than Unskilled) is trainable.
+  * `capacity_summary` includes all professions.
+  * Banker cap is ≥ 2.
+  * Request Training menu shows exhausted professions as `FULL`.
+
+#### Verification
+
+- Test suite: `233 passed` (up from 219).
+
+---
+
 ### claude/post-auction-human-guarantee
 
 Branch: `claude/post-auction-human-guarantee`
