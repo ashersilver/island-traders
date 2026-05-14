@@ -18,7 +18,7 @@ Concurrent per-player design:
 from __future__ import annotations
 import logging
 import threading
-from ..cli.prompts import IOAdapter
+from ..cli.prompts import IOAdapter, ActionCancelled, CANCEL_SENTINEL
 from ..models.resource import ResourceType
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.turn import TurnAction
@@ -237,6 +237,17 @@ class WebSocketIOAdapter(IOAdapter):
                            player.player_id, player.name, resp)
             return TurnAction.END_TURN
 
+    @staticmethod
+    def _check_cancel(resp) -> None:
+        """Raise ActionCancelled if the response is the explicit Cancel sentinel.
+
+        A plain `None` is treated as "no answer" (timeout / interrupt) by each
+        prompt method's existing fallback — only an explicit cancel from the
+        user maps to this exception.
+        """
+        if resp == CANCEL_SENTINEL:
+            raise ActionCancelled()
+
     def choose_resource(self, prompt: str, available: list[ResourceType]) -> ResourceType:
         options = [{"value": r.value, "label": r.value} for r in available]
         resp = self._send_and_wait({
@@ -244,6 +255,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
             "options": options,
         })
+        self._check_cancel(resp)
         if resp is None:
             return available[0]
         try:
@@ -258,6 +270,7 @@ class WebSocketIOAdapter(IOAdapter):
             "min": min_qty,
             "max": max_qty,
         })
+        self._check_cancel(resp)
         if resp is None:
             return min_qty
         try:
@@ -273,6 +286,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
             "options": options,
         })
+        self._check_cancel(resp)
         if resp is None:
             return players[0]
         try:
@@ -286,6 +300,7 @@ class WebSocketIOAdapter(IOAdapter):
             "type": "confirm",
             "prompt": prompt,
         })
+        self._check_cancel(resp)
         if resp is None:
             return False
         return str(resp).lower() in ("true", "y", "yes", "1")
@@ -303,6 +318,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
             "options": options,
         })
+        self._check_cancel(resp)
         if resp and resp in available:
             return resp
         return available[0] if available else ""
@@ -313,6 +329,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
             "max": max_dollops,
         })
+        self._check_cancel(resp)
         if resp is None:
             return 0.0
         try:
@@ -327,6 +344,7 @@ class WebSocketIOAdapter(IOAdapter):
             "prompt": prompt,
             "default": default,
         })
+        self._check_cancel(resp)
         if resp is None:
             return default
         return str(resp).strip() or default
@@ -342,6 +360,7 @@ class WebSocketIOAdapter(IOAdapter):
             "budget": round(player.dollops, 1),
             "market": market_summary,
         })
+        self._check_cancel(resp)
         if resp is None:
             return None
         def _normalise(parsed):

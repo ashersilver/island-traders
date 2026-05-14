@@ -1417,6 +1417,15 @@ function onIslandGuaranteeComplete(msg) {
   if (guaranteeTimerInterval) clearInterval(guaranteeTimerInterval);
   document.getElementById('guarantee-overlay').classList.add('hidden');
   addLog('Island guarantee phase complete — proceeding to Investing.', 'info');
+  // Bug fix: previously the user was stranded on the auction screen with the
+  // guarantee overlay hidden, because investing_start only switches screens
+  // when the auction screen is already hidden.  Now we proactively transition
+  // to the investing screen as soon as the guarantee phase resolves.  If
+  // investData has already arrived (race with the investing_start broadcast)
+  // we render immediately; otherwise the investing_start handler renders when
+  // the data lands.
+  showScreen('investing');
+  if (investData) renderInvesting();
 }
 
 const GUARANTEE_PRICING_EXPLAINER =
@@ -2577,13 +2586,17 @@ function showActionPrompt(msg) {
   document.getElementById('prompt-input').innerHTML = '';
 }
 
-// Standard cancel button for any modal — sends null to the server, which
-// the IO adapter treats as "no choice" (defaults / aborts the action chain).
+// Standard cancel button for any modal — sends the CANCEL_SENTINEL to the
+// server.  The IO adapter detects the sentinel and raises ActionCancelled,
+// which the engine catches to abort the entire action cleanly (no default
+// fallback that would partially execute the action — see bug fix for
+// "Cancel still trained 1 doctor").
+const CANCEL_SENTINEL = '__CANCELLED__';
 const CANCEL_BTN_HTML =
   '<button class="btn-ghost" style="flex:1" onclick="cancelDlg()">Cancel</button>';
 
 function cancelDlg() {
-  sendResponse(null);
+  sendResponse(CANCEL_SENTINEL);
   // Hide the dialog overlay if it's open (sendResponse usually does this
   // implicitly when the next prompt arrives, but cancel should feel instant).
   document.getElementById('overlay').classList.remove('active');
@@ -2688,7 +2701,7 @@ function showMarketBuyPopup(msg) {
   html += '</tbody></table></div>';
   html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
   html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
-  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(null)">Cancel</button></div>';
+  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button></div>';
   html += '</div>';
   showDlg('Market Buy', html, 'market-dialog');
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
@@ -2723,7 +2736,8 @@ function submitMarketBuy() {
     if (qty > 0 && price > 0) bids[inp.dataset.res] = { quantity: qty, price };
   });
   if (Object.keys(orders).length === 0 && Object.keys(bids).length === 0) {
-    sendResponse(null);
+    // Empty submission — treat as cancel rather than an empty buy order.
+    sendResponse(CANCEL_SENTINEL);
   } else {
     sendResponse(JSON.stringify({ buy: orders, bids }));
   }

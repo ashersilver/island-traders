@@ -2,6 +2,9 @@ from __future__ import annotations
 from ..models.resource import ResourceType
 from ..engine.turn import TurnAction
 from ..constants import CURRENCY_SYMBOL
+# Re-export the cancel signals so existing callers continue to import them
+# from this module.
+from .signals import CANCEL_SENTINEL, ActionCancelled  # noqa: F401
 
 
 class IOAdapter:

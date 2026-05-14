@@ -340,20 +340,37 @@ UNSKILLED_RECRUITMENT_RATIO: float = 0.5   # 1 recruitable worker per 2 unskille
 
 # Maximum workers that can graduate into each profession per game YEAR.
 UNIVERSITY_CAPACITY: dict[str, int] = {
+    # Healthcare
     "Doctor":               2,
     "Nurse":               10,
+    "MedicalOrderly":       8,    # apprenticeship-tier healthcare support
+    # Engineering / cross-island
     "Engineer":             2,
+    "Mechanic":             4,    # multi-island Technician (Apprenticeship pipeline)
+    # Agriculture
     "Farmer":               2,
-    "FarmingTechnician":     4,
+    "FarmingTechnician":    4,
     "Veterinarian":         1,
+    # Manufacturing
     "AssemblyWorker":      10,
+    # Mining
     "Miner":                2,
     "MiningTechnician":     4,
     "OilExtractionWorker":  2,
     "RefinerySpecialist":   2,
+    # Banking
     "Banker":               2,
-    "Professor":            4,   # 1 per season × 4 seasons
-    "Mechanic":             4,   # multi-island Technician (Apprenticeship pipeline)
+    "BankingAnalyst":       4,
+    "BankingClerk":         6,
+    # Education
+    "Professor":            4,    # 1 per season × 4 seasons
+    "Lecturer":             4,
+    "Tutor":                6,
+    # Transport (the new professions added with the workforce baseline rule)
+    "LogisticsManager":     2,
+    "FlightCrew":           6,
+    "Seaman":               6,
+    "WarehouseManager":     6,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).
