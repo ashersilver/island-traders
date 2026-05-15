@@ -16,7 +16,9 @@ The game can be played as a **physical board game** (using printed cards, tokens
 - 1 Market Price Board
 - Season Scorecards
 - Resource tokens — **Food, Fish, Ore, Metal, Oil, Freight, Knowledge, Goods,
-  Health Services, Vaccine, Finance, Passenger Seats, Patents**
+  Health Services, Vaccine, Passenger Seats, Patents**
+  *(Note: the Banker does not produce a "Finance" commodity — banking is a
+  service business, see Loans and Insurance sections.)*
 - Capital-equipment tokens — Farm Machinery, Mining Equipment, Lab Equipment,
   Medical Devices, Transport Equipment
 - Dollop coins
@@ -50,8 +52,8 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 | **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil |
 | **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment |
 | **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) |
-| **Educator** | Education & Training Island | Knowledge, **Patents** | Laboratory Equipment, Finance |
-| **Banker** | Banking Island | Finance, **Insurance**, **Loans** | Knowledge |
+| **Educator** | Education & Training Island | Knowledge, **Patents** | Laboratory Equipment |
+| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Knowledge *(expertise; no per-season input)* |
 | **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight |
 | **Doctor** | Healthcare Island | Health Services, Vaccine | Knowledge, Laboratory Equipment |
 
@@ -267,8 +269,8 @@ Before producing, you must have your **production inputs** in inventory.  These 
 | Farmer | 1 Farm Machinery + 1 Oil |
 | Miner | 1 Oil + 1 Freight + 1 Mining Equipment |
 | Transporter | 2 Oil + 1 Fish *(crew provisions)* |
-| Educator | 1 Lab Equipment + 1 Finance |
-| Banker | 1 Knowledge |
+| Educator | 1 Lab Equipment |
+| Banker | — *(service business; revenue comes from loan interest and insurance premiums, not commodity production)* |
 | Manufacturer | Varies by product line: typically **Metal** + Oil + Freight |
 | Doctor | 1 Knowledge + 1 Lab Equipment |
 
@@ -329,7 +331,6 @@ Base prices (in Dollops per unit):
 | Goods | 30 Dp | Manufacturer |
 | Health Services | 35 Dp | Doctor |
 | Vaccine | 40 Dp | Doctor |
-| Finance | 20 Dp | Banker |
 | Passenger Seats | 15 Dp | Transporter *(charter flight / ship berth)* |
 | Patents | 80 Dp | Educator *(one-time +20% input efficiency)* |
 
@@ -720,11 +721,13 @@ Roll Over Loan · View Loans · Inventory · View Market · View Players · End 
 
 **Production formula:** Base × Event Modifier × max(Base Capacity, Fill Rate × Avg Efficiency)
 
-**Resources (current set):**
+**Resources (commodities, current set):**
 Food · Fish · Ore · **Metal** · Oil · Freight · Knowledge · Goods ·
 Lab Equipment · Farm Machinery · Mining Equipment · Medical Devices ·
-Transport Equipment · Health Services · Vaccine · Finance · Insurance ·
-Loans · **Passenger Seats** · **Patents**
+Transport Equipment · Health Services · Vaccine · **Passenger Seats** ·
+**Patents**
+
+**Banking services (not commodity tokens):** Loans · Insurance
 
 **Capital equipment lines** (Manufacturer): Goods (general), Farm Machinery,
 Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment.

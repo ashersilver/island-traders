@@ -29,10 +29,12 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
     # Educator: Knowledge to sell + 2 seasons of inputs
     "Educator":      {"Knowledge": 2,                                 # to sell
-                      "LaboratoryEquipment": 2, "Finance": 2},        # 2 seasons of each input
-    # Banker: Finance to sell + 2 seasons of inputs
-    "Banker":        {"Finance": 2,                                   # to sell
-                      "Knowledge": 2},                                 # 2 seasons: 1 per season
+                      "LaboratoryEquipment": 2},                       # 2 seasons of Lab Equipment
+    # Banker: no production output to stock; just the working knowledge they
+    # need to write loans / underwrite insurance.  Banker income comes from
+    # loan interest spread and insurance premiums — see island-ledger.md §3
+    # for the full institutional-cash-pool model (future implementation).
+    "Banker":        {"Knowledge": 2},                                 # 2 seasons of expertise
     # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
@@ -77,7 +79,12 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
                       "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     "Educator":      {"Knowledge": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Patents": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Banker":        {"Finance": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Banker does NOT produce a "Finance" commodity — banking earns through
+    # the spread on loans (and insurance premiums, future deal-guarantee
+    # fees, brokerage, project finance).  Finance-as-tradeable-commodity
+    # was a placeholder that made the Banker print money; removed so the
+    # business model has to come from the actual lending engine.
+    "Banker":        {},
     "Doctor":        {"HealthServices": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Vaccine": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
 }
@@ -88,8 +95,12 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
     "Transporter":   {"Oil": 2, "Fish": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"LaboratoryEquipment": 1, "Finance": 1}, # labs + operating budget
-    "Banker":        {"Knowledge": 1},                         # expertise + infrastructure
+    "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
+    # Banker has no per-season production input — they make money from loan
+    # interest spread (and future deal-guarantee fees, brokerage, project
+    # finance, insurance underwriting).  Knowledge is still useful but is
+    # not a hard requirement gating "production".
+    "Banker":        {},
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
     "Doctor":        {"Knowledge": 1, "LaboratoryEquipment": 1},
 }

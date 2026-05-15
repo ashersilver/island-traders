@@ -194,14 +194,17 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
     ),
 
     # ----- Banker ----------------------------------------------------------
+    # Capital items now express headroom for Loans and InsurancePolicies
+    # (the Banker's actual business activities) rather than a "Finance"
+    # commodity capacity, which is no longer produced.
     CapitalItem(
         item_id="banker.vault",
         name="Vault",
         role="Banker",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"Finance": 4}},
-        description="+4 Finance capacity",
+        effects={"capacity": {"Loans": 4}},
+        description="+4 Loans capacity",
     ),
     CapitalItem(
         item_id="banker.trading_floor",
@@ -209,8 +212,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Banker",
         cost=70.0,
         delivery_seasons=0,
-        effects={"capacity": {"Finance": 3, "InsurancePolicies": 1}},
-        description="+3 Finance, +1 InsurancePolicy",
+        effects={"capacity": {"Loans": 3, "InsurancePolicies": 1}},
+        description="+3 Loans, +1 InsurancePolicy",
     ),
     CapitalItem(
         item_id="banker.underwriting_desk",
@@ -373,25 +376,22 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
         role="Educator", output="Knowledge",
-        inputs={"LaboratoryEquipment": 0.25, "Finance": 0.25},
+        inputs={"LaboratoryEquipment": 0.25},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
         description="1 Professor required per unit of Knowledge",
     ),
     ProductionRecipe(
         role="Educator", output="Patents",
-        inputs={"LaboratoryEquipment": 0.5, "Finance": 0.5},
+        inputs={"LaboratoryEquipment": 0.5},
         manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
         description="2 Professors required per Patent (Research stock also needed)",
     ),
 
     # ----- Banker ----------------------------------------------------------
-    ProductionRecipe(
-        role="Banker", output="Finance",
-        inputs={"Knowledge": 0.5},
-        manager_per_unit=1.0, technician_per_unit=0.25, worker_per_unit=0.0,
-        money_per_unit=5.0,
-        description="5 Dp capital reserve per unit of Finance",
-    ),
+    # Banker no longer "produces" a Finance commodity.  Income comes from
+    # loan interest spread and insurance premiums.  The recipe below models
+    # underwriting capacity for InsurancePolicies; loans are tracked
+    # separately via the loan ledger (see models/loan.py).
     ProductionRecipe(
         role="Banker", output="InsurancePolicies",
         inputs={"Knowledge": 0.5},
