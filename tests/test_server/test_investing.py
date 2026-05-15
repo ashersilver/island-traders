@@ -346,7 +346,10 @@ def test_player_capacity_returns_per_output_data():
     food = next(o for o in cap["outputs"] if o["output"] == "Food")
     assert food["binding"] == "workforce"
     assert food["blockers"] == ["workforce"]
-    assert food["workforce_short"] == {"Technician": 3.0, "Worker": 7.0}
+    # Shortage labels now use profession-specific titles (2026-05-15 playtest
+    # change) rather than generic band names — for the Farmer the primary
+    # Technician title is "Farming Technician" and the Worker is "Farmhand".
+    assert food["workforce_short"] == {"Farming Technician": 3.0, "Farmhand": 7.0}
 
     fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
     assert fish["binding"] == "workforce"
