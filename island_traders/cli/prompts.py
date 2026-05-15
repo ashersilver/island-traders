@@ -7,6 +7,22 @@ from ..constants import CURRENCY_SYMBOL
 from .signals import CANCEL_SENTINEL, ActionCancelled  # noqa: F401
 
 
+# Player-facing labels for TurnAction values where the default title-cased
+# rendering (`"purchase_capital".replace("_"," ").title()` = "Purchase
+# Capital") isn't the wording we want.  Internal enum names + values stay
+# unchanged — only the player-visible label changes.
+ACTION_LABEL_OVERRIDES: dict[str, str] = {
+    "purchase_capital": "Purchase Equipment",   # was "Purchase Capital" (2026-05-15 playtest)
+}
+
+
+def action_label(action: TurnAction) -> str:
+    """Display label for a TurnAction in any IO adapter's action menu."""
+    if action.value in ACTION_LABEL_OVERRIDES:
+        return ACTION_LABEL_OVERRIDES[action.value]
+    return action.value.replace("_", " ").title()
+
+
 class IOAdapter:
     """All terminal I/O goes through this class. Subclass for tests or alternative UIs."""
 
@@ -19,7 +35,7 @@ class IOAdapter:
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
         self.print(f"\n  {player.name}'s turn ({player.role_names()}) — choose:")
         for i, action in enumerate(available, 1):
-            self.print(f"    {i}. {action.value.replace('_', ' ').title()}")
+            self.print(f"    {i}. {action_label(action)}")
         while True:
             raw = self.input("  > ").strip()
             if raw.isdigit():

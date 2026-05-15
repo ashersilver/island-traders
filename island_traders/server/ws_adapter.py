@@ -18,7 +18,7 @@ Concurrent per-player design:
 from __future__ import annotations
 import logging
 import threading
-from ..cli.prompts import IOAdapter, ActionCancelled, CANCEL_SENTINEL
+from ..cli.prompts import IOAdapter, ActionCancelled, CANCEL_SENTINEL, action_label
 from ..models.resource import ResourceType
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.turn import TurnAction
@@ -216,7 +216,10 @@ class WebSocketIOAdapter(IOAdapter):
             logger.debug("Player %d (%s): season interrupted, returning END_TURN",
                          player.player_id, player.name)
             return TurnAction.END_TURN
-        options = [{"value": a.value, "label": a.value.replace("_", " ").title()} for a in available]
+        options = [
+            {"value": a.value, "label": action_label(a)}
+            for a in available
+        ]
         resp = self._send_and_wait({
             "type": "choose_action",
             "player_id": player.player_id,

@@ -1366,7 +1366,7 @@ class GameManager:
         from ..models.capacity import (
             recipes_for_role, compute_capacity, find_item,
         )
-        from ..models.profession import WorkerBand
+        from ..models.profession import WorkerBand, primary_title
 
         # Build workforce by band (active workers only)
         band_counts = p.workforce.band_summary()
@@ -1454,7 +1454,12 @@ class GameManager:
                         have = wf_by_band.get(band, 0)
                         short = need - have
                         if short > 0:
-                            workforce_short[band.value] = round(short, 2)
+                            # Name the missing workers by their specific
+                            # profession title (e.g. "Flight Crew") rather
+                            # than the generic band ("Technician") so the
+                            # constraint popup reads naturally.
+                            label = primary_title(recipe.role, band)
+                            workforce_short[label] = round(short, 2)
 
                 # Equipment shortfall. Prefer concrete catalogue options over
                 # telling the player "buy capital" and making them hunt.

@@ -5,6 +5,57 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-polish-2026-05-15
+
+Branch: `claude/ux-polish-2026-05-15`
+Target: `pre-release`
+
+Two small UX wins from the 2026-05-15 playtest inbox.
+
+#### "Purchase Capital" → "Purchase Equipment" label
+
+Pure display-label change.  Internal identifier
+(`TurnAction.PURCHASE_CAPITAL`, value `"purchase_capital"`) is unchanged
+— saved games, server JSON, and existing tests all keep working.
+
+Implementation: new `action_label()` helper + `ACTION_LABEL_OVERRIDES`
+dict in `cli/prompts.py`, used by both the CLI `IOAdapter` and the
+WebSocket `WebSocketIOAdapter` so both menus render the same label.
+
+#### Workforce shortage messages use profession titles, not band names
+
+Constraint popup used to say *"+2 Technicians"* — not actionable.  Now
+it says *"+2 Flight Crew"* (for the Transporter), *"+2 Farming
+Technician"* (for the Farmer), *"+2 Banking Analyst"* (for the Banker),
+etc.
+
+Implementation: server-side `_player_capacity` now uses
+`primary_title(recipe.role, band)` from `models/profession.py` when
+building the `workforce_short` dict, so the dashboard receives
+profession names ready to render.  Dashboard rendering didn't need to
+change — it just prints the keys it gets.
+
+#### Tests
+
+- 4 new tests in `tests/test_engine/test_action_labels.py`:
+  * `Purchase Capital` displays as `Purchase Equipment`
+  * Unmapped actions still use default title-casing
+  * Internal enum name + value are unchanged
+  * Every override key points at a real `TurnAction` value
+- 2 new tests in `tests/test_server/test_workforce_shortage_messages.py`:
+  * Transporter shortages name Logistics Manager / Flight Crew /
+    Seaman / Warehouse Manager / Stevedore — never generic bands
+  * Banker shortages name Banker / Banking Analyst / Banking Clerk /
+    Receptionist — never generic bands
+- Updated `tests/test_server/test_investing.py` (1 assertion) to expect
+  the new profession-titled keys instead of `"Technician"` / `"Worker"`.
+
+#### Verification
+
+- Test suite: 246 passed (was 240, +6 new).
+
+---
+
 ### claude/educator-self-training
 
 Branch: `claude/educator-self-training`
