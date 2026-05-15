@@ -5,6 +5,62 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/inbox-2026-05-15
+
+Branch: `claude/inbox-2026-05-15`
+Target: `pre-release`
+
+Docs-only branch.  Processed the 8 playtest items captured in
+`requirements/inbox.md` on 2026-05-15.  No code or test changes.
+
+#### What landed where
+
+| Item | Destination |
+|---|---|
+| Educator self-training (no fee / no transport / 1 season) | `TODO.md` Bugs section |
+| Rename `Purchase Capital` → `Purchase Equipment` | `TODO.md` Dashboard & UX |
+| AI live-play economy / automated trading | `TODO.md` new "AI Trading Behaviour" section (proposed next Codex task) |
+| Personnel shortages by specialty | `TODO.md` Dashboard & UX |
+| Food: base population self-fed | `requirements/production-capacity-model.md §21` (new) + `TODO.md` |
+| Cancel open bids / offers + partial fills | `TODO.md` new "Market & Trading" section |
+| Education refinement: Knowledge → Expertise, +Courses, +Instructors | **New spec** `requirements/education-model.md` + `TODO.md` new "Education Model Refinement" section |
+| Near-match auto-clearing (±1 Dp / ±3%) | `TODO.md` "Market & Trading" |
+| Item valuation: last-deal / lower-of-cost-or-market | `TODO.md` Financial Model |
+
+#### Highlight: Education model refinement is the largest piece
+
+`requirements/education-model.md` (new) lays out a two-phase migration:
+
+* **Phase 1 (mechanical):** rename `ResourceType.KNOWLEDGE` →
+  `ResourceType.EXPERTISE` and display label "Expertise" everywhere.  Pure
+  cascade — zero behavioural change.  ~40-file touch surface.
+* **Phase 2 (gameplay):** add `ResourceType.COURSES` (new tradable);
+  Education produces Courses by consuming Expertise; training requests
+  debit Courses on approval; add `Profession.INSTRUCTOR` (consolidating
+  with Tutor is the recommended open question); rebalance Education
+  starting workforce to 4 Professors + 4 Instructors.
+
+The spec flags open questions (Tutor vs Instructor consolidation, Course
+trade-ability, self-training Course consumption) for product-side
+decisions before implementation starts.
+
+#### Highlight: AI Trading Behaviour is the next Codex candidate
+
+The playtest reported that AI islands behave too passively after
+production — humans have to push trades on them.  The new "AI Trading
+Behaviour" TODO section enumerates the concrete missing behaviours
+(placing bids, listing offers, cross-island arbitrage, deal valuation
+based on last-deal price).  This is well-scoped, lives mostly in
+`engine/ai.py`, and doesn't overlap with Claude's current workstreams —
+exactly the kind of task Codex can pick up on a `codex/ai-trading`
+branch.
+
+#### Verification
+
+- No code changes.  Test suite unchanged.
+
+---
+
 ### claude/banker-rebalance
 
 Branch: `claude/banker-rebalance`

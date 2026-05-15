@@ -14,6 +14,12 @@
       TLS/thread race in ws_adapter — `set_active_player` called on wrong thread
       or `_ensure_player` races, causing `_send_and_wait` to silently return None.
       Reconnect/replay work may help but needs a dedicated investigation.
+- [ ] **Educator self-training** *(playtest 2026-05-15)* — the Education
+      Island can't currently send its own workers to college.  Self-training
+      should take 1 season, require **no educator fee** and **no transport
+      ticket**.  Touches `_action_request_training` + `_action_review_training`
+      in `engine/turn.py` (skip the educator-choice prompt + transport
+      requirement when requester == educator).
 
 ## In Progress
 
@@ -42,6 +48,13 @@ See [`requirements/production-capacity-model.md`](requirements/production-capaci
 - [x] Metal intermediate: Mining smelts Ore + Oil into Metal; enhanced crusher/smelter boosts Metal productivity and reduces Oil use
 - [ ] Capital equipment leases (3-year lease, return or buy out at 5-year straight-line book value)
 - [ ] Cross-island machinery licences — any island can buy non-native machinery from Manufacturing, operate the matching recipe if it supplies inputs/workforce, absorb standard-of-living/salary/perk impacts, and respect commodity/equipment shipping delays
+- [ ] **Food demand: base population is self-fed** *(playtest 2026-05-15)* —
+      starting ~100 residents generate **no** market Food/Fish demand
+      (self-sufficient subsistence).  Only **added** residents beyond the
+      baseline generate +1 Food demand/season.  Add
+      `BASE_POPULATION_SELF_FED = 100` constant; refactor
+      `population_food_demand` to subtract it before scaling.  See
+      `production-capacity-model.md §21`.
 
 ### AI Players
 See [`requirements/llm-player-adapter.md`](requirements/llm-player-adapter.md) for the LLM adapter design.
@@ -54,6 +67,48 @@ Draft PR #12 documents the spec; implementation is the next step.
 - [ ] `LLMPlayerStrategy` implementation behind optional configuration
 - [ ] Tests proving invalid LLM proposals cannot mutate game state
 - [ ] Keep `AIStrategy` as default heuristic for simulations and tests
+
+### AI Trading Behaviour
+*(From the 2026-05-15 playtest inbox.)* Heuristic AI is too passive after
+production today.  Humans currently have to *propose* trades to AIs to get
+anything moving.  Suggested candidate for the next Codex task.
+
+- [ ] AI islands should **place bids** on inputs they're short on
+- [ ] AI islands should **list offers** for outputs they have surplus of
+- [ ] AI islands should **evaluate profitable cross-island deals / inventory
+      arbitrage** (e.g. Mining trades Ore + cash to Education; Education may
+      resell Ore for profit or hold it until worthwhile bids appear)
+- [ ] Verify Transportation actually produces & lists Passenger Seats / air
+      tickets so training isn't silently blocked when no human Transporter is
+      online.  Likely just a check; add a test asserting Transporter AI lists
+      Passenger Seats by season 2.
+- [ ] AI deal-valuation logic should use the **last-deal price or current
+      offer price** (see Item Valuation below), not formula price
+
+### Education Model Refinement
+See [`requirements/education-model.md`](requirements/education-model.md) for full spec.
+*(From the 2026-05-15 playtest inbox.)*  Two-phase migration recommended;
+don't combine the phases.
+
+#### Phase 1 — Rename
+- [ ] `ResourceType.KNOWLEDGE` → `ResourceType.EXPERTISE` (mechanical
+      rename, ~40-file cascade, zero behavioural change)
+- [ ] Update RULES.md / README.md / dashboard labels
+
+#### Phase 2 — Courses + new training flow
+- [ ] Add `ResourceType.COURSES` (new tradable resource, base price ≈ 25 Dp)
+- [ ] New Education recipe: Courses production consumes Expertise as an input
+- [ ] Add `Profession.INSTRUCTOR` (Technician); consider consolidating
+      Tutor → Instructor (open question in the spec)
+- [ ] Training requests debit 1 Course from Educator inventory on approval;
+      no Courses → request stays pending
+- [ ] `UNIVERSITY_CAPACITY` re-segments: Manager-tier training gated by
+      Professors; Technician-tier training gated by Instructors
+- [ ] `STARTING_WORKFORCE[Educator] = 8`: 4 Professors + 4 Instructors
+- [ ] `STARTING_INVENTORY[Educator]` += 6 Expertise + 5 Courses
+- [ ] Self-training (Educator training its own workforce) still consumes a
+      Course but skips fees and transport — coordinate with the related Bug
+      entry above
 
 ### Island Ledger & Ownership Model
 See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the full spec.
@@ -73,6 +128,25 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] Rename "Dollops" heading → "Working Capital" (suffix `Dp` stays)
 - [x] Wealth = total assets at market value + depreciated capital equipment book value + loans receivable − loans outstanding (balance sheet view)
 - [ ] All monetary values show `Dp` suffix consistently in UI
+- [ ] **Item valuation rule** *(playtest 2026-05-15)* — for deal evaluation and
+      wealth reporting, an item's estimated market value should be the **last
+      deal price**, falling back to the **current best offer price** when no
+      deals have happened yet (instead of the formula price).  Existing
+      inventory should be valued at **lower of cost or market** for wealth
+      calculations.  Affects AI valuation heuristics and player / island
+      wealth reporting.
+
+### Market & Trading
+*(Playtest 2026-05-15 additions.)*
+
+- [ ] **Cancel open bids and offers** — players need a UI action to withdraw
+      their own standing bid/offer.  Existing partially filled offers should
+      retain the **reduced remaining quantity** after sales.
+- [ ] **Near-match auto-clearing heuristic** — a bid and offer should
+      cross-match when within either **1 Dollop** OR **3%** of each other
+      (e.g. 97/100 and 9/10 should clear).  Match price = the offer price.
+      Fill the lesser of the two quantities; partially filled standing orders
+      keep the residual.
 
 ### Dashboard & UX
 
@@ -82,6 +156,8 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] **#8 — Intro screen** — animated board with hotspot tooltips explaining each island; requires island graphics assets
 - [ ] Event log: player-relevant lines are highlighted (done ✓ — verify in play)
 - [ ] Consolidated view when controlling multiple islands (tab + "Consolidated" already exists; verify multi-role aggregation is correct)
+- [ ] **Rename action wording: `Purchase Capital` → `Purchase Equipment`** *(playtest 2026-05-15)* — pure label change; touches `engine/turn.py` enum value (TurnAction.PURCHASE_CAPITAL stays as the internal identifier, just changes the player-facing label), the action dispatch in the dashboard, and the action button labels.  Update `Apply Patent` similarly if needed.
+- [ ] **Personnel shortages named by specialty/profession** *(playtest 2026-05-15)* — when production capacity is constrained by missing workers, the UI/log should say *"need 2 more Flight Crew"* or *"need 1 more Banker"*, not the generic *"need 2 more Technicians"*.  Touches the constraint-popup text + workforce-shortage log lines.
 
 ---
 
