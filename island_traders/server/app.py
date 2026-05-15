@@ -73,9 +73,71 @@ ROLE_INFO = {
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
+ISLAND_GUARANTEE_DURATION   = 90   # seconds per islandless human to choose
 DEFAULT_STARTING_CAPITAL    = 700.0   # Dp per player (7-player game default)
 DEFAULT_SEASON_TIMER        = 120     # seconds per season (0 = no timer)
 DEFAULT_PRE_SEASON_TIMER    = 30      # seconds for pre-season review window (0 = skip)
+
+
+# ---------------------------------------------------------------------------
+# Post-auction human island guarantee pricing
+# (requirements/production-capacity-model.md §19.1)
+# ---------------------------------------------------------------------------
+
+def compute_guarantee_price(
+    ai_price_paid: float,
+    starting_wealth: float,
+    buyer_current_wealth: float,
+) -> dict:
+    """Calculate the price an islandless human pays to take an AI's extra island.
+
+    Inputs:
+      ai_price_paid       — what the AI paid for this specific role in the auction.
+      starting_wealth     — the auction-budget reference value (e.g. 700 Dp).
+      buyer_current_wealth — the human buyer's remaining cash (drives the floor).
+
+    Returns a dict with the final price plus the breakdown components used by
+    the UI to explain the calculation:
+        {
+          "ai_paid":      <float>,
+          "ratio_of_start": <float, 0..>,   # ai_paid / starting_wealth
+          "formula_band": "<low|mid|high>", # which clause fired
+          "formula":      <float>,           # auction-price formula value
+          "floor":        <float>,           # 20% of buyer current wealth
+          "final":        <float>,           # max(formula, floor)
+        }
+    """
+    starting_wealth = max(0.0, float(starting_wealth))
+    buyer_current_wealth = max(0.0, float(buyer_current_wealth))
+    ai_price_paid = max(0.0, float(ai_price_paid))
+
+    if starting_wealth > 0:
+        ratio = ai_price_paid / starting_wealth
+    else:
+        ratio = 0.0
+
+    # Inclusive at both ends [11%, 15%] — confirmed in spec open question.
+    if 0.11 <= ratio <= 0.15:
+        formula_value = 2.0 * ai_price_paid
+        band = "mid"
+    elif ratio > 0.15:
+        formula_value = 1.05 * ai_price_paid
+        band = "high"
+    else:
+        formula_value = ai_price_paid
+        band = "low"
+
+    floor = 0.20 * buyer_current_wealth
+    final = max(formula_value, floor)
+
+    return {
+        "ai_paid": round(ai_price_paid, 2),
+        "ratio_of_start": round(ratio, 4),
+        "formula_band": band,
+        "formula": round(formula_value, 2),
+        "floor": round(floor, 2),
+        "final": round(final, 2),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +182,39 @@ class AuctionState:
             "assignments": self.assignments,
             "phase": self.phase,
             "timer_remaining": max(0, round(self.timer_end - time.time(), 1)),
+        }
+
+
+@dataclass
+class IslandGuaranteeState:
+    """Per-room state for the post-auction human island guarantee phase
+    (requirements/production-capacity-model.md §19.1).
+
+    `pending_buyers`: queue of islandless human lobby_player_ids waiting to choose
+                     (sequential — earlier joiners pick first).
+    `current_buyer`: who is currently choosing (None when none).
+    `offers_for_current`: list of {role, seller_pid, seller_name, ai_paid,
+                                   price_breakdown, affordable} for the active buyer.
+    `auction_deductions`: carried over so we can finalize cash movements after
+                          the guarantee phase resolves (matches existing
+                          investing-phase pattern).
+    """
+    pending_buyers: list[str] = field(default_factory=list)
+    current_buyer: str | None = None
+    offers_for_current: list[dict] = field(default_factory=list)
+    timer_end: float = 0.0
+    auction_deductions: dict[str, float] = field(default_factory=dict)
+    _timer_task: Any = field(default=None, repr=False)
+    # Optional record of completed transfers, for the audit/event log.
+    completed: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "current_buyer": self.current_buyer,
+            "pending_buyers": list(self.pending_buyers),
+            "offers": list(self.offers_for_current),
+            "timer_remaining": max(0.0, round(self.timer_end - time.time(), 1)),
+            "completed": list(self.completed),
         }
 
 
@@ -178,11 +273,16 @@ class GameRoom:
     auction_timer_seconds: int = AUCTION_DURATION_SECONDS
     season_timer_seconds: int = DEFAULT_SEASON_TIMER     # 0 = no timer
     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER  # 0 = skip
-    status: str = "waiting"  # waiting | auction | investing | running | finished
+    status: str = "waiting"  # waiting | auction | guarantee | investing | running | finished
     players: list[LobbyPlayer] = field(default_factory=list)
     creator_id: str = ""
     auction: AuctionState | None = None
     investing: InvestingState | None = None
+    # Post-auction human island guarantee (Issue: post-auction safety valve)
+    guarantee: IslandGuaranteeState | None = None
+    # AI auction prices per role (captured at resolution) — used to compute
+    # the AI-island sale price during the guarantee phase.
+    ai_role_prices: dict[str, float] = field(default_factory=dict)
     game: Game | None = None
     game_thread: threading.Thread | None = None
     io_adapter: WebSocketIOAdapter | None = None
@@ -210,10 +310,19 @@ class GameRoom:
     )
     pre_season_end: float = 0.0  # epoch time the pre-season window closes
 
+    # ── Pause/Resume (Issue #1) ───────────────────────────────────────────────
+    # When `paused` is True, all timers are frozen and the game thread sleeping
+    # through pre-season is held until resume.  Only the room creator (host)
+    # may toggle pause.  Ready submissions are still accepted but do not
+    # advance the game state until resume.
+    paused: bool = False
+    paused_at: float = 0.0  # epoch time the current pause began
+
     def to_dict(self) -> dict:
         d = {
             "room_id": self.room_id,
             "name": self.name,
+            "creator_id": self.creator_id,
             "max_players": self.max_players,
             "num_years": self.num_years,
             "is_public": self.is_public,
@@ -224,6 +333,7 @@ class GameRoom:
             "season_timer_seconds": self.season_timer_seconds,
             "pre_season_timer_seconds": self.pre_season_timer_seconds,
             "status": self.status,
+            "paused": self.paused,
             "player_count": len([p for p in self.players if p.is_human]),
             "players": [
                 {"player_id": p.player_id, "name": p.name,
@@ -366,10 +476,11 @@ class GameManager:
         })
 
         if self._loop:
-            asyncio.run_coroutine_threadsafe(
+            fut = asyncio.run_coroutine_threadsafe(
                 self._auction_timer(room_id, auction_secs),
                 self._loop,
             )
+            room.auction._timer_task = fut
             # Schedule AI bids spread across the auction window
             ai_players = [p for p in room.players if not p.is_human]
             if ai_players:
@@ -510,6 +621,7 @@ class GameManager:
         auction.phase = "complete"
         winners: dict[str, str] = {}      # role -> player_id
         deductions: dict[str, float] = {} # player_id -> total Dp owed across all roles won
+        per_role_paid: dict[str, float] = {}  # role -> winning bid amount (for guarantee)
 
         # Resolve each role independently: highest bid wins, ties broken by timestamp.
         # A single player can win MULTIPLE roles if they bid the highest on each.
@@ -522,6 +634,11 @@ class GameManager:
                 top = bids[0]
                 winners[role] = top.player_id
                 deductions[top.player_id] = deductions.get(top.player_id, 0) + top.amount
+                per_role_paid[role] = top.amount
+
+        # Snapshot per-role auction prices on the room so the guarantee phase
+        # (and any future post-auction features) can refer back to them.
+        room.ai_role_prices = dict(per_role_paid)
 
         # Check require_all_human.  The room option means every role must be
         # won by a human player, not merely claimed by an AI placeholder.
@@ -544,10 +661,11 @@ class GameManager:
                 auction.phase = "bidding"
                 auction.timer_end = time.time() + room.auction_timer_seconds
                 if self._loop:
-                    asyncio.run_coroutine_threadsafe(
+                    fut = asyncio.run_coroutine_threadsafe(
                         self._auction_timer(room_id, room.auction_timer_seconds),
                         self._loop,
                     )
+                    room.auction._timer_task = fut
                 return
 
         auction.assignments = {role: pid for role, pid in winners.items()}
@@ -608,6 +726,18 @@ class GameManager:
             "deductions": {pid: round(amt, 1) for pid, amt in deductions.items()},
         })
 
+        # Post-auction human island guarantee (§19.1):
+        # If any human player still has no island AND any AI controls 2+
+        # islands, give the islandless humans a chance to buy an AI extra.
+        # Otherwise proceed straight to Investing.
+        if self._should_run_island_guarantee(room):
+            if self._loop:
+                asyncio.run_coroutine_threadsafe(
+                    self._delayed_guarantee_start(room_id, deductions, delay=2),
+                    self._loop,
+                )
+            return
+
         # Enter the Investing Phase after a short pause so players can see the
         # auction outcome.  When the user clicks "Continue to Game" on the
         # auction-result overlay, the front-end will see status=="investing"
@@ -618,6 +748,249 @@ class GameManager:
                 self._delayed_investing_start(room_id, deductions, delay=2),
                 self._loop,
             )
+
+    # ---- Post-auction human island guarantee (§19.1) ----
+
+    def _should_run_island_guarantee(self, room: GameRoom) -> bool:
+        """Trigger condition: at least one human has zero roles AND at least
+        one AI controls 2+ roles (so a swap is possible)."""
+        islandless_humans = any(
+            p.is_human and not p.role_names for p in room.players
+        )
+        ai_with_extras = any(
+            (not p.is_human) and len(p.role_names) >= 2 for p in room.players
+        )
+        return islandless_humans and ai_with_extras
+
+    def _islandless_humans_in_join_order(self, room: GameRoom) -> list[str]:
+        return [p.player_id for p in room.players
+                if p.is_human and not p.role_names]
+
+    def _build_offers_for(self, room: GameRoom, buyer_pid: str) -> list[dict]:
+        """All AI-held roles where the AI has 2+ roles are eligible offers.
+
+        Each offer includes the calculated guarantee price plus a breakdown so
+        the UI can show how the number was reached.  Affordability is computed
+        against the buyer's current cash (starting_capital — any auction
+        deductions, which for an islandless human is 0).
+        """
+        starting_wealth = room.starting_capital
+        buyer = next((p for p in room.players if p.player_id == buyer_pid), None)
+        buyer_deduction = (
+            (room.guarantee.auction_deductions.get(buyer_pid, 0.0)
+             if room.guarantee else 0.0)
+        )
+        buyer_current_wealth = max(0.0, starting_wealth - buyer_deduction)
+
+        offers = []
+        for ai_lp in room.players:
+            if ai_lp.is_human or len(ai_lp.role_names) < 2:
+                continue
+            for role in ai_lp.role_names:
+                ai_paid = float(room.ai_role_prices.get(role, 0.0))
+                breakdown = compute_guarantee_price(
+                    ai_price_paid=ai_paid,
+                    starting_wealth=starting_wealth,
+                    buyer_current_wealth=buyer_current_wealth,
+                )
+                offers.append({
+                    "role": role,
+                    "seller_player_id": ai_lp.player_id,
+                    "seller_name": ai_lp.name,
+                    "ai_paid": breakdown["ai_paid"],
+                    "price": breakdown["final"],
+                    "breakdown": breakdown,
+                    "affordable": breakdown["final"] <= buyer_current_wealth + 1e-6,
+                })
+        # Stable order: by role name so the UI is predictable.
+        offers.sort(key=lambda o: ALL_ROLES.index(o["role"])
+                                  if o["role"] in ALL_ROLES else 99)
+        return offers
+
+    async def _delayed_guarantee_start(
+        self, room_id: str, deductions: dict[str, float], delay: int = 2
+    ) -> None:
+        await asyncio.sleep(delay)
+        self._start_island_guarantee(room_id, deductions)
+
+    def _start_island_guarantee(
+        self, room_id: str, deductions: dict[str, float]
+    ) -> None:
+        """Enter the guarantee phase.  Sequential per buyer."""
+        room = self.rooms.get(room_id)
+        if not room:
+            return
+        pending = self._islandless_humans_in_join_order(room)
+        if not pending:
+            # Nothing to do — fall through to investing.
+            self._start_investing(room_id, deductions)
+            return
+
+        room.status = "guarantee"
+        room.guarantee = IslandGuaranteeState(
+            pending_buyers=pending,
+            auction_deductions=dict(deductions),
+        )
+        self._advance_island_guarantee(room_id)
+
+    def _advance_island_guarantee(self, room_id: str) -> None:
+        """Move to the next pending buyer, or finalize if queue is empty."""
+        room = self.rooms.get(room_id)
+        if not room or not room.guarantee:
+            return
+        gs = room.guarantee
+
+        # Cancel any in-flight per-buyer timer
+        if gs._timer_task is not None:
+            try: gs._timer_task.cancel()
+            except Exception: pass
+            gs._timer_task = None
+
+        while gs.pending_buyers:
+            buyer_pid = gs.pending_buyers.pop(0)
+            offers = self._build_offers_for(room, buyer_pid)
+            if not offers:
+                # Their would-be offers may have all been bought by an earlier
+                # buyer; skip and continue.
+                continue
+            gs.current_buyer = buyer_pid
+            gs.offers_for_current = offers
+            gs.timer_end = time.time() + ISLAND_GUARANTEE_DURATION
+            self._broadcast_guarantee_state(room)
+            if self._loop:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._guarantee_timer(room_id, ISLAND_GUARANTEE_DURATION),
+                    self._loop,
+                )
+                gs._timer_task = fut
+            return
+
+        # Queue exhausted → finalize and proceed to investing
+        self._finalize_island_guarantee(room_id)
+
+    def _broadcast_guarantee_state(self, room: GameRoom) -> None:
+        if not room.guarantee:
+            return
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "island_guarantee_state",
+            "guarantee": room.guarantee.to_dict(),
+        })
+
+    async def _guarantee_timer(self, room_id: str, seconds: int) -> None:
+        await asyncio.sleep(seconds)
+        room = self.rooms.get(room_id)
+        if not room or not room.guarantee:
+            return
+        # Time expired for the current buyer → they implicitly decline; move on.
+        if room.guarantee.current_buyer is not None:
+            logger.info("Room %s: island guarantee timer expired for buyer %s",
+                        room_id, room.guarantee.current_buyer)
+            room.guarantee.completed.append({
+                "buyer_player_id": room.guarantee.current_buyer,
+                "result": "timeout",
+            })
+            room.guarantee.current_buyer = None
+            room.guarantee.offers_for_current = []
+        self._advance_island_guarantee(room_id)
+
+    def submit_guarantee_choice(
+        self, room_id: str, lobby_player_id: str,
+        accept: bool, role: str | None = None,
+    ) -> dict:
+        """Buyer accepts (with `role`) or declines the current offer set."""
+        room = self.rooms.get(room_id)
+        if not room or not room.guarantee:
+            return {"error": "Not in guarantee phase"}
+        gs = room.guarantee
+        if lobby_player_id != gs.current_buyer:
+            return {"error": "Not your turn to choose"}
+
+        if not accept:
+            gs.completed.append({
+                "buyer_player_id": lobby_player_id,
+                "result": "declined",
+            })
+            self._thread_safe_broadcast(room_id, {
+                "type": "island_guarantee_resolved",
+                "buyer_player_id": lobby_player_id,
+                "result": "declined",
+            })
+            gs.current_buyer = None
+            gs.offers_for_current = []
+            self._advance_island_guarantee(room_id)
+            return {"ok": True, "accepted": False}
+
+        # Accept path — validate the chosen offer.
+        chosen = next((o for o in gs.offers_for_current if o["role"] == role), None)
+        if not chosen:
+            return {"error": f"No offer available for role {role!r}"}
+        if not chosen["affordable"]:
+            return {"error": f"Price {chosen['price']} exceeds your current wealth"}
+
+        # Execute the transfer.
+        seller = next((p for p in room.players
+                       if p.player_id == chosen["seller_player_id"]), None)
+        buyer = next((p for p in room.players if p.player_id == lobby_player_id), None)
+        if not seller or not buyer or role not in seller.role_names:
+            return {"error": "Stale offer; role no longer available"}
+
+        # Lobby-side role transfer
+        seller.role_names.remove(role)
+        buyer.role_names.append(role)
+
+        # Cash movement: buyer pays seller (these are auction-side cash flows
+        # tracked via deductions so the Game.setup() applies them correctly).
+        gs.auction_deductions[lobby_player_id] = (
+            gs.auction_deductions.get(lobby_player_id, 0.0) + chosen["price"]
+        )
+        # Refund the seller's effective net (they keep the price; reduce their
+        # auction-side deduction by the price, or treat as a positive credit).
+        gs.auction_deductions[chosen["seller_player_id"]] = (
+            gs.auction_deductions.get(chosen["seller_player_id"], 0.0)
+            - chosen["price"]
+        )
+
+        gs.completed.append({
+            "buyer_player_id": lobby_player_id,
+            "seller_player_id": chosen["seller_player_id"],
+            "role": role,
+            "price": chosen["price"],
+            "ai_paid": chosen["ai_paid"],
+            "breakdown": chosen["breakdown"],
+            "result": "accepted",
+        })
+
+        self._thread_safe_broadcast(room_id, {
+            "type": "island_guarantee_resolved",
+            "buyer_player_id": lobby_player_id,
+            "seller_player_id": chosen["seller_player_id"],
+            "role": role,
+            "price": chosen["price"],
+            "breakdown": chosen["breakdown"],
+            "result": "accepted",
+        })
+        # Also broadcast the updated room state so other clients see new owners.
+        self._broadcast_room_update(room)
+
+        gs.current_buyer = None
+        gs.offers_for_current = []
+        self._advance_island_guarantee(room_id)
+        return {"ok": True, "accepted": True, "role": role, "price": chosen["price"]}
+
+    def _finalize_island_guarantee(self, room_id: str) -> None:
+        """All islandless buyers handled — broadcast completion and proceed
+        to the Investing Phase using the (possibly modified) deductions."""
+        room = self.rooms.get(room_id)
+        if not room or not room.guarantee:
+            return
+        deductions = dict(room.guarantee.auction_deductions)
+        completed = list(room.guarantee.completed)
+        self._thread_safe_broadcast(room_id, {
+            "type": "island_guarantee_complete",
+            "completed": completed,
+        })
+        room.guarantee = None
+        self._start_investing(room_id, deductions)
 
     async def _delayed_investing_start(
         self, room_id: str, deductions: dict[str, float], delay: int = 2
@@ -676,10 +1049,11 @@ class GameManager:
         })
 
         if self._loop:
-            asyncio.run_coroutine_threadsafe(
+            fut = asyncio.run_coroutine_threadsafe(
                 self._investing_timer(room_id, INVESTING_DURATION_SECONDS),
                 self._loop,
             )
+            room.investing._timer_task = fut
 
     def _investing_payload(self, room: GameRoom, lp: LobbyPlayer) -> dict | None:
         """Build the per-player Investing Phase payload, including reconnects."""
@@ -1216,14 +1590,60 @@ class GameManager:
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
+                # Structured per-loan detail (Issue #6 — Loan rollover UI).
+                # Includes both borrower-side and lender-side active loans
+                # so the dashboard can show roles consistently.
+                "loans_detail": [
+                    {
+                        "loan_id": l.loan_id,
+                        "role": "borrower" if l.borrower_id == p.player_id else "lender",
+                        "principal": round(l.principal, 1),
+                        "interest_rate": l.interest_rate,
+                        "repayment_amount": round(l.repayment_amount, 1),
+                        "term_years": l.term_years,
+                        "issued_year": l.issued_year + 1,
+                        "issued_season": SEASONS[l.issued_season]
+                            if l.issued_season < len(SEASONS) else str(l.issued_season),
+                        "maturity_year": l.maturity_year + 1,
+                        "maturity_season": SEASONS[l.maturity_season]
+                            if l.maturity_season < len(SEASONS) else str(l.maturity_season),
+                        "seasons_to_maturity": max(0,
+                            (l.maturity_year - current_year_idx) * len(SEASONS)
+                            + (l.maturity_season - current_season_idx)),
+                        "counterparty_id": l.lender_id
+                            if l.borrower_id == p.player_id else l.borrower_id,
+                    }
+                    for l in game.loan_ledger.active_loans_for(p.player_id)
+                ],
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                # Plain descriptive strings for back-compat with older UI code
                 "policies": [
                     pol.describe() for pol in p.insurance_policies if pol.active
+                ],
+                # Structured per-policy detail (Issue #5 — Insurance review UI)
+                "policies_detail": [
+                    {
+                        "policy_id": pol.policy_id,
+                        "policy_type": pol.policy_type,
+                        "premium_paid": round(pol.premium_paid, 1),
+                        "purchased_tick": pol.purchased_tick,
+                        "expires_at_tick": pol.expires_at_tick,
+                        "expires_year": pol.expires_at_tick // len(SEASONS) + 1,
+                        "expires_season": SEASONS[pol.expires_at_tick % len(SEASONS)]
+                            if (pol.expires_at_tick % len(SEASONS)) < len(SEASONS)
+                            else "",
+                        "seasons_remaining":
+                            pol.seasons_remaining(current_year_idx, current_season_idx),
+                        "cancel_refund":
+                            pol.cancel_refund(current_year_idx, current_season_idx),
+                        "banker_player_id": pol.banker_player_id,
+                    }
+                    for pol in p.insurance_policies if pol.active
                 ],
             }
             lobby_player = next(
@@ -1395,11 +1815,154 @@ class GameManager:
         """Route a WS response message to the right engine player's event."""
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
+            logger.debug("handle_player_response: room %s not found or no io_adapter", room_id)
             return
         engine_pid = room.lobby_to_engine_id.get(lobby_player_id)
         if engine_pid is None:
+            logger.warning("handle_player_response: lobby_player_id %s has no engine mapping "
+                           "(room %s, phase %s)", lobby_player_id, room_id, room.season_phase)
             return
         room.io_adapter.receive_response(engine_pid, value)
+
+    # ---- Pause / Resume (Issue #1) ----
+
+    def request_pause(self, room_id: str, lobby_player_id: str, paused: bool) -> dict:
+        """Host-only request to pause or resume the game.
+
+        On pause:
+          * `room.paused` is set to True and `paused_at` records the time.
+          * All active asyncio timers (auction, investing, season-action) are
+            cancelled; their `*_timer_end` epochs are frozen.
+          * The pre-season wait loop (running on the game thread) sees
+            `room.paused` and holds until resume.
+          * `submit_ready` still accepts presses but does NOT advance the game
+            state (no interrupt_all, no _pre_season_done.set).
+          * Broadcasts `game_paused` to all clients.
+
+        On resume:
+          * Computes the pause duration.
+          * Bumps every frozen `*_timer_end` forward by that duration.
+          * Reschedules the asyncio timer task with the new remaining seconds.
+          * Clears `room.paused`.
+          * Broadcasts `game_resumed`.
+          * After resume the normal Ready-quorum / timer logic catches up.
+        """
+        room = self.rooms.get(room_id)
+        if not room:
+            return {"error": "Room not found"}
+        if lobby_player_id != room.creator_id:
+            return {"error": "Only the host can pause or resume the game"}
+        if room.status not in ("auction", "investing", "running"):
+            return {"error": f"Cannot pause from status '{room.status}'"}
+
+        if paused:
+            if room.paused:
+                return {"ok": True, "paused": True, "noop": True}
+            self._do_pause(room)
+            return {"ok": True, "paused": True}
+        else:
+            if not room.paused:
+                return {"ok": True, "paused": False, "noop": True}
+            self._do_resume(room)
+            return {"ok": True, "paused": False}
+
+    def _do_pause(self, room: GameRoom) -> None:
+        room.paused = True
+        room.paused_at = time.time()
+
+        # Freeze auction timer
+        if room.auction and room.auction._timer_task is not None:
+            try:
+                room.auction._timer_task.cancel()
+            except Exception:
+                pass
+            room.auction._timer_task = None
+
+        # Freeze investing timer
+        if room.investing and room.investing._timer_task is not None:
+            try:
+                room.investing._timer_task.cancel()
+            except Exception:
+                pass
+            room.investing._timer_task = None
+
+        # Freeze action-phase season timer
+        if room.season_timer_task is not None:
+            try:
+                room.season_timer_task.cancel()
+            except Exception:
+                pass
+            room.season_timer_task = None
+
+        # Pre-season timer is enforced inside the game thread's wait loop;
+        # it inspects `room.paused` on each iteration.  No task to cancel.
+
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "game_paused",
+            "at": room.paused_at,
+        })
+        logger.info("Room %s paused by host (status=%s, phase=%s)",
+                    room.room_id, room.status, room.season_phase)
+
+    def _do_resume(self, room: GameRoom) -> None:
+        now = time.time()
+        pause_duration = max(0.0, now - room.paused_at)
+
+        # Bump every frozen end-epoch forward by the pause duration so the
+        # remaining time picks up where it left off.
+        if room.auction and room.auction.timer_end > 0:
+            room.auction.timer_end += pause_duration
+            remaining = max(0.0, room.auction.timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._auction_timer(room.room_id, remaining), self._loop,
+                )
+                room.auction._timer_task = fut
+
+        if room.investing and room.investing.timer_end > 0:
+            room.investing.timer_end += pause_duration
+            remaining = max(0.0, room.investing.timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._investing_timer(room.room_id, remaining), self._loop,
+                )
+                room.investing._timer_task = fut
+
+        if room.season_timer_end > 0:
+            room.season_timer_end += pause_duration
+            remaining = max(0.0, room.season_timer_end - now)
+            if self._loop and remaining > 0:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._season_timer(room.room_id, int(remaining)), self._loop,
+                )
+                room.season_timer_task = fut
+
+        if room.pre_season_end > 0:
+            room.pre_season_end += pause_duration
+
+        room.paused = False
+        room.paused_at = 0.0
+
+        self._thread_safe_broadcast(room.room_id, {
+            "type": "game_resumed",
+            "pause_duration": round(pause_duration, 2),
+        })
+        # Re-broadcast the in-season ready/timer state so clients see the
+        # bumped countdown immediately.
+        if room.status == "running" and room.season_phase in ("pre_season", "action"):
+            self._broadcast_ready_update(room)
+        logger.info("Room %s resumed by host after %.1fs paused",
+                    room.room_id, pause_duration)
+
+        # After resume, re-check the Ready quorum.  If everyone became Ready
+        # during the pause we close the phase now.
+        if (room.status == "running"
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
+            if room.season_phase == "action" and room.io_adapter:
+                room.io_adapter.interrupt_all()
+            elif room.season_phase == "pre_season":
+                room._pre_season_done.set()
 
     # ---- Simultaneous-play: per-season Ready + Timer ----
 
@@ -1451,8 +2014,19 @@ class GameManager:
                 "active_humans": list(humans),
             })
 
-            # Block the game thread until ready or timeout.
-            room._pre_season_done.wait(timeout=pre_secs)
+            # Block the game thread until everyone is Ready OR the timer
+            # naturally expires.  Polled in 0.5s slices so the loop can
+            # respect `room.paused` — when paused, `pre_season_end` is bumped
+            # forward by _do_resume() so the timeout is automatically extended.
+            while True:
+                if room._pre_season_done.is_set():
+                    break
+                now = time.time()
+                if not room.paused and now >= room.pre_season_end:
+                    break  # natural timeout
+                # Wait briefly; if the done-event fires, return immediately.
+                if room._pre_season_done.wait(timeout=0.5):
+                    break
 
             room.pre_season_end = 0.0
             self._thread_safe_broadcast(room_id, {"type": "pre_season_end"})
@@ -1554,7 +2128,11 @@ class GameManager:
             else:
                 room.season_ready_set.discard(lobby_player_id)
             self._broadcast_ready_update(room)
-            if room.season_active_humans and room.season_ready_set >= room.season_active_humans:
+            # While paused we collect readies but do NOT advance — the host
+            # must resume first.  _do_resume() re-checks the quorum.
+            if (not room.paused
+                    and room.season_active_humans
+                    and room.season_ready_set >= room.season_active_humans):
                 room._pre_season_done.set()
             return {"ok": True, "ready": ready}
 
@@ -1563,18 +2141,24 @@ class GameManager:
             room.season_ready_set.add(lobby_player_id)
             # Set the per-player Ready flag — even if they're mid-action
             # (e.g. inside a market buy dialog) the next choose_action will
-            # return END_TURN and exit the loop.
-            if engine_pid is not None and lobby_player_id not in room.season_human_done:
+            # return END_TURN and exit the loop.  Skip while paused so the
+            # in-flight prompt isn't unblocked until the host resumes.
+            if (engine_pid is not None
+                    and lobby_player_id not in room.season_human_done
+                    and not room.paused):
                 room.io_adapter.mark_player_ready(engine_pid)
         else:
             room.season_ready_set.discard(lobby_player_id)
-            if engine_pid is not None:
+            if engine_pid is not None and not room.paused:
                 room.io_adapter.unmark_player_ready(engine_pid)
 
         self._broadcast_ready_update(room)
 
         # All active humans Ready → close the season immediately.
-        if room.season_active_humans and room.season_ready_set >= room.season_active_humans:
+        # While paused, defer this until resume (see _do_resume).
+        if (not room.paused
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
             room.io_adapter.interrupt_all()
         return {"ok": True, "ready": ready}
 
@@ -1746,6 +2330,11 @@ def create_app() -> FastAPI:
                     "type": "auction_update",
                     "auction": room.auction.to_dict(),
                 }))
+            elif room.status == "guarantee" and room.guarantee:
+                await websocket.send_text(json.dumps({
+                    "type": "island_guarantee_state",
+                    "guarantee": room.guarantee.to_dict(),
+                }))
             elif room.status == "investing" and room.investing:
                 await websocket.send_text(json.dumps({
                     "type": "investing_phase",
@@ -1761,6 +2350,14 @@ def create_app() -> FastAPI:
                 engine_pid = room.lobby_to_engine_id.get(player_id)
                 if room.io_adapter and engine_pid is not None:
                     room.io_adapter.replay_pending_prompt(engine_pid)
+
+            # If the game is paused, let the reconnecting client know so it
+            # can show the paused overlay immediately.
+            if room.paused:
+                await websocket.send_text(json.dumps({
+                    "type": "game_paused",
+                    "at": room.paused_at,
+                }))
 
             while True:
                 raw = await websocket.receive_text()
@@ -1802,6 +2399,22 @@ def create_app() -> FastAPI:
                     await websocket.send_text(json.dumps({
                         "type": "ready_ack", **result
                     }))
+                elif msg_type == "pause_request":
+                    result = manager.request_pause(
+                        room_id, player_id, bool(msg.get("paused", True)),
+                    )
+                    await websocket.send_text(json.dumps({
+                        "type": "pause_ack", **result
+                    }))
+                elif msg_type == "guarantee_choice":
+                    result = manager.submit_guarantee_choice(
+                        room_id, player_id,
+                        bool(msg.get("accept", False)),
+                        msg.get("role"),
+                    )
+                    await websocket.send_text(json.dumps({
+                        "type": "guarantee_ack", **result
+                    }))
                 elif msg_type == "chat":
                     manager._thread_safe_broadcast(room_id, {
                         "type": "chat",
@@ -1822,9 +2435,14 @@ def create_app() -> FastAPI:
 
 def main():
     import argparse
+    import os
+    # Honour the PORT env var (used by autoPort-assigned preview ports and most
+    # PaaS providers).  Falls back to 8000 only if neither --port nor PORT is set.
+    default_port = int(os.environ.get("PORT", "8000"))
+    default_host = os.environ.get("HOST", "0.0.0.0")
     parser = argparse.ArgumentParser(description="Island Traders Game Server")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=default_host)
+    parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--reload", action="store_true")
     args = parser.parse_args()
 

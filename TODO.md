@@ -68,15 +68,15 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 
 ### Financial Model
 
-- [ ] **#6 — Loan roll-over** — renegotiate rate and term on a loan before or at maturity
-- [ ] **#5 — Insurance review** — view active policies, cancel or renegotiate at renewal
+- [x] **#6 — Loan roll-over** — `ROLLOVER_LOAN` action; old loan ROLLED_OVER, new loan inherits repayment as principal at fresh banker_quote_rate
+- [x] **#5 — Insurance review** — `MANAGE_INSURANCE` action; pro-rata cancel refund (premium × seasons_remaining / total). Renewal via existing BUY_INSURANCE action.
 - [ ] Rename "Dollops" heading → "Working Capital" (suffix `Dp` stays)
 - [x] Wealth = total assets at market value + depreciated capital equipment book value + loans receivable − loans outstanding (balance sheet view)
 - [ ] All monetary values show `Dp` suffix consistently in UI
 
 ### Dashboard & UX
 
-- [ ] **#1 — Pause game** — freeze all timers, broadcast `game_paused`; other players see a non-interactive overlay until host unpauses
+- [x] **#1 — Pause game** — host-only pause/resume; freezes all timers (auction/investing/season-action/pre-season); full-screen overlay; ready submissions queued during pause and processed on resume
 - [ ] **#3 — Action alerts / event subscriptions** — chips on the log panel to filter by event type; popup notification when a subscribed event fires. *(See also `inbox.md` event-filtering requirement.)*
 - [ ] **#7 — All-player summary on island layout** — overlay player values (wealth, output, workforce) on the island map SVG
 - [ ] **#8 — Intro screen** — animated board with hotspot tooltips explaining each island; requires island graphics assets
@@ -88,15 +88,15 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 ## Backlog
 
 ### From CLAUDE.md
-- [ ] README.md (proper GitHub project readme)
-- [ ] RULES.md — fix Doctor workforce numbers (6 total: 2 Doctors + 4 Nurses)
+- [x] README.md (proper GitHub project readme) — exists and up to date
+- [x] RULES.md — Doctor workforce numbers fixed (6 total: 2 Doctors + 4 Nurses)
 - [ ] Simulation recalibration after ForgeHaven + insurance + capacity-model changes
 - [ ] PDF export via reportlab (stretch goal)
 
 ### Feature Roadmap
 - [ ] Auction margin lending: borrow up to 50% of starting capital at 10% (Banker, back-to-back 5% IMF loan). See `requirements/production-capacity-model.md §18`.
 - [ ] Roleless players — role aftermarket (secondary sales) + on-call bank deposits expanding Banker lending capacity. See `requirements/production-capacity-model.md §19` and `requirements/island-ledger.md`.
-- [ ] Post-auction human island guarantee — islandless humans can buy an extra AI island at the formula price before Year 1 starts. See `requirements/production-capacity-model.md §19.1`.
+- [x] Post-auction human island guarantee — sequential per-buyer phase between auction and investing; AI must sell, price = max(20% floor, banded formula); see `requirements/production-capacity-model.md §19.1`.
 - [ ] Brokerage services: Banker negotiates deals between islands for a commission
 - [ ] Contracts & Futures (forward agreements between players)
 - [ ] Infrastructure Investment (upgrade production capacity mid-game)

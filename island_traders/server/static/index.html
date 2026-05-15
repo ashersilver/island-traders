@@ -151,6 +151,31 @@ button:active{transform:scale(.97)}
 .psb-ready-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--dim)}
 .psb-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--dim)}
 .psb-dot.ready{background:#88ddaa}
+
+/* Pause overlay (Issue #1) */
+.pause-overlay{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,0.78);
+  display:flex;align-items:center;justify-content:center;
+  z-index:9000;
+  backdrop-filter:blur(2px);
+}
+.pause-overlay.hidden{display:none}
+.pause-card{
+  background:linear-gradient(135deg,#1a120a 0%,#2a1d08 100%);
+  border:2px solid var(--gold);
+  border-radius:var(--radius);
+  padding:2rem 3rem;
+  text-align:center;
+  box-shadow:0 0 40px rgba(212,165,116,.3);
+  max-width:480px;
+}
+.pause-icon{font-size:3.5rem;color:var(--gold);margin-bottom:.6rem;line-height:1}
+.pause-title{font-size:1.8rem;font-weight:700;color:var(--gold);margin-bottom:.6rem}
+.pause-sub{font-size:.95rem;color:var(--dim);margin-bottom:1.4rem;line-height:1.4}
+.pause-card .btn-gold{font-size:1rem;padding:.7rem 1.8rem}
+.is-paused #pause-btn-label::before{content:"▶ ";}
+#pause-btn.is-paused #pause-btn-label{color:var(--gold)}
 .budget-bar{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:.6rem 1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
 .budget-bar .budget-label{color:var(--dim);font-size:.82rem}
 .budget-bar .budget-val{color:var(--gold);font-weight:700;font-size:1rem}
@@ -641,6 +666,20 @@ button:active{transform:scale(.97)}
       <div id="auction-result-content"></div>
       <button class="btn-gold" style="margin-top:1rem;font-size:1rem;padding:.7rem 2.4rem;border-radius:50px" onclick="continueToGame()">Continue →</button>
     </div>
+
+    <!-- Post-auction human island guarantee panel (§19.1) -->
+    <div id="guarantee-overlay" class="hidden" style="margin-top:1rem;background:var(--panel);border:2px solid var(--gold);border-radius:var(--radius);padding:1.4rem">
+      <h2 style="color:var(--gold);margin-bottom:.4rem">🏝 Island Guarantee</h2>
+      <div id="guarantee-sub" style="color:var(--dim);font-size:.85rem;margin-bottom:1rem"></div>
+      <div id="guarantee-timer" style="color:var(--dim);font-size:.75rem;margin-bottom:.6rem"></div>
+      <div id="guarantee-offers"></div>
+      <div id="guarantee-actions" style="margin-top:1rem;display:flex;gap:.6rem">
+        <button class="btn-ghost" onclick="submitGuaranteeChoice(false, null)">Decline All</button>
+      </div>
+      <div id="guarantee-spectator" class="hidden" style="color:var(--dim);font-size:.85rem;margin-top:.6rem">
+        Waiting for the islandless player to choose…
+      </div>
+    </div>
   </div>
 </div>
 
@@ -703,8 +742,24 @@ button:active{transform:scale(.97)}
                 onclick="toggleReady()" title="Click when you've finished your actions this season">
           <span id="ready-btn-label">Ready ✓</span>
         </button>
+        <button id="pause-btn" class="btn-ghost btn-sm hidden"
+                onclick="togglePause()" title="Pause the game for everyone (host only)">
+          <span id="pause-btn-label">⏸ Pause</span>
+        </button>
         <span class="wealth" id="hdr-wealth">—</span>
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
+      </div>
+    </div>
+
+    <!-- Pause overlay — covers the entire game screen when paused -->
+    <div id="pause-overlay" class="pause-overlay hidden">
+      <div class="pause-card">
+        <div class="pause-icon">⏸</div>
+        <div class="pause-title">Game Paused</div>
+        <div class="pause-sub" id="pause-sub">The host has paused the game. Please wait…</div>
+        <button id="pause-overlay-resume" class="btn-gold hidden" onclick="togglePause()">
+          ▶ Resume Game
+        </button>
       </div>
     </div>
 
@@ -736,8 +791,12 @@ button:active{transform:scale(.97)}
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
       <div class="section">
-        <h3>Insurance</h3>
+        <h3>Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span></h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
+      </div>
+      <div class="section">
+        <h3>Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span></h3>
+        <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
       </div>
     </div>
 
@@ -811,6 +870,8 @@ let selectedRole = null;
 let myBids = {};  // role -> amount
 let timerInterval = null;
 let auctionTimerEnd = 0;
+// Pause state (Issue #1)
+let isPaused = false;
 let activeTabRole = null;
 let builtTabsForRoles = null; // serialised role list used to build the current tab bar
 // Simultaneous-play state
@@ -1230,6 +1291,11 @@ function showAuctionResult(msg) {
 }
 
 function continueToGame() {
+  // If a post-auction island-guarantee phase is in progress, stay put —
+  // the overlay is already rendered and will resolve into investing on its own.
+  if (currentRoom && currentRoom.status === 'guarantee') {
+    return;
+  }
   // If we're already in the Investing Phase, switch to that screen and wait
   // for the per-player investing_start payload (it may have arrived already).
   if (investData) {
@@ -1247,6 +1313,131 @@ function continueToGame() {
   requestState();
   setTimeout(continueToGame, 500);
 }
+
+// ==================== ISLAND GUARANTEE (§19.1) ====================
+
+let guaranteeTimerInterval = null;
+
+function onIslandGuaranteeState(gs) {
+  const overlay = document.getElementById('guarantee-overlay');
+  overlay.classList.remove('hidden');
+  // Ensure the auction-result overlay isn't covering things
+  document.getElementById('auction-result-overlay').classList.add('hidden');
+
+  const isMyTurn = gs.current_buyer === myPlayerId;
+  const offersEl = document.getElementById('guarantee-offers');
+  const actionsEl = document.getElementById('guarantee-actions');
+  const spectatorEl = document.getElementById('guarantee-spectator');
+  const subEl = document.getElementById('guarantee-sub');
+  const offers = gs.offers || [];
+
+  // Find the buyer's display name (best effort)
+  const buyerLp = (currentRoom?.players || []).find(p => p.player_id === gs.current_buyer);
+  const buyerName = buyerLp ? buyerLp.name : 'a player';
+
+  if (isMyTurn && offers.length) {
+    subEl.innerHTML =
+      `You ended the auction without an island. ` +
+      `Choose one to take from an AI player that won extras — the AI must sell at the price shown below. ` +
+      `<a href="#" onclick="event.preventDefault();alert(GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
+    actionsEl.classList.remove('hidden');
+    spectatorEl.classList.add('hidden');
+    offersEl.innerHTML = offers.map(o => {
+      const bd = o.breakdown || {};
+      const bandLabel = {
+        low:  'below 11% band → AI paid (no premium)',
+        mid:  'in 11–15% band → 2× AI paid',
+        high: 'above 15% band → 1.05× AI paid',
+      }[bd.formula_band] || '';
+      const role = o.role;
+      const color = ROLE_COLORS[role] || '#aaa';
+      const affordableCls = o.affordable ? '' : 'opacity:.5;pointer-events:none';
+      return (
+        `<div style="margin-bottom:.6rem;padding:.7rem;border:1px solid ${color}55;border-radius:6px;${affordableCls}">` +
+          `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+            `<strong style="color:${color}">${esc(roleDisplayName(role) || role)} Island</strong>` +
+            `<button class="btn-gold btn-sm" onclick="submitGuaranteeChoice(true, '${esc(role)}')" ${o.affordable ? '' : 'disabled'}>` +
+              `Buy for ${o.price.toFixed(1)} Dp` +
+            `</button>` +
+          `</div>` +
+          `<div style="font-size:.75rem;color:var(--dim);margin-top:.3rem">` +
+            `Seller: ${esc(o.seller_name)} (paid ${bd.ai_paid} Dp) &middot; ` +
+            `floor (20% of your cash): ${bd.floor} Dp &middot; ${esc(bandLabel)}` +
+          `</div>` +
+        `</div>`
+      );
+    }).join('');
+  } else if (isMyTurn) {
+    subEl.innerHTML = 'No AI extras are currently available to you.';
+    offersEl.innerHTML = '';
+    actionsEl.classList.add('hidden');
+    spectatorEl.classList.remove('hidden');
+  } else {
+    subEl.innerHTML = `<strong>${esc(buyerName)}</strong> is choosing whether to take an AI island.`;
+    offersEl.innerHTML = '';
+    actionsEl.classList.add('hidden');
+    spectatorEl.classList.remove('hidden');
+  }
+
+  // Timer
+  if (guaranteeTimerInterval) clearInterval(guaranteeTimerInterval);
+  const endAt = Date.now() + (gs.timer_remaining || 0) * 1000;
+  const tick = () => {
+    const remain = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    document.getElementById('guarantee-timer').textContent =
+      remain > 0 ? `${remain}s remaining` : 'Time expired — moving on…';
+    if (remain <= 0) clearInterval(guaranteeTimerInterval);
+  };
+  guaranteeTimerInterval = setInterval(tick, 250);
+  tick();
+}
+
+function submitGuaranteeChoice(accept, role) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'guarantee_choice', accept, role}));
+  }
+}
+
+function onIslandGuaranteeResolved(msg) {
+  if (msg.result === 'accepted') {
+    const buyerLp = (currentRoom?.players || []).find(p => p.player_id === msg.buyer_player_id);
+    const buyerName = buyerLp ? buyerLp.name : 'A player';
+    addLog(
+      `🏝 ${buyerName} bought the ${roleDisplayName(msg.role) || msg.role} island for ${msg.price.toFixed(1)} Dp.`,
+      'ok'
+    );
+  } else if (msg.result === 'declined') {
+    const buyerLp = (currentRoom?.players || []).find(p => p.player_id === msg.buyer_player_id);
+    const buyerName = buyerLp ? buyerLp.name : 'A player';
+    addLog(`🏝 ${buyerName} declined the island guarantee offer.`, 'info');
+  }
+}
+
+function onIslandGuaranteeComplete(msg) {
+  if (guaranteeTimerInterval) clearInterval(guaranteeTimerInterval);
+  document.getElementById('guarantee-overlay').classList.add('hidden');
+  addLog('Island guarantee phase complete — proceeding to Investing.', 'info');
+  // Bug fix: previously the user was stranded on the auction screen with the
+  // guarantee overlay hidden, because investing_start only switches screens
+  // when the auction screen is already hidden.  Now we proactively transition
+  // to the investing screen as soon as the guarantee phase resolves.  If
+  // investData has already arrived (race with the investing_start broadcast)
+  // we render immediately; otherwise the investing_start handler renders when
+  // the data lands.
+  showScreen('investing');
+  if (investData) renderInvesting();
+}
+
+const GUARANTEE_PRICING_EXPLAINER =
+  "How the price is set:\n\n" +
+  "1. Let P be the AI's auction price for this island.\n" +
+  "2. Let S be the auction starting budget (700 Dp by default).\n" +
+  "3. Auction-price formula:\n" +
+  "     If P is between 11% and 15% of S  →  formula = 2 × P\n" +
+  "     If P is above 15% of S            →  formula = 1.05 × P\n" +
+  "     Otherwise (P < 11% of S)          →  formula = P\n" +
+  "4. Floor = 20% of your current cash.\n" +
+  "5. Final price = max(formula, floor).";
 
 // ==================== INVESTING PHASE ====================
 
@@ -1632,7 +1823,9 @@ function handleMessage(msg) {
   switch(msg.type) {
     case 'room_update':
       if (currentRoom && msg.room) {
+        currentRoom = msg.room;
         renderWaitingRoom(msg.room);
+        refreshPauseButton();
       }
       break;
     case 'auction_start':
@@ -1666,6 +1859,18 @@ function handleMessage(msg) {
         renderInvesting();
       }
       startInvestTimer(msg.timer_seconds || 180);
+      break;
+    case 'island_guarantee_state':
+      onIslandGuaranteeState(msg.guarantee);
+      break;
+    case 'island_guarantee_resolved':
+      onIslandGuaranteeResolved(msg);
+      break;
+    case 'island_guarantee_complete':
+      onIslandGuaranteeComplete(msg);
+      break;
+    case 'guarantee_ack':
+      if (msg.error) addLog('Guarantee error: ' + msg.error, 'err');
       break;
     case 'investing_update':
       document.getElementById('invest-status').textContent =
@@ -1702,6 +1907,7 @@ function handleMessage(msg) {
         showScreen('game');
         buildIslandMap();
       }
+      refreshPauseButton();
       break;
     case 'print':
       addLog(msg.text);
@@ -1751,6 +1957,15 @@ function handleMessage(msg) {
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
       if (msg.error) addLog('Ready error: ' + msg.error, 'err');
+      break;
+    case 'game_paused':
+      onGamePaused(msg);
+      break;
+    case 'game_resumed':
+      onGameResumed(msg);
+      break;
+    case 'pause_ack':
+      if (msg.error) addLog('Pause error: ' + msg.error, 'err');
       break;
     case 'game_over':
       showGameOver(msg);
@@ -1826,10 +2041,64 @@ function renderGameState() {
     .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
     .join('') || '<span style="color:var(--dim)">Empty</span>';
 
-  const pols = me.policies || [];
-  document.getElementById('s-insurance').innerHTML = pols.length
-    ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
-    : '<span style="color:var(--dim)">None</span>';
+  // Insurance: prefer structured `policies_detail`; fall back to plain strings.
+  const polsDetail = me.policies_detail || [];
+  if (polsDetail.length) {
+    document.getElementById('s-insurance').innerHTML = polsDetail.map(pol => {
+      const expiring = pol.seasons_remaining <= 1;
+      return (
+        `<div style="margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:4px;${expiring ? 'border-color:var(--gold);' : ''}">` +
+          `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+            `<strong>${esc(pol.policy_type.charAt(0).toUpperCase() + pol.policy_type.slice(1))} Insurance</strong>` +
+            `<span style="font-size:.7rem;color:${expiring ? 'var(--gold)' : 'var(--dim)'}">` +
+              `${pol.seasons_remaining} season${pol.seasons_remaining === 1 ? '' : 's'} left` +
+            `</span>` +
+          `</div>` +
+          `<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">` +
+            `Premium: ${pol.premium_paid.toFixed(1)} Dp &middot; ` +
+            `Expires Y${pol.expires_year} ${esc(pol.expires_season)} &middot; ` +
+            `<span title="Pro-rata refund if cancelled now">Cancel refund: ${pol.cancel_refund.toFixed(1)} Dp</span>` +
+          `</div>` +
+        `</div>`
+      );
+    }).join('');
+  } else {
+    const pols = me.policies || [];
+    document.getElementById('s-insurance').innerHTML = pols.length
+      ? pols.map(p => `<div style="margin-bottom:.25rem">${esc(p)}</div>`).join('')
+      : '<span style="color:var(--dim)">None</span>';
+  }
+
+  // Loans detail (Issue #6): show structured info per active loan.
+  const loans = me.loans_detail || [];
+  const loansEl = document.getElementById('s-loans-detail');
+  if (loansEl) {
+    if (loans.length) {
+      loansEl.innerHTML = loans.map(loan => {
+        const isBorrower = loan.role === 'borrower';
+        const due = loan.seasons_to_maturity <= 1;
+        return (
+          `<div style="margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:4px;${due ? 'border-color:var(--gold);' : ''}">` +
+            `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
+              `<strong>Loan #${loan.loan_id}</strong>` +
+              `<span style="font-size:.7rem;color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</span>` +
+            `</div>` +
+            `<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">` +
+              `${loan.principal.toFixed(1)} Dp @ ${(loan.interest_rate * 100).toFixed(1)}% &middot; ` +
+              `${loan.term_years}-year term<br>` +
+              `Repay <strong>${loan.repayment_amount.toFixed(1)} Dp</strong> &middot; ` +
+              `<span style="color:${due ? 'var(--gold)' : 'var(--dim)'}">` +
+                `matures Y${loan.maturity_year} ${esc(loan.maturity_season)} ` +
+                `(${loan.seasons_to_maturity} season${loan.seasons_to_maturity === 1 ? '' : 's'})` +
+              `</span>` +
+            `</div>` +
+          `</div>`
+        );
+      }).join('');
+    } else {
+      loansEl.innerHTML = '<span style="color:var(--dim)">No active loans</span>';
+    }
+  }
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
@@ -2233,6 +2502,57 @@ function toggleReady() {
   }
 }
 
+// ─── Pause / Resume (Issue #1) ────────────────────────────────────────────
+function isHostPlayer() {
+  return currentRoom && currentRoom.creator_id && currentRoom.creator_id === myPlayerId;
+}
+
+function refreshPauseButton() {
+  // Show the header Pause button only to the host while the game is running.
+  const btn = document.getElementById('pause-btn');
+  if (!btn) return;
+  const show = isHostPlayer() && gameState && currentRoom && currentRoom.status !== 'finished';
+  btn.classList.toggle('hidden', !show);
+  btn.classList.toggle('is-paused', isPaused);
+  document.getElementById('pause-btn-label').textContent =
+      isPaused ? '▶ Resume' : '⏸ Pause';
+}
+
+function togglePause() {
+  if (!isHostPlayer()) return;
+  const next = !isPaused;
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({type:'pause_request', paused: next}));
+  }
+}
+
+function onGamePaused(msg) {
+  isPaused = true;
+  if (currentRoom) currentRoom.paused = true;
+  const overlay = document.getElementById('pause-overlay');
+  overlay.classList.remove('hidden');
+  const sub = document.getElementById('pause-sub');
+  const resumeBtn = document.getElementById('pause-overlay-resume');
+  if (isHostPlayer()) {
+    sub.textContent = 'You paused the game. Click Resume when you\'re ready to continue.';
+    resumeBtn.classList.remove('hidden');
+  } else {
+    sub.textContent = 'The host has paused the game. Please wait…';
+    resumeBtn.classList.add('hidden');
+  }
+  refreshPauseButton();
+  addLog('⏸ Game paused by host.', 'info');
+}
+
+function onGameResumed(msg) {
+  isPaused = false;
+  if (currentRoom) currentRoom.paused = false;
+  document.getElementById('pause-overlay').classList.add('hidden');
+  refreshPauseButton();
+  const dur = msg && msg.pause_duration;
+  addLog('▶ Game resumed' + (dur ? ` (paused ${dur}s).` : '.'), 'info');
+}
+
 function buildIslandMap() {
   const container = document.getElementById('island-map-svg');
   if (container.querySelector('svg')) return;
@@ -2266,13 +2586,17 @@ function showActionPrompt(msg) {
   document.getElementById('prompt-input').innerHTML = '';
 }
 
-// Standard cancel button for any modal — sends null to the server, which
-// the IO adapter treats as "no choice" (defaults / aborts the action chain).
+// Standard cancel button for any modal — sends the CANCEL_SENTINEL to the
+// server.  The IO adapter detects the sentinel and raises ActionCancelled,
+// which the engine catches to abort the entire action cleanly (no default
+// fallback that would partially execute the action — see bug fix for
+// "Cancel still trained 1 doctor").
+const CANCEL_SENTINEL = '__CANCELLED__';
 const CANCEL_BTN_HTML =
   '<button class="btn-ghost" style="flex:1" onclick="cancelDlg()">Cancel</button>';
 
 function cancelDlg() {
-  sendResponse(null);
+  sendResponse(CANCEL_SENTINEL);
   // Hide the dialog overlay if it's open (sendResponse usually does this
   // implicitly when the next prompt arrives, but cancel should feel instant).
   document.getElementById('overlay').classList.remove('active');
@@ -2377,7 +2701,7 @@ function showMarketBuyPopup(msg) {
   html += '</tbody></table></div>';
   html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
   html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
-  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(null)">Cancel</button></div>';
+  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button></div>';
   html += '</div>';
   showDlg('Market Buy', html, 'market-dialog');
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
@@ -2412,7 +2736,8 @@ function submitMarketBuy() {
     if (qty > 0 && price > 0) bids[inp.dataset.res] = { quantity: qty, price };
   });
   if (Object.keys(orders).length === 0 && Object.keys(bids).length === 0) {
-    sendResponse(null);
+    // Empty submission — treat as cancel rather than an empty buy order.
+    sendResponse(CANCEL_SENTINEL);
   } else {
     sendResponse(JSON.stringify({ buy: orders, bids }));
   }

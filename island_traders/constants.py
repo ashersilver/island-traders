@@ -14,30 +14,31 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 
 # Bootstrap inventory: each island starts with —
 #   (a) one season's worth of its outputs, ready to sell in the opening round
-#   (b) one season's worth of its production inputs, so it can produce round 2
-# Anything beyond that must be purchased on the market.
+#   (b) TWO seasons' worth of its production inputs, enough to produce through
+#       Spring and Summer of Year 1 before needing to buy from other islands
+# This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    # Farmer: Spring outputs to sell + Spring inputs to produce next round
+    # Farmer: Spring outputs to sell + 2 seasons of inputs
     "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
-                      "FarmMachinery": 1, "Oil": 2},                  # fuel buffer, not a season-proof stockpile
-    # Miner: partial output to sell + inputs to produce (Oil serves both)
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 1 to produce
-                      "Freight": 1, "MiningEquipment": 1},            # to produce
-    # Transporter: cargo + seats to sell + Oil & Fish to run services
+                      "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
+    # Miner: partial output to sell + 2 seasons of inputs
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
+                      "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
+    # Transporter: cargo + seats to sell + 2 seasons of Oil & Fish
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 3, "Fish": 1},                           # fuel-heavy role gets a larger opening buffer
-    # Educator: Knowledge to sell + inputs to run the university
+                      "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
+    # Educator: Knowledge to sell + 2 seasons of inputs
     "Educator":      {"Knowledge": 2,                                 # to sell
-                      "LaboratoryEquipment": 1, "Finance": 1},        # to produce
-    # Banker: Finance to sell + inputs to run the bank
+                      "LaboratoryEquipment": 2, "Finance": 2},        # 2 seasons of each input
+    # Banker: Finance to sell + 2 seasons of inputs
     "Banker":        {"Finance": 2,                                   # to sell
-                      "Knowledge": 1},                                # to produce
-    # Manufacturer: FarmMachinery (default opening line) to sell + inputs to produce
+                      "Knowledge": 2},                                 # 2 seasons: 1 per season
+    # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
-                      "Metal": 2, "Oil": 2},                          # to produce; heavier lines still need more
-    # Doctor: services to sell + inputs to operate
+                      "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
+    # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Knowledge": 1, "LaboratoryEquipment": 1},      # to produce
+                      "Knowledge": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
 }
 
 # Dollops per unit at balanced supply/demand
@@ -216,14 +217,15 @@ SEASONAL_YIELD: dict[str, dict[str, float]] = {
 }
 
 # Starting total workers per role (see STARTING_WORKERS_BY_PROFESSION for detail).
+# Invariant: every island starts with at least 1 Manager + 2 Technicians.
 STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
-    "Transporter":   4,
-    "Educator":      3,
-    "Banker":        3,
+    "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
+    "Educator":      4,   # 1 Professor + 2 Technicians (Tutor x2) + 1 Unskilled
+    "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
-    "Doctor":        6,    # 2 Doctors + 4 Nurses (scaled for board game)
+    "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
 }
 
 # Fraction of starting workers who begin with training_level >= 1.
@@ -249,11 +251,29 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     "Farmer":        [("Farmer", 1), ("FarmingTechnician", 1), ("Veterinarian", 1)],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
-    "Transporter":   [("Engineer", 1), ("Mechanic", 1)],
-    "Educator":      [("Professor", 1)],
-    "Banker":        [("Banker", 1)],
+    "Transporter":   [
+        ("LogisticsManager", 1),     # Manager
+        ("FlightCrew", 1),           # Technician
+        ("Seaman", 1),               # Technician
+        ("WarehouseManager", 1),     # Technician (ground ops supervisor)
+    ],
+    "Educator":      [
+        ("Professor", 1),            # Manager
+        ("Tutor", 2),                # Technicians
+        # +1 Unskilled remainder (Admin)
+    ],
+    "Banker":        [
+        ("Banker", 1),               # Manager
+        ("BankingAnalyst", 1),       # Technician
+        ("BankingClerk", 1),         # Technician
+        # +1 Unskilled remainder (Receptionist)
+    ],
     "Manufacturer":  [("Engineer", 1), ("AssemblyWorker", 1), ("Mechanic", 1)],
-    "Doctor":        [("Doctor", 2), ("Nurse", 4)],    # exactly 6, no unskilled remainder
+    "Doctor":        [
+        ("Doctor", 2),               # Manager
+        ("Nurse", 2),                # Manager (was 4)
+        ("MedicalOrderly", 2),       # Technician (new — meets ≥2T invariant)
+    ],
 }
 
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
@@ -277,11 +297,14 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
     "Farmer":       ["Farmer", "FarmingTechnician", "Veterinarian", "Mechanic"],
     "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
-    "Transporter":  ["Engineer", "Mechanic"],
-    "Educator":     ["Professor"],
-    "Banker":       ["Banker"],
+    "Transporter":  [
+        "LogisticsManager", "Engineer",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
+    ],
+    "Educator":     ["Professor", "Lecturer", "Tutor"],
+    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
     "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
-    "Doctor":       ["Doctor", "Nurse"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
 }
 
 # ---------------------------------------------------------------------------
@@ -317,20 +340,37 @@ UNSKILLED_RECRUITMENT_RATIO: float = 0.5   # 1 recruitable worker per 2 unskille
 
 # Maximum workers that can graduate into each profession per game YEAR.
 UNIVERSITY_CAPACITY: dict[str, int] = {
+    # Healthcare
     "Doctor":               2,
     "Nurse":               10,
+    "MedicalOrderly":       8,    # apprenticeship-tier healthcare support
+    # Engineering / cross-island
     "Engineer":             2,
+    "Mechanic":             4,    # multi-island Technician (Apprenticeship pipeline)
+    # Agriculture
     "Farmer":               2,
-    "FarmingTechnician":     4,
+    "FarmingTechnician":    4,
     "Veterinarian":         1,
+    # Manufacturing
     "AssemblyWorker":      10,
+    # Mining
     "Miner":                2,
     "MiningTechnician":     4,
     "OilExtractionWorker":  2,
     "RefinerySpecialist":   2,
+    # Banking
     "Banker":               2,
-    "Professor":            4,   # 1 per season × 4 seasons
-    "Mechanic":             4,   # multi-island Technician (Apprenticeship pipeline)
+    "BankingAnalyst":       4,
+    "BankingClerk":         6,
+    # Education
+    "Professor":            4,    # 1 per season × 4 seasons
+    "Lecturer":             4,
+    "Tutor":                6,
+    # Transport (the new professions added with the workforce baseline rule)
+    "LogisticsManager":     2,
+    "FlightCrew":           6,
+    "Seaman":               6,
+    "WarehouseManager":     6,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).
