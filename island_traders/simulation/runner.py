@@ -7,6 +7,7 @@ across all roles.
 
 Usage:
     python -m island_traders.simulation.runner --games 200 --years 3 --seed 42
+    python -m island_traders.simulation.runner --games 200 --years 3 --seeds 42,1,7,99
 """
 from __future__ import annotations
 import argparse
@@ -168,14 +169,75 @@ class SimulationRunner:
         print(f"Price history → {price_csv}")
 
 
+def _parse_seeds(raw: str) -> list[int]:
+    seeds: list[int] = []
+    for part in raw.split(","):
+        value = part.strip()
+        if value:
+            seeds.append(int(value))
+    if not seeds:
+        raise ValueError("--seeds must include at least one integer seed")
+    return seeds
+
+
+def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> None:
+    print(f"\n--- {title} ---")
+    print(f"{'Role':<16} {'Wins':>6} {'Win%':>7} {'AvgWealth':>12}")
+    print("-" * 45)
+    for rs in stats.role_stats.values():
+        print(
+            f"{rs.role_name:<16} {rs.wins:>6} "
+            f"{rs.win_rate*100:>6.1f}% {rs.avg_wealth:>12.1f} Dp"
+        )
+
+
+def _print_multi_seed_summary(seed_stats: list[tuple[int, SimulationStats]]) -> None:
+    role_names = list(ROLES.keys())
+    print("\n--- Multi-Seed Win Rate Summary ---")
+    header = f"{'Role':<16}" + "".join(f"{seed:>10}" for seed, _ in seed_stats) + f"{'Mean':>10}"
+    print(header)
+    print("-" * len(header))
+    for role_name in role_names:
+        rates = [
+            stats.role_stats[role_name].win_rate * 100
+            for _, stats in seed_stats
+        ]
+        row = f"{role_name:<16}" + "".join(f"{rate:>9.1f}%" for rate in rates)
+        row += f"{(sum(rates) / len(rates)):>9.1f}%"
+        print(row)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Island Traders simulation runner")
     parser.add_argument("--games", type=int, default=100, help="Number of games to simulate")
     parser.add_argument("--years", type=int, default=3, help="Years per game")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed for reproducibility")
+    parser.add_argument(
+        "--seeds",
+        type=str,
+        default=None,
+        help="Comma-separated RNG seeds to run as separate batches, e.g. 42,1,7,99",
+    )
     parser.add_argument("--charts", type=str, default=None, help="Path to event_charts.yaml")
     parser.add_argument("--output", type=str, default="simulation_results/run", help="Output CSV prefix")
     args = parser.parse_args()
+
+    if args.seeds:
+        seed_stats: list[tuple[int, SimulationStats]] = []
+        for seed in _parse_seeds(args.seeds):
+            print(f"Running {args.games} games × {args.years} years (seed={seed}) ...")
+            runner = SimulationRunner(
+                num_games=args.games,
+                num_years=args.years,
+                seed=seed,
+                event_charts_path=args.charts,
+            )
+            stats = runner.run()
+            seed_stats.append((seed, stats))
+            _print_role_balance(stats, title=f"Role Balance — seed {seed}")
+            runner.export_csv(stats, f"{args.output}_seed_{seed}")
+        _print_multi_seed_summary(seed_stats)
+        return
 
     print(f"Running {args.games} games × {args.years} years (seed={args.seed}) ...")
     runner = SimulationRunner(
@@ -185,13 +247,7 @@ def main() -> None:
         event_charts_path=args.charts,
     )
     stats = runner.run()
-
-    print("\n--- Role Balance ---")
-    print(f"{'Role':<16} {'Wins':>6} {'Win%':>7} {'AvgWealth':>12}")
-    print("-" * 45)
-    for rs in stats.role_stats.values():
-        print(f"{rs.role_name:<16} {rs.wins:>6} {rs.win_rate*100:>6.1f}% {rs.avg_wealth:>12.1f} Dp")
-
+    _print_role_balance(stats)
     runner.export_csv(stats, args.output)
 
 
