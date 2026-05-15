@@ -14,12 +14,9 @@
       TLS/thread race in ws_adapter — `set_active_player` called on wrong thread
       or `_ensure_player` races, causing `_send_and_wait` to silently return None.
       Reconnect/replay work may help but needs a dedicated investigation.
-- [ ] **Educator self-training** *(playtest 2026-05-15)* — the Education
-      Island can't currently send its own workers to college.  Self-training
-      should take 1 season, require **no educator fee** and **no transport
-      ticket**.  Touches `_action_request_training` + `_action_review_training`
-      in `engine/turn.py` (skip the educator-choice prompt + transport
-      requirement when requester == educator).
+- [x] **Educator self-training** *(playtest 2026-05-15, fixed)* —
+      `_action_request_training` short-circuits when requester is the
+      Educator: no fee, no air ticket, auto-approve + auto-dispatch.
 
 ## In Progress
 
@@ -110,6 +107,58 @@ don't combine the phases.
       Course but skips fees and transport — coordinate with the related Bug
       entry above
 
+#### Phase 3 — Training cost components (#18)
+- [ ] Course duration varies by profession: Doctor=4, Engineer/Banker/
+      Professor/Lecturer/Logistics Manager/Farmer/Miner=2, Nurse=1,
+      Technicians=1 with apprenticeship facility (2 without)
+- [ ] **Expertise consumption: 1 Expertise per trainee per season**
+      (so a Doctor batch of 2 trainees consumes 4×2 = 8 Expertise)
+- [ ] Food & accommodation cost: 5 Dp per trainee per season at college
+- [ ] Apprenticeship Facility — new capital item flag
+      `provides_apprenticeship_facility: bool` reducing Technician
+      training to 1 season (else +1 season at 50% productivity on return)
+- [ ] `_action_request_training` fee suggestion includes all cost
+      components (base fee + food/accom + tickets + expertise units)
+
+### Medical & Laboratory Island
+See [`requirements/medical-laboratory.md`](requirements/medical-laboratory.md)
+for full spec.  Covers GitHub issues **#19, #25, #26**.  Five-phase
+implementation; recommend not combining phases.
+
+#### Phase A — Role rename + Lab Tests resource (#26 root)
+- [ ] Display rename: "Healthcare" → "Medical & Laboratory" (internal
+      `ROLES["Doctor"]` key unchanged)
+- [ ] New `ResourceType.LABORATORY_TESTS` (base price ≈ 35 Dp)
+- [ ] Add Doctor production recipe for Lab Tests
+- [ ] Starting inventory: small Lab Test stockpile
+
+#### Phase B — Cross-island Lab Test consumers (#26)
+- [ ] Mining Ore → Metal smelting requires 1 Lab Test ("Metal Assay")
+      per batch
+- [ ] Farmer seasonal production requires 1 Lab Test ("Soil Analysis")
+- [ ] RULES.md updated with Lab Test consumers
+
+#### Phase C — Ecologist + Environmental Assessment gate (#25)
+- [ ] Add `Profession.ECOLOGIST` (Technician, 2-season apprenticeship)
+- [ ] Add `installation_review_required: bool` field on CapitalItem;
+      default true for high-cost items
+- [ ] Hook into capital activation: held until Ecologist + Environmental
+      Assessment Lab Test present
+- [ ] `UNIVERSITY_CAPACITY[Ecologist] = 6` (or similar)
+
+#### Phase D — Actuary + insurance underwriting gate (#24)
+- [ ] Add `Profession.ACTUARY` (Technician, 2-season)
+- [ ] `SELL_INSURANCE` requires ≥1 Actuary on Banker's workforce
+- [ ] Banker pays actuarial evaluation cost (5 Dp) from institutional pool
+
+#### Phase E — Doctor-certification insurance economics (#19)
+- [ ] Annual physical (1 Lab Test "Health Certificate") halves premium
+- [ ] Anniversary physical maintains the half-rate at renewal
+- [ ] Insured workers don't lose productivity from injury events
+      (medical insurance injury reduction → 1.0 when policy active)
+- [ ] Death benefit becomes profession-based replacement training cost
+      (paid from Bank pool to island working capital)
+
 ### Island Ledger & Ownership Model
 See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the full spec.
 *Prerequisite for financial model improvements, role resale, and Banker institutional pool.*
@@ -156,8 +205,31 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] **#8 — Intro screen** — animated board with hotspot tooltips explaining each island; requires island graphics assets
 - [ ] Event log: player-relevant lines are highlighted (done ✓ — verify in play)
 - [ ] Consolidated view when controlling multiple islands (tab + "Consolidated" already exists; verify multi-role aggregation is correct)
-- [ ] **Rename action wording: `Purchase Capital` → `Purchase Equipment`** *(playtest 2026-05-15)* — pure label change; touches `engine/turn.py` enum value (TurnAction.PURCHASE_CAPITAL stays as the internal identifier, just changes the player-facing label), the action dispatch in the dashboard, and the action button labels.  Update `Apply Patent` similarly if needed.
-- [ ] **Personnel shortages named by specialty/profession** *(playtest 2026-05-15)* — when production capacity is constrained by missing workers, the UI/log should say *"need 2 more Flight Crew"* or *"need 1 more Banker"*, not the generic *"need 2 more Technicians"*.  Touches the constraint-popup text + workforce-shortage log lines.
+- [x] **Rename action wording: `Purchase Capital` → `Purchase Equipment`** *(playtest 2026-05-15, done)* — display-layer rename via `ACTION_LABEL_OVERRIDES` in `cli/prompts.py`; internal `TurnAction.PURCHASE_CAPITAL` unchanged.
+- [x] **Personnel shortages named by specialty/profession** *(playtest 2026-05-15, done)* — `workforce_short` payload now uses `primary_title(role, band)` so the dashboard shows "+2 Flight Crew" / "+1 Banking Analyst" etc.
+- [ ] **#20 — Personnel counts on left panel** *(playtest 2026-05-15)* —
+      add trained / untrained personnel counts (including general
+      workers) to the left-hand info panel.  Server payload already
+      exposes `workforce_bands` + `workforce_count`; just needs UI
+      rendering.
+- [ ] **#21 — Product selection by name, not index** *(playtest 2026-05-15)* —
+      when producing, the choice list must show the product name (e.g.
+      "Farm Machinery", "Lab Equipment") not numeric index.  Touches the
+      production prompt chain when Manufacturer picks a product line.
+- [ ] **#22 — Market UI/UX polish** *(playtest 2026-05-15)*
+  - [ ] Market Prices popup rendered as a grid (not a list)
+  - [ ] When buying, distinguish *bid* (limit order) from *buy now*
+        (lift the ask) — currently both inputs are writable and
+        indistinguishable
+  - [ ] When buying a commodity with an existing ask, prefill the price
+        field with the ask
+  - [ ] When selling a commodity with an existing bid, prefill the price
+        field with the bid
+- [ ] **#23 — Logo + island detail popup** *(playtest 2026-05-15)*
+  - [ ] Top-left game logo: bolder + more readable
+  - [ ] Clicking on any island brings up a well-formatted popup with
+        description, role info, and the island's graphic.  Aligns with
+        GitHub #8 (Intro screen).
 
 ---
 

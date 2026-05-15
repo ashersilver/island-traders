@@ -202,6 +202,67 @@ Zero behavioural change — pure rename.  Aim: tests green at this point.
 
 ---
 
+## Training cost components (Issue #18)
+
+Different professions need different training depths.  The total fee a
+requester pays the Educator should reflect the cost components, not be a
+single flat number:
+
+| Component | Notes |
+|---|---|
+| **Transportation** | Already covered (1 PassengerSeats per trainee, supplied by Educator).  Skipped for self-training. |
+| **Food & accommodation** | Per-trainee, per-season-at-college.  Suggest 5 Dp per worker per season. |
+| **Course duration (1–4 seasons)** | Profession-dependent.  Doctor = 4 seasons; Engineer / Banker / Professor / Lecturer / Logistics Manager / Farmer / Miner = 2 seasons; Nurse = 1 season; Technicians = 1 season *(with apprenticeship facility — see below)*. |
+| **Expertise consumption** | **1 unit of Expertise per trainee per season** (i.e. a 4-season Doctor consumes 4 Expertise; a 2-season Engineer consumes 2 Expertise).  Replaces the flat "Expertise input" notion from the recipe sketch above. |
+| **Course slot** | 1 Course per *class* (up to 12 students) — see Class-size rule. |
+| **Educator base fee** | Suggest 20 Dp per trainee.  The Banker's actuarial / professional certification of the qualification, if applicable, layers on top. |
+
+Suggested **fee suggestion** the prompt offers the requester:
+
+```
+suggested_total = (base_fee × trainees)
+                + (food_per_season × trainees × course_duration)
+                + (ticket_price × trainees)
+                + (expertise_unit_price × trainees × course_duration)
+```
+
+### Apprenticeship facility (Technician training)
+
+Technicians normally need **2 seasons** of training (1 season at the
+Education Island + 1 season returning to their home island as a "partial
+technician" at **50% productivity**).
+
+If the home island has an **Apprenticeship Facility** capital item, the
+return-island season is skipped: the technician comes back fully
+qualified after 1 season.  This makes the apprenticeship facility a
+meaningful capital purchase for islands that need to scale Technicians
+quickly.
+
+> **Open implementation question:** which capital items count as
+> apprenticeship facilities?  Recommendation: add a new field
+> `provides_apprenticeship_facility: bool` on `CapitalItem`; set true
+> for relevant items like Manufacturer's Assembly Line, Mining's
+> Foreman Office, Transporter's Crew Training Hall, etc.
+
+### Duration table (under the new model)
+
+| Profession | Band | Seasons |
+|---|---|---|
+| Doctor | Manager | 4 |
+| Engineer | Manager | 2 |
+| Banker | Manager | 2 |
+| Professor | Manager | 2 |
+| Lecturer | Manager | 2 |
+| Logistics Manager | Manager | 2 |
+| Farmer | Manager | 2 |
+| Miner | Manager | 2 |
+| Nurse | Manager | 1 |
+| **Ecologist** | Technician | 2 *(new — see medical-laboratory.md)* |
+| **Actuary** | Technician | 2 *(new — see medical-laboratory.md)* |
+| All other Technicians | Technician | 1 with apprenticeship facility, 2 without |
+
+---
+
 ## Open questions
 
 1. **Tutor vs Instructor** — ✅ **Decided 2026-05-15:** consolidate into

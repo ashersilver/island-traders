@@ -5,6 +5,85 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/issues-2026-05-15-synthesis
+
+Branch: `claude/issues-2026-05-15-synthesis`
+Target: `pre-release`
+
+Docs-only branch.  Synthesises **9 new GitHub Issues** (#18–#26) posted
+during the 2026-05-15 playtest into specs and TODO entries.  No code or
+test changes.
+
+#### New spec: `requirements/medical-laboratory.md`
+
+Roots three interconnected issues (#19, #25, #26) under a single coherent
+spec:
+
+1. **#26 — Medical & Laboratory Island** — Doctor role keeps its
+   internal identifier but display label becomes "Medical & Laboratory";
+   adds a new tradeable output `LaboratoryTests` (base price ≈ 35 Dp).
+2. **#25 — Ecologist profession** — new Technician profession required
+   to certify capital-equipment installations.  Each install needs an
+   Ecologist on staff + 1 Environmental Assessment Lab Test.
+3. **#19 — Doctor-certified insurance** — Doctors issue Lab Tests
+   ("Health Certificates") that halve insurance premiums; insured
+   workers don't lose productivity from injury; death benefits pay
+   replacement training cost.
+
+Lab Tests are the glue — same enum value, four different narrative
+"types":
+
+| Consumer | Test type | Why |
+|---|---|---|
+| Mining | Metal Assay | Required to smelt Ore + Oil → Metal |
+| Farmer | Soil Analysis | Seasonal production gate |
+| Any island installing capital | Environmental Assessment | Required for activation |
+| Banking | Health Certificate | Halves insurance premium |
+
+Five-phase implementation plan (A through E) keeps each piece
+independently mergeable.
+
+#### `requirements/education-model.md` extended with Issue #18
+
+New "Training cost components" section formalises the cost breakdown:
+
+* Profession-dependent **course duration** (Doctor=4, most Managers=2,
+  Nurse=1, Technicians=1 with apprenticeship facility or 2 without)
+* **Expertise consumption = 1 unit per trainee per season** (so a
+  Doctor batch of 2 trainees consumes 4×2 = 8 Expertise)
+* **Food & accommodation** cost layered into the suggested fee
+* **Apprenticeship Facility** — a new capital item flag
+  (`provides_apprenticeship_facility: bool`) reduces Technician training
+  to 1 season
+
+Duration table covering all professions including the new Ecologist and
+Actuary entries from `medical-laboratory.md`.
+
+#### TODO.md sections added / updated
+
+* **New section:** `Medical & Laboratory Island` with phases A–E
+  spanning #19, #25, #26
+* **Education Model Refinement** got a new Phase 3 covering #18
+* **Dashboard & UX** got 4 new entries: #20 (personnel counts), #21
+  (product names not indexes), #22 (market UX polish), #23 (bolder
+  logo + island popup)
+* Two ticked off as already done in earlier merges:
+  - `Purchase Capital` → `Purchase Equipment` (✓)
+  - Personnel shortages named by profession (✓)
+
+#### Issue #24 (Actuary)
+
+Captured in `medical-laboratory.md §4` (Banking gets a new Actuary
+Technician profession required to underwrite insurance policies).
+Cross-references this work to the Banker institutional pool in
+`island-ledger.md`.
+
+#### Verification
+
+- No code changes.  Test suite unchanged at 246 passed.
+
+---
+
 ### claude/ux-polish-2026-05-15
 
 Branch: `claude/ux-polish-2026-05-15`
