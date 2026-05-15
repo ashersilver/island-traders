@@ -568,34 +568,49 @@ class TurnManager:
         )
         worker_ids = trainable_ids[:count]
 
-        # Find Educator players
-        educators = [
-            p for p in self.players
-            if p.player_id != player.player_id
-            and any(r.name == "Educator" for r in p.roles)
-        ]
-        if not educators:
-            self.io.print("  No Educator player in this game.")
-            return
-
-        educator = self.io.choose_player("Which Educator?", educators)
+        # Self-training: if THIS player is the Educator, they're training their
+        # own workforce on-island.  Skip the educator picker, the fee prompt,
+        # and the air-ticket requirement.  The training request is still
+        # registered against University capacity and still takes 1 season to
+        # complete.
+        is_self_training = any(r.name == "Educator" for r in player.roles)
         sym = CURRENCY_SYMBOL
-        self.io.print(
-            f"  Travel: Air ticket — Education supplies {count} PassengerSeats "
-            f"for {count} trainee(s); return travel is included."
-        )
-        self.io.print(
-            "  Sea travel would add one extra season, but the current rule uses "
-            "Educator-supplied air tickets for standard training."
-        )
-        ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
-        suggested_total = (20.0 * count) + (ticket_price * count)
-        dollops_educator = self.io.ask_dollop_amount(
-            f"Offer total training fee to Educator ({educator.name}) in {sym}? "
-            f"(suggested includes tickets: {suggested_total:.0f} {sym})",
-            player.dollops,
-        )
-        transport_mode = "air_ticket"
+        if is_self_training:
+            educator = player
+            dollops_educator = 0.0
+            transport_mode = "self_training"
+            self.io.print(
+                f"  Self-training: {count} of your own worker(s) will train as "
+                f"{target_profession} on-island.  No fee, no transport ticket."
+            )
+        else:
+            # Find Educator players (excluding self — already handled above)
+            educators = [
+                p for p in self.players
+                if p.player_id != player.player_id
+                and any(r.name == "Educator" for r in p.roles)
+            ]
+            if not educators:
+                self.io.print("  No Educator player in this game.")
+                return
+
+            educator = self.io.choose_player("Which Educator?", educators)
+            self.io.print(
+                f"  Travel: Air ticket — Education supplies {count} PassengerSeats "
+                f"for {count} trainee(s); return travel is included."
+            )
+            self.io.print(
+                "  Sea travel would add one extra season, but the current rule uses "
+                "Educator-supplied air tickets for standard training."
+            )
+            ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
+            suggested_total = (20.0 * count) + (ticket_price * count)
+            dollops_educator = self.io.ask_dollop_amount(
+                f"Offer total training fee to Educator ({educator.name}) in {sym}? "
+                f"(suggested includes tickets: {suggested_total:.0f} {sym})",
+                player.dollops,
+            )
+            transport_mode = "air_ticket"
         dollops_transport = 0.0
 
         try:
@@ -617,12 +632,24 @@ class TurnManager:
         player_names = {p.player_id: p.name for p in self.players}
         self.io.print(f"  Training request #{req.batch_id} submitted:")
         self.io.print(f"    {req.describe(player_names)}")
+        result.actions_taken.append(f"request_training:batch#{req.batch_id}")
+
+        if is_self_training:
+            # Auto-approve and dispatch immediately — there's no other party
+            # in the loop.  Workers head off to the on-island programme this
+            # season; return next season.
+            self.training.educator_approve(req.batch_id)
+            self.training.dispatch(req.batch_id, year, season_index)
+            self.io.print(
+                f"  {count} worker(s) entered on-island training as {target_profession}; "
+                f"return in {SEASONS[(season_index + 1) % len(SEASONS)]}."
+            )
+            return
 
         self.io.print(
             f"  Awaiting {educator.name}'s approval. "
             f"{educator.name} must supply {count} PassengerSeats air ticket(s)."
         )
-        result.actions_taken.append(f"request_training:batch#{req.batch_id}")
 
         # AI Educator auto-responds immediately
         if not educator.is_human:

@@ -64,6 +64,8 @@ class TrainingRequest:
             transport_str = f"Flight ({self.dollops_to_transporter:.0f} {sym})"
         elif self.transport_mode == "cargo":
             transport_str = "Cargo vessel (free, +1 season)"
+        elif self.transport_mode == "self_training":
+            transport_str = "on-island (no transport, no fee)"
         else:
             trn = (
                 player_names.get(self.transporter_id, f"Player{self.transporter_id}")

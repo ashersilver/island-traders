@@ -5,6 +5,55 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/educator-self-training
+
+Branch: `claude/educator-self-training`
+Target: `pre-release`
+
+Bug fix from the 2026-05-15 playtest: the Education Island couldn't train
+its own workforce because `_action_request_training` excluded the player
+from the educator picker list, then bailed with "No Educator player in
+this game."
+
+#### Fix
+
+In `_action_request_training`, detect when the requester is the Educator
+(`is_self_training = any(r.name == "Educator" for r in player.roles)`)
+and route through a short-circuit branch that:
+
+* Sets `educator = player` (skips the educator-choice prompt)
+* Sets `dollops_educator = 0.0` (no fee — skips the prompt entirely)
+* Sets `transport_mode = "self_training"` (new mode; bypasses the
+  PassengerSeats / air-ticket consumption)
+* After submitting the request, **auto-approves and dispatches**
+  immediately — the workers go into the on-island programme this
+  season and return next season.
+
+University capacity is still consumed for the chosen profession, so
+self-training cannot bypass the annual / seasonal caps.
+
+#### Files touched
+
+- `island_traders/engine/turn.py` — self-training branch in
+  `_action_request_training`
+- `island_traders/models/training.py` — `describe()` now handles the
+  new `"self_training"` transport mode
+
+#### Tests
+
+- 5 new tests in `tests/test_engine/test_educator_self_training.py`:
+  * Skips the educator picker and fee prompt
+  * Consumes zero PassengerSeats; dispatches immediately
+  * Returns after exactly one season
+  * Still counts against University capacity (no cap bypass)
+  * Works in a solo / single-Educator scenario
+
+#### Verification
+
+- Test suite: 240 passed (was 235, +5 new).
+
+---
+
 ### claude/edu-spec-and-codex-brief
 
 Branch: `claude/edu-spec-and-codex-brief`
