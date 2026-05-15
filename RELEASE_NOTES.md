@@ -5,6 +5,54 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/edu-spec-and-codex-brief
+
+Branch: `claude/edu-spec-and-codex-brief`
+Target: `pre-release`
+
+Docs-only branch.  Two updates following the 2026-05-15 inbox-processing
+session and the product decisions that came out of it.
+
+#### `requirements/education-model.md` updates
+
+* **Patents now consume Expertise as an input** (~0.25 Expertise per
+  Patent) on top of Laboratory Equipment + Manager capacity.
+* **Class-size rule:** 1 Course covers a class of up to **12 students**.
+  When a training batch exceeds 12 trainees the system auto-splits across
+  multiple Courses (debiting `ceil(trainees/12)`).
+* **Self-training Course consumption** clarified: yes, self-training
+  still debits a Course even though it skips fees + transport.  The
+  12-student class size applies, so multiple workers on the Education
+  Island can be trained on a single Course.
+* **Tutor → Instructor consolidation:** Profession.TUTOR is renamed to
+  Profession.INSTRUCTOR.  The clean Manager/Technician pairing is
+  Professor / Instructor.  "Tutor" can stay as a display title alias.
+* New constant flagged: `MAX_CLASS_SIZE_PER_COURSE = 12`.
+* Open-questions section updated to mark items 1, 3, and 4 as decided.
+
+#### `requirements/codex-tasks/ai-trading.md` (new)
+
+Self-contained Codex task brief for the next parallel work item: making
+heuristic AI islands proactively participate in the market (place bids,
+list offers, evaluate cross-island arbitrage).  Mirrors the existing
+`codex-tasks/sim-calibration.md` format — goal, scope, in/out-of-scope
+files, acceptance criteria, hand-off mechanics.
+
+Specific scoped behaviours:
+
+1. List most fresh output for sale each season
+2. Bid on missing inputs
+3. **Transporter AI must list Passenger Seats** (currently silently
+   blocking training)
+4. Cross-island arbitrage / opportunistic deals
+5. Switch deal valuation to last-deal / best-offer (TODO item)
+
+#### Verification
+
+- No code changes.  Test suite unchanged.
+
+---
+
 ### claude/inbox-2026-05-15
 
 Branch: `claude/inbox-2026-05-15`
