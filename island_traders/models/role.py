@@ -48,17 +48,21 @@ ROLES: dict[str, Role] = {
         short_name="Education",
         island="Education, Research and Training Island",
         produces=(ResourceType.KNOWLEDGE, ResourceType.PATENTS),
-        needs=(ResourceType.LABORATORY_EQUIPMENT, ResourceType.FINANCE),
+        needs=(ResourceType.LABORATORY_EQUIPMENT,),
         description="Trains the workforce and advances knowledge across the archipelago.",
     ),
     "Banker": Role(
         name="Banker",
         display_name="Banking and Insurance",
-        short_name="Finance",
+        short_name="Banking",
         island="Banking and Insurance Island",
-        produces=(ResourceType.FINANCE,),
+        # Banker income is service-based, not commodity-based: loan interest
+        # spread + insurance premiums (and, on the roadmap, deal guarantees,
+        # brokerage, project finance).  The Finance commodity has been
+        # removed from the production loop.
+        produces=(),
         needs=(ResourceType.KNOWLEDGE,),
-        description="Issues credit and financial services — capital flows where it is invited.",
+        description="Lends capital, underwrites insurance, and brokers deals — earning the spread.",
     ),
     "Manufacturer": Role(
         name="Manufacturer",

@@ -5,6 +5,109 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/banker-rebalance
+
+Branch: `claude/banker-rebalance`
+Target: `pre-release`
+
+Banker is a **service business**, not a commodity producer.  Income comes
+from loan interest spread + insurance premiums (and, future, deal
+guarantees, brokerage, and project finance).  This branch removes the
+`Finance` commodity from the production loop — the root cause Codex
+identified for the 75.6% Banker win rate.
+
+#### What changed
+
+- **Banker BASE_PRODUCTION is now empty** (was: 30 Finance/season).  The
+  Banker no longer "produces" anything on the market.  Banker income comes
+  exclusively from the existing loan ledger (interest at the quoted rate)
+  and from insurance premiums sold via the existing `SELL_INSURANCE`
+  action.
+- **Banker PRODUCTION_INPUTS is now empty** (was: 1 Knowledge).  Banking
+  doesn't gate on per-season inputs.  Knowledge still useful for training
+  workers, but isn't consumed by an idle Produce action.
+- **Educator PRODUCTION_INPUTS dropped Finance** (was: Lab Equipment +
+  Finance, now: Lab Equipment).  No more "operating budget paid in a
+  tradeable commodity".
+- **STARTING_INVENTORY:** Banker no longer starts with 2 Finance to sell;
+  Educator no longer starts with 2 Finance to spend.
+- **`models/role.py`:** Banker `produces=()`, no longer `(FINANCE,)`.
+  Educator `needs=(LABORATORY_EQUIPMENT,)`.  Banker short_name renamed
+  from "Finance" to "Banking" to reflect the service-focus.
+- **`constants_capacity.py`:**
+  * Removed the `Banker → Finance` production recipe.
+  * Updated Banker capital items (Vault, Trading Floor) to express
+    capacity in `Loans` / `InsurancePolicies` instead of `Finance`.
+  * Removed `Finance` from Educator recipe inputs.
+- **`server/app.py` ROLE_INFO** updated: Banker produces "Loans,
+  Insurance" not "Finance"; Educator needs "Laboratory Equipment" only.
+- **`RULES.md`** updated: Seven Islands table, Production Inputs table,
+  Base Prices table, physical contents list, and Quick Reference now
+  reflect Banker as a service business with no Finance commodity.
+
+#### What didn't change
+
+- The `ResourceType.FINANCE` enum still exists — back-compat for any
+  saved games or external references.  No code now produces or consumes
+  it during normal play.
+- The existing loan engine (`models/loan.py`, banker_quote_rate, etc.)
+  is unchanged — that was already the right shape.
+- The Insurance products (Life + Medical, with manage/cancel/refund
+  flows) are unchanged.
+
+#### Simulation impact (500 games × 4 seeds {42, 1, 7, 99})
+
+| Role         | Before       | After (mean) |
+|--------------|-------------:|-------------:|
+| Banker       | **75.0%**    | **1.1%**     |
+| Transporter  | 23.6%        | 95.2%        |
+| Farmer       | 1.4%         | 3.8%         |
+| Miner        | 0.0%         | 0.0%         |
+| Educator     | 0.0%         | 0.0%         |
+| Manufacturer | 0.0%         | 0.0%         |
+| Doctor       | 0.0%         | 0.0%         |
+
+Banker dominance is **eliminated** — exactly the goal of this fix.
+
+#### Honest caveats
+
+This is a *targeted* fix for the Banker exploit.  It does **not** balance
+the overall game.  The post-fix distribution surfaces a separate
+structural problem: **Transporter now dominates at ~95%** (already over-
+monetized; with Banker out, Transporter sweeps).  Roles at 0% wins still
+need their own structural look.
+
+Two known follow-ups, both out of scope for this branch:
+
+1. **Banker AI strategy** — the heuristic AI doesn't yet proactively
+   offer/seek loans, so the Banker has almost no income in AI-only
+   simulations.  Real multiplayer should be different (humans will seek
+   loans).  Once the Island Ledger refactor lands and the institutional
+   cash pool + deposit accounts exist, the Banker's economics will be
+   meaningfully different — re-baseline at that point.
+2. **Transporter economy** — `damage_seasons` semantics and AI market
+   behaviour need separate work (Codex's diagnostics noted this).
+
+#### Future Banker revenue streams (TBD, on the roadmap)
+
+- **Deal guarantees** — Banker charges a fee to guarantee a P2P deal so
+  the counterparty is paid even if the proposer defaults
+- **Brokerage** — Banker negotiates deals between two other islands for
+  a commission
+- **Project finance** — when project-based capital expenditures are
+  introduced, Banker provides structured loans for specific projects
+- **Deal insurance** — premium-priced cover for a single transaction
+  (vs. the seasonal Life / Medical policies that exist today)
+
+#### Verification
+
+- Test suite: 235 passed (unchanged count; 3 Banker-production tests
+  rewritten to assert no production rather than asserting on Finance flow).
+- Baseline simulation (`--games 500 --seed 42`) vs post-fix simulation
+  recorded in the table above.
+
+---
+
 ### codex/sim-calibration
 
 Branch: `codex/sim-calibration`

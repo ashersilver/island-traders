@@ -22,9 +22,17 @@ def test_every_role_has_3_to_5_capital_items():
 
 
 def test_every_role_has_at_least_two_recipes():
-    for role in ROLES:
+    # Banker is exempt: their business is loans + insurance, not commodity
+    # production.  They have a single InsurancePolicies recipe representing
+    # underwriting capacity; loans live in the loan ledger.
+    commodity_producing_roles = [r for r in ROLES if r != "Banker"]
+    for role in commodity_producing_roles:
         recipes = recipes_for_role(PRODUCTION_RECIPES, role)
         assert len(recipes) >= 2, f"{role} has only {len(recipes)} recipes; need ≥ 2 outputs"
+    # Banker should still appear in the recipe list at least once (for
+    # underwriting capacity), even though they don't sell a commodity.
+    banker_recipes = recipes_for_role(PRODUCTION_RECIPES, "Banker")
+    assert len(banker_recipes) >= 1, "Banker should have at least the InsurancePolicies recipe"
 
 
 def test_capital_item_ids_unique():

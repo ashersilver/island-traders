@@ -45,12 +45,13 @@ def test_outage_blocks_production(farmer, outage_event):
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
-def test_banker_needs_knowledge(banker, normal_event):
-    banker.receive_resources(ResourceType.KNOWLEDGE, 1)
+def test_banker_does_not_produce_a_finance_commodity(banker, normal_event):
+    """After the Banker rebalance, banking income comes from loan interest and
+    insurance premiums — not from selling a 'Finance' resource on the
+    market.  Producing should return an empty dict."""
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
-    assert ResourceType.FINANCE in produced
-    assert produced[ResourceType.FINANCE] > 0
+    assert produced == {}
 
 
 def test_educator_needs_laboratory_equipment(normal_event):
@@ -59,7 +60,6 @@ def test_educator_needs_laboratory_equipment(normal_event):
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
     educator.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
-    educator.receive_resources(ResourceType.FINANCE, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.KNOWLEDGE in produced
@@ -93,10 +93,13 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     assert produced[ResourceType.OIL] == 80
 
 
-def test_banker_cannot_produce_without_inputs(banker, normal_event):
+def test_banker_production_is_a_no_op(banker, normal_event):
+    """Banker has no commodity production (empty BASE_PRODUCTION) and no
+    required inputs after the rebalance.  Calling produce() should be
+    safe and return an empty dict without raising."""
     engine = ProductionEngine()
-    with pytest.raises(InsufficientInputsError):
-        engine.produce(banker, normal_event)
+    produced = engine.produce(banker, normal_event)
+    assert produced == {}
 
 
 def test_bumper_harvest_increases_yield(farmer, bumper_event):
