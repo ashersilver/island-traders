@@ -10,7 +10,10 @@ Release notes are required before merging a feature/fix branch into
 Branch: `codex/sim-calibration`
 Target: `pre-release`
 
-Simulation calibration pass for the current `pre-release` economy.
+Simulation calibration iteration for the current `pre-release` economy.
+This is not a final balance certification; further calibration iterations are
+expected before the next major release is promoted from `pre-release` to
+`main`.
 
 #### Baseline
 
