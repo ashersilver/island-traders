@@ -772,7 +772,8 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Working Capital</span><span class="val gold" id="s-dollops">—</span></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
-        <div class="stat"><span class="lbl">Workers</span><span class="val" id="s-workers">—</span></div>
+        <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span></div>
+        <div class="stat"><span class="lbl">Personnel</span><span class="val" id="s-personnel">—</span></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
@@ -1915,7 +1916,7 @@ function handleMessage(msg) {
     case 'choose_action':
       showActionPrompt(msg);
       break;
-    case 'choose_resource': case 'choose_profession':
+    case 'choose_resource': case 'choose_profession': case 'choose_option':
       showOptionPicker(msg);
       break;
     case 'choose_quantity':
@@ -2030,6 +2031,13 @@ function renderGameState() {
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
   document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+  // Personnel breakdown (#20): trained (Managers + Technicians) vs untrained
+  // (general Workers), plus the per-band counts.
+  const wb = me.workforce_bands || {};
+  const mgr = wb.Manager ?? 0, tech = wb.Technician ?? 0, wrk = wb.Worker ?? 0;
+  const trained = mgr + tech;
+  document.getElementById('s-personnel').textContent =
+    `${trained} trained (${mgr} Mgr · ${tech} Tech) · ${wrk} untrained`;
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
