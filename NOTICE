@@ -1,0 +1,39 @@
+Island Traders
+Copyright 2026 Philip A. Silver
+
+This product is licensed under the Apache License, Version 2.0 (see the
+LICENSE file).  The following attribution and disclosure notices are
+provided for informational purposes only and do not modify the License.
+
+------------------------------------------------------------------------
+Originality
+------------------------------------------------------------------------
+The game design, rules, economic model, event charts, and accompanying
+requirements documentation in this project are the original work of the
+project author(s).  Any resemblance to existing board games, video games,
+simulations, or other published works — in theme, mechanics, terminology,
+or presentation — is coincidental and unintentional.
+
+------------------------------------------------------------------------
+AI-Assisted Development Disclosure
+------------------------------------------------------------------------
+Portions of the design, source code, documentation, and tests in this
+project were initially generated and have been maintained with the
+assistance of AI coding tools, including Anthropic's "Claude" and
+OpenAI's "Codex".  The project author(s) have reviewed this material and
+make no claim that AI-generated contributions knowingly incorporate the
+intellectual property of any third party.  To the extent any such
+material is later found to inadvertently resemble third-party
+intellectual property, it is unintentional; see the DISCLAIMER.md file
+and the Disclaimer of Warranty (Section 7) and Limitation of Liability
+(Section 8) of the LICENSE.
+
+------------------------------------------------------------------------
+Contributions
+------------------------------------------------------------------------
+Contributions submitted for inclusion in this project are licensed under
+the Apache License, Version 2.0, per Section 5 of the LICENSE.  A
+contributor retains copyright in their own contribution but grants the
+copyright and patent licenses described in Sections 2 and 3 of the
+LICENSE.  Contributing does not transfer ownership of, or grant a
+contributor any proprietary claim over, the project as a whole.

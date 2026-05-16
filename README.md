@@ -226,4 +226,10 @@ calibration pass before each version bump.
 
 ## License
 
-See repository for license terms.
+Released under the **Apache License, Version 2.0** — see [`LICENSE`](LICENSE)
+and [`NOTICE`](NOTICE).
+
+The game design and rules are original work; any similarity to existing games
+is coincidental.  Parts of the code and design were generated and maintained
+with AI assistance (Claude, Codex).  See [`DISCLAIMER.md`](DISCLAIMER.md) for
+the full originality, contribution, and AI-disclosure statement.
