@@ -99,6 +99,25 @@ class IOAdapter:
                     return available[idx]
             self.print("  Invalid choice.")
 
+    def choose_option(self, prompt: str, options: list[dict]) -> object:
+        """Choose from a list of labelled options.
+
+        `options` is `[{"value": <any json-serialisable>, "label": str}, ...]`.
+        Returns the chosen option's `value`.  Unlike `choose_quantity`, this
+        presents named choices rather than a free numeric input — used for
+        product selection so the player picks "Farm Machinery", not "3".
+        """
+        self.print(f"\n  {prompt}")
+        for i, opt in enumerate(options, 1):
+            self.print(f"    {i}. {opt['label']}")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(options):
+                    return options[idx]["value"]
+            self.print("  Invalid choice.")
+
     def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
         sym = CURRENCY_SYMBOL
         self.print(f"\n  {prompt} (max {max_dollops:.1f} {sym}, 0 to skip)")
@@ -150,6 +169,9 @@ class FakeIOAdapter(IOAdapter):
 
     def choose_profession(self, prompt, available):
         return available[0] if available else None
+
+    def choose_option(self, prompt, options):
+        return options[0]["value"] if options else None
 
     def confirm(self, prompt):
         return True

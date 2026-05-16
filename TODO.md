@@ -207,12 +207,12 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 - [ ] Consolidated view when controlling multiple islands (tab + "Consolidated" already exists; verify multi-role aggregation is correct)
 - [x] **Rename action wording: `Purchase Capital` → `Purchase Equipment`** *(playtest 2026-05-15, done)* — display-layer rename via `ACTION_LABEL_OVERRIDES` in `cli/prompts.py`; internal `TurnAction.PURCHASE_CAPITAL` unchanged.
 - [x] **Personnel shortages named by specialty/profession** *(playtest 2026-05-15, done)* — `workforce_short` payload now uses `primary_title(role, band)` so the dashboard shows "+2 Flight Crew" / "+1 Banking Analyst" etc.
-- [ ] **#20 — Personnel counts on left panel** *(playtest 2026-05-15)* —
+- [x] **#20 — Personnel counts on left panel** *(playtest 2026-05-15)* —
       add trained / untrained personnel counts (including general
       workers) to the left-hand info panel.  Server payload already
       exposes `workforce_bands` + `workforce_count`; just needs UI
       rendering.
-- [ ] **#21 — Product selection by name, not index** *(playtest 2026-05-15)* —
+- [x] **#21 — Product selection by name, not index** *(playtest 2026-05-15)* —
       when producing, the choice list must show the product name (e.g.
       "Farm Machinery", "Lab Equipment") not numeric index.  Touches the
       production prompt chain when Manufacturer picks a product line.

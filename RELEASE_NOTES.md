@@ -5,6 +5,52 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-quickwins-20-21
+
+Branch: `claude/ux-quickwins-20-21`
+Target: `pre-release`
+Closes: GitHub #20, #21
+
+#### #21 — Product selection by name, not index
+
+Producing used to print a numbered list then ask via `choose_quantity`
+(a numeric input box on the dashboard).  Players had to read the list and
+type a number.
+
+New generic **`choose_option(prompt, options)`** prompt added to all three
+IO adapters (base terminal `IOAdapter`, `FakeIOAdapter`, and
+`WebSocketIOAdapter`).  `options` is `[{"value", "label"}, …]`; it returns
+the chosen `value`.  The dashboard renders it as labelled buttons (reuses
+the existing option picker — new `choose_option` WS message case).
+
+`_action_produce` and `_choose_product_line_human` now use it, so the
+player picks **"Farmer: Food — up to N now"** or
+**"Heavy Machinery — Inputs: … → …"** as a button, never an index.
+
+#### #20 — Personnel counts on the left panel
+
+New **"Personnel"** stat row in the left info panel showing the
+trained/untrained breakdown:
+`N trained (X Mgr · Y Tech) · Z untrained`.  The "Workers" row label
+clarified to "Workers (active/total)".  Server payload already exposed
+`workforce_bands`; this is UI-only.
+
+#### Tests
+
+- 9 new tests in `tests/test_engine/test_choose_option.py`:
+  base terminal picker (selection + reprompt), FakeIOAdapter default,
+  WS round-trip / timeout-first / cancel-sentinel-raises / unknown-value
+  fallback, and an integration test asserting `_action_produce` calls
+  `choose_option` with human labels.
+
+#### Verification
+
+- Test suite: 255 passed (was 246, +9 new).  No regressions — existing
+  production tests still pass (FakeIOAdapter.choose_option returns the
+  first option, same effective behaviour as the old choose_quantity=min).
+
+---
+
 ### claude/issues-2026-05-15-synthesis
 
 Branch: `claude/issues-2026-05-15-synthesis`

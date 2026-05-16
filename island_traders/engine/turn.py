@@ -423,24 +423,28 @@ class TurnManager:
         result.actions_taken.append(f"purchase_capital:{item.item_id}:{manufacturer.name}")
 
     def _choose_product_line_human(self) -> str:
-        """Prompt the human Manufacturer player to choose a product line."""
+        """Prompt the human Manufacturer player to choose a product line.
+
+        Presented as named choices (Issue #21), not a numeric index.
+        """
         lines = list(MANUFACTURER_PRODUCT_LINES.items())
-        self.io.print("\n  ForgeHaven Product Lines:")
-        for i, (key, line) in enumerate(lines, 1):
+        picker_options = []
+        for key, line in lines:
             freight_note = (
-                f"  (no freight surcharge)"
+                "  (no freight surcharge)"
                 if line["freight_per_unit"] == 0
                 else f"  (+{line['freight_per_unit']} Freight/unit shipped)"
             )
-            self.io.print(
-                f"    {i}. {line['desc']:<30}"
-                f"  Inputs: {line['inputs']}"
-                f"  → {line['qty']}x {line['output']}"
-                f"  | Skilled: {line['skilled']}  Unskilled: {line['unskilled']}"
-                f"{freight_note}"
+            label = (
+                f"{line['desc']} — Inputs: {line['inputs']} "
+                f"→ {line['qty']}x {line['output']}{freight_note}"
             )
-        choice = self.io.choose_quantity("Choose product line [1–4]:", 1, len(lines))
-        return lines[choice - 1][0]
+            picker_options.append({"value": key, "label": label})
+        chosen = self.io.choose_option("Choose product line", picker_options)
+        # `chosen` is a product-line key; fall back to the first if anything
+        # unexpected comes back.
+        valid_keys = {k for k, _ in lines}
+        return chosen if chosen in valid_keys else lines[0][0]
 
     def _action_produce(
         self, player: Player, event_result: EventResult, result: TurnResult, season_name: str
@@ -456,8 +460,10 @@ class TurnManager:
             self.io.print("  Cannot produce anything right now — production is blocked by equipment, workforce, or inputs.")
             return
 
-        self.io.print("  Production choices:")
-        for idx, option in enumerate(options, 1):
+        # Present the production choices as named options (Issue #21) — the
+        # player picks "Farm Machinery", not an index number.
+        picker_options = []
+        for idx, option in enumerate(options):
             output = option["output"].value
             line = ""
             if option["product_line"]:
@@ -465,13 +471,17 @@ class TurnManager:
                 line = f" — {line_info['desc']}"
             cap = option["capacity_limit"]
             cap_note = "" if cap is None else f" (capacity cap {cap})"
-            self.io.print(
-                f"    {idx}. {option['role']}: {output}{line} "
-                f"— can produce up to {option['max_qty']} now{cap_note}"
+            label = (
+                f"{option['role']}: {output}{line} "
+                f"— up to {option['max_qty']} now{cap_note}"
             )
+            picker_options.append({"value": idx, "label": label})
 
-        choice = self.io.choose_quantity("Choose product to produce", 1, len(options))
-        option = options[choice - 1]
+        chosen = self.io.choose_option("Choose product to produce", picker_options)
+        try:
+            option = options[int(chosen)]
+        except (TypeError, ValueError, IndexError):
+            option = options[0]
         qty = self.io.choose_quantity(
             f"How many {option['output'].value}? (max {option['max_qty']})",
             1,

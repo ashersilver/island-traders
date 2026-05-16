@@ -326,6 +326,28 @@ class WebSocketIOAdapter(IOAdapter):
             return resp
         return available[0] if available else ""
 
+    def choose_option(self, prompt: str, options: list[dict]) -> object:
+        """Present named choices (buttons), return the chosen option's value.
+
+        `options` is `[{"value": <json-serialisable>, "label": str}, ...]`.
+        The client renders these as buttons (reusing the option picker) and
+        sends back the value as a string; we match on str(value).
+        """
+        resp = self._send_and_wait({
+            "type": "choose_option",
+            "prompt": prompt,
+            "options": [
+                {"value": o["value"], "label": o["label"]} for o in options
+            ],
+        })
+        self._check_cancel(resp)
+        if resp is None:
+            return options[0]["value"] if options else None
+        for o in options:
+            if str(o["value"]) == str(resp):
+                return o["value"]
+        return options[0]["value"] if options else None
+
     def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
         resp = self._send_and_wait({
             "type": "ask_dollop_amount",
