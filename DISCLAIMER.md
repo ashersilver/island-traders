@@ -89,11 +89,14 @@ disclaimer **cannot** by itself:
   No license can promise that; the disclosure in Section 3 manages the risk
   by being transparent and acting in good faith, but it is not a legal
   shield.
-- **Replace a Contributor License Agreement (CLA) or Developer Certificate
-  of Origin (DCO).**  If the author wants every contributor to formally
-  attest that their contribution is their own and properly licensed, a
-  lightweight DCO ("Signed-off-by" in commits) or a CLA should be added.
-  This is recommended if the project grows.
+- **Fully replace a Contributor License Agreement (CLA).**  A lightweight
+  **Developer Certificate of Origin (DCO) is now in place** — see
+  [`DCO`](DCO) and [`CONTRIBUTING.md`](CONTRIBUTING.md); every commit must
+  be signed off (`git commit -s`).  The DCO gives a per-commit attestation
+  of provenance, which is sufficient for most open-source projects.  A
+  heavier CLA (e.g. copyright assignment) is still a separate instrument
+  the author may add later if a sponsor or downstream redistributor
+  requires it.
 
 These limitations are flagged here, not hidden, so the author can decide
 whether to seek legal counsel for the parts that matter to them.

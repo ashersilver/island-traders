@@ -215,7 +215,11 @@ calibration pass before each version bump.
 
 ## Contributing & releases
 
-- Work happens on feature branches off `pre-release`.
+- See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full guide. **Every commit
+  must be signed off** under the [Developer Certificate of Origin](DCO)
+  (`git commit -s`).
+- Work happens on feature branches off `pre-release` (`claude/…`, `codex/…`,
+  or `yourname/…` prefixes).
 - Release notes live in [`RELEASE_NOTES.md`](RELEASE_NOTES.md) and must be
   updated before a feature branch merges to `pre-release`.
 - The release process is documented in
