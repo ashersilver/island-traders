@@ -26,10 +26,26 @@ This causes two related problems in 7-player or multi-AI games:
 
 ## Branch
 
-- **Base:** `pre-release` (latest at HEAD on `origin`)
+- **Base:** `pre-release` at HEAD on `origin`.  As of hand-off the tip is
+  `4b23592` ("Merge claude/education-phase1-rename: Knowledge → Expertise").
+  `git fetch origin && git checkout pre-release && git pull` first.
 - **Branch name:** `codex/ai-trading` (use the `codex/` prefix to keep
   branches visually distinct from Claude's `claude/` work)
 - **Target for merge:** `pre-release`
+
+> **Codebase has moved since this brief was first drafted.**  Recent
+> merges you should be aware of:
+> - **`Knowledge` → `Expertise`**: the resource enum is now
+>   `ResourceType.EXPERTISE` (value `"Expertise"`).  There is no
+>   `KNOWLEDGE` member.  The optional "AI Educator buys Expertise" extra
+>   below already reflects this.
+> - **Banker rebalance**: the Banker no longer produces a "Finance"
+>   commodity — banking is a service business (loans/insurance).  Don't
+>   build AI logic that lists "Finance" for sale.
+> - **Market UX (#22)**: bid/ask prefill + a `prefill` param on
+>   `ask_dollop_amount`.  Doesn't affect AI (AI doesn't use the prompt
+>   path) but the market model semantics are unchanged.
+> - **Baseline test count is 262** (not 235 — see Acceptance criteria).
 
 ## Files in scope
 
@@ -120,7 +136,7 @@ Model" — implementing it here is fine.
 - ✅ A regression test confirms an AI with no input inventory places
   bids on its required inputs.
 - ✅ All existing tests pass (`.venv/bin/python -m pytest tests/`, target
-  235 passing or better).
+  **262 passing or better** — that is the current baseline).
 - ✅ `RELEASE_NOTES.md` has a new `### codex/ai-trading` section with a
   before/after market-activity comparison.
 
@@ -129,7 +145,7 @@ Model" — implementing it here is fine.
 - A `--diagnostics` flag on the simulation runner that prints per-role
   market-participation stats (bids placed, offers listed, deals matched).
 - AI Banker that proactively offers loans to capital-short borrowers.
-- AI Educator that buys Knowledge / Expertise from other educators
+- AI Educator that buys Expertise from other educators
   *(only relevant in multi-Educator games, which today's auction
   doesn't typically produce — but it's a nice forward-compat hook).*
 
