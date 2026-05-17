@@ -5,6 +5,46 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/issue-22-market-ux
+
+Branch: `claude/issue-22-market-ux`
+Target: `pre-release`
+Closes: GitHub #22
+
+Four market UI/UX fixes from the 2026-05-15 playtest:
+
+1. **Market Prices popup as a grid** — `renderMarketTable` now uses a new
+   `.market-grid` style (gridlined, tabular-numeric, right-aligned,
+   zebra-striped, colour-coded bid/ask) in the board popup.  The compact
+   side-panel mini-table is unchanged.
+2. **Bid vs Buy clarity** — the Market Buy popup now has a legend
+   ("⬤ Buy Now" = immediate at the ask; "⬤ Place Bid" = limit order at
+   your price), grouped headers, gridline separators, tinted columns
+   (gold for buy-now, green for place-bid), and tooltips on each input.
+3. **Buying prefill** — the new-bid price field is pre-filled with the
+   current ask (when one exists) instead of the formula price, so a
+   buyer placing a bid starts from the price that would clear.
+4. **Selling prefill** — the asking-price prompt is pre-filled with the
+   best bid (when one exists).  New optional `prefill` parameter on
+   `ask_dollop_amount` across all three IO adapters; the WS message
+   carries `prefill` and the dashboard input uses it as its initial
+   value with a hint line.
+
+#### Tests
+
+- 7 new tests in `tests/test_engine/test_market_prefill.py`: base
+  adapter honours/overrides prefill, FakeIOAdapter accepts the new
+  kwarg, WS message carries `prefill`, and `_action_market_sell`
+  prefills the asking price with the best bid.
+
+#### Verification
+
+- Test suite: 262 passed (was 255, +7).  Existing test IO adapters that
+  override `ask_dollop_amount` with the old 2-arg signature are
+  unaffected (they aren't on the market-sell path).
+
+---
+
 ### claude/ux-quickwins-20-21
 
 Branch: `claude/ux-quickwins-20-21`

@@ -216,15 +216,13 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
       when producing, the choice list must show the product name (e.g.
       "Farm Machinery", "Lab Equipment") not numeric index.  Touches the
       production prompt chain when Manufacturer picks a product line.
-- [ ] **#22 — Market UI/UX polish** *(playtest 2026-05-15)*
-  - [ ] Market Prices popup rendered as a grid (not a list)
-  - [ ] When buying, distinguish *bid* (limit order) from *buy now*
-        (lift the ask) — currently both inputs are writable and
-        indistinguishable
-  - [ ] When buying a commodity with an existing ask, prefill the price
-        field with the ask
-  - [ ] When selling a commodity with an existing bid, prefill the price
-        field with the bid
+- [x] **#22 — Market UI/UX polish** *(playtest 2026-05-15, done)*
+  - [x] Market Prices popup rendered as a grid (.market-grid style)
+  - [x] Buy popup: legend + grouped/tinted columns distinguishing
+        "Buy Now @ ask" from "Place Bid @ your price"
+  - [x] Buying: new-bid price prefilled with the current ask
+  - [x] Selling: asking-price prompt prefilled with the best bid
+        (new `prefill` param on ask_dollop_amount)
 - [ ] **#23 — Logo + island detail popup** *(playtest 2026-05-15)*
   - [ ] Top-left game logo: bolder + more readable
   - [ ] Clicking on any island brings up a well-formatted popup with

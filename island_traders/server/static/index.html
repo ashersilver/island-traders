@@ -356,6 +356,15 @@ button:active{transform:scale(.97)}
 .comp-table td{padding:.25rem .35rem;border-bottom:1px solid #0a1220}
 .comp-table tr.me{background:rgba(10,189,227,.07)}
 
+/* Market prices popup grid (#22.1) — clean, aligned, gridlined */
+.market-grid{width:100%;border-collapse:collapse;font-size:.84rem;margin-bottom:1rem}
+.market-grid th{color:var(--dim);font-weight:600;padding:.4rem .6rem;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:right}
+.market-grid th:first-child,.market-grid td:first-child{text-align:left}
+.market-grid td{padding:.35rem .6rem;border:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.market-grid tbody tr:nth-child(even){background:rgba(255,255,255,.02)}
+.market-grid .bid{color:var(--green);font-weight:600}
+.market-grid .ask{color:var(--gold);font-weight:600}
+
 .prompt-area{background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);padding:.9rem}
 .prompt-area h3{color:var(--heading);margin-bottom:.5rem;font-size:.9rem}
 .action-btns{display:flex;flex-wrap:wrap;gap:.35rem}
@@ -2266,7 +2275,7 @@ function renderMarketTable(market, compact = false) {
       <td>${askQty || '—'}</td>
     </tr>`;
   }).join('');
-  const cls = compact ? 'market-mini' : 'comp-table';
+  const cls = compact ? 'market-mini' : 'market-grid';
   return `<table class="${cls}">
     <thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -2639,8 +2648,13 @@ function showQuantityInput(msg) {
 }
 
 function showDollopInput(msg) {
+  const prefill = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
+  const hint = prefill > 0
+    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Pre-filled with the current best price — adjust if you wish.</div>`
+    : '';
   showDlg(msg.prompt, `
-    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.1" value="0" style="width:100%;margin:.5rem 0"/>
+    ${hint}
+    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.01" value="${prefill}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
       ${CANCEL_BTN_HTML}
@@ -2690,20 +2704,36 @@ function showMarketBuyPopup(msg) {
   const budget = msg.budget || 0;
   const entries = Object.entries(market);
   let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
-  html += '<div class="market-buy-wrap"><table class="market-buy-table"><thead><tr><th style="width:190px">Commodity</th><th style="width:95px">Bid</th><th style="width:80px">Bid Qty</th><th style="width:95px">Ask</th><th style="width:80px">Ask Qty</th><th style="width:90px">Buy Qty</th><th style="width:250px">New Bid</th></tr></thead><tbody>';
+  // #22.2 — make it explicit which side is an immediate purchase vs a limit
+  // bid.  The two actions are visually separated and explained.
+  html += `<div style="font-size:.78rem;color:var(--dim);margin-bottom:.5rem;line-height:1.5">
+    <span style="color:var(--gold)">⬤ Buy Now</span> — purchases immediately at the seller's <em>Ask</em> price (only available when there's an ask).
+    &nbsp;&nbsp;<span style="color:var(--green)">⬤ Place Bid</span> — posts a limit order at <em>your</em> price; it fills when a seller's ask meets it.
+  </div>`;
+  html += '<div class="market-buy-wrap"><table class="market-buy-table"><thead><tr>'
+    + '<th style="width:170px">Commodity</th>'
+    + '<th colspan="2" style="color:var(--green);border-left:2px solid var(--border)">Current Bid</th>'
+    + '<th colspan="2" style="color:var(--gold);border-left:2px solid var(--border)">Current Ask</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">⬤ Buy Now (qty @ ask)</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">⬤ Place Bid (qty @ your price)</th>'
+    + '</tr></thead><tbody>';
   for (const [res, d] of entries) {
     const askQty = d.ask_quantity ?? d.quantity ?? 0;
     const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
     const bidQty = d.bid_quantity ?? 0;
     const bidPrice = d.bid_price;
+    // #22.3 — when an ask exists, pre-fill the new-bid price with the ask
+    // (the buyer starts from the price that would clear), else the formula
+    // price as a sensible default.
+    const bidPrefill = (askQty && askPrice) ? Number(askPrice).toFixed(2) : (d.formula_price || 0);
     html += `<tr>
       <td>${esc(res)}</td>
-      <td style="color:var(--green)">${fmtMarketPrice(bidPrice)}</td>
+      <td style="color:var(--green);border-left:2px solid var(--border)">${fmtMarketPrice(bidPrice)}</td>
       <td>${bidQty || '—'}</td>
-      <td style="color:var(--gold)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+      <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
       <td>${askQty || '—'}</td>
-      <td><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-      <td><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${d.formula_price || 0}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
+      <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+      <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
     </tr>`;
   }
   html += '</tbody></table></div>';
