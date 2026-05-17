@@ -5,6 +5,46 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/education-phase1-rename
+
+Branch: `claude/education-phase1-rename`
+Target: `pre-release`
+Implements: `requirements/education-model.md` — Phase 1 (mechanical rename)
+
+**Pure rename — zero behavioural change.** Test suite unchanged at
+**262 passed** (same count and same tests as before).
+
+`ResourceType.KNOWLEDGE` (`"Knowledge"`) → `ResourceType.EXPERTISE`
+(`"Expertise"`) everywhere:
+
+- `models/resource.py` — enum member + value
+- `models/role.py` — Educator produces / Banker & Doctor need Expertise
+- `constants.py` — `BASE_PRICES`, `BASE_PRODUCTION`, `PRODUCTION_INPUTS`,
+  `STARTING_INVENTORY`, comments; dead `TRAINING_KNOWLEDGE_COST` →
+  `TRAINING_EXPERTISE_COST`
+- `constants_capacity.py` — Educator recipe `output="Expertise"`, capacity
+  effects, input-relief, descriptions
+- `server/app.py` — `ROLE_INFO` produce/needs display strings
+- `config/event_charts.yaml` — price-shock resource keys
+- `RULES.md`, `README.md` — all player-facing references
+- `board/game_board.html` — visible label text (internal DOM id
+  `res-knowledge` and JS `gameState.knowledge` left as-is; that file is a
+  standalone demo, not the live dashboard)
+- `tests/test_engine/test_production.py` — assertions
+
+Phase 2 (add `Courses` resource, Educator produces Courses by consuming
+Expertise, Course-gated training, `Profession.INSTRUCTOR`, rebalanced
+Education starting workforce) remains a separate future branch per the
+spec.
+
+#### Verification
+
+- Test suite: 262 passed (unchanged — confirms pure rename).
+- Smoke-tested: enum has `EXPERTISE` and no `KNOWLEDGE`; server imports;
+  `island-traders-export` printables contain no "Knowledge".
+
+---
+
 ### claude/issue-22-market-ux
 
 Branch: `claude/issue-22-market-ux`

@@ -27,20 +27,20 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Transporter: cargo + seats to sell + 2 seasons of Oil & Fish
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
                       "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
-    # Educator: Knowledge to sell + 2 seasons of inputs
-    "Educator":      {"Knowledge": 2,                                 # to sell
+    # Educator: Expertise to sell + 2 seasons of inputs
+    "Educator":      {"Expertise": 2,                                 # to sell
                       "LaboratoryEquipment": 2},                       # 2 seasons of Lab Equipment
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
     # loan interest spread and insurance premiums — see island-ledger.md §3
     # for the full institutional-cash-pool model (future implementation).
-    "Banker":        {"Knowledge": 2},                                 # 2 seasons of expertise
+    "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
     # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Knowledge": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
+                      "Expertise": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
 }
 
 # Dollops per unit at balanced supply/demand
@@ -51,7 +51,7 @@ BASE_PRICES: dict[str, float] = {
     "Metal":               25.0,
     "Oil":                 20.0,
     "Freight":             12.0,
-    "Knowledge":           18.0,
+    "Expertise":           18.0,
     "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
     "HealthServices":      35.0,
@@ -77,7 +77,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
                       "Oil": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     "Transporter":   {"Freight": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Educator":      {"Knowledge": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    "Educator":      {"Expertise": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Patents": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Banker does NOT produce a "Finance" commodity — banking earns through
     # the spread on loans (and insurance premiums, future deal-guarantee
@@ -98,11 +98,11 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
-    # finance, insurance underwriting).  Knowledge is still useful but is
+    # finance, insurance underwriting).  Expertise is still useful but is
     # not a hard requirement gating "production".
     "Banker":        {},
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
-    "Doctor":        {"Knowledge": 1, "LaboratoryEquipment": 1},
+    "Doctor":        {"Expertise": 1, "LaboratoryEquipment": 1},
 }
 
 # Per-season input→output table for the Farmer island.
@@ -393,8 +393,8 @@ UNIVERSITY_SEASONAL_CAP: dict[str, int] = {
 # Training constants (legacy — superseded by UNIVERSITY_CAPACITY per profession)
 # ---------------------------------------------------------------------------
 
-# Units of Knowledge resource consumed to train one worker.
-TRAINING_KNOWLEDGE_COST: int = 1
+# Units of Expertise resource consumed to train one worker.
+TRAINING_EXPERTISE_COST: int = 1
 
 # ---------------------------------------------------------------------------
 # Population / birth rate constants

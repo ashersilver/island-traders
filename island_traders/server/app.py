@@ -58,17 +58,17 @@ ROLE_INFO = {
                      "island": ROLES["Transporter"].island, "produces": "Freight",
                      "needs": "Transport Equipment, Oil", "color": "#3498db"},
     "Educator":     {"display_name": ROLES["Educator"].display_name, "short_name": ROLES["Educator"].short_name,
-                     "island": ROLES["Educator"].island, "produces": "Knowledge, Patents",
+                     "island": ROLES["Educator"].island, "produces": "Expertise, Patents",
                      "needs": "Laboratory Equipment", "color": "#9b59b6"},
     "Banker":       {"display_name": ROLES["Banker"].display_name, "short_name": ROLES["Banker"].short_name,
                      "island": ROLES["Banker"].island, "produces": "Loans, Insurance",
-                     "needs": "Knowledge", "color": "#f1c40f"},
+                     "needs": "Expertise", "color": "#f1c40f"},
     "Manufacturer": {"display_name": ROLES["Manufacturer"].display_name, "short_name": ROLES["Manufacturer"].short_name,
                      "island": ROLES["Manufacturer"].island, "produces": "Machinery, Lab Equipment",
                      "needs": "Metal, Oil, Freight", "color": "#1abc9c"},
     "Doctor":       {"display_name": ROLES["Doctor"].display_name, "short_name": ROLES["Doctor"].short_name,
                      "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
-                     "needs": "Knowledge, Laboratory Equipment", "color": "#e74c3c"},
+                     "needs": "Expertise, Laboratory Equipment", "color": "#e74c3c"},
 }
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override

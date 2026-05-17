@@ -153,8 +153,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Knowledge": 4}, "education_slots": 2},
-        description="+4 Knowledge, +2 Education slots",
+        effects={"capacity": {"Expertise": 4}, "education_slots": 2},
+        description="+4 Expertise, +2 Education slots",
     ),
     CapitalItem(
         item_id="educator.library",
@@ -162,8 +162,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=40.0,
         delivery_seasons=0,
-        effects={"capacity": {"Knowledge": 2, "Patents": 1}},
-        description="+2 Knowledge, +1 Patent",
+        effects={"capacity": {"Expertise": 2, "Patents": 1}},
+        description="+2 Expertise, +1 Patent",
     ),
     CapitalItem(
         item_id="educator.research_lab",
@@ -180,8 +180,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=80.0,
         delivery_seasons=2,
-        effects={"capacity": {"Patents": 1}, "input_relief": {"Knowledge": {"LaboratoryEquipment": 0.2}}},
-        description="+1 Patent, -0.2 LaboratoryEquipment per Knowledge",
+        effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"LaboratoryEquipment": 0.2}}},
+        description="+1 Patent, -0.2 LaboratoryEquipment per Expertise",
     ),
     CapitalItem(
         item_id="educator.apprenticeship_programme",
@@ -375,10 +375,10 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
 
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
-        role="Educator", output="Knowledge",
+        role="Educator", output="Expertise",
         inputs={"LaboratoryEquipment": 0.25},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
-        description="1 Professor required per unit of Knowledge",
+        description="1 Professor required per unit of Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Patents",
@@ -394,7 +394,7 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # separately via the loan ledger (see models/loan.py).
     ProductionRecipe(
         role="Banker", output="InsurancePolicies",
-        inputs={"Knowledge": 0.5},
+        inputs={"Expertise": 0.5},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.0,
         money_per_unit=8.0,
         description="8 Dp hedge cost per InsurancePolicy",
@@ -433,12 +433,12 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Doctor ----------------------------------------------------------
     ProductionRecipe(
         role="Doctor", output="HealthServices",
-        inputs={"Knowledge": 0.25, "LaboratoryEquipment": 0.25},
+        inputs={"Expertise": 0.25, "LaboratoryEquipment": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Doctor", output="Vaccine",
-        inputs={"Knowledge": 0.5, "LaboratoryEquipment": 1.0},
+        inputs={"Expertise": 0.5, "LaboratoryEquipment": 1.0},
         manager_per_unit=1.0, technician_per_unit=0.0, worker_per_unit=0.0,
     ),
 ]

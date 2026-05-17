@@ -164,7 +164,7 @@ Educator:
       outage: true
       damage_seasons: 0
       natural_disaster: false
-      price_shock_resource: "Knowledge"
+      price_shock_resource: "Expertise"
       price_shock_multiplier: 1.8
     - name: "Pandemic Closure"
       weight: 0.03
@@ -173,7 +173,7 @@ Educator:
       outage: false
       damage_seasons: 1
       natural_disaster: true
-      price_shock_resource: "Knowledge"
+      price_shock_resource: "Expertise"
       price_shock_multiplier: 1.4
 
 Banker:

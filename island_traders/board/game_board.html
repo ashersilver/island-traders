@@ -402,7 +402,7 @@
       <div class="res-chip"><div class="res-dot" style="background:#7A4A2C"></div> <span id="res-dollops">100</span> Dp</div>
       <div class="res-chip"><div class="res-dot" style="background:#C8872A"></div> <span id="res-goods">85</span> Goods</div>
       <div class="res-chip"><div class="res-dot" style="background:#4A7C59"></div> <span id="res-food">95</span> Food</div>
-      <div class="res-chip"><div class="res-dot" style="background:#4A6E8C"></div> <span id="res-knowledge">60</span> Knowledge</div>
+      <div class="res-chip"><div class="res-dot" style="background:#4A6E8C"></div> <span id="res-knowledge">60</span> Expertise</div>
     </div>
     <div class="turn-badge">Turn <strong id="turn-num">1</strong></div>
   </div>
@@ -610,9 +610,9 @@ const ISLANDS = [
     ring: '#C4603C',
     stats: { 'Health Index': 9, 'Vaccine Output': 6, Research: 7, Population: 8 },
     produces: ['⚕️ Health Services  4 / season', '💉 Vaccine  1 / season'],
-    needs:    ['📚 Knowledge  1 / season', '🔬 Laboratory Equipment  1 / season'],
+    needs:    ['📚 Expertise  1 / season', '🔬 Laboratory Equipment  1 / season'],
     actions: [
-      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Knowledge + 1 Lab Equipment' },
+      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Expertise + 1 Lab Equipment' },
       { icon: '💉', label: 'Distribute Vaccines', target: 'any', cost: '1 Vaccine / island' },
       { icon: '🔬', label: 'Joint Research with Scholara', target: 'education', cost: '—' },
     ]
@@ -665,11 +665,11 @@ const ISLANDS = [
     rx: 62, ry: 52,
     grad: 'grad-education',
     ring: '#4A6E8C',
-    stats: { Knowledge: 9, 'Training Slots': 8, Research: 7, Influence: 6 },
-    produces: ['📚 Knowledge  4 / season'],
+    stats: { Expertise: 9, 'Training Slots': 8, Research: 7, Influence: 6 },
+    produces: ['📚 Expertise  4 / season'],
     needs:    ['🔬 Laboratory Equipment  1 / season'],
     actions: [
-      { icon: '📚', label: 'Produce Knowledge', target: 'self', cost: '1 Laboratory Equipment' },
+      { icon: '📚', label: 'Produce Expertise', target: 'self', cost: '1 Laboratory Equipment' },
       { icon: '🎓', label: 'Review Training Requests', target: 'self', cost: 'negotiated fee' },
       { icon: '🔬', label: 'Joint Research with Mericula', target: 'healthcare', cost: '—' },
     ]
