@@ -5,6 +5,38 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/ai-trading
+
+Branch: `codex/ai-trading`
+Target: `pre-release`
+Implements: `requirements/codex-tasks/ai-trading.md`
+
+#### Player-Facing Changes
+
+- AI islands now place standing bids when they are short of required production inputs instead of waiting for humans to rescue the supply chain.
+- AI islands review pending peer deals with market-aware valuation and accept profitable deals while rejecting value-destroying ones.
+- AI islands can capture visible bid/ask arbitrage when the market already exposes a profitable spread.
+- Transporter AI now lists produced `PassengerSeats` for sale; previously those seats were produced but omitted from AI selling because the stale role metadata only advertised `Freight`.
+
+#### Before / After Market Activity
+
+- Before: an input-starved Farmer with 0 `FarmMachinery` placed no standing bid; after: it posts a market bid for the missing machinery on its turn.
+- Before: Transporter AI produced `PassengerSeats` but did not list them; after: a post-production regression test confirms a standing `PassengerSeats` offer exists.
+- Before: AI deal acceptance used only formula prices in the human-turn path; after: AI-targeted deals use latest accepted cash/unit deal price, then current best offer, then formula price as fallback.
+
+#### Known Follow-Ups
+
+- The task brief asks for trade-row verification in the simulation price-history CSV, but the current simulation exporter records seasonal price snapshots only, not executed-trade rows. I left that exporter untouched to stay inside the agreed file scope.
+- `Transporter` role metadata still lists only `Freight` in `models/role.py` even though production constants also emit `PassengerSeats`; this branch works around that by selling actual produced resources, but the metadata should be reconciled separately.
+- The 1000-game AI-only run still shows structural balance drift once active trading is enabled (Banker 68.0% wins, Educator and Doctor 0.0%); balancing is intentionally left for the separate calibration workstream.
+
+#### Verification
+
+- Test suite: `265 passed` (baseline 262, +3 AI-trading regressions).
+- Simulation: `.venv/bin/python -m island_traders.simulation.runner --games 1000 --seed 42 --output simulation_results/ai_trading`.
+
+---
+
 ### claude/education-phase1-rename
 
 Branch: `claude/education-phase1-rename`
