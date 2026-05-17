@@ -348,11 +348,13 @@ class WebSocketIOAdapter(IOAdapter):
                 return o["value"]
         return options[0]["value"] if options else None
 
-    def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
+    def ask_dollop_amount(self, prompt: str, max_dollops: float,
+                          prefill: float = 0.0) -> float:
         resp = self._send_and_wait({
             "type": "ask_dollop_amount",
             "prompt": prompt,
             "max": max_dollops,
+            "prefill": round(prefill, 2) if prefill else 0,
         })
         self._check_cancel(resp)
         if resp is None:

@@ -118,11 +118,18 @@ class IOAdapter:
                     return options[idx]["value"]
             self.print("  Invalid choice.")
 
-    def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
+    def ask_dollop_amount(self, prompt: str, max_dollops: float,
+                          prefill: float = 0.0) -> float:
         sym = CURRENCY_SYMBOL
-        self.print(f"\n  {prompt} (max {max_dollops:.1f} {sym}, 0 to skip)")
+        hint = f" (max {max_dollops:.1f} {sym}, 0 to skip"
+        if prefill:
+            hint += f", suggested {prefill:.2f}"
+        hint += ")"
+        self.print(f"\n  {prompt}{hint}")
         while True:
             raw = self.input("  > ").strip()
+            if raw == "" and prefill:
+                return prefill
             try:
                 val = float(raw)
                 if -max_dollops <= val <= max_dollops:
@@ -176,7 +183,7 @@ class FakeIOAdapter(IOAdapter):
     def confirm(self, prompt):
         return True
 
-    def ask_dollop_amount(self, prompt, max_dollops):
+    def ask_dollop_amount(self, prompt, max_dollops, prefill=0.0):
         return 0.0
 
     def ask_text(self, prompt, default=""):

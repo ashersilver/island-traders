@@ -1237,9 +1237,18 @@ class TurnManager:
                     self.io.print(f"  Failed: {e}")
                 return
         ref_price = self.market.current_price(rtype)
-        self.io.print(f"  Reference price: {ref_price:.2f} {sym}/unit")
+        # #22.4 — if a bid exists, pre-fill the asking price with the best
+        # bid so the seller starts from a price that would clear immediately.
+        prefill = best_bid.price_per_unit if best_bid else ref_price
+        self.io.print(
+            f"  Reference price: {ref_price:.2f} {sym}/unit"
+            + (f"  |  best bid: {best_bid.price_per_unit:.2f} {sym}/unit"
+               if best_bid else "")
+        )
         price = self.io.ask_dollop_amount(
-            f"Your asking price per unit (ref: {ref_price:.2f})?", ref_price * 5
+            f"Your asking price per unit (ref: {ref_price:.2f})?",
+            ref_price * 5,
+            prefill=prefill,
         )
         if price <= 0:
             self.io.print("  Cancelled — price must be positive.")
