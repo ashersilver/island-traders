@@ -164,7 +164,7 @@ tests/                      # pytest test suite
 budget is 700 Dp per player.
 
 **Resources (11 total):** `Food`, `Fish`, `Ore`, `Oil`, `Metal`, `Freight`,
-`Knowledge`, `CapitalEquipment`, `Goods`, `HealthServices`, `Vaccine`,
+`Expertise`, `CapitalEquipment`, `Goods`, `HealthServices`, `Vaccine`,
 `Finance`.
 
 **The 7 islands and their economies:**
@@ -174,10 +174,10 @@ budget is 700 Dp per player.
 | Farmer | Agriculture, Fisheries & Foods | Food, Fish | CapitalEquipment, Oil |
 | Miner | Mining & Oil | Ore, Oil, Metal | Oil, Freight, MiningEquipment |
 | Transporter | Transportation & Shipping | Freight | Oil, CapitalEquipment |
-| Educator | Education & Training | Knowledge, Patents | CapitalEquipment, Finance |
-| Banker | Banking | Finance, Insurance | Knowledge, CapitalEquipment |
+| Educator | Education & Training | Expertise, Patents | CapitalEquipment, Finance |
+| Banker | Banking | Finance, Insurance | Expertise, CapitalEquipment |
 | Manufacturer | Manufacturing | Goods, CapitalEquipment | Metal, Oil, Freight |
-| Doctor | Healthcare | HealthServices, Vaccine | Knowledge, CapitalEquipment |
+| Doctor | Healthcare | HealthServices, Vaccine | Expertise, CapitalEquipment |
 
 **Workforce model:** Every island starts with at least **1 Manager** and
 **2 Technicians** plus general unskilled labour. Transporter, for example,

@@ -87,10 +87,11 @@ See [`requirements/education-model.md`](requirements/education-model.md) for ful
 *(From the 2026-05-15 playtest inbox.)*  Two-phase migration recommended;
 don't combine the phases.
 
-#### Phase 1 — Rename
-- [ ] `ResourceType.KNOWLEDGE` → `ResourceType.EXPERTISE` (mechanical
-      rename, ~40-file cascade, zero behavioural change)
-- [ ] Update RULES.md / README.md / dashboard labels
+#### Phase 1 — Rename ✅ (done — claude/education-phase1-rename)
+- [x] `ResourceType.KNOWLEDGE` → `ResourceType.EXPERTISE` (mechanical
+      rename, zero behavioural change — 262 tests still green)
+- [x] Update RULES.md / README.md / constants / event charts / board
+      labels.  Banker input + Educator output are now "Expertise".
 
 #### Phase 2 — Courses + new training flow
 - [ ] Add `ResourceType.COURSES` (new tradable resource, base price ≈ 25 Dp)

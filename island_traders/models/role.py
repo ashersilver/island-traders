@@ -47,7 +47,7 @@ ROLES: dict[str, Role] = {
         display_name="Education, Research and Training",
         short_name="Education",
         island="Education, Research and Training Island",
-        produces=(ResourceType.KNOWLEDGE, ResourceType.PATENTS),
+        produces=(ResourceType.EXPERTISE, ResourceType.PATENTS),
         needs=(ResourceType.LABORATORY_EQUIPMENT,),
         description="Trains the workforce and advances knowledge across the archipelago.",
     ),
@@ -61,7 +61,7 @@ ROLES: dict[str, Role] = {
         # brokerage, project finance).  The Finance commodity has been
         # removed from the production loop.
         produces=(),
-        needs=(ResourceType.KNOWLEDGE,),
+        needs=(ResourceType.EXPERTISE,),
         description="Lends capital, underwrites insurance, and brokers deals — earning the spread.",
     ),
     "Manufacturer": Role(
@@ -88,7 +88,7 @@ ROLES: dict[str, Role] = {
         short_name="Healthcare",
         island="Healthcare and Health Research Island",
         produces=(ResourceType.HEALTH_SERVICES, ResourceType.VACCINE),
-        needs=(ResourceType.KNOWLEDGE, ResourceType.LABORATORY_EQUIPMENT),
+        needs=(ResourceType.EXPERTISE, ResourceType.LABORATORY_EQUIPMENT),
         description="Provides health services and vaccines, keeping the workforce productive.",
     ),
 }

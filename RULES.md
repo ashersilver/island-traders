@@ -15,7 +15,7 @@ The game can be played as a **physical board game** (using printed cards, tokens
 - 7 Island Event Chart tables (one per island)
 - 1 Market Price Board
 - Season Scorecards
-- Resource tokens — **Food, Fish, Ore, Metal, Oil, Freight, Knowledge, Goods,
+- Resource tokens — **Food, Fish, Ore, Metal, Oil, Freight, Expertise, Goods,
   Health Services, Vaccine, Passenger Seats, Patents**
   *(Note: the Banker does not produce a "Finance" commodity — banking is a
   service business, see Loans and Insurance sections.)*
@@ -52,10 +52,10 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 | **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil |
 | **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment |
 | **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) |
-| **Educator** | Education & Training Island | Knowledge, **Patents** | Laboratory Equipment |
-| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Knowledge *(expertise; no per-season input)* |
+| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment |
+| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* |
 | **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Knowledge, Laboratory Equipment |
+| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment |
 
 > **Multi-role play:** A single player can win multiple islands in the auction
 > (they manage each island independently). If two or more humans want to
@@ -272,7 +272,7 @@ Before producing, you must have your **production inputs** in inventory.  These 
 | Educator | 1 Lab Equipment |
 | Banker | — *(service business; revenue comes from loan interest and insurance premiums, not commodity production)* |
 | Manufacturer | Varies by product line: typically **Metal** + Oil + Freight |
-| Doctor | 1 Knowledge + 1 Lab Equipment |
+| Doctor | 1 Expertise + 1 Lab Equipment |
 
 If you do not have the required inputs, you cannot produce this season.  You
 can buy inputs from the market, negotiate with other players, or use the
@@ -297,7 +297,7 @@ each season), capital equipment is an owned **asset**.
 
 ### Patents
 
-The Educator produces **Patents** alongside Knowledge.  Each Patent applied
+The Educator produces **Patents** alongside Expertise.  Each Patent applied
 via the **Apply Patent** action gives a permanent **–20% input cost** on one
 output the player produces, up to **3 active patents per output**.
 
@@ -322,7 +322,7 @@ Base prices (in Dollops per unit):
 | Metal | 25 Dp | Miner *(smelted from Ore + Oil)* |
 | Oil | 20 Dp | Miner |
 | Freight | 12 Dp | Transporter |
-| Knowledge | 18 Dp | Educator |
+| Expertise | 18 Dp | Educator |
 | Lab Equipment | 28 Dp | Manufacturer |
 | Farm Machinery | 32 Dp | Manufacturer |
 | Mining Equipment | 42 Dp | Manufacturer |
@@ -505,7 +505,7 @@ At the **start of their return season** they come home with training level incre
 
 The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents a course of vaccination for one worker or resident.
 
-- **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Knowledge + Capital).
+- **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Expertise + Capital).
 - **Effect:** A Vaccine applied to a worker improves their wellness for **4 seasons**, conferring a small efficiency bonus and reducing the likelihood of illness-related absences.
 - **Trading:** Vaccines can be sold on the market or traded peer-to-peer like any other resource.
 - **Base price:** 40 Dp per unit.
@@ -693,7 +693,7 @@ The Chat Board is a **shared public record** visible to all players. It lists ev
 - *Event rolls:* Alice: Normal Harvest. Bob: Stable Markets. Carol: Normal Semester. Dave: Normal Operations.
 - *Alice's turn:* Alice has 2 Capital in inventory. She produces 4 Food + 3 Fish. She sells 3 Food to the market for 30 Dp.
 - *Bob's turn:* Bob produces 3 Capital with no inputs needed. He sells 2 Capital to the market for 50 Dp.
-- *Carol's turn:* Carol buys 1 Capital from the market (25 Dp). She produces 4 Knowledge. She proposes a deal to Alice: "3 Knowledge for 20 Dp." Alice accepts.
+- *Carol's turn:* Carol buys 1 Capital from the market (25 Dp). She produces 4 Expertise. She proposes a deal to Alice: "3 Expertise for 20 Dp." Alice accepts.
 - *Dave's turn:* Dave needs Oil to produce Freight — none on the market yet. He ends his turn.
 
 **Summer, Year 1 — Alice requests training:**
@@ -722,7 +722,7 @@ Roll Over Loan · View Loans · Inventory · View Market · View Players · End 
 **Production formula:** Base × Event Modifier × max(Base Capacity, Fill Rate × Avg Efficiency)
 
 **Resources (commodities, current set):**
-Food · Fish · Ore · **Metal** · Oil · Freight · Knowledge · Goods ·
+Food · Fish · Ore · **Metal** · Oil · Freight · Expertise · Goods ·
 Lab Equipment · Farm Machinery · Mining Equipment · Medical Devices ·
 Transport Equipment · Health Services · Vaccine · **Passenger Seats** ·
 **Patents**

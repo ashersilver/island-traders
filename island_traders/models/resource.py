@@ -10,7 +10,7 @@ class ResourceType(str, Enum):
     METAL             = "Metal"
     OIL               = "Oil"
     FREIGHT           = "Freight"
-    KNOWLEDGE         = "Knowledge"
+    EXPERTISE         = "Expertise"
     LABORATORY_EQUIPMENT = "LaboratoryEquipment"
     GOODS             = "Goods"
     HEALTH_SERVICES      = "HealthServices"

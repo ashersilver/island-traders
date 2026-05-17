@@ -62,7 +62,7 @@ def test_educator_needs_laboratory_equipment(normal_event):
     educator.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
-    assert ResourceType.KNOWLEDGE in produced
+    assert ResourceType.EXPERTISE in produced
 
 
 def test_doctor_needs_laboratory_equipment(normal_event):
@@ -70,7 +70,7 @@ def test_doctor_needs_laboratory_equipment(normal_event):
     from island_traders.models.role import ROLES
 
     doctor = Player(11, "Doctor", [ROLES["Doctor"]], 100.0, is_human=False)
-    doctor.receive_resources(ResourceType.KNOWLEDGE, 1)
+    doctor.receive_resources(ResourceType.EXPERTISE, 1)
     doctor.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
     produced = ProductionEngine().produce(doctor, normal_event)
 
