@@ -25,6 +25,19 @@ Target: `pre-release`
   2 Medical Orderlies composition; the older handoff's “2 Doctors + 4
   Nurses” note is stale against present `pre-release`.
 
+### codex/personnel-sidebar-breakdown
+
+Branch: `codex/personnel-sidebar-breakdown`
+Target: `pre-release`
+
+- Makes the left-side Personnel summary readable as an indented multiline
+  breakdown and shows per-band workers currently in training.
+- Adds a Request Training deficit report so players can see which formal
+  professions their island staffing plan is missing.
+- Adds an “All visible skill deficits” training option that submits the
+  currently requestable missing professions together while preserving
+  per-profession University-capacity batches internally.
+
 ### claude/codex-brief-sustenance
 
 Branch: `claude/codex-brief-sustenance`
