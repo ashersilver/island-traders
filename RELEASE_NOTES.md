@@ -5,6 +5,26 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/sustenance-model
+
+Branch: `codex/sustenance-model`
+Target: `pre-release`
+
+- Replaces the legacy population Food-demand path with the §21
+  balance-aware model: the first 100 permanent residents are self-fed,
+  while residents above that baseline create 1 unit of marginal Food
+  demand each season.
+- Adds the `extra_residents` seam to
+  `Player.population_food_fish_needs()` so Education Phase 3 can charge
+  visiting trainees against campus sustenance without mutating resident
+  population.
+- Adds focused model coverage for baseline demand, population growth, and
+  transient residents.
+- Leaves the Healthcare workforce wording unchanged because current
+  merged code and rules already agree on the newer 2 Doctors + 2 Nurses +
+  2 Medical Orderlies composition; the older handoff's “2 Doctors + 4
+  Nurses” note is stale against present `pre-release`.
+
 ### claude/codex-brief-sustenance
 
 Branch: `claude/codex-brief-sustenance`

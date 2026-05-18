@@ -148,6 +148,7 @@ def test_game_state_replays_recent_ticker_log():
 def test_game_state_includes_sustenance_runway_alerts_with_recommended_purchase():
     mgr = GameManager()
     room, banker, farmer = _bootstrap_game(mgr)
+    farmer.population = 120  # above the self-fed baseline, so Food runway matters
     state = mgr.get_game_state(room.room_id, "p2")
     alerts = state["sustenance_alerts"][str(farmer.player_id)]
     food = next(alert for alert in alerts if alert["resource"] == "Food")

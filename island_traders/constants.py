@@ -7,6 +7,7 @@ CURRENCY_SYMBOL = "Dp"       # display symbol
 STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 total)
 TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
+BASE_POPULATION_SELF_FED: int = 100
 
 # Production is intentionally board-game chunky: one production action should
 # create enough supply for the archipelago, not one sad little crate.
