@@ -85,14 +85,14 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 1)  # 1 class slot (Phase 2)
+    educator.receive_resources(ResourceType.COURSES, 1)  # 1 class slot
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=70.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0,
         season=0,
         transport_mode="air_ticket",
@@ -128,7 +128,7 @@ def test_training_approval_does_not_consume_expertise_per_attendee():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=70.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0,
         season=0,
         transport_mode="air_ticket",
@@ -159,7 +159,7 @@ def test_educator_cannot_approve_training_without_air_tickets():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=70.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0,
         season=0,
         transport_mode="air_ticket",
@@ -223,14 +223,14 @@ def test_requester_can_accept_training_counter_offer_and_dispatch():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 1)  # class slot (Phase 2)
+    educator.receive_resources(ResourceType.COURSES, 1)  # class slot
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=50.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0,
         season=0,
         transport_mode="air_ticket",

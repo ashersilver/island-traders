@@ -115,6 +115,24 @@ def equipment_capacity(
     return total
 
 
+def apprenticeship_slot_capacity(
+    catalogue: Iterable[CapitalItem], owned: dict[str, int],
+) -> int:
+    """Sum the flat `effects['apprenticeship_slots']` from every owned item.
+
+    The Educator's apprenticeship slot pool (e.g. the Apprenticeship
+    Programme capital, +3 slots each) gates concurrent Technician-tier
+    training — distinct from Course-gated Manager-tier university intake.
+    """
+    total = 0
+    for it in catalogue:
+        n = owned.get(it.item_id, 0)
+        if n <= 0:
+            continue
+        total += int(it.effects.get("apprenticeship_slots", 0)) * n
+    return total
+
+
 def workforce_capacity(
     recipe: ProductionRecipe, available: dict[WorkerBand, int],
 ) -> float:

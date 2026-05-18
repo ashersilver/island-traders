@@ -413,6 +413,10 @@ TRAINING_EXPERTISE_COST: int = 1
 # Courses on Educator approval (Education Model Phase 2).
 MAX_CLASS_SIZE_PER_COURSE: int = 12
 
+# Per-trainee food & accommodation cost while at the Education Island,
+# charged per season at college (Education Model Phase 3 fee component).
+TRAINEE_FOOD_ACCOM_PER_SEASON: float = 5.0
+
 # ---------------------------------------------------------------------------
 # Population / birth rate constants
 # ---------------------------------------------------------------------------

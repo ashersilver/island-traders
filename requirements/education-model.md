@@ -186,8 +186,8 @@ its outputs gate every other island's growth.
 
 ## Migration plan
 
-Three phases.  **Phase 1 and Phase 2 are done and merged**
-(`pre-release` ≥ `3948582`); Phase 3 is the next work.
+Three phases.  **Phases 1, 2 and 3 are done** — 1 & 2 merged
+(`pre-release` ≥ `3948582`); Phase 3 on `claude/education-phase3`.
 
 ### Phase 1 — Rename (mechanical) — ✅ DONE (`claude/education-phase1-rename`)
 
@@ -228,10 +228,10 @@ Zero behavioural change — pure rename.  Tests green (262).
 > so Courses gate Manager-tier only and Technicians use the
 > apprenticeship slot pool (decision (a), 2026-05-17).
 
-### Phase 3 — Training cost components + apprenticeship pipeline (Issue #18) — ⏳ NEXT
+### Phase 3 — Training cost components + apprenticeship pipeline (Issue #18) — ✅ DONE (`claude/education-phase3`)
 
 See the **Training cost components** section below for the full spec.
-Summary of what Phase 3 implements:
+Summary of what Phase 3 implements (all shipped; suite 293 green):
 
 1. Scope the Phase-2 Course-debit to **Manager-tier only**.
 2. Technician training → **apprenticeship slot pool**

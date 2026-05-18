@@ -128,7 +128,7 @@ def test_standard_training_pending_without_courses():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=70.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0, season=0, transport_mode="air_ticket",
     )
     io = FakeIOAdapter()
@@ -160,7 +160,7 @@ def test_standard_training_consumes_one_course_for_small_class():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=100.0,
-        target_profession="FarmingTechnician",
+        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
         year=0, season=0, transport_mode="air_ticket",
     )
     io = FakeIOAdapter()

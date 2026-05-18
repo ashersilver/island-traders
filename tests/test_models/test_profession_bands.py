@@ -4,6 +4,7 @@ from __future__ import annotations
 from island_traders.models.profession import (
     Profession, WorkerBand, PROFESSION_BAND, BAND_TITLES,
     band_of, primary_title, EDUCATION_SEASONS, APPRENTICESHIP_SEASONS,
+    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
 )
 from island_traders.models.workforce import Workforce
 
@@ -60,10 +61,16 @@ def test_primary_title_examples():
 
 
 def test_education_and_apprenticeship_durations():
-    assert EDUCATION_SEASONS[Profession.DOCTOR] == 2
-    assert EDUCATION_SEASONS[Profession.NURSE] == 1   # Nurse is faster per requirements
+    # Phase 3 (ruled 2026-05-17): Doctor 3 seasons, Nurse 1, others 2.
+    assert EDUCATION_SEASONS[Profession.DOCTOR] == 3
+    assert EDUCATION_SEASONS[Profession.NURSE] == 1
+    assert EDUCATION_SEASONS[Profession.ENGINEER] == 2
+    # Every Technician apprenticeship is exactly 1 season away at Education,
+    # followed by one 75%-productivity settling season on the home island.
     for p, seasons in APPRENTICESHIP_SEASONS.items():
-        assert seasons >= 1
+        assert seasons == 1
+    assert APPRENTICESHIP_SETTLING_SEASONS == 1
+    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.75
 
 
 def test_workforce_band_helpers():

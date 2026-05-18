@@ -16,6 +16,31 @@ from ..constants import (
     UNIVERSITY_CAPACITY, UNIVERSITY_SEASONAL_CAP, CURRENCY_SYMBOL,
     CARGO_TRANSIT_SEASONS,
 )
+from .profession import (
+    Profession, WorkerBand, band_of,
+    EDUCATION_SEASONS, APPRENTICESHIP_SEASONS,
+)
+
+
+def away_seasons(profession: str) -> int:
+    """Seasons a trainee is away for the given profession.
+
+    Manager-band → university course duration (EDUCATION_SEASONS, e.g.
+    Doctor 3, Nurse 1, others 2).  Technician-band → apprenticeship
+    away-duration (APPRENTICESHIP_SEASONS, 1 season; the post-return 75%
+    settling season is tracked on the Worker, not here).  Unknown
+    professions fall back to 1 season.
+    """
+    try:
+        prof = Profession(profession)
+    except ValueError:
+        return 1
+    band = band_of(prof)
+    if band == WorkerBand.MANAGER:
+        return EDUCATION_SEASONS.get(prof, 2)
+    if band == WorkerBand.TECHNICIAN:
+        return APPRENTICESHIP_SEASONS.get(prof, 1)
+    return 1
 
 
 class TrainingCapacityError(Exception):
@@ -238,9 +263,11 @@ class TrainingRegistry:
         req.status = TrainingStatus.DISPATCHED
         req.dispatched_year = year
         req.dispatched_season = season
+        # Profession-dependent course/apprenticeship duration (Phase 3).
+        away = away_seasons(req.target_profession)
         # Cargo adds one extra season of transit delay
         extra = CARGO_TRANSIT_SEASONS if req.transport_mode == "cargo" else 0
-        ret_season = season + 1 + extra
+        ret_season = season + away + extra
         ret_year = year + ret_season // num_seasons
         req.return_year = ret_year
         req.return_season = ret_season % num_seasons
@@ -256,6 +283,41 @@ class TrainingRegistry:
         for r in due:
             r.status = TrainingStatus.COMPLETED
         return due
+
+    def technician_trainees_in_flight(self, educator_id: int) -> int:
+        """Trainees occupying this Educator's apprenticeship slot pool.
+
+        A Technician-band batch occupies a slot from approval
+        (AWAITING_TRANSPORT) through return (DISPATCHED); the slot frees
+        automatically once process_returns() flips the batch to COMPLETED.
+        Manager-tier (Course-gated) batches are excluded.
+        """
+        return sum(
+            len(r.worker_ids)
+            for r in self._requests
+            if r.educator_id == educator_id
+            and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
+            and band_of(r.target_profession) == WorkerBand.TECHNICIAN
+        )
+
+    def visiting_trainees(self, educator_id: int) -> int:
+        """Headcount currently on campus at this Educator's island.
+
+        Counts only trainees physically away from their home island
+        (status DISPATCHED) sent by *other* islands — self-training uses
+        the Educator's own residents, already counted in its population.
+        This is the "campus load" figure: extra mouths the Education
+        Island must feed until the trainees return (consumed by the §21
+        balance-aware sustenance model — see
+        requirements/codex-tasks/sustenance-model.md).
+        """
+        return sum(
+            len(r.worker_ids)
+            for r in self._requests
+            if r.educator_id == educator_id
+            and r.requester_id != educator_id
+            and r.status == TrainingStatus.DISPATCHED
+        )
 
     def pending_for_educator(self, educator_id: int) -> list[TrainingRequest]:
         return [

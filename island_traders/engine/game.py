@@ -315,6 +315,7 @@ class Game:
                         "training_level": w.training_level,
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
+                        "settling_seasons": w.settling_seasons,
                         "profession": w.profession,
                     }
                     for w in p.workforce.workers
@@ -432,6 +433,7 @@ class Game:
                     training_level=w["training_level"],
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
+                    settling_seasons=w.get("settling_seasons", 0),
                     profession=w.get("profession", Profession.UNSKILLED.value),
                 )
                 for w in wf_data.get("workers", [])
