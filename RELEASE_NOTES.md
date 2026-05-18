@@ -5,6 +5,51 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/release-prep
+
+Branch: `claude/release-prep`
+Target: `pre-release`
+
+**Docs-only — release-readiness prep.** No code/test changes (suite
+unchanged at 297).
+
+- **Balance measured on `pre-release` @ `36c74a4`** (AI-only, 3y, seeds
+  42/1/7/99): Banker 54.6% + Farmer 42.5% ≈ 97% of all wins;
+  **Transporter and Doctor win 0%** on every seed; Miner 0.4%, Educator
+  1.0%, Manufacturer 1.5%. Target ≈14.3% each. Stable across seeds →
+  structural, not RNG.
+- Adds `requirements/codex-tasks/balance-calibration-2026-05.md` — a
+  self-contained Codex brief to fix this (the release blocker). Notes
+  the old `codex/sim-calibration` branch is stale/abandoned (0 ahead,
+  ~5.8k behind) — calibration must start fresh.
+- **RULES.md fix:** the two "Healthcare full capacity" statements
+  disagreed (one "20 Medical Orderlies", one "20 unskilled workers");
+  aligned to `4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total)`,
+  consistent with `STARTING_WORKERS_BY_PROFESSION` (the CLAUDE.md
+  "workforce 12 / 10 Nurses" complaint was already fixed in an earlier
+  branch — the starting-workforce table already shows 2+2+2=6).
+
+**Release-readiness (proposed, for product-owner decision):**
+
+- **NO-GO to promote `pre-release` → `master` yet.** Blocker: AI balance
+  above (Codex brief filed). Tests green, 49 commits of real work, but a
+  game that ships with two roles unable to win and two roles taking 97%
+  of wins is not releasable.
+- **Tag scheme proposal:** no tags exist; `master` was promoted via PRs
+  #16/#17 untagged. Suggest annotated semver tags on `master` at each
+  promotion, starting **`v0.1.0`** for this milestone (pre-1.0 = rules
+  still in flux). Future: `v0.2.0` per feature-milestone promotion.
+- **Roll-up mechanic at promote time:** rename `## Unreleased` →
+  `## v0.1.0 — <date>` (the 24 accumulated sections become the v0.1.0
+  changelog), open a fresh empty `## Unreleased`, PR `pre-release` →
+  `master`, then `git tag -a v0.1.0`.
+- **Second-order release-gate item (not blocking, but should ship with
+  v0.1.0):** RULES.md training chapter is stale vs shipped Phase 1–3
+  (single-season model, no apprenticeship slot-pool/Instructor gate, no
+  profession-dependent duration, no 75% settling, "Tutor" vs
+  "Instructor"). Needs a doc-reconciliation pass before the rulebook is
+  a trustworthy v0.1.0 deliverable.
+
 ### claude/education-phase3
 
 Branch: `claude/education-phase3`

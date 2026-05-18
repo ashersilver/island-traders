@@ -382,7 +382,7 @@ Seasonal requirements:
 | Manufacturer | 5 | 5 | 5 | 4 |
 | Doctor | 30 | **35** | 30 | **44** |
 
-> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 unskilled workers (44 total).
+> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
 
 ### Worker Professions
 Workers are not generic — each belongs to a **profession** that reflects their specialisation.  Every profession also has a **band** — *Manager*, *Technician*, or *Worker* — which determines training pathway and role on the island.  A worker's tier is shown as their profession name plus training level (e.g. *Doctor (Basic)*, *Flight Crew (Skilled)*).  Unskilled workers have no profession until they graduate from university or finish an apprenticeship.
