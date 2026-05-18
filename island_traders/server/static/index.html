@@ -320,6 +320,25 @@ button:active{transform:scale(.97)}
 .stat .val.gold{color:var(--gold)}
 .stat .val.green{color:var(--green)}
 .stat .val.red{color:var(--red)}
+.personnel-stat{align-items:flex-start}
+.personnel-breakdown{
+  display:grid;
+  gap:.12rem;
+  min-width:8.5rem;
+  padding-left:.75rem;
+  text-align:left;
+}
+.personnel-line{
+  display:flex;
+  justify-content:space-between;
+  gap:.75rem;
+  font-weight:600;
+}
+.personnel-line .training-count{
+  color:var(--dim);
+  font-weight:500;
+  white-space:nowrap;
+}
 .stat.net-wealth{
   margin:.1rem 0 .45rem;
   padding:.45rem .55rem;
@@ -782,7 +801,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span></div>
-        <div class="stat"><span class="lbl">Personnel</span><span class="val" id="s-personnel">—</span></div>
+        <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel">—</div></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
@@ -2118,13 +2137,19 @@ function renderGameState() {
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
   document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
-  // Personnel breakdown (#20): trained (Managers + Technicians) vs untrained
-  // (general Workers), plus the per-band counts.
   const wb = me.workforce_bands || {};
+  const tb = me.workforce_training_bands || {};
   const mgr = wb.Manager ?? 0, tech = wb.Technician ?? 0, wrk = wb.Worker ?? 0;
-  const trained = mgr + tech;
-  document.getElementById('s-personnel').textContent =
-    `${trained} trained (${mgr} Mgr · ${tech} Tech) · ${wrk} untrained`;
+  const personnelLines = [
+    ['Managers', mgr, tb.Manager ?? 0],
+    ['Technicians', tech, tb.Technician ?? 0],
+    ['Workers', wrk, tb.Worker ?? 0],
+  ];
+  document.getElementById('s-personnel').innerHTML = personnelLines
+    .map(([label, active, training]) =>
+      `<div class="personnel-line"><span>${label}: ${active}</span><span class="training-count">(${training} in training)</span></div>`
+    )
+    .join('');
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;

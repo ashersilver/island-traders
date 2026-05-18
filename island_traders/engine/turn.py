@@ -17,6 +17,7 @@ from ..models.profession import Profession, PROFESSION_LABEL, WorkerBand, band_o
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
+    STARTING_WORKERS_BY_PROFESSION,
     MANUFACTURER_PRODUCT_LINES, MAX_CLASS_SIZE_PER_COURSE,
     TRAINEE_FOOD_ACCOM_PER_SEASON,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
@@ -545,6 +546,16 @@ class TurnManager:
             prof for prof, info in capacity_map.items() if info["remaining"] <= 0
         ]
 
+        skill_deficits = self._training_skill_deficits(player)
+        self.io.print("  Skill deficits against your island staffing plan:")
+        if skill_deficits:
+            for prof, qty in skill_deficits.items():
+                cap = capacity_map.get(prof, {}).get("remaining", 0)
+                suffix = f"{cap} university slot(s) available now" if cap > 0 else "no university slots available now"
+                self.io.print(f"    {prof:<24}  need {qty}  ({suffix})")
+        else:
+            self.io.print("    None — formal staffing plan is currently covered.")
+
         # Show capacity report — both available and exhausted lines so the
         # player can see the full picture.
         self.io.print("  University capacity this year:")
@@ -568,10 +579,6 @@ class TurnManager:
             self.io.print("  University is fully booked for this year across all professions.")
             return
 
-        target_profession = self.io.choose_profession(
-            "Train workers into which profession?", available_professions
-        )
-
         # For the chosen profession, decide which workers are eligible
         # Unskilled workers → enter profession at Basic; professionals → advance level
         unskilled_ids = player.workforce.get_unskilled_ids(player.workforce.active_count)
@@ -585,11 +592,49 @@ class TurnManager:
             self.io.print("  No eligible workers to send (all expert or already at college).")
             return
 
-        remaining_capacity = capacity_map[target_profession]["remaining"]
-        max_send = min(len(trainable_ids), remaining_capacity)
-        count = self.io.choose_quantity(
-            f"How many workers to train as {target_profession}? (max {max_send})", 1, max_send
+        bundle_plan = {
+            prof: min(qty, capacity_map.get(prof, {}).get("remaining", 0))
+            for prof, qty in skill_deficits.items()
+            if capacity_map.get(prof, {}).get("remaining", 0) > 0
+        }
+        bundle_plan = {prof: qty for prof, qty in bundle_plan.items() if qty > 0}
+        bundle_option = "All visible skill deficits"
+        profession_choices = list(available_professions)
+        if bundle_plan:
+            profession_choices.append(bundle_option)
+
+        target_profession = self.io.choose_profession(
+            "Train workers into which profession?", profession_choices
         )
+        if target_profession == bundle_option:
+            training_plan: dict[str, int] = {}
+            remaining_workers = len(trainable_ids)
+            for prof, qty in bundle_plan.items():
+                if remaining_workers <= 0:
+                    break
+                send = min(qty, remaining_workers)
+                if send > 0:
+                    training_plan[prof] = send
+                    remaining_workers -= send
+            if not training_plan:
+                self.io.print("  No visible skill deficits can be requested right now.")
+                return
+            count = sum(training_plan.values())
+            summary = ", ".join(f"{qty} × {prof}" for prof, qty in training_plan.items())
+            self.io.print(f"  Bundle request: {summary}")
+            unsent = sum(bundle_plan.values()) - count
+            if unsent > 0:
+                self.io.print(
+                    f"  {unsent} additional deficit slot(s) remain unsent because only "
+                    f"{len(trainable_ids)} eligible worker(s) are available now."
+                )
+        else:
+            remaining_capacity = capacity_map[target_profession]["remaining"]
+            max_send = min(len(trainable_ids), remaining_capacity)
+            count = self.io.choose_quantity(
+                f"How many workers to train as {target_profession}? (max {max_send})", 1, max_send
+            )
+            training_plan = {target_profession: count}
         worker_ids = trainable_ids[:count]
 
         # Self-training: if THIS player is the Educator, they're training their
@@ -653,48 +698,65 @@ class TurnManager:
             transport_mode = "air_ticket"
         dollops_transport = 0.0
 
-        try:
-            req = self.training.propose(
-                requester_id=player.player_id,
-                worker_ids=worker_ids,
-                educator_id=educator.player_id,
-                dollops_to_educator=dollops_educator,
-                dollops_to_transporter=dollops_transport,
-                target_profession=target_profession,
-                year=year,
-                season=season_index,
-                transport_mode=transport_mode,
+        player_names = {p.player_id: p.name for p in self.players}
+        requests = []
+        worker_offset = 0
+        for profession, profession_count in training_plan.items():
+            batch_worker_ids = worker_ids[worker_offset:worker_offset + profession_count]
+            worker_offset += profession_count
+            batch_fee = (
+                dollops_educator * profession_count / count
+                if count else 0.0
             )
-        except TrainingCapacityError as e:
-            self.io.print(f"  {e}")
+            try:
+                req = self.training.propose(
+                    requester_id=player.player_id,
+                    worker_ids=batch_worker_ids,
+                    educator_id=educator.player_id,
+                    dollops_to_educator=batch_fee,
+                    dollops_to_transporter=dollops_transport,
+                    target_profession=profession,
+                    year=year,
+                    season=season_index,
+                    transport_mode=transport_mode,
+                )
+            except TrainingCapacityError as e:
+                self.io.print(f"  {e}")
+                continue
+            requests.append(req)
+            self.io.print(f"  Training request #{req.batch_id} submitted:")
+            self.io.print(f"    {req.describe(player_names)}")
+            result.actions_taken.append(f"request_training:batch#{req.batch_id}")
+        if not requests:
             return
 
-        player_names = {p.player_id: p.name for p in self.players}
-        self.io.print(f"  Training request #{req.batch_id} submitted:")
-        self.io.print(f"    {req.describe(player_names)}")
-        result.actions_taken.append(f"request_training:batch#{req.batch_id}")
-
         if is_self_training:
-            # Manager-tier self-training consumes a Course slot; Technician
-            # self-training consumes an apprenticeship slot + needs an
-            # Instructor.  Either way, no fee and no transport ticket.
-            ok, gate_msg = self._training_capacity_status(player, req)
-            if not ok:
+            # Self-training: each batch is auto-approved + dispatched
+            # on-island (no fee, no transport ticket).  A bundled request
+            # is several batches; Manager-tier batches consume a Course
+            # slot, Technician-tier batches an apprenticeship slot (and
+            # need an Instructor) — Phase 3 band-aware gate.  We commit
+            # each ready batch immediately (so capacity is never debited
+            # without a dispatch) and leave any blocked batch pending
+            # until its capacity frees up.
+            for req in requests:
+                ok, gate_msg = self._training_capacity_status(player, req)
+                if not ok:
+                    self.io.print(
+                        f"  Self-training request #{req.batch_id} "
+                        f"({self._profession_label(req.target_profession)}) "
+                        f"submitted but on hold: {gate_msg} It will start "
+                        f"once that capacity frees up."
+                    )
+                    continue
+                used_desc = self._consume_training_capacity(player, req)
+                self.training.educator_approve(req.batch_id)
+                self.training.dispatch(req.batch_id, year, season_index)
                 self.io.print(
-                    f"  Self-training request #{req.batch_id} submitted but on hold: "
-                    f"{gate_msg} It will start once that capacity frees up."
+                    f"  {len(req.worker_ids)} worker(s) entered on-island "
+                    f"training as {self._profession_label(req.target_profession)} "
+                    f"({used_desc}); return: {self._format_training_return(req)}."
                 )
-                return
-            used_desc = self._consume_training_capacity(player, req)
-            # Auto-approve and dispatch immediately — there's no other party
-            # in the loop.  Workers head off to the on-island programme this
-            # season; return after the profession's course/apprenticeship.
-            self.training.educator_approve(req.batch_id)
-            self.training.dispatch(req.batch_id, year, season_index)
-            self.io.print(
-                f"  {count} worker(s) entered on-island training as {target_profession} "
-                f"({used_desc}); return: {self._format_training_return(req)}."
-            )
             return
 
         self.io.print(
@@ -704,7 +766,34 @@ class TurnManager:
 
         # AI Educator auto-responds immediately
         if not educator.is_human:
-            self._ai_educator_respond(educator, player, req, season_name, year)
+            for req in requests:
+                self._ai_educator_respond(educator, player, req, season_name, year)
+
+    def _training_skill_deficits(self, player: Player) -> dict[str, int]:
+        """Formal-profession gaps against the player's role staffing blueprint."""
+        required: dict[str, int] = {}
+        for role in player.roles:
+            for profession, count in STARTING_WORKERS_BY_PROFESSION.get(role.name, []):
+                required[profession] = required.get(profession, 0) + count
+
+        current: dict[str, int] = {}
+        for worker in player.workforce.workers:
+            current[worker.profession] = current.get(worker.profession, 0) + 1
+        workers_by_id = {worker.worker_id: worker for worker in player.workforce.workers}
+        for req in self.training.active_for_player(player.player_id):
+            incoming = sum(
+                1
+                for worker_id in req.worker_ids
+                if workers_by_id.get(worker_id)
+                and workers_by_id[worker_id].profession == Profession.UNSKILLED.value
+            )
+            current[req.target_profession] = current.get(req.target_profession, 0) + incoming
+
+        return {
+            profession: needed - current.get(profession, 0)
+            for profession, needed in required.items()
+            if needed > current.get(profession, 0)
+        }
 
     def _ai_educator_respond(
         self, educator, requester, req, season_name: str, year: int

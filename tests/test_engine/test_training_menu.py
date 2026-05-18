@@ -137,3 +137,52 @@ def test_request_training_menu_shows_exhausted_professions(monkeypatch):
     # The menu must show "Banker" FULL — even though it has 0 remaining.
     assert "Banker" in log
     assert "FULL" in log
+
+
+def test_request_training_menu_shows_skill_deficits_and_can_bundle_them():
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.engine.trading import TradingEngine
+    from island_traders.engine.turn import TurnManager, TurnResult
+    from island_traders.cli.prompts import FakeIOAdapter
+    from island_traders.models.deal import DealLedger
+    from island_traders.models.market import Market
+    from island_traders.models.player import Player
+    from island_traders.models.profession import Profession
+    from island_traders.models.role import ROLES
+
+    class BundleIO(FakeIOAdapter):
+        def choose_profession(self, prompt, available):
+            assert "All visible skill deficits" in available
+            return "All visible skill deficits"
+        def ask_dollop_amount(self, prompt, max_dollops):
+            return 100.0
+
+    player = Player(player_id=0, name="P", roles=[ROLES["Doctor"]],
+                    dollops=200.0, is_human=True)
+    player.workforce.add_workers(4, profession=Profession.UNSKILLED.value)
+    educator = Player(player_id=1, name="E", roles=[ROLES["Educator"]],
+                      dollops=100.0, is_human=True)
+    market = Market()
+    io = BundleIO()
+    tm = TurnManager(
+        players=[player, educator],
+        production_engine=ProductionEngine(),
+        trading_engine=TradingEngine(market, DealLedger()),
+        market=market,
+        io_adapter=io,
+    )
+
+    result = TurnResult(player_id=player.player_id, season=0, year=0)
+    tm._action_request_training(player, result, season_name="Spring", year=0)
+
+    log = "\n".join(io.printed)
+    assert "Skill deficits against your island staffing plan" in log
+    assert "Doctor" in log and "need 2" in log
+    assert "Nurse" in log and "need 2" in log
+    assert "MedicalOrderly" in log and "need 2" in log
+
+    requests = tm.training.all_requests()
+    assert [(r.target_profession, len(r.worker_ids)) for r in requests] == [
+        ("Doctor", 2),
+        ("Nurse", 2),
+    ]

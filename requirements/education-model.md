@@ -392,3 +392,13 @@ This is a substantial refactor.  Estimated touch surface:
 
 Recommend doing Phase 1 (mechanical rename) as its own branch first, then
 Phase 2 (Courses + training flow) as a second branch.  Don't combine.
+
+### Training-request UX extension
+
+When a player opens **Request Training**, the game should show the island's
+current formal-profession deficits against its staffing plan before asking
+what to train. If several required professions are missing at once, the player
+should be able to submit one bundled request for all currently requestable
+deficits rather than repeating the same flow profession-by-profession. The
+bundle still resolves into per-profession training batches under the hood so
+University capacity, educator approval, and transport rules remain explicit.
