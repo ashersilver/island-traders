@@ -138,10 +138,12 @@ distinct operating lines.
 | Transportation | Captain; Pilot / Copilot | Petty Officer; Aircraft Service Technician | Sailor; Steward; Ground Crew | Sea and air operations share the island. |
 | Educator | Professor; Technical Director | Lecturer; Mentor | Worker; Apprentice | Top line is academic; second line is technical/apprenticeship. |
 
-**University grad seasons** (Education pipeline):
-- Doctor: 2 seasons
+**University grad seasons** (Education pipeline) — canonical table is in
+`requirements/education-model.md` (Duration table):
+- Doctor: **3 seasons** (ruled 2026-05-17)
 - Nurse: 1 season
-- Other Managers (Farmer, Engineer, Banker, Professor, etc.): 2 seasons
+- Other Managers (Farmer, Engineer, Banker, Professor, Lecturer,
+  Logistics Manager, Miner): 2 seasons
 
 ### Starting workforce mix (default)
 
@@ -304,23 +306,23 @@ Research Lab or Computer Cluster.
 
 ## 8. Apprenticeships
 
-The University coordinates the curriculum, but **the apprentice stays on their
-home island** for the duration and continues working at their existing level
-(no productivity loss while training).
+> **Canonical model: see `requirements/education-model.md` →
+> "Apprenticeship pipeline (Technician training)".**  The earlier
+> "apprentice stays home / no productivity loss / in-house sellable
+> token" model documented here was **superseded on 2026-05-17**.  This
+> section is kept only as a pointer to avoid divergence.
 
-- Apprentice consumes a **separate Apprenticeship slot pool** at the Educator
-  (gated by Apprenticeship Programme capital + Lecturer/Trainer Technicians).
-- After N seasons (typically 2), the worker promotes from Worker → Technician
-  on their home island.
-- An island that already employs Technicians of the relevant kind (Farmer,
-  Engineer, Mechanic) can run **in-house apprenticeships** as a sellable
-  output (cheaper / faster than the University route). Buyers receive an
-  Apprentice token that joins their workforce as a Technician after a 2-season
-  probation.
+In brief (full detail in `education-model.md`):
 
-Examples:
-- Farmer island sells "Apprentice Farming Foreman" tokens.
-- Manufacturer sells "Apprentice Mechanic" or "Apprentice Engineer".
+- Technician apprenticeship is gated by the Educator's **apprenticeship
+  slot pool** (`educator.apprenticeship_programme` capital,
+  `apprenticeship_slots`) **and Instructor (trainer) capacity** — *not*
+  by Courses (Courses gate Manager-tier university training only).
+- The apprentice spends **1 season at the Education Island**, then
+  returns home and works at **75% productivity for exactly one season**
+  before reaching 100%.
+- **Dropped:** the "home-island Apprenticeship Facility" capital flag and
+  the cross-island "in-house apprenticeship sellable token" mechanic.
 
 ---
 

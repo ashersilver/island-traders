@@ -103,7 +103,7 @@ equipment.  Not exclusive to any one role.
 
 | Profession | Band | Training duration | Notes |
 |---|---|---|---|
-| `Ecologist` | Technician | **2 seasons** | Trained at the Educator's University like any apprenticeship. |
+| `Ecologist` | Technician | **1 season away** + 1 settling season @ 75% | Standard apprenticeship pipeline — gated by the Educator's apprenticeship slot pool + Instructors (see `education-model.md`). |
 
 ### Environmental Assessment workflow
 
@@ -149,7 +149,7 @@ issue any insurance policy.
 
 | Profession | Band | Training duration | Notes |
 |---|---|---|---|
-| `Actuary` | Technician | 2 seasons | Trained at the Educator's University. |
+| `Actuary` | Technician | **1 season away** + 1 settling season @ 75% | Standard apprenticeship pipeline (see `education-model.md`). |
 
 ### Effect on insurance pricing
 

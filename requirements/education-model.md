@@ -81,39 +81,62 @@ ProductionRecipe(
 > capacity (2 Professors per Patent); the Expertise input is the
 > intellectual-capital cost on top.
 
-### Training requests
+### Training requests — two distinct pipelines
 
-Training (Request Training action) now requires the Education Island to
-have **Courses in inventory**:
+> **Decided 2026-05-17:** Courses (university) and vocational
+> apprenticeship are **distinct, non-overlapping** pipelines.  A
+> Technician request does **not** consume a Course; a Manager request
+> does **not** consume an apprenticeship slot.
 
-- **Managerial training** (Professor-tier outputs — Doctor, Engineer,
-  Banker, Farmer, Miner, Professor, Lecturer, Logistics Manager):
-  1 Course covers a *class* of up to **12 students**.  *Capacity-gated by
-  Professors.*
-- **Technician / apprenticeship training** (Farming Technician,
-  Veterinarian, Mining Technician, Oil Extraction Worker, Refinery
-  Specialist, Mechanic, Assembly Worker, Flight Crew, Seaman, Warehouse
-  Manager, Banking Analyst, Banking Clerk, Medical Orderly):
-  1 Course covers a *class* of up to **12 students**.  *Capacity-gated by
-  Instructors.*
+**Manager-tier training (university — Course-gated):**
+Professor-tier outputs — Doctor, Engineer, Banker, Farmer, Miner,
+Professor, Lecturer, Logistics Manager.
 
-**Class-size rule (confirmed 2026-05-15):**
+- Gated by **Courses in inventory** *and* Professor capacity.
+- 1 Course covers a *class* of up to **12 students** (class-size rule
+  below).
+- Trainees travel to the Education Island for the profession's full
+  course duration (see Duration table — Doctor 3 seasons, most Managers
+  2, Nurse 1).
+
+**Technician-tier training (vocational apprenticeship — slot-pool gated):**
+Farming Technician, Horticulturalist, Veterinarian, Mining Technician,
+Oil Extraction Worker, Refinery Specialist, Mechanic, Assembly Worker,
+Flight Crew, Seaman, Warehouse Manager, Banking Analyst, Banking Clerk,
+Medical Orderly, Instructor (+ future Ecologist / Actuary).
+
+- Gated by the Educator's **apprenticeship slot pool** (the
+  `educator.apprenticeship_programme` capital, `apprenticeship_slots`)
+  **and Instructor (trainer) capacity** — **not** by Courses.
+- The apprentice spends **1 season at the Education Island**, then
+  returns home and works at **75% productivity for exactly one season**
+  before reaching 100%.
+- No "in-house apprenticeship sellable token" — that idea is dropped.
+
+**Class-size rule (Manager-tier Courses, confirmed 2026-05-15):**
 A single Course is a classroom slot, not a per-student token.  Up to
 **12 trainees** can share one Course.  When an Educator approves a
-training batch:
+Manager-tier batch:
 
 * If the batch has ≤ 12 trainees, **1 Course** is debited from inventory.
-* If the batch has > 12 trainees, the system either splits the batch
-  across multiple Courses (debiting `ceil(trainees / 12)`) or asks the
-  Educator to re-submit smaller batches.  Recommendation: auto-split, with
-  a confirmation prompt to the requester if the cost goes up.
+* If the batch has > 12 trainees, the system splits the batch across
+  multiple Courses (debiting `ceil(trainees / 12)`).  Recommendation:
+  auto-split, with a confirmation prompt to the requester if the cost
+  goes up.
 
-No Courses → cannot approve the request (it stays pending until next
-season's production refills).
+No Courses → a Manager-tier request stays pending until next season's
+Course production refills.  No free apprenticeship slot → a
+Technician-tier request stays pending until a slot frees up.
 
-> The 12-student class-size cap also applies to **self-training** (see
-> below).  Multiple Professors / Banking Clerks / etc. on the Education
-> Island can train as a single class on one Course.
+> The 12-student class-size cap applies to Manager-tier **self-training**
+> too.  Multiple Professors / Lecturers on the Education Island can train
+> as a single class on one Course.  Technician self-training instead
+> consumes an apprenticeship slot.
+
+> **Phase 2 reconciliation note:** Phase 2 (merged) currently debits a
+> Course for *all* tiers including Technicians.  **Phase 3 scopes the
+> Course-debit to Manager-tier only**; Technician training switches to
+> the apprenticeship-slot-pool gate described above.
 
 ### New profession: Instructor
 
@@ -163,9 +186,10 @@ its outputs gate every other island's growth.
 
 ## Migration plan
 
-Two-phase to keep the change tractable:
+Three phases.  **Phase 1 and Phase 2 are done and merged**
+(`pre-release` ≥ `3948582`); Phase 3 is the next work.
 
-### Phase 1 — Rename (mechanical)
+### Phase 1 — Rename (mechanical) — ✅ DONE (`claude/education-phase1-rename`)
 
 1. `ResourceType.KNOWLEDGE` → `ResourceType.EXPERTISE`.  Display label
    "Expertise" everywhere.
@@ -175,9 +199,9 @@ Two-phase to keep the change tractable:
    names "Knowledge" gets renamed.
 4. RULES.md, README.md updated.
 
-Zero behavioural change — pure rename.  Aim: tests green at this point.
+Zero behavioural change — pure rename.  Tests green (262).
 
-### Phase 2 — Courses + new training flow
+### Phase 2 — Courses + new training flow — ✅ DONE (`claude/education-phase2`)
 
 1. Add `ResourceType.COURSES` and `BASE_PRICES["Courses"] = 25`.
 2. Add the new Education recipes (Expertise + Courses + Patents).
@@ -200,9 +224,33 @@ Zero behavioural change — pure rename.  Aim: tests green at this point.
    capacity gating; Education Island can't approve more training than
    Courses available; AI Educator behaviour when Courses are short.
 
+> Phase 2 as shipped Course-gates **all** tiers.  Phase 3 corrects this
+> so Courses gate Manager-tier only and Technicians use the
+> apprenticeship slot pool (decision (a), 2026-05-17).
+
+### Phase 3 — Training cost components + apprenticeship pipeline (Issue #18) — ⏳ NEXT
+
+See the **Training cost components** section below for the full spec.
+Summary of what Phase 3 implements:
+
+1. Scope the Phase-2 Course-debit to **Manager-tier only**.
+2. Technician training → **apprenticeship slot pool**
+   (`educator.apprenticeship_programme`) + Instructor (trainer) gate;
+   1 season at Education, then **75% productivity for one season** on
+   return, then 100%.
+3. Profession-dependent **course duration** (Doctor **3**, other
+   Managers 2, Nurse 1; Technicians 1 season away).
+4. **1 Expertise per Course per season** (not per trainee).
+5. Per-trainee **food & accommodation** cost in the fee suggestion +
+   **campus load** (visiting trainees raise the Education Island's
+   marginal sustenance demand via the new balance-aware model — §21 of
+   `production-capacity-model.md`; do **not** reuse the legacy Food/Fish
+   path).
+6. `EDUCATION_SEASONS[DOCTOR]` 2 → **3** in code.
+
 ---
 
-## Training cost components (Issue #18)
+## Training cost components (Issue #18 — Phase 3)
 
 Different professions need different training depths.  The total fee a
 requester pays the Educator should reflect the cost components, not be a
@@ -244,40 +292,50 @@ This makes Education a real place rather than a magical certification portal:
 approving more students creates revenue, but also raises the island's own
 short-term sustenance needs until those trainees return home.
 
-### Apprenticeship facility (Technician training)
+### Apprenticeship pipeline (Technician training) — canonical model
 
-Technicians normally need **2 seasons** of training (1 season at the
-Education Island + 1 season returning to their home island as a "partial
-technician" at **50% productivity**).
+> **Decided 2026-05-17.**  This supersedes both the earlier
+> "home-island Apprenticeship Facility" idea here *and*
+> `production-capacity-model.md §8`'s "apprentice never leaves home"
+> model.  `production-capacity-model.md §8` is updated to point here.
 
-If the home island has an **Apprenticeship Facility** capital item, the
-return-island season is skipped: the technician comes back fully
-qualified after 1 season.  This makes the apprenticeship facility a
-meaningful capital purchase for islands that need to scale Technicians
-quickly.
+- Technician apprenticeship is gated by the Educator's **apprenticeship
+  slot pool** (`educator.apprenticeship_programme` capital,
+  `apprenticeship_slots`) **and Instructor (trainer) capacity** — *not*
+  by Courses.
+- The apprentice spends **1 season at the Education Island** (away from
+  their home island).
+- On return they work at **75% productivity for exactly one season**,
+  then **100%** from the following season.
+- There is **no** in-house cross-island apprenticeship sellable token,
+  and **no** `provides_apprenticeship_facility` capital flag — the
+  single gating mechanism is the Educator slot pool + Instructors.
 
-> **Open implementation question:** which capital items count as
-> apprenticeship facilities?  Recommendation: add a new field
-> `provides_apprenticeship_facility: bool` on `CapitalItem`; set true
-> for relevant items like Manufacturer's Assembly Line, Mining's
-> Foreman Office, Transporter's Crew Training Hall, etc.
+> **Code implication:** `APPRENTICESHIP_SEASONS` currently encodes 2 for
+> every Technician (a flat "away" duration).  Phase 3 changes the *away*
+> duration to **1** season and adds the separate post-return
+> "75%-for-one-season" productivity ramp on the home island.
 
-### Duration table (under the new model)
+### Duration table (canonical — under the Phase 3 model)
 
-| Profession | Band | Seasons |
-|---|---|---|
-| Doctor | Manager | 4 |
-| Engineer | Manager | 2 |
-| Banker | Manager | 2 |
-| Professor | Manager | 2 |
-| Lecturer | Manager | 2 |
-| Logistics Manager | Manager | 2 |
-| Farmer | Manager | 2 |
-| Miner | Manager | 2 |
-| Nurse | Manager | 1 |
-| **Ecologist** | Technician | 2 *(new — see medical-laboratory.md)* |
-| **Actuary** | Technician | 2 *(new — see medical-laboratory.md)* |
-| All other Technicians | Technician | 1 with apprenticeship facility, 2 without |
+"Seasons away at Education" — for Technicians the home-island
+75%-productivity settling season is *additional* and is not counted as
+"away" time.
+
+| Profession | Band | Seasons away | Notes |
+|---|---|---|---|
+| Doctor | Manager | **3** | (was ambiguous 2-vs-4; ruled 3 on 2026-05-17) |
+| Engineer | Manager | 2 | |
+| Banker | Manager | 2 | |
+| Professor | Manager | 2 | |
+| Lecturer | Manager | 2 | |
+| Logistics Manager | Manager | 2 | |
+| Farmer | Manager | 2 | |
+| Miner | Manager | 2 | |
+| Nurse | Manager | 1 | |
+| **Ecologist** | Technician | 1 | + 1 settling season @ 75% *(new — see medical-laboratory.md)* |
+| **Actuary** | Technician | 1 | + 1 settling season @ 75% *(new — see medical-laboratory.md)* |
+| All other Technicians | Technician | 1 | + 1 settling season @ 75% on the home island |
 
 ---
 
@@ -297,9 +355,20 @@ quickly.
    small Expertise input (~0.25 Expertise per Patent) on top of the
    Laboratory Equipment + Professor capacity already required.
 4. **Self-training Course consumption** — ✅ **Decided 2026-05-15:**
-   self-training **still consumes 1 Course** even though it skips the
-   educator fee and transport ticket.  Class-size cap of 12 applies, so
-   multiple workers on the Education Island can train on the same Course.
+   Manager-tier self-training **still consumes 1 Course** even though it
+   skips the educator fee and transport ticket.  Class-size cap of 12
+   applies.  Technician self-training consumes an apprenticeship slot
+   instead (decision (a)).
+5. **Courses vs apprenticeship pipelines** — ✅ **Decided 2026-05-17:**
+   distinct and non-overlapping (decision (a)).  Manager-tier =
+   Course-gated; Technician-tier = apprenticeship-slot-pool +
+   Instructor gated, **not** Course-gated.
+6. **Doctor training duration** — ✅ **Decided 2026-05-17:** **3 seasons**
+   (not 2, not 4).  `EDUCATION_SEASONS[DOCTOR]` 2→3 in Phase 3.
+7. **Apprenticeship mechanic** — ✅ **Decided 2026-05-17:** 1 season
+   away at Education + 1 settling season @ 75% on the home island;
+   gated by the Educator slot pool + Instructors; no home-island
+   facility flag; no sellable token.
 
 ---
 

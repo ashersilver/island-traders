@@ -5,6 +5,42 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/docs-phase3-reconcile
+
+Branch: `claude/docs-phase3-reconcile`
+Target: `pre-release`
+
+**Docs-only.** No code or test changes (suite unchanged at 283).
+Reconciles the requirements so Education Phase 3 is unambiguous, after
+Codex's role-structuring merge changed the surrounding model.
+
+Decisions ruled by the product owner 2026-05-17, now canonical:
+
+- **Doctor training = 3 seasons** (was ambiguous 2-vs-4). Fixed in
+  `education-model.md` duration table + `production-capacity-model.md §5`
+  (and flagged for `EDUCATION_SEASONS[DOCTOR] 2→3` in Phase 3 code).
+- **Courses vs apprenticeship are distinct, non-overlapping pipelines
+  (decision (a))**: Manager-tier = Course-gated; Technician-tier =
+  Educator apprenticeship-slot-pool + Instructor gated, **not**
+  Course-gated. Phase 2 (shipped) Course-gates all tiers — Phase 3
+  scopes that to Manager-tier.
+- **Apprenticeship model**: 1 season away at Education, then **75%
+  productivity for exactly one season** on the home island, then 100%.
+  Supersedes both the old "home-island Apprenticeship Facility" idea
+  and `production-capacity-model.md §8`'s "stays home / no loss" model.
+- **Dropped**: `provides_apprenticeship_facility` capital flag; the
+  in-house cross-island apprenticeship sellable-token mechanic.
+- **1 Expertise per Course per season** (per Course, not per trainee).
+- **Campus load** must use the new balance-aware sustenance model
+  (`production-capacity-model.md §21`), not the legacy Food/Fish path.
+
+Files touched: `requirements/education-model.md` (Phase 1/2 marked done,
+Phase 3 promoted + spec'd, training-pipelines split, duration table,
+open-questions closed), `requirements/production-capacity-model.md`
+(§5 Doctor=3, §8 now points to education-model.md as canonical),
+`requirements/medical-laboratory.md` (Ecologist/Actuary durations align
+to the apprenticeship model), `TODO.md` (Phase 2 ✅, Phase 3 rewritten).
+
 ### claude/education-phase2
 
 Branch: `claude/education-phase2`
