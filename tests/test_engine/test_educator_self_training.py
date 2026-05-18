@@ -19,11 +19,16 @@ from island_traders.models.role import ROLES
 from island_traders.models.training import TrainingRegistry, TrainingStatus
 
 
-def _educator(num_workers: int = 4) -> Player:
-    """Educator with `num_workers` unskilled workers ready to train."""
+def _educator(num_workers: int = 4, courses: int = 5) -> Player:
+    """Educator with `num_workers` unskilled workers ready to train and
+    `courses` Course slots in inventory (Phase 2: self-training consumes
+    Courses)."""
+    from island_traders.models.resource import ResourceType
     p = Player(0, "Education Island", [ROLES["Educator"]], 100.0, is_human=True)
     # Add some unskilled workforce so there's something to train
     p.workforce.add_workers(num_workers, profession="Unskilled")
+    if courses:
+        p.receive_resources(ResourceType.COURSES, courses)
     return p
 
 
@@ -168,3 +173,40 @@ def test_self_training_with_no_other_players_does_not_fail():
         season_name="Spring", year=0,
     )
     assert len(training.all_requests()) == 1
+
+
+def test_self_training_pending_when_no_courses(self_or_none=None):
+    """Phase 2: self-training still consumes a Course slot.  With zero
+    Courses the request is submitted but stays pending (AWAITING_EDUCATOR,
+    not DISPATCHED) until Course production refills the stock."""
+    from island_traders.models.resource import ResourceType
+    educator = _educator(courses=0)               # no Course slots
+    assert educator.inventory.get(ResourceType.COURSES) == 0
+    training = TrainingRegistry()
+    io = SelfTrainingIO(profession="Professor", count=1)
+    tm = _turn_manager([educator], training, io)
+
+    tm._action_request_training(
+        educator, TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring", year=0,
+    )
+
+    reqs = training.all_requests()
+    assert len(reqs) == 1
+    assert reqs[0].status == TrainingStatus.AWAITING_EDUCATOR  # pending, not dispatched
+
+
+def test_self_training_consumes_one_course():
+    """A self-training class of ≤12 trainees debits exactly 1 Course."""
+    from island_traders.models.resource import ResourceType
+    educator = _educator(num_workers=3, courses=2)
+    training = TrainingRegistry()
+    io = SelfTrainingIO(profession="Professor", count=2)
+    tm = _turn_manager([educator], training, io)
+
+    tm._action_request_training(
+        educator, TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring", year=0,
+    )
+    assert training.all_requests()[0].status == TrainingStatus.DISPATCHED
+    assert educator.inventory.get(ResourceType.COURSES) == 1  # 2 → 1

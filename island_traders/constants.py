@@ -27,8 +27,10 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
                       "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
-    # Educator: Expertise to sell + 2 seasons of inputs
-    "Educator":      {"Expertise": 2,                                 # to sell
+    # Educator: Expertise + Courses on hand so other islands can train in
+    # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
+    "Educator":      {"Expertise": 6,                                 # feeds Course production
+                      "Courses": 5,                                    # classroom slots ready Y1
                       "LaboratoryEquipment": 2},                       # 2 seasons of Lab Equipment
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
@@ -55,6 +57,7 @@ BASE_PRICES: dict[str, float] = {
     "Oil":                 20.0,
     "Freight":             12.0,
     "Expertise":           18.0,
+    "Courses":             25.0,   # classroom slots; gated by Expertise consumption
     "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
     "HealthServices":      35.0,
@@ -240,7 +243,7 @@ STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
     "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      4,   # 1 Professor + 2 Technicians (Tutor x2) + 1 Unskilled
+    "Educator":      8,   # 4 Professors + 4 Instructors (Education gates every island's growth)
     "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
     "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
@@ -276,9 +279,9 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
         ("WarehouseManager", 1),     # Technician (ground ops supervisor)
     ],
     "Educator":      [
-        ("Professor", 1),            # Manager
-        ("Tutor", 2),                # Technicians
-        # +1 Unskilled remainder (Admin)
+        ("Professor", 4),            # Manager — Expertise / Patents / managerial training
+        ("Instructor", 4),           # Technician — Courses / apprenticeship training
+        # exactly 8, no unskilled remainder
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
@@ -319,7 +322,7 @@ SKILLED_PROFESSIONS: dict[str, list[str]] = {
         "LogisticsManager", "Engineer",
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
     ],
-    "Educator":     ["Professor", "Lecturer", "Tutor"],
+    "Educator":     ["Professor", "Lecturer", "Instructor"],
     "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
     "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
     "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
@@ -384,7 +387,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Education
     "Professor":            4,    # 1 per season × 4 seasons
     "Lecturer":             4,
-    "Tutor":                6,
+    "Instructor":           6,
     # Transport (the new professions added with the workforce baseline rule)
     "LogisticsManager":     2,
     "FlightCrew":           6,
@@ -403,6 +406,11 @@ UNIVERSITY_SEASONAL_CAP: dict[str, int] = {
 
 # Units of Expertise resource consumed to train one worker.
 TRAINING_EXPERTISE_COST: int = 1
+
+# A Course is a classroom slot, not a per-student token.  Up to this many
+# trainees can share one Course; larger batches consume ceil(n / cap)
+# Courses on Educator approval (Education Model Phase 2).
+MAX_CLASS_SIZE_PER_COURSE: int = 12
 
 # ---------------------------------------------------------------------------
 # Population / birth rate constants

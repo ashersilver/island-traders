@@ -101,7 +101,7 @@ def test_new_transporter_professions_have_correct_bands():
 
 def test_new_technician_professions_for_educator_banker_doctor():
     assert band_of(Profession.LECTURER)        == WorkerBand.MANAGER
-    assert band_of(Profession.TUTOR)           == WorkerBand.TECHNICIAN
+    assert band_of(Profession.INSTRUCTOR)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_ANALYST) == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_CLERK)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.MEDICAL_ORDERLY) == WorkerBand.TECHNICIAN

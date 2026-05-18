@@ -145,3 +145,39 @@ def test_market_sell_prefills_asking_price_with_best_bid():
     assert captured["prefill"] == 22.0, (
         "asking price should be pre-filled with the best bid price"
     )
+
+
+def test_market_bid_logs_immediate_exact_price_fill():
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.engine.trading import TradingEngine
+    from island_traders.engine.turn import TurnManager, TurnResult
+    from island_traders.models.deal import DealLedger
+    from island_traders.models.market import Market
+    from island_traders.models.player import Player
+    from island_traders.models.resource import ResourceType
+    from island_traders.models.role import ROLES
+
+    class BulkBidIO(FakeIOAdapter):
+        def market_buy_bulk(self, player, market_summary):
+            return {"bids": {"PassengerSeats": {"quantity": 20, "price": 15.0}}}
+
+    seller = Player(0, "Transport", [ROLES["Transporter"]], 100.0, is_human=True)
+    seller.receive_resources(ResourceType.PASSENGER_SEATS, 20)
+    buyer = Player(1, "Education", [ROLES["Educator"]], 500.0, is_human=True)
+    market = Market()
+    market.post_offer(seller, ResourceType.PASSENGER_SEATS, 15.0, 20)
+
+    io = BulkBidIO()
+    tm = TurnManager(
+        players=[seller, buyer],
+        production_engine=ProductionEngine(),
+        trading_engine=TradingEngine(market, DealLedger()),
+        market=market,
+        io_adapter=io,
+    )
+    result = TurnResult(buyer.player_id, season=0, year=0)
+    tm._action_market_buy(buyer, result)
+
+    assert buyer.inventory.get(ResourceType.PASSENGER_SEATS) == 20
+    assert any("Bought 20x PassengerSeats immediately" in line for line in io.printed)
+    assert "buy:20xPassengerSeats" in result.actions_taken

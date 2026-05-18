@@ -85,6 +85,7 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.COURSES, 1)  # 1 class slot (Phase 2)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
@@ -108,15 +109,50 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
 
     assert req.status == TrainingStatus.DISPATCHED
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
+    assert educator.inventory.get(ResourceType.COURSES) == 0  # 1 Course consumed
     assert educator.dollops == 170.0
     assert farmer.dollops == 30.0
     assert farmer.workforce.training_count == 2
+
+
+def test_training_approval_does_not_consume_expertise_per_attendee():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(2)
+    educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.COURSES, 1)
+    educator.receive_resources(ResourceType.EXPERTISE, 3)
+    training = TrainingRegistry()
+    training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[w.worker_id for w in workers],
+        educator_id=educator.player_id,
+        dollops_to_educator=70.0,
+        target_profession="FarmingTechnician",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+
+    manager = _turn_manager([farmer, educator], training, FakeIOAdapter())
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    assert educator.inventory.get(ResourceType.COURSES) == 0
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 3
 
 
 def test_educator_cannot_approve_training_without_air_tickets():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
+    # Give Courses so the Course peek passes and the test still exercises
+    # the air-ticket gate (the Course peek doesn't consume on ticket failure).
+    educator.receive_resources(ResourceType.COURSES, 1)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
@@ -143,6 +179,8 @@ def test_educator_cannot_approve_training_without_air_tickets():
     assert educator.dollops == 100.0
     assert farmer.workforce.training_count == 0
     assert "needs 2 more PassengerSeats" in "\n".join(io.printed)
+    # No-leak: a ticket shortfall must NOT consume the Course slot.
+    assert educator.inventory.get(ResourceType.COURSES) == 1
 
 
 def test_educator_can_counter_training_request_with_price_and_message():
@@ -185,6 +223,7 @@ def test_requester_can_accept_training_counter_offer_and_dispatch():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.COURSES, 1)  # class slot (Phase 2)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
