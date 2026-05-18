@@ -5,6 +5,59 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/education-phase2
+
+Branch: `claude/education-phase2`
+Target: `pre-release`
+Implements: `requirements/education-model.md` Phase 2 + GitHub #22 (market UX)
+
+Rebased onto `pre-release` after Codex's `codex/role-structuring` split
+landed (`f0c0960`). Both bodies of work came from the same combined
+safety snapshot `fd519e0`; this branch is exactly the Claude-owned delta
+(`git diff f0c0960 fd519e0`), re-applied cleanly in the separate
+`island-traders-claude` worktree.
+
+#### Education Model — Phase 2 (Courses + Instructor)
+
+- **New resource `Courses`** (`ResourceType.COURSES`, base price 25 Dp) —
+  classroom slots produced by the Education Island.
+- **New Educator recipe**: Courses production consumes `Expertise` as an
+  input; Patents production now also consumes a small Expertise input.
+- **`Tutor` → `Instructor` consolidation**: `Profession.TUTOR` renamed to
+  `Profession.INSTRUCTOR` (canonical Technician on the Education Island);
+  "Tutor" kept as a display-title alias in `BAND_TITLES`.
+- **Course-gated training**: `_action_request_training` /
+  `_approve_training_request` / AI educator / self-training now debit
+  `ceil(trainees / MAX_CLASS_SIZE_PER_COURSE)` Courses on approval
+  (`MAX_CLASS_SIZE_PER_COURSE = 12`). No Courses → request stays pending.
+  Course availability is peeked *before* air tickets are consumed so a
+  shortfall can't burn the Educator's PassengerSeats.
+- **Starting state**: Educator workforce 4 → 8 (4 Professors + 4
+  Instructors); starting inventory gains 6 Expertise + 5 Courses.
+
+#### GitHub #22 — Market UX
+
+- New generic `choose_option(prompt, options)` IO prompt (named choice
+  buttons) used for product selection — replaces the numeric-index
+  picker.
+- `ask_dollop_amount` gained a `prefill` argument; market **sell** prompt
+  pre-fills the best bid, market **buy** modal pre-fills the ask, with
+  bid-vs-buy made visually explicit.
+- Market board popup rendered as a clean grid.
+- Immediate-fill on a bid that crosses an existing ask now logs the fill.
+
+#### Tests
+
+- New `tests/test_engine/test_education_courses.py`.
+- Updated `test_educator_self_training.py`, `test_training_review.py`,
+  `test_training_menu.py`, `test_profession_bands.py`,
+  `test_market_prefill.py` for Courses + Instructor + prefill.
+- **Full suite: 283 passed** in the Claude worktree on top of
+  `pre-release` @ `f0c0960` (Codex's 271 + this delta = 283 — reconciles
+  exactly with the original combined `fd519e0`).
+
+---
+
 ### codex/ai-trading
 
 Branch: `codex/ai-trading`

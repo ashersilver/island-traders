@@ -213,7 +213,7 @@ single flat number:
 | **Transportation** | Already covered (1 PassengerSeats per trainee, supplied by Educator).  Skipped for self-training. |
 | **Food & accommodation** | Per-trainee, per-season-at-college.  Suggest 5 Dp per worker per season. |
 | **Course duration (1–4 seasons)** | Profession-dependent.  Doctor = 4 seasons; Engineer / Banker / Professor / Lecturer / Logistics Manager / Farmer / Miner = 2 seasons; Nurse = 1 season; Technicians = 1 season *(with apprenticeship facility — see below)*. |
-| **Expertise consumption** | **1 unit of Expertise per trainee per season** (i.e. a 4-season Doctor consumes 4 Expertise; a 2-season Engineer consumes 2 Expertise).  Replaces the flat "Expertise input" notion from the recipe sketch above. |
+| **Expertise consumption** | **1 unit of Expertise per Course per season**, not per trainee.  A Course is the teaching unit; up to 12 attendees share that same Expertise cost. |
 | **Course slot** | 1 Course per *class* (up to 12 students) — see Class-size rule. |
 | **Educator base fee** | Suggest 20 Dp per trainee.  The Banker's actuarial / professional certification of the qualification, if applicable, layers on top. |
 
@@ -223,8 +223,26 @@ Suggested **fee suggestion** the prompt offers the requester:
 suggested_total = (base_fee × trainees)
                 + (food_per_season × trainees × course_duration)
                 + (ticket_price × trainees)
-                + (expertise_unit_price × trainees × course_duration)
+                + (expertise_unit_price × courses_needed × course_duration)
 ```
+
+This keeps the classroom economy coherent: adding students to an existing
+Course raises food and transport costs, but does **not** multiply the
+Expertise burned by the class.
+
+### Campus load
+
+While trainees are away at the Education Island, they become part of its
+seasonal operating burden:
+
+- they require **Food** in addition to the island's resident population;
+- they require accommodation / upkeep, represented in the training fee;
+- they should be surfaced in the Education UX as **campus load**, e.g.
+  “8 visiting trainees next season → +8 Food demand”.
+
+This makes Education a real place rather than a magical certification portal:
+approving more students creates revenue, but also raises the island's own
+short-term sustenance needs until those trainees return home.
 
 ### Apprenticeship facility (Technician training)
 

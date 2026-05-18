@@ -15,7 +15,7 @@ from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
-    MANUFACTURER_PRODUCT_LINES,
+    MANUFACTURER_PRODUCT_LINES, MAX_CLASS_SIZE_PER_COURSE,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
@@ -645,13 +645,26 @@ class TurnManager:
         result.actions_taken.append(f"request_training:batch#{req.batch_id}")
 
         if is_self_training:
+            # Self-training still consumes Course slots (1 per class of
+            # MAX_CLASS_SIZE_PER_COURSE).  No Courses → request stays
+            # pending until next season's Course production refills.
+            need_courses = self.courses_needed(count)
+            if not self._ensure_training_courses(player, req):
+                have = player.inventory.get(ResourceType.COURSES)
+                self.io.print(
+                    f"  Self-training request #{req.batch_id} submitted but on hold: "
+                    f"needs {need_courses} Course(s), Education Island has {have}. "
+                    f"It will start once Courses are produced."
+                )
+                return
             # Auto-approve and dispatch immediately — there's no other party
             # in the loop.  Workers head off to the on-island programme this
             # season; return next season.
             self.training.educator_approve(req.batch_id)
             self.training.dispatch(req.batch_id, year, season_index)
             self.io.print(
-                f"  {count} worker(s) entered on-island training as {target_profession}; "
+                f"  {count} worker(s) entered on-island training as {target_profession} "
+                f"({need_courses} Course slot(s) used); "
                 f"return in {SEASONS[(season_index + 1) % len(SEASONS)]}."
             )
             return
@@ -672,12 +685,22 @@ class TurnManager:
         fair_rate = 20.0 * len(req.worker_ids)
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * len(req.worker_ids)
         if req.dollops_to_educator >= fair_rate + ticket_cost:
+            # Peek Courses before burning air tickets.
+            need_c = self.courses_needed(len(req.worker_ids))
+            if educator.inventory.get(ResourceType.COURSES) < need_c:
+                self.io.print(
+                    f"  [AI] {educator.name} cannot approve training request #{req.batch_id} yet: "
+                    f"needs {need_c} Course(s) "
+                    f"(has {educator.inventory.get(ResourceType.COURSES)}). Pending."
+                )
+                return
             if not self._ensure_training_air_tickets(educator, req):
                 self.io.print(
                     f"  [AI] {educator.name} cannot approve training request #{req.batch_id}: "
                     f"needs {len(req.worker_ids)} PassengerSeats air ticket(s)."
                 )
                 return
+            self._ensure_training_courses(educator, req)
             self.training.educator_approve(req.batch_id)
             requester.spend_dollops(req.dollops_to_educator)
             educator.receive_dollops(req.dollops_to_educator)
@@ -744,6 +767,32 @@ class TurnManager:
         educator.give_resources(ResourceType.PASSENGER_SEATS, needed)
         return True
 
+    @staticmethod
+    def courses_needed(num_trainees: int) -> int:
+        """How many Course slots a training batch consumes.
+
+        A Course is a classroom of up to MAX_CLASS_SIZE_PER_COURSE
+        trainees; larger batches auto-split across multiple Courses.
+        """
+        if num_trainees <= 0:
+            return 0
+        return -(-num_trainees // MAX_CLASS_SIZE_PER_COURSE)  # ceil division
+
+    def _ensure_training_courses(self, educator: Player, req) -> bool:
+        """Consume ceil(trainees / class size) Courses from the Educator.
+
+        Returns False (without consuming) if the Education Island doesn't
+        have enough Courses in inventory yet — the request stays pending
+        until next season's Course production refills the stock.
+        """
+        needed = self.courses_needed(len(req.worker_ids))
+        if needed <= 0:
+            return True
+        if educator.inventory.get(ResourceType.COURSES) < needed:
+            return False
+        educator.give_resources(ResourceType.COURSES, needed)
+        return True
+
     def _profession_label(self, profession: str) -> str:
         try:
             return PROFESSION_LABEL.get(Profession(profession), profession)
@@ -804,6 +853,17 @@ class TurnManager:
         season_name: str,
         year: int,
     ) -> bool:
+        # Peek Course sufficiency BEFORE consuming any air tickets so a
+        # Course shortfall doesn't burn the Educator's PassengerSeats.
+        need_courses = self.courses_needed(len(req.worker_ids))
+        have_courses = educator.inventory.get(ResourceType.COURSES)
+        if need_courses > have_courses:
+            self.io.print(
+                f"  Cannot approve yet — Education Island needs {need_courses} Course slot(s) "
+                f"for this batch but only has {have_courses}. Produce more Courses first; "
+                f"the request stays pending."
+            )
+            return False
         if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req):
             short = len(req.worker_ids) - educator.inventory.get(ResourceType.PASSENGER_SEATS)
             self.io.print(
@@ -811,6 +871,8 @@ class TurnManager:
                 f"PassengerSeats air ticket(s). Buy tickets from the market first."
             )
             return False
+        # Tickets secured; now consume the Course slots.
+        self._ensure_training_courses(educator, req)
         requester.spend_dollops(req.dollops_to_educator)
         educator.receive_dollops(req.dollops_to_educator)
         if req.status == TrainingStatus.COUNTERED:
@@ -1165,6 +1227,13 @@ class TurnManager:
                     result.actions_taken.append(
                         f"bid:{qty}x{rtype.value}@{bid.price_per_unit:.2f}"
                     )
+                    filled = bid.quantity - bid.remaining
+                    if filled > 0:
+                        self.io.print(
+                            f"  Bought {filled}x {rtype.value} immediately from matching asks "
+                            f"for {filled * bid.price_per_unit:.2f} {sym}"
+                        )
+                        result.actions_taken.append(f"buy:{filled}x{rtype.value}")
                 except Exception as e:
                     self.io.print(f"  Bid {rtype_str} failed: {e}")
         else:
@@ -1187,6 +1256,13 @@ class TurnManager:
                     result.actions_taken.append(
                         f"bid:{qty}x{rtype.value}@{bid.price_per_unit:.2f}"
                     )
+                    filled = bid.quantity - bid.remaining
+                    if filled > 0:
+                        self.io.print(
+                            f"  Bought {filled}x {rtype.value} immediately from matching asks "
+                            f"for {filled * bid.price_per_unit:.2f} {sym}"
+                        )
+                        result.actions_taken.append(f"buy:{filled}x{rtype.value}")
                 except Exception as e:
                     self.io.print(f"  Bid failed: {e}")
                 return

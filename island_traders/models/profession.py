@@ -44,7 +44,7 @@ class Profession(str, Enum):
     WAREHOUSE_MANAGER    = "WarehouseManager"  # Technician (Transporter, ground ops)
     # Educator — technician-tier teaching staff
     LECTURER             = "Lecturer"          # Manager (Educator faculty)
-    TUTOR                = "Tutor"             # Technician (Educator)
+    INSTRUCTOR           = "Instructor"        # Technician (Educator) — consolidated from Tutor
     # Banker — technician-tier clerical staff
     BANKING_ANALYST      = "BankingAnalyst"    # Technician (Banker)
     BANKING_CLERK        = "BankingClerk"      # Technician (Banker)
@@ -85,7 +85,7 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.WAREHOUSE_MANAGER:   WorkerBand.TECHNICIAN,  # ground ops supervisor
     # Educator
     Profession.LECTURER:            WorkerBand.MANAGER,
-    Profession.TUTOR:               WorkerBand.TECHNICIAN,
+    Profession.INSTRUCTOR:          WorkerBand.TECHNICIAN,
     # Banker
     Profession.BANKING_ANALYST:     WorkerBand.TECHNICIAN,
     Profession.BANKING_CLERK:       WorkerBand.TECHNICIAN,
@@ -125,7 +125,7 @@ BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     },
     "Educator": {
         WorkerBand.MANAGER:    ["Professor", "Lecturer"],
-        WorkerBand.TECHNICIAN: ["Tutor", "Trainer"],
+        WorkerBand.TECHNICIAN: ["Instructor", "Tutor", "Trainer"],
         WorkerBand.WORKER:     ["Admin"],
     },
     "Banker": {
@@ -183,7 +183,7 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.SEAMAN:              2,
     Profession.WAREHOUSE_MANAGER:   2,
     # Educator technicians
-    Profession.TUTOR:               2,
+    Profession.INSTRUCTOR:          2,
     # Banker technicians
     Profession.BANKING_ANALYST:     2,
     Profession.BANKING_CLERK:       2,
@@ -202,7 +202,7 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
         Profession.FLIGHT_CREW, Profession.SEAMAN, Profession.WAREHOUSE_MANAGER,
         Profession.MECHANIC,
     ],
-    "Educator":      [Profession.PROFESSOR, Profession.LECTURER, Profession.TUTOR],
+    "Educator":      [Profession.PROFESSOR, Profession.LECTURER, Profession.INSTRUCTOR],
     "Banker":        [Profession.BANKER, Profession.BANKING_ANALYST, Profession.BANKING_CLERK],
     "Manufacturer":  [Profession.ASSEMBLY_WORKER, Profession.ENGINEER, Profession.MECHANIC],
     "Doctor":        [Profession.DOCTOR, Profession.NURSE, Profession.MEDICAL_ORDERLY],
@@ -233,7 +233,7 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.WAREHOUSE_MANAGER:   "Warehouse Manager",
     # Educator
     Profession.LECTURER:            "Lecturer",
-    Profession.TUTOR:               "Tutor",
+    Profession.INSTRUCTOR:          "Instructor",
     # Banker
     Profession.BANKING_ANALYST:     "Banking Analyst",
     Profession.BANKING_CLERK:       "Banking Clerk",

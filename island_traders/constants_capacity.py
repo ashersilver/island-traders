@@ -417,10 +417,16 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         description="1 Professor required per unit of Expertise",
     ),
     ProductionRecipe(
+        role="Educator", output="Courses",
+        inputs={"LaboratoryEquipment": 0.1, "Expertise": 1.0},
+        manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.0,
+        description="1 Instructor + 0.5 Professor per Course; consumes 1 Expertise",
+    ),
+    ProductionRecipe(
         role="Educator", output="Patents",
-        inputs={"LaboratoryEquipment": 0.5},
+        inputs={"LaboratoryEquipment": 0.5, "Expertise": 0.25},
         manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
-        description="2 Professors required per Patent (Research stock also needed)",
+        description="2 Professors per Patent; consumes a small Expertise input",
     ),
 
     # ----- Banker ----------------------------------------------------------

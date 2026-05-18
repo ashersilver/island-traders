@@ -3,7 +3,7 @@
 Two related fixes:
   1. UNIVERSITY_CAPACITY now includes training caps for the new professions
      introduced with the workforce ≥1M+2T rule (LogisticsManager, FlightCrew,
-     Seaman, WarehouseManager, Lecturer, Tutor, BankingAnalyst, BankingClerk,
+     Seaman, WarehouseManager, Lecturer, Instructor, BankingAnalyst, BankingClerk,
      MedicalOrderly) so they can actually be trained into.
   2. The Request Training menu prints exhausted professions with their cap
      status (so the player sees WHY an option isn't selectable, instead of it
@@ -23,7 +23,7 @@ def test_new_professions_have_training_caps():
     UNIVERSITY_CAPACITY entries so they can be trained into."""
     new_professions = [
         "LogisticsManager", "FlightCrew", "Seaman", "WarehouseManager",
-        "Lecturer", "Tutor",
+        "Lecturer", "Instructor",   # Tutor consolidated into Instructor (Phase 2)
         "BankingAnalyst", "BankingClerk",
         "MedicalOrderly",
     ]
