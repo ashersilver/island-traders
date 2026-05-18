@@ -436,6 +436,7 @@ def test_game_state_includes_worker_band_counts_for_each_player():
     player.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
     player.workforce.add_workers(2, training_level=1, profession=Profession.MECHANIC.value)
     player.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    player.workforce.dispatch_for_training([1, 3])
     room.game = SimpleNamespace(
         players=[player],
         market=Market(),
@@ -450,8 +451,13 @@ def test_game_state_includes_worker_band_counts_for_each_player():
     assert state["funding_rates"] == {"1": 4.5, "2": 5.25, "3": 6.0}
     assert state["players"][0]["workforce_bands"] == {
         "Manager": 1,
-        "Technician": 2,
-        "Worker": 3,
+        "Technician": 1,
+        "Worker": 2,
+    }
+    assert state["players"][0]["workforce_training_bands"] == {
+        "Manager": 0,
+        "Technician": 1,
+        "Worker": 1,
     }
 
 

@@ -128,6 +128,14 @@ class Workforce:
             out[band_of(w.profession).value] += 1
         return out
 
+    def training_band_summary(self) -> dict[str, int]:
+        """Away-at-training counts keyed by home band name."""
+        out = {b.value: 0 for b in WorkerBand}
+        for w in self.workers:
+            if w.in_training:
+                out[band_of(w.profession).value] += 1
+        return out
+
     def has_mechanic(self) -> bool:
         """True if at least one active Mechanic is on staff."""
         return self.count_profession(Profession.MECHANIC.value) > 0
