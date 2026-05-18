@@ -1744,7 +1744,13 @@ class GameManager:
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
-            for r, qty in p.population_food_fish_needs().items():
+            campus_extra = (
+                game.training.visiting_trainees(p.player_id)
+                if any(r.name == "Educator" for r in p.roles) else 0
+            )
+            for r, qty in p.population_food_fish_needs(
+                extra_residents=campus_extra
+            ).items():
                 short = qty - p.inventory.get(r)
                 safety_target = qty * 2  # next season + one-season buffer
                 recommended_purchase = max(0, safety_target - p.inventory.get(r))

@@ -331,9 +331,20 @@ class TurnManager:
                     self.io.on_action_complete()
 
     def _post_population_food_demand(self) -> None:
-        """Post seasonal market demand from island populations without consuming stock yet."""
+        """Post seasonal market demand from island populations without consuming stock yet.
+
+        The Education Island also feeds visiting trainees on campus
+        ("campus load") — they are transient extra mouths over and above
+        its residents until they return home (Education Phase 3 ↔ §21).
+        """
         for player in self.players:
-            for resource, qty in player.population_food_fish_needs().items():
+            extra_residents = (
+                self.training.visiting_trainees(player.player_id)
+                if any(r.name == "Educator" for r in player.roles) else 0
+            )
+            for resource, qty in player.population_food_fish_needs(
+                extra_residents=extra_residents
+            ).items():
                 if qty > 0:
                     self.market.post_demand(resource, qty)
 

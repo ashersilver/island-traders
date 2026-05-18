@@ -42,15 +42,14 @@ now canonical in `requirements/education-model.md`.
   Expertise is **not** debited from inventory on training approval (it
   is burned at Course *production* time, per Phase 2) — verified by
   `test_training_approval_does_not_consume_expertise_per_attendee`.
-- **Campus load.** The Educator review screen now surfaces visiting
-  trainees on campus (`TrainingRegistry.visiting_trainees`) as a
-  forward-looking "+N Food demand" note. The demand-model *integration*
-  (feeding this into the §21 balance-aware sustenance model via the
-  `extra_residents` seam) is intentionally owned by the parallel Codex
-  task `requirements/codex-tasks/sustenance-model.md` — Phase 3 does not
-  touch the legacy Food/Fish path. Whichever of the two branches merges
-  second wires the final `population_food_fish_needs(extra_residents=…)`
-  call.
+- **Campus load.** The Educator review screen surfaces visiting trainees
+  on campus (`TrainingRegistry.visiting_trainees`) as a forward-looking
+  "+N Food demand" note. Phase 3 merged **after** Codex's
+  `codex/sustenance-model`, so this branch also wires the seam: the
+  server now calls `population_food_fish_needs(extra_residents=…)` with
+  the Education Island's visiting-trainee count, so campus load actually
+  raises the island's marginal Food demand and runway warnings (the §21
+  balance-aware model, not the legacy Food/Fish path).
 
 **No-ops:** `provides_apprenticeship_facility` / cross-island
 sellable-apprenticeship-token never existed in code (only in the
@@ -67,6 +66,26 @@ and the self-training return test were updated to the new durations.
 Apprenticeship Programme + an Instructor to admit Technician trainees.
 This is a deliberate gate per spec; flag for the Codex sim-calibration
 pass if Technician supply tightens.
+
+### codex/sustenance-model
+
+Branch: `codex/sustenance-model`
+Target: `pre-release`
+
+- Replaces the legacy population Food-demand path with the §21
+  balance-aware model: the first 100 permanent residents are self-fed,
+  while residents above that baseline create 1 unit of marginal Food
+  demand each season.
+- Adds the `extra_residents` seam to
+  `Player.population_food_fish_needs()` so Education Phase 3 can charge
+  visiting trainees against campus sustenance without mutating resident
+  population.
+- Adds focused model coverage for baseline demand, population growth, and
+  transient residents.
+- Leaves the Healthcare workforce wording unchanged because current
+  merged code and rules already agree on the newer 2 Doctors + 2 Nurses +
+  2 Medical Orderlies composition; the older handoff's “2 Doctors + 4
+  Nurses” note is stale against present `pre-release`.
 
 ### claude/codex-brief-sustenance
 

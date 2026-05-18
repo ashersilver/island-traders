@@ -246,6 +246,31 @@ def test_technician_returns_with_one_settling_season():
     )) < 1e-9
 
 
+def test_campus_load_raises_education_island_food_demand():
+    """Phase 3 ↔ §21 seam: visiting trainees feed extra_residents into
+    population_food_fish_needs, raising the Education Island's marginal
+    Food demand (campus load) — not the legacy Food/Fish path."""
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id, worker_ids=[1, 2, 3],
+        educator_id=educator.player_id, dollops_to_educator=0.0,
+        target_profession="FarmingTechnician", year=0, season=0,
+        transport_mode="air_ticket",
+    )
+    training.educator_approve(req.batch_id)
+    training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
+    assert training.visiting_trainees(educator.player_id) == 3
+
+    tm = _turn_manager([farmer, educator], training, FakeIOAdapter())
+    tm._post_population_food_demand()
+    # Both islands sit at the self-fed baseline (population 100 ==
+    # BASE_POPULATION_SELF_FED) so the ONLY marginal Food demand posted
+    # is the Education Island's 3 visiting trainees.
+    assert tm.market.demand.get(ResourceType.FOOD, 0) == 3
+
+
 def test_manager_returns_without_settling():
     wf = Workforce()
     w = wf.add_workers(1, profession="Unskilled")[0]
