@@ -23,6 +23,30 @@ class InsufficientInputsError(Exception):
 
 
 class ProductionEngine:
+    def _has_active_profession(self, player: Player, profession: str) -> bool:
+        return any(w.profession == profession for w in player.workforce.active_workers)
+
+    def _farmer_specialist_multiplier(
+        self, player: Player, output: ResourceType, season_name: str
+    ) -> float:
+        """Late-season Farmer penalties when specialist depth is missing.
+
+        After the first two seasons, Produce needs a Horticulturalist and Meat
+        needs a Veterinarian to avoid a 25% productivity drop.
+        """
+        if season_name not in {"Autumn", "Winter"}:
+            return 1.0
+        if (
+            output == ResourceType.PRODUCE
+            and not self._has_active_profession(player, "Horticulturalist")
+        ):
+            return 0.75
+        if (
+            output == ResourceType.MEAT
+            and not self._has_active_profession(player, "Veterinarian")
+        ):
+            return 0.75
+        return 1.0
     def _has_enhanced_metal_equipment(self, player: Player) -> bool:
         return player.capital_inventory.get("miner.enhanced_crusher_smelter", 0) > 0
 
@@ -209,6 +233,8 @@ class ProductionEngine:
             sy = self._seasonal_yield(role.name, season_name)
             for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     # Deduct freight surcharge for Manufacturer shipment
@@ -265,6 +291,8 @@ class ProductionEngine:
             sy = self._seasonal_yield(role.name, season_name)
             for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     outputs[r] = outputs.get(r, 0) + qty
@@ -317,6 +345,12 @@ class ProductionEngine:
             WorkerBand.WORKER: bands.get("Worker", 0),
         }
         on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
+        if role_name == "Farmer" and output == ResourceType.FOOD:
+            # Packaged Food accepts either Fish or Meat as its protein.
+            on_hand[ResourceType.FISH.value] = (
+                player.inventory.get(ResourceType.FISH)
+                + player.inventory.get(ResourceType.MEAT)
+            )
         cap = compute_capacity(
             recipe=recipe,
             catalogue=CAPITAL_CATALOGUE,
@@ -368,6 +402,52 @@ class ProductionEngine:
                         "capacity_limit": capacity_limit,
                         "preview": preview,
                     })
+            if role.name == "Farmer":
+                # Meat is a deliberate livestock line: 4 Grain feedstock per
+                # Meat, with Veterinarian depth protecting late-season output.
+                meat_capacity = self._capacity_limit(player, role.name, ResourceType.MEAT)
+                if meat_capacity and meat_capacity > 0:
+                    meat_max = int(
+                        meat_capacity
+                        * self._farmer_specialist_multiplier(
+                            player, ResourceType.MEAT, season_name
+                        )
+                    )
+                    if meat_max > 0:
+                        options.append({
+                            "role": role.name,
+                            "output": ResourceType.MEAT,
+                            "product_line": None,
+                            "max_qty": meat_max,
+                            "preview_qty": meat_max,
+                            "capacity_limit": meat_capacity,
+                            "preview": self.production_preview(
+                                self._role_player(player, role), event_result, season_name
+                            ),
+                        })
+                # Food is now a deliberate convenience product, not a crop.
+                # It is packaged only when the island has an Industrial Kitchen
+                # and a balanced set of ingredients on hand.
+                preview_qty = min(
+                    player.inventory.get(ResourceType.GRAIN),
+                    player.inventory.get(ResourceType.PRODUCE),
+                    player.inventory.get(ResourceType.FISH)
+                    + player.inventory.get(ResourceType.MEAT),
+                )
+                capacity_limit = self._capacity_limit(player, role.name, ResourceType.FOOD)
+                max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
+                if max_qty > 0:
+                    options.append({
+                        "role": role.name,
+                        "output": ResourceType.FOOD,
+                        "product_line": None,
+                        "max_qty": int(max_qty),
+                        "preview_qty": int(preview_qty),
+                        "capacity_limit": capacity_limit,
+                        "preview": self.production_preview(
+                            self._role_player(player, role), event_result, season_name
+                        ),
+                    })
         return [opt for opt in options if opt["max_qty"] > 0]
 
     def _inputs_for_selected_output(
@@ -382,6 +462,18 @@ class ProductionEngine:
     ) -> dict[ResourceType, int]:
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if recipe:
+            if role_name == "Farmer" and output == ResourceType.FOOD:
+                fish_used = min(qty, player.inventory.get(ResourceType.FISH))
+                meat_used = qty - fish_used
+                inputs = {
+                    ResourceType.GRAIN: qty,
+                    ResourceType.PRODUCE: qty,
+                }
+                if fish_used:
+                    inputs[ResourceType.FISH] = fish_used
+                if meat_used:
+                    inputs[ResourceType.MEAT] = meat_used
+                return inputs
             recipe = self._adjust_recipe_for_player(recipe, player)
             mult = player.patent_input_multiplier(recipe.output)
             return {

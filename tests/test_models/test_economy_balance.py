@@ -19,9 +19,9 @@ def test_miner_oil_is_reduced_and_metal_is_available():
     assert BASE_PRODUCTION["Miner"]["Metal"] == 40
 
 
-def test_transporter_uses_fish_not_food_for_provisions():
-    assert STARTING_INVENTORY["Transporter"]["Fish"] == 2
-    assert "Food" not in STARTING_INVENTORY["Transporter"]
+def test_transporter_uses_food_not_fish_for_provisions():
+    assert STARTING_INVENTORY["Transporter"]["Food"] == 2
+    assert "Fish" not in STARTING_INVENTORY["Transporter"]
 
 
 def test_every_island_starts_with_at_least_two_seasons_of_inputs():

@@ -49,13 +49,13 @@ ALL_ROLES = ["Farmer", "Miner", "Transporter", "Educator",
 
 ROLE_INFO = {
     "Farmer":       {"display_name": ROLES["Farmer"].display_name, "short_name": ROLES["Farmer"].short_name,
-                     "island": ROLES["Farmer"].island, "produces": "Food, Fish",
+                     "island": ROLES["Farmer"].island, "produces": "Grain, Produce, Fish, Meat, Food",
                      "needs": "Farm Machinery, Oil", "color": "#27ae60"},
     "Miner":        {"display_name": ROLES["Miner"].display_name, "short_name": ROLES["Miner"].short_name,
                      "island": ROLES["Miner"].island, "produces": "Ore, Metal, Oil",
                      "needs": "Mining Equipment, Freight", "color": "#e67e22"},
     "Transporter":  {"display_name": ROLES["Transporter"].display_name, "short_name": ROLES["Transporter"].short_name,
-                     "island": ROLES["Transporter"].island, "produces": "Freight",
+                     "island": ROLES["Transporter"].island, "produces": "Freight, PassengerSeats",
                      "needs": "Transport Equipment, Oil", "color": "#3498db"},
     "Educator":     {"display_name": ROLES["Educator"].display_name, "short_name": ROLES["Educator"].short_name,
                      "island": ROLES["Educator"].island, "produces": "Expertise, Patents",
@@ -1406,6 +1406,12 @@ class GameManager:
                     boosted = _replace(recipe, inputs=boosted_inputs)
                 else:
                     boosted = recipe
+                if recipe.role == "Farmer" and recipe.output == ResourceType.FOOD.value:
+                    # Packaged Food accepts either Fish or Meat as its protein.
+                    on_hand[ResourceType.FISH.value] = (
+                        p.inventory.get(ResourceType.FISH)
+                        + p.inventory.get(ResourceType.MEAT)
+                    )
                 cap = compute_capacity(
                     recipe=boosted,
                     catalogue=CAPITAL_CATALOGUE,
@@ -1512,6 +1518,7 @@ class GameManager:
                 outputs.append({
                     "output":         recipe.output,
                     "role":           recipe.role,
+                    "is_service_output": recipe.output == "InsurancePolicies",
                     "max_producible": round(cap.max_producible, 2)
                                       if cap.max_producible != float("inf") else None,
                     "equipment_cap":  round(cap.equipment_cap, 2),
@@ -1731,6 +1738,7 @@ class GameManager:
                 "warnings": warnings,
             })
         barter_needs = []
+        sustenance_alerts_by_player_id: dict[int, list[dict]] = {}
         for p in game.players:
             needs = []
             for r in p.all_required_inputs():
@@ -1738,6 +1746,18 @@ class GameManager:
                     needs.append(r.value)
             for r, qty in p.population_food_fish_needs().items():
                 short = qty - p.inventory.get(r)
+                safety_target = qty * 2  # next season + one-season buffer
+                recommended_purchase = max(0, safety_target - p.inventory.get(r))
+                runway = None if qty <= 0 else round(p.inventory.get(r) / qty, 2)
+                if runway is not None and runway < 2:
+                    sustenance_alerts_by_player_id.setdefault(p.player_id, []).append({
+                        "resource": r.value,
+                        "on_hand": p.inventory.get(r),
+                        "seasonal_need": qty,
+                        "runway_seasons": runway,
+                        "recommended_purchase": recommended_purchase,
+                        "severity": "danger" if runway < 1 else "warning",
+                    })
                 if short > 0:
                     needs.append(f"{short} {r.value} for population")
             if any(r.name == "Educator" for r in p.roles):
@@ -1774,6 +1794,10 @@ class GameManager:
                 ).items()
             },
             "players": players_data,
+            "sustenance_alerts": {
+                str(player_id): alerts
+                for player_id, alerts in sustenance_alerts_by_player_id.items()
+            },
             "market": market_data,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "price_history": [
@@ -1781,6 +1805,10 @@ class GameManager:
                  "prices": {r.value: round(p, 2) for r, p in s.prices.items()}}
                 for s in game.market.price_history[-8:]
             ],
+            # Replay a bounded slice of the ticker so late/reconnecting tabs
+            # still see AI turns, which intentionally run before humans.
+            "recent_log": list(room.io_adapter._log[-200:]) if room.io_adapter else [],
+            "log_count": len(room.io_adapter._log) if room.io_adapter else 0,
         }
 
     # ---- Thread-safe WebSocket sending ----
