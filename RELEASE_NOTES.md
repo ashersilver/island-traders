@@ -5,6 +5,69 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/education-phase3
+
+Branch: `claude/education-phase3`
+Target: `pre-release`
+
+Education Model **Phase 3** — training cost components + the
+apprenticeship pipeline (Issue #18). Implements the 2026-05-17 rulings
+now canonical in `requirements/education-model.md`.
+
+**Behaviour changes:**
+
+- **Two distinct training pipelines (decision (a)).** Phase 2 shipped a
+  Course debit for *all* tiers; Phase 3 scopes Courses to **Manager-tier
+  only**. Technician-tier training is now gated by the Educator's
+  **apprenticeship slot pool** (`educator.apprenticeship_programme`
+  capital, +3 slots each) **and** at least one **Instructor** on the
+  Education Island workforce — never by Courses. A slot is held while a
+  Technician batch is in flight and frees automatically on return.
+- **Profession-dependent course duration is now wired into dispatch.**
+  Previously every batch returned the next season regardless of
+  profession. Now: Doctor **3** seasons away, other Managers **2**,
+  Nurse **1**, all Technicians **1** (`EDUCATION_SEASONS[DOCTOR]` 2→3;
+  `APPRENTICESHIP_SEASONS` flat 2→1).
+- **Apprenticeship settling ramp.** A returning Technician works exactly
+  **one season at 75% productivity** on the home island before reaching
+  100% (`Worker.settling_seasons`; new constants
+  `APPRENTICESHIP_SETTLING_SEASONS=1`,
+  `APPRENTICESHIP_SETTLING_EFFICIENCY=0.75`). University (Manager)
+  graduates do **not** settle. Persisted in save games.
+- **Fee suggestion now itemised.** The training-fee prompt suggests
+  `base + food/accom + tickets + expertise` where food/accom is
+  `TRAINEE_FOOD_ACCOM_PER_SEASON` (5 Dp) × trainees × course duration,
+  and the Expertise term is 1 Expertise per Course per season
+  (Manager-tier only — apprenticeships are not Course/Expertise gated).
+  Expertise is **not** debited from inventory on training approval (it
+  is burned at Course *production* time, per Phase 2) — verified by
+  `test_training_approval_does_not_consume_expertise_per_attendee`.
+- **Campus load.** The Educator review screen now surfaces visiting
+  trainees on campus (`TrainingRegistry.visiting_trainees`) as a
+  forward-looking "+N Food demand" note. The demand-model *integration*
+  (feeding this into the §21 balance-aware sustenance model via the
+  `extra_residents` seam) is intentionally owned by the parallel Codex
+  task `requirements/codex-tasks/sustenance-model.md` — Phase 3 does not
+  touch the legacy Food/Fish path. Whichever of the two branches merges
+  second wires the final `population_food_fish_needs(extra_residents=…)`
+  call.
+
+**No-ops:** `provides_apprenticeship_facility` / cross-island
+sellable-apprenticeship-token never existed in code (only in the
+now-reconciled requirements docs), so nothing to remove.
+
+**Tests:** suite **293 passing** (283 baseline → 10 net new). New
+`tests/test_engine/test_education_phase3.py` covers the apprenticeship
+gate, slot-pool overbooking, duration-into-dispatch, and the settling
+ramp. Six Phase-2 Course tests were repointed to a Manager profession
+(Nurse) since Technicians are no longer Course-gated; the duration test
+and the self-training return test were updated to the new durations.
+
+**Calibration follow-up:** AI/sim Educators must now hold an
+Apprenticeship Programme + an Instructor to admit Technician trainees.
+This is a deliberate gate per spec; flag for the Codex sim-calibration
+pass if Technician supply tightens.
+
 ### claude/codex-brief-sustenance
 
 Branch: `claude/codex-brief-sustenance`

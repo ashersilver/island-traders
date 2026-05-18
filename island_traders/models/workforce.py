@@ -1,6 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from .profession import Profession, WorkerBand, band_of
+from .profession import (
+    Profession, WorkerBand, band_of,
+    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
+)
 
 
 # Efficiency caps per training level (0=Unskilled, 1=Basic, 2=Skilled, 3=Expert)
@@ -16,6 +19,10 @@ class Worker:
     training_level: int = 0      # 0=Unskilled, 1=Basic professional, 2=Skilled, 3=Expert
     in_training: bool = False
     profession: str = Profession.UNSKILLED.value   # stored as string for simple serialisation
+    # Seasons of reduced-productivity "settling" remaining after a returning
+    # apprentice (Technician band) reaches their home island.  0 = at full
+    # productivity.  University (Manager) graduates never settle.
+    settling_seasons: int = 0
 
     @property
     def plateau(self) -> float:
@@ -24,7 +31,10 @@ class Worker:
     @property
     def efficiency(self) -> float:
         raw = EFFICIENCY_BASE + self.experience_seasons * EFFICIENCY_GAIN_PER_SEASON
-        return min(raw, self.plateau)
+        eff = min(raw, self.plateau)
+        if self.settling_seasons > 0:
+            eff *= APPRENTICESHIP_SETTLING_EFFICIENCY
+        return eff
 
     @property
     def tier_name(self) -> str:
@@ -34,10 +44,13 @@ class Worker:
             return "Unskilled"
         levels = ["", "Basic", "Skilled", "Expert"]
         level_str = levels[min(self.training_level, 3)]
-        return f"{self.profession} ({level_str})"
+        suffix = " — settling" if self.settling_seasons > 0 else ""
+        return f"{self.profession} ({level_str}){suffix}"
 
     def gain_experience(self) -> None:
         self.experience_seasons += 1
+        if self.settling_seasons > 0:
+            self.settling_seasons -= 1
 
     def train(self, target_profession: str | None = None) -> None:
         """Advance this worker's training.
@@ -58,6 +71,10 @@ class Worker:
     def return_from_training(self, target_profession: str | None = None) -> None:
         self.in_training = False
         self.train(target_profession)
+        # Apprenticeship (Technician band) graduates work a reduced-output
+        # settling season on the home island; university graduates do not.
+        if band_of(self.profession) == WorkerBand.TECHNICIAN:
+            self.settling_seasons = APPRENTICESHIP_SETTLING_SEASONS
 
 
 @dataclass

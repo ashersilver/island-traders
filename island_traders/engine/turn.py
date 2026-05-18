@@ -4,23 +4,26 @@ from enum import Enum
 from ..models.player import Player
 from ..models.market import Market
 from ..models.resource import ResourceType
-from ..models.training import TrainingRegistry, TrainingStatus, TrainingCapacityError
+from ..models.training import (
+    TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
+)
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
-from ..models.profession import Profession, PROFESSION_LABEL
+from ..models.profession import Profession, PROFESSION_LABEL, WorkerBand, band_of
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
     MANUFACTURER_PRODUCT_LINES, MAX_CLASS_SIZE_PER_COURSE,
+    TRAINEE_FOOD_ACCOM_PER_SEASON,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role
+from ..models.capacity import items_for_role, apprenticeship_slot_capacity
 # ActionCancelled is raised by IO adapters when the user explicitly cancels a
 # prompt chain; the main action loop catches it to abort the action cleanly.
 # Imported from .cli.signals (dependency-free) to avoid a circular import via
@@ -614,10 +617,26 @@ class TurnManager:
                 "Educator-supplied air tickets for standard training."
             )
             ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
-            suggested_total = (20.0 * count) + (ticket_price * count)
+            course_duration = away_seasons(target_profession)
+            is_manager = band_of(target_profession) == WorkerBand.MANAGER
+            # Expertise is burned per Course per season — Manager-tier only;
+            # apprenticeships (Technician) are not Course/Expertise gated.
+            courses = self.courses_needed(count) if is_manager else 0
+            expertise_price = self.market.current_price(ResourceType.EXPERTISE)
+            base_fee = 20.0 * count
+            food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * count * course_duration
+            tickets = ticket_price * count
+            expertise_cost = expertise_price * courses * course_duration
+            suggested_total = base_fee + food_accom + tickets + expertise_cost
+            self.io.print(
+                f"  Fee components — base {base_fee:.0f}, food/accom "
+                f"{food_accom:.0f} ({count}×{course_duration}s @ "
+                f"{TRAINEE_FOOD_ACCOM_PER_SEASON:.0f} {sym}), tickets "
+                f"{tickets:.0f}, expertise {expertise_cost:.0f}."
+            )
             dollops_educator = self.io.ask_dollop_amount(
                 f"Offer total training fee to Educator ({educator.name}) in {sym}? "
-                f"(suggested includes tickets: {suggested_total:.0f} {sym})",
+                f"(suggested total: {suggested_total:.0f} {sym})",
                 player.dollops,
             )
             transport_mode = "air_ticket"
@@ -645,27 +664,25 @@ class TurnManager:
         result.actions_taken.append(f"request_training:batch#{req.batch_id}")
 
         if is_self_training:
-            # Self-training still consumes Course slots (1 per class of
-            # MAX_CLASS_SIZE_PER_COURSE).  No Courses → request stays
-            # pending until next season's Course production refills.
-            need_courses = self.courses_needed(count)
-            if not self._ensure_training_courses(player, req):
-                have = player.inventory.get(ResourceType.COURSES)
+            # Manager-tier self-training consumes a Course slot; Technician
+            # self-training consumes an apprenticeship slot + needs an
+            # Instructor.  Either way, no fee and no transport ticket.
+            ok, gate_msg = self._training_capacity_status(player, req)
+            if not ok:
                 self.io.print(
                     f"  Self-training request #{req.batch_id} submitted but on hold: "
-                    f"needs {need_courses} Course(s), Education Island has {have}. "
-                    f"It will start once Courses are produced."
+                    f"{gate_msg} It will start once that capacity frees up."
                 )
                 return
+            used_desc = self._consume_training_capacity(player, req)
             # Auto-approve and dispatch immediately — there's no other party
             # in the loop.  Workers head off to the on-island programme this
-            # season; return next season.
+            # season; return after the profession's course/apprenticeship.
             self.training.educator_approve(req.batch_id)
             self.training.dispatch(req.batch_id, year, season_index)
             self.io.print(
                 f"  {count} worker(s) entered on-island training as {target_profession} "
-                f"({need_courses} Course slot(s) used); "
-                f"return in {SEASONS[(season_index + 1) % len(SEASONS)]}."
+                f"({used_desc}); return: {self._format_training_return(req)}."
             )
             return
 
@@ -685,13 +702,13 @@ class TurnManager:
         fair_rate = 20.0 * len(req.worker_ids)
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * len(req.worker_ids)
         if req.dollops_to_educator >= fair_rate + ticket_cost:
-            # Peek Courses before burning air tickets.
-            need_c = self.courses_needed(len(req.worker_ids))
-            if educator.inventory.get(ResourceType.COURSES) < need_c:
+            # Peek training capacity (Course slot or apprenticeship slot +
+            # Instructor) before burning air tickets.
+            ok, gate_msg = self._training_capacity_status(educator, req)
+            if not ok:
                 self.io.print(
                     f"  [AI] {educator.name} cannot approve training request #{req.batch_id} yet: "
-                    f"needs {need_c} Course(s) "
-                    f"(has {educator.inventory.get(ResourceType.COURSES)}). Pending."
+                    f"{gate_msg} Pending."
                 )
                 return
             if not self._ensure_training_air_tickets(educator, req):
@@ -700,7 +717,7 @@ class TurnManager:
                     f"needs {len(req.worker_ids)} PassengerSeats air ticket(s)."
                 )
                 return
-            self._ensure_training_courses(educator, req)
+            self._consume_training_capacity(educator, req)
             self.training.educator_approve(req.batch_id)
             requester.spend_dollops(req.dollops_to_educator)
             educator.receive_dollops(req.dollops_to_educator)
@@ -778,20 +795,61 @@ class TurnManager:
             return 0
         return -(-num_trainees // MAX_CLASS_SIZE_PER_COURSE)  # ceil division
 
-    def _ensure_training_courses(self, educator: Player, req) -> bool:
-        """Consume ceil(trainees / class size) Courses from the Educator.
+    def _training_capacity_status(self, educator: Player, req) -> tuple[bool, str]:
+        """Can this batch be admitted?  Pure check — no side effects.
 
-        Returns False (without consuming) if the Education Island doesn't
-        have enough Courses in inventory yet — the request stays pending
-        until next season's Course production refills the stock.
+        Manager-tier (university) is Course-gated.  Technician-tier
+        (vocational apprenticeship) is gated by the Educator's
+        apprenticeship slot pool *and* Instructor capacity — never by
+        Courses (the two pipelines are distinct, decision (a) 2026-05-17).
+        Returns (ok, reason); reason is empty when ok.
         """
-        needed = self.courses_needed(len(req.worker_ids))
-        if needed <= 0:
-            return True
-        if educator.inventory.get(ResourceType.COURSES) < needed:
-            return False
-        educator.give_resources(ResourceType.COURSES, needed)
-        return True
+        band = band_of(req.target_profession)
+        n = len(req.worker_ids)
+        if band == WorkerBand.MANAGER:
+            need = self.courses_needed(n)
+            have = educator.inventory.get(ResourceType.COURSES)
+            if have < need:
+                return False, (
+                    f"needs {need} Course slot(s) for this class "
+                    f"(Education Island has {have})."
+                )
+            return True, ""
+        if band == WorkerBand.TECHNICIAN:
+            if educator.workforce.count_profession(Profession.INSTRUCTOR.value) < 1:
+                return False, (
+                    "no Instructor on the Education Island to run the apprenticeship."
+                )
+            capacity = apprenticeship_slot_capacity(
+                CAPITAL_CATALOGUE, educator.capital_inventory
+            )
+            in_use = self.training.technician_trainees_in_flight(educator.player_id)
+            if capacity - in_use < n:
+                return False, (
+                    f"apprenticeship slot pool full "
+                    f"({in_use}/{capacity} slot(s) occupied, need {n})."
+                )
+            return True, ""
+        return True, ""
+
+    def _consume_training_capacity(self, educator: Player, req) -> str:
+        """Debit the capacity this batch uses; return a human description.
+
+        Manager-tier debits Course slots from inventory.  Technician-tier
+        consumes nothing from inventory — the apprenticeship slot is held
+        implicitly while the batch is in flight (see
+        TrainingRegistry.technician_trainees_in_flight) and frees on return.
+        """
+        band = band_of(req.target_profession)
+        n = len(req.worker_ids)
+        if band == WorkerBand.MANAGER:
+            need = self.courses_needed(n)
+            if need > 0:
+                educator.give_resources(ResourceType.COURSES, need)
+            return f"{need} Course slot(s) used"
+        if band == WorkerBand.TECHNICIAN:
+            return f"{n} apprenticeship slot(s) used"
+        return "no formal training required"
 
     def _profession_label(self, profession: str) -> str:
         try:
@@ -853,15 +911,13 @@ class TurnManager:
         season_name: str,
         year: int,
     ) -> bool:
-        # Peek Course sufficiency BEFORE consuming any air tickets so a
-        # Course shortfall doesn't burn the Educator's PassengerSeats.
-        need_courses = self.courses_needed(len(req.worker_ids))
-        have_courses = educator.inventory.get(ResourceType.COURSES)
-        if need_courses > have_courses:
+        # Peek training capacity BEFORE consuming any air tickets so a
+        # capacity shortfall doesn't burn the Educator's PassengerSeats.
+        ok, gate_msg = self._training_capacity_status(educator, req)
+        if not ok:
             self.io.print(
-                f"  Cannot approve yet — Education Island needs {need_courses} Course slot(s) "
-                f"for this batch but only has {have_courses}. Produce more Courses first; "
-                f"the request stays pending."
+                f"  Cannot approve yet — Education Island {gate_msg} "
+                f"The request stays pending."
             )
             return False
         if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req):
@@ -871,8 +927,9 @@ class TurnManager:
                 f"PassengerSeats air ticket(s). Buy tickets from the market first."
             )
             return False
-        # Tickets secured; now consume the Course slots.
-        self._ensure_training_courses(educator, req)
+        # Tickets secured; now consume the training capacity (Course slot
+        # for Manager-tier; apprenticeship slot is held implicitly).
+        self._consume_training_capacity(educator, req)
         requester.spend_dollops(req.dollops_to_educator)
         educator.receive_dollops(req.dollops_to_educator)
         if req.status == TrainingStatus.COUNTERED:
@@ -932,6 +989,12 @@ class TurnManager:
         if not any(r.name == "Educator" for r in player.roles):
             self._print_training_status_for_player(player)
             return
+        on_campus = self.training.visiting_trainees(player.player_id)
+        if on_campus:
+            self.io.print(
+                f"  Campus load: {on_campus} visiting trainee(s) on the Education "
+                f"Island this season → +{on_campus} Food demand until they return."
+            )
         pending = self.training.pending_for_educator(player.player_id)
         if not pending:
             self.io.print("  No training requests awaiting your approval.")

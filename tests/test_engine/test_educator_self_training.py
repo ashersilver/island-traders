@@ -113,7 +113,7 @@ def test_self_training_does_not_consume_passenger_seats():
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
 
 
-def test_self_training_returns_after_one_season():
+def test_self_training_returns_after_course_duration():
     educator = _educator()
     training = TrainingRegistry()
     io = SelfTrainingIO(profession="Professor", count=1)
@@ -126,14 +126,16 @@ def test_self_training_returns_after_one_season():
     )
 
     req = training.all_requests()[0]
-    # Dispatched in Spring (season=0); return season = 0 + 1 = 1 (Summer)
+    # Professor is Manager-tier → 2-season university course (Phase 3).
+    # Dispatched in Spring (season=0); return season = 0 + 2 = 2 (Autumn).
     assert req.dispatched_year == 0
     assert req.dispatched_season == 0
     assert req.return_year == 0
-    assert req.return_season == 1
+    assert req.return_season == 2
 
-    # Run process_returns at year 0 Summer — the batch should complete.
-    completed = training.process_returns(year=0, season=1)
+    # Not due in Summer (one season early); due in Autumn.
+    assert training.process_returns(year=0, season=1) == []
+    completed = training.process_returns(year=0, season=2)
     assert len(completed) == 1
     assert completed[0].batch_id == req.batch_id
     assert completed[0].status == TrainingStatus.COMPLETED

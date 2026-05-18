@@ -102,32 +102,37 @@ don't combine the phases.
 - [x] `STARTING_WORKFORCE[Educator] = 8`: 4 Professors + 4 Instructors
 - [x] `STARTING_INVENTORY[Educator]` += Expertise + 5 Courses
 - [x] Self-training consumes a Course but skips fees and transport
-- [ ] *(Phase 3 correction)* Phase 2 Course-debit currently applies to
-      **all** tiers; Phase 3 scopes it to Manager-tier only
+- [x] *(Phase 3 correction)* Phase 2 Course-debit scoped to Manager-tier
+      only (Technicians now apprenticeship-gated)
 
-#### Phase 3 — Training cost components + apprenticeship pipeline (#18) ⏳ NEXT
-*(All decisions ruled 2026-05-17 — see `requirements/education-model.md`.)*
-- [ ] Scope Phase-2 Course-debit to **Manager-tier only** (decision (a):
+#### Phase 3 — Training cost components + apprenticeship pipeline (#18) ✅ (done — claude/education-phase3)
+*(All decisions ruled 2026-05-17 — see `requirements/education-model.md`.
+Suite 293 green.)*
+- [x] Scope Phase-2 Course-debit to **Manager-tier only** (decision (a):
       Courses ≠ apprenticeship; non-overlapping pipelines)
-- [ ] Technician training → **apprenticeship slot pool**
+- [x] Technician training → **apprenticeship slot pool**
       (`educator.apprenticeship_programme`) + Instructor (trainer) gate,
       **not** Course-gated
-- [ ] Apprentice: **1 season away** at Education, then **75% productivity
+- [x] Apprentice: **1 season away** at Education, then **75% productivity
       for exactly one season** on the home island, then 100%
-      (`APPRENTICESHIP_SEASONS` away-duration → 1; add the settling ramp)
-- [ ] Course duration by profession: **Doctor = 3**, other Managers = 2,
-      Nurse = 1  →  `EDUCATION_SEASONS[DOCTOR]` 2 → 3
-- [ ] **Expertise consumption: 1 Expertise per Course per season**
-      (per Course, *not* per trainee — up to 12 share one Course)
-- [ ] Food & accommodation cost: 5 Dp per trainee per season at college
-- [ ] **Campus load**: visiting trainees raise the Education Island's
-      marginal sustenance demand via the new balance-aware model
-      (`production-capacity-model.md §21`) — do NOT reuse the legacy
-      Food/Fish path
-- [ ] `_action_request_training` fee suggestion includes all cost
+      (`APPRENTICESHIP_SEASONS` away-duration → 1; settling ramp on Worker)
+- [x] Course duration by profession: **Doctor = 3**, other Managers = 2,
+      Nurse = 1  →  `EDUCATION_SEASONS[DOCTOR]` 2 → 3, wired into dispatch
+- [x] **Expertise consumption: 1 Expertise per Course per season**
+      (per Course, *not* per trainee) — in the fee suggestion; not a
+      second inventory debit (Courses already burn Expertise at
+      production time, Phase 2)
+- [x] Food & accommodation cost: 5 Dp per trainee per season at college
+      (`TRAINEE_FOOD_ACCOM_PER_SEASON`)
+- [x] **Campus load**: visiting-trainee count surfaced
+      (`TrainingRegistry.visiting_trainees`) on the Educator review
+      screen.  Demand-model integration via the §21 `extra_residents`
+      seam is owned by `requirements/codex-tasks/sustenance-model.md`
+      (Codex) — Phase 3 does NOT touch the legacy Food/Fish path
+- [x] `_action_request_training` fee suggestion includes all cost
       components (base fee + food/accom + tickets + expertise/Course)
-- [ ] Drop the `provides_apprenticeship_facility` flag and the in-house
-      sellable-token idea (both ruled out 2026-05-17)
+- [x] Drop the `provides_apprenticeship_facility` flag / sellable-token
+      — no-op: never existed in code (only in reconciled requirements)
 
 ### Medical & Laboratory Island
 See [`requirements/medical-laboratory.md`](requirements/medical-laboratory.md)

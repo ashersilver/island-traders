@@ -10,10 +10,11 @@ has an annual quota limiting how many can be trained per game year; Professors
 additionally have a per-season cap.
 
 Workers are also classified into one of three **bands** — see WorkerBand:
-  - MANAGER:    university-trained (Education pipeline; Doctor=2 seasons,
+  - MANAGER:    university-trained (Education pipeline; Doctor=3 seasons,
                 Nurse=1 season, others=2 seasons)
-  - TECHNICIAN: apprenticeship-trained (separate Educator slot pool; worker
-                stays on home island during the apprenticeship)
+  - TECHNICIAN: apprenticeship-trained (Educator slot pool + Instructor;
+                1 season away at the Education Island, then a 75%-productivity
+                settling season on the home island before reaching 100%)
   - WORKER:     hired directly from the island population (no formal training)
 """
 from __future__ import annotations
@@ -154,9 +155,10 @@ def primary_title(role_name: str, band: WorkerBand) -> str:
 
 
 # Education pipeline duration in seasons (per Manager profession).
-# Per requirements: Doctor 2, Nurse 1, others 2 by default.
+# Canonical (education-model.md, ruled 2026-05-17): Doctor 3, Nurse 1,
+# all other Managers 2.
 EDUCATION_SEASONS: dict[Profession, int] = {
-    Profession.DOCTOR:            2,
+    Profession.DOCTOR:            3,
     Profession.NURSE:             1,
     Profession.ENGINEER:          2,
     Profession.FARMER:             2,
@@ -167,29 +169,39 @@ EDUCATION_SEASONS: dict[Profession, int] = {
     Profession.LECTURER:           2,
 }
 
-# Apprenticeship pipeline duration in seasons (per Technician profession).
-# Default: 2 seasons for all (worker stays on home island during training).
+# Apprenticeship pipeline: number of seasons the apprentice is *away* at
+# the Education Island.  Canonical (education-model.md, ruled 2026-05-17):
+# 1 season away for every Technician, followed by exactly one
+# 75%-productivity "settling" season on the home island (the settling
+# season is NOT counted here — see APPRENTICESHIP_SETTLING_SEASONS and
+# Worker.settling_seasons).
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
-    Profession.FARMING_TECHNICIAN:  2,
-    Profession.HORTICULTURALIST:    2,
-    Profession.VETERINARIAN:        2,
-    Profession.ASSEMBLY_WORKER:     2,
-    Profession.MINING_TECHNICIAN:   2,
-    Profession.OIL_EXTRACTION:      2,
-    Profession.REFINERY_SPECIALIST: 2,
-    Profession.MECHANIC:            2,
+    Profession.FARMING_TECHNICIAN:  1,
+    Profession.HORTICULTURALIST:    1,
+    Profession.VETERINARIAN:        1,
+    Profession.ASSEMBLY_WORKER:     1,
+    Profession.MINING_TECHNICIAN:   1,
+    Profession.OIL_EXTRACTION:      1,
+    Profession.REFINERY_SPECIALIST: 1,
+    Profession.MECHANIC:            1,
     # Transporter technicians
-    Profession.FLIGHT_CREW:         2,
-    Profession.SEAMAN:              2,
-    Profession.WAREHOUSE_MANAGER:   2,
+    Profession.FLIGHT_CREW:         1,
+    Profession.SEAMAN:              1,
+    Profession.WAREHOUSE_MANAGER:   1,
     # Educator technicians
-    Profession.INSTRUCTOR:          2,
+    Profession.INSTRUCTOR:          1,
     # Banker technicians
-    Profession.BANKING_ANALYST:     2,
-    Profession.BANKING_CLERK:       2,
+    Profession.BANKING_ANALYST:     1,
+    Profession.BANKING_CLERK:       1,
     # Doctor technicians
-    Profession.MEDICAL_ORDERLY:     2,
+    Profession.MEDICAL_ORDERLY:     1,
 }
+
+# How many post-return seasons a freshly-qualified apprentice works at
+# reduced productivity on the home island before reaching 100%.
+APPRENTICESHIP_SETTLING_SEASONS: int = 1
+# Productivity multiplier applied during each settling season.
+APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.75
 
 
 # Which professions are primarily associated with each island role.
