@@ -19,14 +19,14 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Farmer: Spring outputs to sell + 2 seasons of inputs
-    "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
+    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3,           # to sell (Spring outputs)
                       "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
     # Miner: partial output to sell + 2 seasons of inputs
     "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
                       "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
-    # Transporter: cargo + seats to sell + 2 seasons of Oil & Fish
+    # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
+                      "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
     # Educator: Expertise to sell + 2 seasons of inputs
     "Educator":      {"Expertise": 2,                                 # to sell
                       "LaboratoryEquipment": 2},                       # 2 seasons of Lab Equipment
@@ -47,6 +47,9 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 BASE_PRICES: dict[str, float] = {
     "Food":                10.0,
     "Fish":                 8.0,
+    "Grain":                7.0,
+    "Produce":              9.0,
+    "Meat":                12.0,
     "Ore":                 15.0,
     "Metal":               25.0,
     "Oil":                 20.0,
@@ -94,7 +97,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
-    "Transporter":   {"Oil": 2, "Fish": 1},   # jet fuel (self-refined from Oil) + crew provisions
+    "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
     "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
@@ -111,22 +114,26 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
     },
     "Summer": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 6 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
     },
     "Autumn": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # bumper harvest; fishing winds down
     },
     "Winter": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # stores drawn down; minimal production
     },
 }
@@ -260,7 +267,7 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # but is currently encoded simply as 2 Doctors + 4 Nurses; revisit when Apprenticeship
 # pipeline is implemented.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 1), ("FarmingTechnician", 1), ("Veterinarian", 1)],
+    "Farmer":        [("Farmer", 1), ("Horticulturalist", 1), ("Veterinarian", 1)],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
     "Transporter":   [
         ("LogisticsManager", 1),     # Manager
@@ -306,7 +313,7 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "FarmingTechnician", "Veterinarian", "Mechanic"],
+    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic"],
     "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
     "Transporter":  [
         "LogisticsManager", "Engineer",
@@ -361,6 +368,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Agriculture
     "Farmer":               2,
     "FarmingTechnician":    4,
+    "Horticulturalist":      2,
     "Veterinarian":         1,
     # Manufacturing
     "AssemblyWorker":      10,

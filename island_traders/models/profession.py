@@ -27,6 +27,7 @@ class Profession(str, Enum):
     ENGINEER             = "Engineer"
     FARMER               = "Farmer"
     FARMING_TECHNICIAN   = "FarmingTechnician"
+    HORTICULTURALIST     = "Horticulturalist"
     VETERINARIAN         = "Veterinarian"
     ASSEMBLY_WORKER      = "AssemblyWorker"
     MINER                = "Miner"
@@ -67,6 +68,7 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.ENGINEER:            WorkerBand.MANAGER,
     Profession.FARMER:              WorkerBand.MANAGER,
     Profession.FARMING_TECHNICIAN:  WorkerBand.TECHNICIAN,
+    Profession.HORTICULTURALIST:    WorkerBand.TECHNICIAN,
     Profession.VETERINARIAN:        WorkerBand.TECHNICIAN,
     Profession.ASSEMBLY_WORKER:     WorkerBand.TECHNICIAN,
     Profession.MINER:               WorkerBand.MANAGER,    # mining engineer / geologist
@@ -108,7 +110,7 @@ def band_of(profession: Profession | str) -> WorkerBand:
 BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     "Farmer": {
         WorkerBand.MANAGER:    ["Farmer"],
-        WorkerBand.TECHNICIAN: ["Farming Technician", "Farming Foreman", "Veterinarian", "Mechanic"],
+        WorkerBand.TECHNICIAN: ["Farming Technician", "Horticulturalist", "Veterinarian", "Mechanic"],
         WorkerBand.WORKER:     ["Farmhand"],
     },
     "Miner": {
@@ -169,6 +171,7 @@ EDUCATION_SEASONS: dict[Profession, int] = {
 # Default: 2 seasons for all (worker stays on home island during training).
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.FARMING_TECHNICIAN:  2,
+    Profession.HORTICULTURALIST:    2,
     Profession.VETERINARIAN:        2,
     Profession.ASSEMBLY_WORKER:     2,
     Profession.MINING_TECHNICIAN:   2,
@@ -192,7 +195,7 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
 # Which professions are primarily associated with each island role.
 # Used to filter available training options for each player.
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
-    "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.VETERINARIAN, Profession.MECHANIC],
+    "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.HORTICULTURALIST, Profession.VETERINARIAN, Profession.MECHANIC],
     "Miner":         [Profession.MINER, Profession.MINING_TECHNICIAN, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC],
     "Transporter":   [
         Profession.LOGISTICS_MANAGER, Profession.ENGINEER,
@@ -213,6 +216,7 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.ENGINEER:            "Engineer",
     Profession.FARMER:              "Farmer (specialist)",
     Profession.FARMING_TECHNICIAN:  "Farming Technician",
+    Profession.HORTICULTURALIST:    "Horticulturalist",
     Profession.VETERINARIAN:        "Veterinarian",
     Profession.ASSEMBLY_WORKER:     "Assembly Worker",
     Profession.MINER:               "Miner (specialist)",

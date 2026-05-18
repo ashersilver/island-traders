@@ -26,8 +26,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Farmer",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"Food": 10}},
-        description="+10 Food capacity",
+        effects={"capacity": {"Grain": 10, "Produce": 6}},
+        description="+10 Grain, +6 Produce capacity",
     ),
     CapitalItem(
         item_id="farmer.harvester",
@@ -35,8 +35,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Farmer",
         cost=90.0,
         delivery_seasons=2,
-        effects={"capacity": {"Food": 6}, "labour_relief": {"Technician": 1}},
-        description="+6 Food, -1 Technician need",
+        effects={"capacity": {"Grain": 6, "Produce": 4}, "labour_relief": {"Technician": 1}},
+        description="+6 Grain, +4 Produce, -1 Technician need",
     ),
     CapitalItem(
         item_id="farmer.fishing_boat",
@@ -46,6 +46,24 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Fish": 4}},
         description="+4 Fish capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.livestock_barn",
+        name="Livestock Barn",
+        role="Farmer",
+        cost=70.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Meat": 4}},
+        description="+4 Meat capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.industrial_kitchen",
+        name="Industrial Kitchen",
+        role="Farmer",
+        cost=75.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Food": 6}},
+        description="+6 packaged Food capacity",
     ),
     CapitalItem(
         item_id="farmer.storage_building",
@@ -331,16 +349,34 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
 PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
-        role="Farmer", output="Food",
-        inputs={"Oil": 2.0},
+        role="Farmer", output="Grain",
+        inputs={"Oil": 10 / 6},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="2 Oil per unit of Food",
+        description="Farm equipment fuel",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 1.0},
+        inputs={"Oil": 10 / 3},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="1 Oil per unit of Fish",
+        description="Fishing fleet fuel",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Produce",
+        inputs={"Oil": 5.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Field produce; Horticulturalists improve the line",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Meat",
+        inputs={"Grain": 40.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Livestock consume Grain feedstock",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Food",
+        inputs={"Grain": 1.0, "Produce": 1.0, "Fish": 1.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Packaged balanced meals from Grain + Produce + Fish or Meat",
     ),
 
     # ----- Miner -----------------------------------------------------------
@@ -364,12 +400,12 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Transporter -----------------------------------------------------
     ProductionRecipe(
         role="Transporter", output="Freight",
-        inputs={"Oil": 0.5, "Fish": 0.2},
+        inputs={"Oil": 0.5, "Food": 0.2},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
     ProductionRecipe(
         role="Transporter", output="PassengerSeats",
-        inputs={"Oil": 0.4, "Fish": 0.25},
+        inputs={"Oil": 0.4, "Food": 0.25},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
 

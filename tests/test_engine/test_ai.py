@@ -125,7 +125,7 @@ def test_transporter_ai_lists_passenger_seats_after_production():
     market = Market()
     transporter = make_player(1, "Transporter AI", ["Transporter"])
     transporter.receive_resources(ResourceType.OIL, 4)
-    transporter.receive_resources(ResourceType.FISH, 2)
+    transporter.receive_resources(ResourceType.FOOD, 2)
 
     ai.take_turn(
         transporter,

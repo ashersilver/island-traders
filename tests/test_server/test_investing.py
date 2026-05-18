@@ -313,24 +313,29 @@ def test_player_capacity_returns_per_output_data():
         player_id=0, name="Test Farmer", roles=[ROLES["Farmer"]],
         dollops=100.0,
     )
-    # Capital: 1 Tractor (100 Food cap), 1 Fishing Boat (40 Fish cap)
+    # Capital: 1 Tractor, 1 Fishing Boat, 1 Industrial Kitchen
     p.add_capital("farmer.tractor", 1)
     p.add_capital("farmer.fishing_boat", 1)
+    p.add_capital("farmer.industrial_kitchen", 1)
     # Workforce: 1 Manager + 1 Technician + 3 Workers
     p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
     p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
-    # Inputs: enough Oil for Food and Fish
+    # Inputs: enough Oil for raw lines and balanced ingredients for packaged Food
     p.receive_resources(ResourceType.OIL, 30)
     p.receive_resources(ResourceType.FISH, 5)
+    p.receive_resources(ResourceType.GRAIN, 5)
+    p.receive_resources(ResourceType.PRODUCE, 5)
 
     mgr = GameManager()
     cap = mgr._player_capacity(p)
 
-    # Should report both Food and Fish outputs (Farmer recipes)
+    # Should report packaged Food plus raw Farmer outputs.
     output_names = {o["output"] for o in cap["outputs"]}
     assert "Food" in output_names
     assert "Fish" in output_names
+    assert "Grain" in output_names
+    assert "Produce" in output_names
 
     # Capital portfolio includes both items
     owned_ids = {it["item_id"] for it in cap["capital_owned"]}
@@ -349,7 +354,7 @@ def test_player_capacity_returns_per_output_data():
     # Shortage labels now use profession-specific titles (2026-05-15 playtest
     # change) rather than generic band names — for the Farmer the primary
     # Technician title is "Farming Technician" and the Worker is "Farmhand".
-    assert food["workforce_short"] == {"Farming Technician": 3.0, "Farmhand": 7.0}
+    assert food["workforce_short"] == {"Farming Technician": 1.0, "Farmhand": 2.0}
 
     fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
     assert fish["binding"] == "workforce"
@@ -369,7 +374,8 @@ def test_player_capacity_surfaces_equipment_shortfall_options():
     p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
     p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
-    p.receive_resources(ResourceType.OIL, 30)
+    p.receive_resources(ResourceType.GRAIN, 5)
+    p.receive_resources(ResourceType.PRODUCE, 5)
     p.receive_resources(ResourceType.FISH, 5)
 
     cap = GameManager()._player_capacity(p)
@@ -378,7 +384,7 @@ def test_player_capacity_surfaces_equipment_shortfall_options():
     assert food["binding"] == "equipment"
     assert food["blockers"] == ["equipment"]
     assert food["equipment_short"]["needed_capacity"] == 25.0
-    assert food["equipment_short"]["options"][0]["item_id"] == "farmer.tractor"
+    assert food["equipment_short"]["options"][0]["item_id"] == "farmer.industrial_kitchen"
     assert food["equipment_short"]["options"][0]["count"] == 1
 
 

@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 class ResourceType(str, Enum):
     FOOD              = "Food"
     FISH              = "Fish"
+    GRAIN             = "Grain"
+    PRODUCE           = "Produce"
+    MEAT              = "Meat"
     ORE               = "Ore"
     METAL             = "Metal"
     OIL               = "Oil"
