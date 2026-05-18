@@ -93,33 +93,41 @@ don't combine the phases.
 - [x] Update RULES.md / README.md / constants / event charts / board
       labels.  Banker input + Educator output are now "Expertise".
 
-#### Phase 2 — Courses + new training flow
-- [ ] Add `ResourceType.COURSES` (new tradable resource, base price ≈ 25 Dp)
-- [ ] New Education recipe: Courses production consumes Expertise as an input
-- [ ] Add `Profession.INSTRUCTOR` (Technician); consider consolidating
-      Tutor → Instructor (open question in the spec)
-- [ ] Training requests debit 1 Course from Educator inventory on approval;
+#### Phase 2 — Courses + new training flow ✅ (done — claude/education-phase2)
+- [x] Add `ResourceType.COURSES` (new tradable resource, base price 25 Dp)
+- [x] New Education recipe: Courses production consumes Expertise as an input
+- [x] `Profession.TUTOR` → `Profession.INSTRUCTOR` consolidation
+- [x] Training requests debit `ceil(trainees/12)` Courses on approval;
       no Courses → request stays pending
-- [ ] `UNIVERSITY_CAPACITY` re-segments: Manager-tier training gated by
-      Professors; Technician-tier training gated by Instructors
-- [ ] `STARTING_WORKFORCE[Educator] = 8`: 4 Professors + 4 Instructors
-- [ ] `STARTING_INVENTORY[Educator]` += 6 Expertise + 5 Courses
-- [ ] Self-training (Educator training its own workforce) still consumes a
-      Course but skips fees and transport — coordinate with the related Bug
-      entry above
+- [x] `STARTING_WORKFORCE[Educator] = 8`: 4 Professors + 4 Instructors
+- [x] `STARTING_INVENTORY[Educator]` += Expertise + 5 Courses
+- [x] Self-training consumes a Course but skips fees and transport
+- [ ] *(Phase 3 correction)* Phase 2 Course-debit currently applies to
+      **all** tiers; Phase 3 scopes it to Manager-tier only
 
-#### Phase 3 — Training cost components (#18)
-- [ ] Course duration varies by profession: Doctor=4, Engineer/Banker/
-      Professor/Lecturer/Logistics Manager/Farmer/Miner=2, Nurse=1,
-      Technicians=1 with apprenticeship facility (2 without)
-- [ ] **Expertise consumption: 1 Expertise per trainee per season**
-      (so a Doctor batch of 2 trainees consumes 4×2 = 8 Expertise)
+#### Phase 3 — Training cost components + apprenticeship pipeline (#18) ⏳ NEXT
+*(All decisions ruled 2026-05-17 — see `requirements/education-model.md`.)*
+- [ ] Scope Phase-2 Course-debit to **Manager-tier only** (decision (a):
+      Courses ≠ apprenticeship; non-overlapping pipelines)
+- [ ] Technician training → **apprenticeship slot pool**
+      (`educator.apprenticeship_programme`) + Instructor (trainer) gate,
+      **not** Course-gated
+- [ ] Apprentice: **1 season away** at Education, then **75% productivity
+      for exactly one season** on the home island, then 100%
+      (`APPRENTICESHIP_SEASONS` away-duration → 1; add the settling ramp)
+- [ ] Course duration by profession: **Doctor = 3**, other Managers = 2,
+      Nurse = 1  →  `EDUCATION_SEASONS[DOCTOR]` 2 → 3
+- [ ] **Expertise consumption: 1 Expertise per Course per season**
+      (per Course, *not* per trainee — up to 12 share one Course)
 - [ ] Food & accommodation cost: 5 Dp per trainee per season at college
-- [ ] Apprenticeship Facility — new capital item flag
-      `provides_apprenticeship_facility: bool` reducing Technician
-      training to 1 season (else +1 season at 50% productivity on return)
+- [ ] **Campus load**: visiting trainees raise the Education Island's
+      marginal sustenance demand via the new balance-aware model
+      (`production-capacity-model.md §21`) — do NOT reuse the legacy
+      Food/Fish path
 - [ ] `_action_request_training` fee suggestion includes all cost
-      components (base fee + food/accom + tickets + expertise units)
+      components (base fee + food/accom + tickets + expertise/Course)
+- [ ] Drop the `provides_apprenticeship_facility` flag and the in-house
+      sellable-token idea (both ruled out 2026-05-17)
 
 ### Medical & Laboratory Island
 See [`requirements/medical-laboratory.md`](requirements/medical-laboratory.md)
