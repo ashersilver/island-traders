@@ -8,7 +8,7 @@ from .profession import Profession
 from .insurance import InsurancePolicy
 from ..constants import (
     PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, UNSKILLED_RECRUITMENT_RATIO,
-    FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
+    FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES, BASE_POPULATION_SELF_FED,
 )
 
 
@@ -206,12 +206,23 @@ class Player:
                 totals[r] = totals.get(r, 0) + qty
         return totals
 
-    def population_food_fish_needs(self) -> dict[ResourceType, int]:
-        """Seasonal food demand from residents, with extra fish demand from higher incomes."""
+    def population_food_fish_needs(
+        self, extra_residents: int = 0
+    ) -> dict[ResourceType, int]:
+        """Seasonal sustenance demand.
+
+        The first ``BASE_POPULATION_SELF_FED`` permanent residents are assumed
+        to be fed locally and generate no marginal market Food demand.
+        ``extra_residents`` adds transient mouths, such as visiting trainees,
+        without mutating resident population; they always count as marginal
+        demand above the self-fed baseline.
+        """
         population = max(0, self.population)
+        transient_residents = max(0, extra_residents)
+        marginal_food_residents = max(0, population - BASE_POPULATION_SELF_FED)
         bands = self.workforce.band_summary()
         educated_workers = bands.get("Manager", 0) + bands.get("Technician", 0)
-        food = max(1, ceil(population / 50)) if population else 0
+        food = marginal_food_residents + transient_residents
         fish = ceil(population / 100) + ceil(educated_workers / 8)
         return {
             ResourceType.FOOD: food,

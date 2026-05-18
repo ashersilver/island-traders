@@ -4,12 +4,27 @@ from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 
 
-def test_population_food_need_scales_with_population():
-    small = Player(1, "Small", [ROLES["Farmer"]], 100.0, population=20)
-    large = Player(2, "Large", [ROLES["Farmer"]], 100.0, population=120)
+def test_population_at_self_fed_baseline_has_no_marginal_food_need():
+    baseline = Player(1, "Baseline", [ROLES["Farmer"]], 100.0, population=100)
 
-    assert small.population_food_fish_needs()[ResourceType.FOOD] == 1
-    assert large.population_food_fish_needs()[ResourceType.FOOD] == 3
+    assert baseline.population_food_fish_needs()[ResourceType.FOOD] == 0
+
+
+def test_population_growth_above_baseline_adds_marginal_food_need():
+    grown = Player(2, "Grown", [ROLES["Farmer"]], 100.0, population=120)
+
+    assert grown.population_food_fish_needs()[ResourceType.FOOD] == 20
+
+
+def test_extra_residents_add_transient_food_need_without_mutating_population():
+    campus = Player(3, "Campus", [ROLES["Educator"]], 100.0, population=100)
+
+    default_need = campus.population_food_fish_needs()[ResourceType.FOOD]
+    with_visitors = campus.population_food_fish_needs(extra_residents=7)[ResourceType.FOOD]
+
+    assert default_need == 0
+    assert with_visitors == 7
+    assert campus.population == 100
 
 
 def test_educated_workforce_increases_fish_need():
