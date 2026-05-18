@@ -5,6 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-brief-sustenance
+
+Branch: `claude/codex-brief-sustenance`
+Target: `pre-release`
+
+**Docs-only.** Adds `requirements/codex-tasks/sustenance-model.md` — a
+self-contained Codex hand-off to implement the §21 balance-aware
+sustenance model (and the standing RULES.md Doctor-workforce fix) in
+parallel with Education Phase 3. Defines the campus-load interface seam
+and an explicit file-ownership split so the two tracks merge cleanly.
+No code or test changes (suite unchanged at 283).
+
 ### claude/docs-phase3-reconcile
 
 Branch: `claude/docs-phase3-reconcile`
