@@ -284,6 +284,21 @@ class TrainingRegistry:
             r.status = TrainingStatus.COMPLETED
         return due
 
+    def drop_worker(self, worker_id: int) -> None:
+        """Remove a worker from any non-terminal training request.
+
+        Used when a worker retires while away at training: they no
+        longer exist, so they must not 'return'.  A request left with
+        no workers is rejected (frees its slot/Course accounting).
+        """
+        for r in self._requests:
+            if r.status in (TrainingStatus.COMPLETED, TrainingStatus.REJECTED):
+                continue
+            if worker_id in r.worker_ids:
+                r.worker_ids = [w for w in r.worker_ids if w != worker_id]
+                if not r.worker_ids:
+                    r.status = TrainingStatus.REJECTED
+
     def technician_trainees_in_flight(self, educator_id: int) -> int:
         """Trainees occupying this Educator's apprenticeship slot pool.
 

@@ -298,6 +298,31 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
 }
 
+# ---------------------------------------------------------------------------
+# Worker lifecycle (economy-lifecycle Phase B)
+# ---------------------------------------------------------------------------
+
+# Working life in seasons per worker band; a worker retires (is removed
+# from the roster — the seat must be re-recruited + retrained) once their
+# age reaches this.  First-cut tunable (accepted 2026-05-19).
+WORKING_LIFE_SEASONS: dict[str, int] = {
+    "Manager":    40,   # ~10 years
+    "Technician": 32,   # ~8 years
+    "Worker":     24,   # ~6 years (Unskilled)
+}
+DEFAULT_WORKING_LIFE_SEASONS: int = 32
+
+# Bootstrap seeding: starting workers of (role → profession) begin this
+# many seasons *from retirement* (seed age = working_life(band) − value).
+# Phase B activates Agriculture only; other islands default to age 0.
+# This is also the model's near-retirement balance lever.
+STARTING_WORKER_AGES: dict[str, dict[str, int]] = {
+    "Farmer": {
+        "Farmer":          4,   # Manager ~1 year from retirement
+        "Horticulturalist": 8,  # Technician ~2 years from retirement
+    },
+}
+
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
 # "Skilled" means a worker whose profession appears in SKILLED_PROFESSIONS for that role.
 # The seasonal SEASONAL_WORKFORCE totals scale these requirements up/down by season.

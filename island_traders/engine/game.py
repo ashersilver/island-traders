@@ -9,7 +9,7 @@ from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.profession import Profession
+from ..models.profession import Profession, band_of
 from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
@@ -20,6 +20,7 @@ from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
     STARTING_WORKERS_BY_PROFESSION,
+    WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
@@ -117,9 +118,21 @@ class Game:
                 profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
 
                 allocated = 0
+                role_age_seed = STARTING_WORKER_AGES.get(rname, {})
                 for profession_name, count in profession_breakdown:
                     scaled_count = max(1, round(count * workforce_scale))
-                    player.workforce.add_workers(scaled_count, training_level=1, profession=profession_name)
+                    seed_age = 0
+                    seasons_left = role_age_seed.get(profession_name)
+                    if seasons_left is not None:
+                        life = WORKING_LIFE_SEASONS.get(
+                            band_of(profession_name).value,
+                            DEFAULT_WORKING_LIFE_SEASONS,
+                        )
+                        seed_age = max(0, life - seasons_left)
+                    player.workforce.add_workers(
+                        scaled_count, training_level=1,
+                        profession=profession_name, age_seasons=seed_age,
+                    )
                     allocated += scaled_count
 
                 # Remaining slots are Unskilled
@@ -148,6 +161,7 @@ class Game:
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
+                self._process_retirements(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters
                 )
@@ -195,6 +209,27 @@ class Game:
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
+
+    def _process_retirements(self, year: int, season: int) -> None:
+        """Age every island's workers one season; remove retirees.
+
+        A worker away at training who retires is also dropped from its
+        training batch so it cannot 'return' (it no longer exists).
+        """
+        for player in self.players:
+            retired = player.workforce.advance_age_and_retire(
+                WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS
+            )
+            if not retired:
+                continue
+            for w in retired:
+                if w.in_training:
+                    self.training.drop_worker(w.worker_id)
+            professions = ", ".join(sorted({w.profession for w in retired}))
+            self.io.print(
+                f"\n[RETIREMENT] {player.name}: {len(retired)} worker(s) "
+                f"retired ({professions}). Recruit + retrain to replace."
+            )
 
     def _process_training_returns(self, year: int, season: int) -> None:
         player_map = {p.player_id: p for p in self.players}
@@ -316,6 +351,7 @@ class Game:
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
                         "settling_seasons": w.settling_seasons,
+                        "age_seasons": w.age_seasons,
                         "profession": w.profession,
                     }
                     for w in p.workforce.workers
@@ -434,6 +470,7 @@ class Game:
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
                     settling_seasons=w.get("settling_seasons", 0),
+                    age_seasons=w.get("age_seasons", 0),
                     profession=w.get("profession", Profession.UNSKILLED.value),
                 )
                 for w in wf_data.get("workers", [])
