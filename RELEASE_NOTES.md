@@ -5,6 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/rules-training-reconcile
+
+Branch: `claude/rules-training-reconcile`
+Target: `pre-release`
+
+**Docs-only** (RULES.md). No code/test changes (suite unchanged at
+297). Reconciles the player-facing rulebook's training chapter with the
+shipped Education Phase 1–3 + personnel-sidebar mechanics — it had been
+left describing the pre-Phase-3 model.
+
+- **Two-pipeline model documented:** Manager-tier = Course-gated
+  university (1 Course per class ≤12); Technician-tier = Apprenticeship
+  Programme slot-pool + Instructor gated, never Course-gated.
+- **Profession-dependent durations** added to the capacity table
+  (Doctor **3** seasons away, other Managers 2, Nurse 1, all Technicians
+  1) and the full annual-quota table now lists every profession
+  (previously a stale "caps added in a future balance pass" note).
+- **Apprenticeship settling season** (1 season home @ 75% before 100%),
+  **itemised fee** (base + food/accom 5 Dp/trainee/season + ticket +
+  Manager-tier Expertise), **campus load**, and the **"All visible
+  skill deficits"** bundled-request option all documented.
+- Steps rewritten (the old duplicated "Educator Approval" Steps 2 & 4
+  and the charter-flight-as-default were inaccurate); air ticket is now
+  correctly the default transport. Quick Reference transport block
+  aligned.
+- Stale fixes: Educator starting workforce `4 → 8` (4 Professors + 4
+  Instructors); profession table `Tutor → Instructor`; turn-action
+  one-liner no longer claims "one season".
+
+Clears the second-order release-gate item flagged in
+`claude/release-prep` — the v0.1.0 rulebook training chapter is now
+trustworthy. (Balance calibration remains the outstanding release
+blocker.)
+
 ### claude/release-prep
 
 Branch: `claude/release-prep`
