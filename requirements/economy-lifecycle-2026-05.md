@@ -153,7 +153,12 @@ visible `maintenance_per_season` (default ≈ `0.03 × 90 ≈ 3 Dp`/season,
 
 ---
 
-## 3. Banker MBA gate
+## 3. Banker capital-reserve & MBA model
+
+> **Supersedes** the earlier "no loans without 3 MBAs" binary gate.
+> Product-owner refinement 2026-05-18: this is a **fractional-reserve /
+> capital-adequacy** model. The MBA does not switch lending on/off — it
+> lowers the reserve ratio, i.e. raises the bank's lending **leverage**.
 
 ### Credential
 
@@ -167,30 +172,96 @@ A distinct University request (not a normal profession change):
 - Target = the MBA credential on existing Banker Managers (they keep the
   `Banker` profession; `has_mba` flips true on completion).
 - Gate: **2 Professors** of University capacity **+ 3 Courses** consumed
-  per MBA batch (class-size rule still applies for >12, but MBA cohorts
-  are tiny). Manager-tier pipeline (Course-gated), **2 seasons away**.
-- Reuses the Phase 1–3 plumbing
+  per MBA batch. Manager-tier pipeline (Course-gated), **2 seasons
+  away**. Reuses the Phase 1–3 plumbing
   (`_training_capacity_status`/`_consume_training_capacity`,
-  `away_seasons`) with an MBA-specific branch:
-  `courses_needed = 3` per batch and a `professors_required = 2`
-  capacity check.
+  `away_seasons`) with an MBA branch: `courses_needed = 3`,
+  `professors_required = 2`.
 
-### Loan gate
+### Capital-reserve model (how loans are funded)
 
-`_action_offer_loan` (and the AI loan path) is blocked unless the
-Banking Island's **active workforce has ≥3 Manager-band `Banker`
-workers with `has_mba == True`**. Message:
-`"Cannot issue loans: Banking Island needs ≥3 MBA-qualified managers (has N)."`
+The bank lends a mix of **its own capital** and **externally-sourced
+capital** (depositors — invisible counterparties). It must back each
+loan with own capital at a **reserve ratio** that depends on MBA depth:
 
-### Bootstrap (so Banking isn't bricked at turn 1)
+| Banking Island state | Reserve ratio `r` | Leverage on own capital |
+|---|---|---|
+| < 3 MBA-qualified Banker Managers | **0.50** | ≈ 2× |
+| ≥ 3 MBA-qualified Banker Managers | **0.20** | ≈ 5× |
 
-Banker starting roster today is 1 Banker + 1 Analyst + 1 Clerk + 1
-Unskilled. To lend from turn 1 it must start with **3 Banker Managers,
-all `has_mba=True`, seeded near retirement** (per the bootstrap-lever
-philosophy) so Banking can lend immediately but must train MBA
-replacements within ~1–2 years or lose lending. Updates
-`STARTING_WORKERS_BY_PROFESSION["Banker"]` and the age/MBA seeding
-tables.
+(`MBA_RESERVE_RATIO_BASE = 0.50`, `MBA_RESERVE_RATIO_QUALIFIED = 0.20`,
+`MBA_QUALIFIED_THRESHOLD = 3` — all tunable.)
+
+On issuing a loan of principal **P** at the prevailing posted funding
+rate `posted` (the rate *at issuance*) and quoted loan rate
+`loan = posted + spread + risk_premium` (the existing
+`banker_quote_rate`; bullet bond, borrower repays `P·(1+loan)` at
+maturity):
+
+- **Own capital committed (reserved):** `own = r · P`. The bank must
+  have ≥ `own` free Dp; that amount is **locked** (cannot be re-lent or
+  spent) until the loan resolves. This is what makes pre-MBA lending
+  genuinely capital-constrained — with ~1500 Dp and `r=0.5` a fresh
+  bank can carry only ~3000 Dp of loans until it trains MBAs.
+- **Externally sourced:** `ext = (1 − r) · P`. The borrower still
+  receives the full **P**; `ext` is funded off-screen by depositors.
+
+### Returns to the bank
+
+At maturity (borrower pays `P·(1+loan)`):
+
+- **Full interest on own capital:** `own · loan`.
+- **Margin only on external capital:** `ext · (loan − posted)` — the
+  bank pays depositors the prevailing rate `posted` (locked at
+  issuance) and keeps the spread+risk margin.
+- Reserved `own` is released back to free Dp.
+- Net loan profit = `own·loan + ext·(loan − posted)`
+  ≡ `P·loan − ext·posted`.
+
+> **Default handling:** on borrower default the bank loses the committed
+> `own` (and still owes depositors `ext·(1+posted)`) — extends the
+> existing default path; models real downside so leverage isn't free.
+
+> **"Own capital" = the Banker player's Dollops** for now. A dedicated
+> Banker institutional pool is future work (`requirements/island-ledger.md`);
+> the reserve accounting here is forward-compatible with it.
+
+### No bootstrap — Banking starts unleveraged (intentional)
+
+Banking starts with its normal roster and **zero MBA-qualified
+managers**. It can still lend, but only at `r = 0.50` — deliberately
+limited early-game (the product-owner's intended constraint). It must
+train **3 MBAs** (2 Professors + 3 Courses, 2 seasons each — a real
+Education dependency + cost + lead time) to reach `r = 0.20` and scale.
+No `has_mba` seeding on the Banker starting roster.
+
+### Loan processing latency (computing centre)
+
+New Banker capital item **`banker.computing_centre`** (cost ~80 Dp,
+`delivery_seasons` per catalogue norms — tunable). It is subject to the
+Phase C capital lifecycle (lifespan + maintenance):
+
+- **Without an in-service computing centre:** a loan **application** is
+  submitted one season and **funds disburse the following season**
+  (1-season processing delay; reuses the training-style
+  request→pending→resolve-next-season pattern). Reserve capital is
+  committed at disbursement, not application.
+- **With an in-service computing centre:** same-season disbursement.
+- If the computing centre is unmaintained/expired (Phase C), latency
+  reverts to 1 season — an ongoing reason to keep it serviced.
+
+### Touch points
+
+`models/loan.py` (Loan record gains `principal`, `own_committed`,
+`external_funded`, `posted_at_issue`, `loan_rate`, `reserve_ratio`,
+processing-state; `LoanLedger` tracks locked own-capital per Banker),
+`engine/turn.py` `_action_offer_loan` / take-loan / repayment / AI loan
+path, `constants.py` (reserve ratios + threshold), `constants_capacity.py`
+(`banker.computing_centre`).
+
+> **Phase D may split:** **D1** = reserve model + MBA leverage +
+> credential/training; **D2** = computing-centre processing latency.
+> D1 is the balance-critical piece; D2 is an independent enhancement.
 
 ---
 

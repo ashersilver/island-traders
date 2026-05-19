@@ -200,12 +200,21 @@ Banker/Farmer over-dominance — calibrate AFTER A–D land.**
       expiry removes unit (repurchase from Manufacturer)
 - [ ] `farmer.harvester` service life = 8 (combine, ~2 yr) + start aged
 
-#### Phase D — Banker MBA gate
+#### Phase D — Banker capital-reserve & MBA model
+*(Fractional-reserve model, supersedes the binary "no loans w/o MBA"
+gate.)*  May split D1 (reserve model — balance-critical) / D2
+(computing-centre latency).
 - [ ] `Worker.has_mba`; MBA training branch (2 Professors + 3 Courses,
       2 seasons, Course-gated Manager pipeline)
-- [ ] `_action_offer_loan` + AI loan path blocked unless ≥3 MBA Banker
-      Managers active
-- [ ] Banking bootstrap roster: 3 MBA Banker Managers, near-retirement
+- [ ] Reserve model: own capital backs loans at `r` = **0.50** (<3 MBA
+      managers) / **0.20** (≥3); reserved own-capital locked until loan
+      resolves; external funds the rest
+- [ ] Returns: full interest on own capital + margin `(loan−posted)`
+      on external; default loses committed own capital
+- [ ] **No** Banking MBA bootstrap — starts with 0 MBA managers,
+      `r=0.50` (intentional early constraint), trains up to scale
+- [ ] D2: `banker.computing_centre` capital — without it, loan
+      application takes +1 season to disburse (Phase C lifecycle applies)
 
 #### Phase E — RULES.md + calibration handoff
 - [ ] Document all four mechanics in RULES.md

@@ -16,12 +16,21 @@ cross-island economic-dependency feature set:
 
 - New `requirements/economy-lifecycle-2026-05.md`: worker
   lifecycle/retirement (general age system, Agriculture bootstrap),
-  universal capital lifespan + per-season maintenance, Banker MBA
-  loan-gate (credential on existing Banker Managers; 2 Professors + 3
-  Courses, 2 seasons; ≥3 MBA managers to lend), and an economy
-  rebalance (per-player cash 700→1500, Mining Oil 4→8, Agriculture
-  Food →15). Phased A–E, independently mergeable; A–D engine work,
-  E = RULES.md + calibration handoff.
+  universal capital lifespan + per-season maintenance, a Banker
+  **capital-reserve / MBA leverage** model, and an economy rebalance
+  (per-player cash 700→1500, Mining Oil 4→8, Agriculture Food →15).
+  Phased A–E, independently mergeable; A–D engine work, E = RULES.md +
+  calibration handoff.
+- **Banker model (refined 2026-05-18):** fractional-reserve, not a
+  binary gate. Loans are backed by the bank's own capital at a reserve
+  ratio (**0.50** with <3 MBA Banker Managers, **0.20** with ≥3); own
+  capital earns full interest, externally-sourced capital earns only
+  the margin over the posted rate at issuance; reserved own capital is
+  locked until the loan resolves. Banking starts with **0** MBA
+  managers (intentional early constraint, ~2× leverage) and trains up
+  (2 Professors + 3 Courses, 2 seasons) to ~5×. Without a
+  `banker.computing_centre` capital item, loan applications take +1
+  season to disburse. No MBA bootstrap roster.
 - `TODO.md`: Economy Lifecycle section with the A–E checklist.
 - Annotates `codex-tasks/balance-calibration-2026-05.md` with a
   **sequencing dependency**: calibration must run *after* economy
