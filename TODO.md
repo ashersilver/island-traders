@@ -213,8 +213,16 @@ gate.)*  May split D1 (reserve model — balance-critical) / D2
       on external; default loses committed own capital
 - [ ] **No** Banking MBA bootstrap — starts with 0 MBA managers,
       `r=0.50` (intentional early constraint), trains up to scale
+- [ ] Loan negotiation: Banker may quote ANY rate (formula = suggested
+      default); applicant **counter-offer** loop (reuse training
+      counter pattern); AI uses fair-rate thresholds
+- [ ] Loan **terms** 1/2/3 yr; 2/3-yr = interest settled annually,
+      principal rolled at **original amount + original rate** until
+      final year (rate locked at origination). Distinct from shipped
+      #6 `ROLLOVER_LOAN` (post-maturity opt-in fresh-rate refinance)
 - [ ] D2: `banker.computing_centre` capital — without it, loan
       application takes +1 season to disburse (Phase C lifecycle applies)
+- [ ] D2: indicative 1/2/3-yr term-rate quotes surfaced in loan UI
 
 #### Phase E — RULES.md + calibration handoff
 - [ ] Document all four mechanics in RULES.md
@@ -261,6 +269,12 @@ See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the ful
 
 ### Dashboard & UX
 
+- [ ] **Role-player guides** — on-demand per-role instruction beyond
+      the acquisition intro (esp. Banker lending/reserve/MBA rules).
+      See [`requirements/role-player-guides.md`](requirements/role-player-guides.md).
+      Single content source (intro + guide + RULES.md); schedule after
+      economy-lifecycle Phase D, pair with Phase E RULES.md pass;
+      candidate Codex docs/UX task.
 - [x] **#1 — Pause game** — host-only pause/resume; freezes all timers (auction/investing/season-action/pre-season); full-screen overlay; ready submissions queued during pause and processed on resume
 - [ ] **#3 — Action alerts / event subscriptions** — chips on the log panel to filter by event type; popup notification when a subscribed event fires. *(See also `inbox.md` event-filtering requirement.)*
 - [ ] **#7 — All-player summary on island layout** — overlay player values (wealth, output, workforce) on the island map SVG

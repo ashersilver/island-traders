@@ -31,6 +31,18 @@ cross-island economic-dependency feature set:
   (2 Professors + 3 Courses, 2 seasons) to ~5×. Without a
   `banker.computing_centre` capital item, loan applications take +1
   season to disburse. No MBA bootstrap roster.
+- **Loan terms & negotiation (refined 2026-05-19):** Banker may quote
+  any rate (formula = suggested default) and the applicant can
+  **counter** (reuses the training counter pattern); indicative
+  **1/2/3-year** term-rate quotes; 2/3-year loans settle interest
+  annually and roll the **original amount at the original rate** until
+  the final year (rate locked at origination) — distinct from the
+  shipped #6 post-maturity opt-in refinance.
+- New `requirements/role-player-guides.md`: on-demand per-role
+  instruction beyond the acquisition intro (esp. the Banker lending
+  rules), single content source shared with RULES.md; scheduled after
+  economy Phase D / paired with Phase E. TODO entry under Dashboard &
+  UX.
 - `TODO.md`: Economy Lifecycle section with the A–E checklist.
 - Annotates `codex-tasks/balance-calibration-2026-05.md` with a
   **sequencing dependency**: calibration must run *after* economy

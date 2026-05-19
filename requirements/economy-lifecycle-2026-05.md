@@ -250,12 +250,55 @@ Phase C capital lifecycle (lifespan + maintenance):
 - If the computing centre is unmaintained/expired (Phase C), latency
   reverts to 1 season — an ongoing reason to keep it serviced.
 
+### Loan negotiation, term quotes & rollover (refinement 2026-05-19)
+
+**Free pricing + applicant counter.** The Banker may quote **any**
+interest rate it likes (the `banker_quote_rate` formula becomes a
+*suggested* default, not a cap). The loan flow gains a
+**counter-offer** loop: the applicant can counter the rate; the Banker
+accepts/re-counters/declines — the same negotiation pattern already
+used for training requests (`educator_counter` /
+`requester_accept_counter`). Both AI sides use the existing fair-rate
+heuristics as their accept thresholds.
+
+**Indicative term quotes.** The Banker can publish indicative rates for
+**1-, 2- and 3-year** terms (what it is *seeking* per term) — surfaced
+in the loan UI / barter board so applicants see the term curve before
+applying. Indicative only; the actual rate is set per loan via the
+negotiation above.
+
+**Loan terms & the simple rollover rule.** Loans carry a **term of 1,
+2 or 3 years**:
+
+- **1-year:** the existing bullet — repay `principal · (1 + rate)` at
+  maturity (one year out).
+- **2- or 3-year:** **interest is settled annually**; the **principal
+  is rolled over for the original amount at the original rate** each
+  year until the final year, when the principal is repaid. The rate is
+  **locked at origination** for the whole term (no annual re-quote).
+
+> **Interaction with shipped #6 (`ROLLOVER_LOAN`).** The existing
+> roll-over action re-issues at a *fresh* `banker_quote_rate`. The new
+> rule makes multi-year rollover **automatic, original-amount,
+> original-rate** for the loan's contracted term. Recommendation:
+> keep `ROLLOVER_LOAN` as the *post-maturity, opt-in* refinance (fresh
+> rate) it is today; the new rule governs *within-term* annual
+> servicing of 2/3-year loans. The reserve accounting (own capital
+> locked, full interest on own / margin on external) applies each year
+> the principal remains outstanding. Flag for product-owner confirm:
+> does annual interest also split own/external the same way? (Default
+> assumption: yes — same split each serviced year.)
+
+> Part of **Phase D1** (it is core loan economics), except the indicative
+> term-quote UI which can ride with **D2**.
+
 ### Touch points
 
 `models/loan.py` (Loan record gains `principal`, `own_committed`,
 `external_funded`, `posted_at_issue`, `loan_rate`, `reserve_ratio`,
-processing-state; `LoanLedger` tracks locked own-capital per Banker),
-`engine/turn.py` `_action_offer_loan` / take-loan / repayment / AI loan
+`term_years`, processing-state, per-year servicing; `LoanLedger` tracks
+locked own-capital per Banker), `engine/turn.py` `_action_offer_loan` /
+take-loan / counter-offer / repayment / annual-servicing / AI loan
 path, `constants.py` (reserve ratios + threshold), `constants_capacity.py`
 (`banker.computing_centre`).
 
