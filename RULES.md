@@ -92,7 +92,7 @@ Each player begins the game with:
 | Farmer | 6 | 1 Farmer, 1 Farming Technician, 1 Veterinarian, 3 Unskilled | 60% | ~100 |
 | Miner | 5 | 1 Miner, 1 Mining Technician, 1 Oil Extraction Worker, 2 Unskilled | 50% | ~100 |
 | Transporter | 4 | **1 Logistics Manager, 1 Flight Crew, 1 Seaman, 1 Warehouse Manager** | 65% | ~100 |
-| Educator | 4 | 1 Professor, 2 Tutors, 1 Unskilled | 55% | ~100 |
+| Educator | 8 | 4 Professors, 4 Instructors | 55% | ~100 |
 | Banker | 4 | 1 Banker, 1 Banking Analyst, 1 Banking Clerk, 1 Unskilled | 70% | ~100 |
 | Manufacturer | 5 | 1 Engineer, 1 Assembly Worker, 1 Mechanic, 2 Unskilled | 50% | ~100 |
 | Doctor | 6 | 2 Doctors, 2 Nurses, 2 Medical Orderlies | 55% | ~100 |
@@ -219,7 +219,7 @@ On your turn you may take **any number of actions** in any order:
 | **Propose Deal** | Offer a peer-to-peer trade directly to another player — any combination of resources, quantities, and a Dollop sweetener. |
 | **Purchase Capital** | Buy named capital equipment from the Manufacturer (e.g. Farm Machinery, Mining Equipment, Lab Equipment).  Complex items have a 2-season delivery delay. |
 | **Apply Patent** | Activate a Patent from inventory on one of your outputs — permanent –20% input cost on that output (max 3 active patents per output). |
-| **Request Training** | Send workers to the Education Island for one season (requires Educator and Transporter agreement).  Choose the target profession. |
+| **Request Training** | Send workers to the Education Island to train into a profession (duration depends on the profession — see Training).  Choose one target profession, or bundle **all visible skill deficits** in one request. |
 | **Review Training** | *(Educator only)* Approve or reject incoming training requests. |
 | **Arrange Transport** | *(Transporter only)* Accept or counter-offer transport jobs for workers going to college. |
 | **Recruit Workers** | Draw unskilled workers from your island's population into your workforce (1 recruit per 2 unskilled residents). |
@@ -403,7 +403,7 @@ Workers are not generic — each belongs to a **profession** that reflects their
 | **Warehouse Manager** | Technician | Transport | Ground-ops supervisor *(name is industry convention; classified as Technician)* |
 | Professor | Manager | Education | University teaching (max 1 graduate/season) |
 | **Lecturer** | Manager | Education | Faculty teaching staff |
-| **Tutor** | Technician | Education | Apprentice-trained teaching staff |
+| **Instructor** | Technician | Education | Apprenticeship training delivery *(formerly "Tutor")* |
 | Banker | Manager | Banking | Lending, deposits, insurance |
 | **Banking Analyst** | Technician | Banking | Risk and pricing analysis |
 | **Banking Clerk** | Technician | Banking | Operations and account servicing |
@@ -423,81 +423,136 @@ At the end of each year, each island's population grows by up to **2% per year**
 
 ## Training
 
-Training workers requires negotiation between **three parties**: the island sending workers, the **Educator**, and the **Transporter**. It is a multi-turn process:
+Training is a multi-turn process between the island sending workers and the **Educator** (and, only if you choose a Transporter-hauled mode instead of the default Educator-supplied air ticket, the **Transporter**):
+
+### Two training pipelines
+
+A worker's **band** determines how it is trained:
+
+- **Manager-tier** (university) — Doctor, Nurse, Engineer, Farmer, Miner,
+  Banker, Professor, Lecturer, Logistics Manager.  Gated by **Courses**
+  held by the Education Island (1 Course = one class of up to **12**
+  trainees; larger batches split across `⌈trainees ÷ 12⌉` Courses)
+  *and* the per-profession annual quota.
+- **Technician-tier** (vocational apprenticeship) — Farming Technician,
+  Horticulturalist, Veterinarian, Mining Technician, Oil Extraction
+  Worker, Refinery Specialist, Assembly Worker, Mechanic, Flight Crew,
+  Seaman, Warehouse Manager, Banking Analyst, Banking Clerk, Medical
+  Orderly, Instructor.  Gated by the Education Island's **Apprenticeship
+  Programme** capital (an apprenticeship-slot pool) **and** at least one
+  **Instructor** on its workforce — **not** by Courses.
+
+The pipelines are independent: a Manager request never consumes an
+apprenticeship slot, and a Technician request never consumes a Course.
 
 ### Capacity Limits
-The University has **per-profession annual quotas**.  Each profession has a fixed number of graduate places per year.  Some professions also have a stricter per-season cap.
 
-| Profession | Band | Annual cap | Seasonal cap |
-|---|---|---|---|
-| Doctor | M | 2 | — |
-| Nurse | M | 10 | — |
-| Engineer | M | 2 | — |
-| Farmer | M | 2 | — |
-| Miner | M | 2 | — |
-| Banker | M | 2 | — |
-| Professor | M | 4 | **1 per season** |
-| Farming Technician | T | 4 | — |
-| Veterinarian | T | 1 | — |
-| Assembly Worker | T | 10 | — |
-| Mining Technician | T | 4 | — |
-| Oil Extraction Worker | T | 2 | — |
-| Refinery Specialist | T | 2 | — |
-| Mechanic | T | 4 | — |
+The University has a **per-profession annual quota** (plus, for
+Professors, a per-season cap).  Once a profession's annual quota is
+full, no further requests for it can be submitted until the next year.
 
-Once a profession's annual quota is full, no further requests for that
-profession can be submitted until the following year.
+| Profession | Band | Annual cap | Seasonal cap | Seasons away |
+|---|---|---|---|---|
+| Doctor | M | 2 | — | **3** |
+| Nurse | M | 10 | — | 1 |
+| Engineer | M | 2 | — | 2 |
+| Farmer | M | 2 | — | 2 |
+| Miner | M | 2 | — | 2 |
+| Banker | M | 2 | — | 2 |
+| Professor | M | 4 | **1/season** | 2 |
+| Lecturer | M | 4 | — | 2 |
+| Logistics Manager | M | 2 | — | 2 |
+| Farming Technician | T | 4 | — | 1 |
+| Horticulturalist | T | 2 | — | 1 |
+| Veterinarian | T | 1 | — | 1 |
+| Assembly Worker | T | 10 | — | 1 |
+| Mining Technician | T | 4 | — | 1 |
+| Oil Extraction Worker | T | 2 | — | 1 |
+| Refinery Specialist | T | 2 | — | 1 |
+| Mechanic | T | 4 | — | 1 |
+| Flight Crew | T | 6 | — | 1 |
+| Seaman | T | 6 | — | 1 |
+| Warehouse Manager | T | 6 | — | 1 |
+| Banking Analyst | T | 4 | — | 1 |
+| Banking Clerk | T | 6 | — | 1 |
+| Medical Orderly | T | 8 | — | 1 |
+| Instructor | T | 6 | — | 1 |
 
-> **Note on the newly-named professions** (Logistics Manager, Flight Crew,
-> Seaman, Warehouse Manager, Lecturer, Tutor, Banking Analyst, Banking Clerk,
-> Medical Orderly): these arrive on the starting workforce of their home
-> island.  Training caps for these professions will be added in a future
-> balance pass — until then, growth happens by recruiting unskilled workers
-> and training them into the established legacy professions, or by hiring
-> from the population pool directly.
+"Seasons away" is time spent at the Education Island.  Manager durations
+differ by profession (Doctor **3**, Nurse **1**, all other Managers
+**2**).  Every Technician apprenticeship is **1 season away**, followed
+by one **settling season at home at 75% productivity** before reaching
+full output.  Travelling by cargo vessel adds **one extra season** of
+absence on top.
 
 ### Step 1 — Request Training
-On your turn, choose **Request Training**. You specify:
-- The **target profession** for your workers to graduate into (must have remaining university quota)
-- How many workers to send (they must be on your island and not already at Expert level)
-- Which Educator player will train them
-- How many Dollops you offer the Educator
-- How many Dollops you offer the Transporter for moving the workers
 
-Unskilled workers sent to university enter the target profession at Basic level. Workers who already hold that profession advance one level (Basic → Skilled → Expert).
+On your turn, choose **Request Training**.  The screen first reports
+your island's formal-profession **deficits** against its staffing plan.
+You then specify:
 
-Your workers are **not yet absent** at this point.
+- The **target profession** (must have remaining annual quota), **or**
+  select **"All visible skill deficits"** to bundle every currently
+  requestable missing profession into one request — it still resolves
+  into per-profession batches internally so quotas, approval and
+  transport stay explicit.
+- How many workers to send (on your island, not already Expert).
+- Which Educator player will train them, and the Dollops you offer.
+
+Unskilled workers enter the target profession at **Basic**; workers who
+already hold it advance one level (Basic → Skilled → Expert).  Your
+workers are **not yet absent** at this point.
+
+**Suggested fee** (the prompt itemises it): an Educator base fee per
+trainee, **food & accommodation** (5 Dp per trainee per season at
+college), the travel ticket, and — Manager-tier only — the Expertise
+the Course burns.  Self-training (the Educator training its own
+workers) skips the fee and the ticket.
 
 ### Step 2 — Educator Approval
-The Educator reviews the request on their turn and either **approves** (accepts the Dollop payment) or **rejects** it.
 
-- If rejected, your workers stay home and you keep your Dollops.
-- If approved, the Dollops transfer to the Educator and the request moves to Step 3.
+The Educator reviews the request on their turn.  It can only be approved
+when the band gate is satisfied:
 
-### Step 3 — Choose Transport
+- **Manager-tier:** a **Course** is available (auto-split for >12) and
+  the air ticket is in hand.
+- **Technician-tier:** a free **apprenticeship slot** and an
+  **Instructor** are available.
 
-When submitting the request you choose one of three transport modes:
+If the gate isn't met the request stays **pending** (not rejected)
+until capacity frees up — no Dollops or tickets are consumed while
+pending.  On approval the Dollops transfer to the Educator.
 
-| Mode | Cost | Arrival |
+### Step 3 — Transport
+
+Travel is normally by **Educator-supplied air ticket** (one
+PassengerSeats per trainee, return included), so workers depart the
+season the Educator approves.  Alternatives:
+
+| Mode | Cost | Effect |
 |---|---|---|
-| **Charter flight** | 20% of educator fee (paid upfront) | Same season — workers depart immediately on educator approval |
-| **Cargo vessel** | Free for up to 2 passengers | Workers arrive at Education Island **one season late** — total absence is 2 seasons |
-| **Hire Transporter** | Negotiated with the Transporter player | Same season once Transporter agrees |
+| **Air ticket** *(default)* | Included in the fee | Depart on approval |
+| **Cargo vessel** | Free, up to 2 passengers | **+1 extra season** away |
+| **Hire Transporter** | Negotiated with the Transporter | Depart once the Transporter agrees |
 
-> Cargo is cheapest but means your workers are away for two seasons instead of one. Use it in seasons where you can afford the extra absence (e.g. Winter).
+### Step 4 — Departure & Return
 
-### Step 4 — Educator Approval
-The Educator reviews the request on their turn and either **approves** or **rejects** it. On approval, funds transfer immediately.
+Once agreed, workers **depart** and don't count toward your workforce
+while away.  Visiting trainees are **campus load** for the Education
+Island — they raise *its* seasonal Food demand until they go home.
 
-- For **flight** and **cargo** modes, workers depart as soon as the Educator approves (no separate Transporter step).
-- For **Transporter** mode, the request moves to the Transporter for agreement.
+They return at the **start of their return season** (the profession's
+"seasons away"; cargo adds one) with training level **+1**.  Experience
+carries over — they resume from where they left off, with a higher
+efficiency ceiling.  **Technician (apprenticeship) graduates work their
+first home season at 75% productivity** (one settling season) before
+reaching full output; Manager (university) graduates have no settling
+penalty.
 
-### Step 5 — Departure & Return
-Once all parties have agreed, your workers **depart**. They do not count toward your workforce while away.
-
-At the **start of their return season** they come home with training level increased by one. Their experience is unchanged — they develop from where they left off, but the efficiency ceiling is higher.
-
-> **Tip:** Send workers by cargo in Winter (low seasonal demand) to absorb the two-season absence at minimal production cost.
+> **Tip:** Doctors are away **3** seasons — plan the gap.  Send
+> Technicians by cargo in Winter to absorb the extra absence cheaply,
+> and remember the 75% settling season when timing returns for a busy
+> production season.
 
 ---
 
@@ -746,7 +801,7 @@ Bullet bond — pay principal × (1+rate) at maturity, or Roll Over.
 **Insurance refund (Manage Insurance):** `premium × seasons_remaining ÷ total_term`.
 
 **Training transport:**
-- ✈️ Flight: 20% of educator fee, immediate departure
+- 🎫 Air ticket *(default)*: Educator supplies 1 PassengerSeats per trainee (return included), depart on approval
 - 🚢 Cargo vessel: free for ≤ 2 passengers, +1 season delay
 - 🚤 Transporter: negotiated fee, immediate departure
 
