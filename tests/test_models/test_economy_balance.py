@@ -5,9 +5,12 @@ from island_traders.constants import (
 
 
 def test_oil_starting_buffers_reflect_role_demand():
-    """Oil-consuming islands start with at least 2 seasons of Oil."""
+    """Oil-consuming islands start with at least 2 seasons of Oil.
+
+    Miner carries a larger Oil buffer (8) per economy-lifecycle Phase A.
+    """
     assert STARTING_INVENTORY["Farmer"]["Oil"] == 2
-    assert STARTING_INVENTORY["Miner"]["Oil"] == 4
+    assert STARTING_INVENTORY["Miner"]["Oil"] == 8
     assert STARTING_INVENTORY["Transporter"]["Oil"] == 4
     assert STARTING_INVENTORY["Manufacturer"]["Oil"] == 2
     assert STARTING_INVENTORY["Miner"]["Metal"] == 2

@@ -4,8 +4,8 @@ CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
 
-STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 total)
-TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
+STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
+TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 BASE_POPULATION_SELF_FED: int = 100
 
@@ -20,10 +20,10 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Farmer: Spring outputs to sell + 2 seasons of inputs
-    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3,           # to sell (Spring outputs)
+    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
                       "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
     # Miner: partial output to sell + 2 seasons of inputs
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
                       "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
     # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell

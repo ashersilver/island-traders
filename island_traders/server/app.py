@@ -74,7 +74,7 @@ ROLE_INFO = {
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
 ISLAND_GUARANTEE_DURATION   = 90   # seconds per islandless human to choose
-DEFAULT_STARTING_CAPITAL    = 700.0   # Dp per player (7-player game default)
+DEFAULT_STARTING_CAPITAL    = 1500.0  # Dp per player (economy-lifecycle Phase A; was 700)
 DEFAULT_SEASON_TIMER        = 120     # seconds per season (0 = no timer)
 DEFAULT_PRE_SEASON_TIMER    = 30      # seconds for pre-season review window (0 = skip)
 
