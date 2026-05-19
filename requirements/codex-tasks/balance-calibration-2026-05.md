@@ -4,6 +4,17 @@
 point release of `pre-release` → `master` can ship. This is the single
 **hard blocker** for the next release.
 
+## ⚠️ Sequencing dependency — read first (added 2026-05-18)
+
+Do **not** start this until the **Economy Lifecycle** feature
+(`requirements/economy-lifecycle-2026-05.md`, Phases A–D) has landed on
+`pre-release`. That feature deliberately re-balances exactly the
+over-dominant roles measured below — per-player cash 700→1500, a Banker
+MBA loan-gate + universal capital maintenance (Banker nerf), and
+Agriculture worker-retirement + combine replacement/maintenance (Farmer
+nerf). Calibrating the *current* economy would be thrown away. Re-run
+the baseline against post-Phase-D `pre-release` and tune from there.
+
 ## Why this is urgent
 
 Measured on `pre-release` @ `36c74a4` (this is *current*, not the old

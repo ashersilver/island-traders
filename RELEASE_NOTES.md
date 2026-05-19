@@ -5,6 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-lifecycle-spec
+
+Branch: `claude/economy-lifecycle-spec`
+Target: `pre-release`
+
+**Docs-only — requirements spec.** No code/test changes (suite
+unchanged at 297). Captures product-owner direction (2026-05-18) for a
+cross-island economic-dependency feature set:
+
+- New `requirements/economy-lifecycle-2026-05.md`: worker
+  lifecycle/retirement (general age system, Agriculture bootstrap),
+  universal capital lifespan + per-season maintenance, Banker MBA
+  loan-gate (credential on existing Banker Managers; 2 Professors + 3
+  Courses, 2 seasons; ≥3 MBA managers to lend), and an economy
+  rebalance (per-player cash 700→1500, Mining Oil 4→8, Agriculture
+  Food →15). Phased A–E, independently mergeable; A–D engine work,
+  E = RULES.md + calibration handoff.
+- `TODO.md`: Economy Lifecycle section with the A–E checklist.
+- Annotates `codex-tasks/balance-calibration-2026-05.md` with a
+  **sequencing dependency**: calibration must run *after* economy
+  Phases A–D land (this feature deliberately re-balances the
+  over-dominant Banker/Farmer, so calibrating the current economy would
+  be wasted).
+
+Decisions locked via AskUserQuestion: 1500/player; general retirement
+(Agriculture first, near-retirement seeding as a tuning lever); MBA as a
+credential on existing Banker Managers; universal capital wear.
+
 ### claude/release-prep
 
 Branch: `claude/release-prep`

@@ -173,6 +173,45 @@ implementation; recommend not combining phases.
 - [ ] Death benefit becomes profession-based replacement training cost
       (paid from Bank pool to island working capital)
 
+### Economy Lifecycle & Cross-Island Dependency
+See [`requirements/economy-lifecycle-2026-05.md`](requirements/economy-lifecycle-2026-05.md)
+for full spec.  Product-owner direction 2026-05-18.  Five mechanics,
+phased A–E (independently mergeable).  **Re-balances the open
+Banker/Farmer over-dominance — calibrate AFTER A–D land.**
+
+#### Phase A — Economy constants + starting stocks (smallest, do first)
+- [ ] Per-player starting cash 700 → **1500** (`STARTING_DOLLOPS`,
+      `TOTAL_STARTING_DOLLOPS` 10500, `DEFAULT_STARTING_CAPITAL`)
+- [ ] `STARTING_INVENTORY["Miner"]["Oil"]` 4 → **8**
+- [ ] `STARTING_INVENTORY["Farmer"]["Food"]` → **15** (new key)
+
+#### Phase B — Worker lifecycle + Agriculture bootstrap
+- [ ] `Worker.age_seasons`; `WORKING_LIFE_SEASONS` per band (M40/T32/W24,
+      tunable); retire→remove at season roll-over (reuse remove_workers)
+- [ ] `STARTING_WORKER_AGES` seeding; Agriculture: Farmer −4,
+      Horticulturalist −8 (retire end Y1 / Y2)
+- [ ] Mid-training retiree → drop from batch + log
+
+#### Phase C — Capital lifecycle
+- [ ] `CapitalItem.service_life_seasons` (def 20) +
+      `maintenance_per_season` (≈3 % cost); per-unit age from
+      `capital_acquired_ticks`
+- [ ] Maintenance debit each season; unmaintained → 0 capacity + warn;
+      expiry removes unit (repurchase from Manufacturer)
+- [ ] `farmer.harvester` service life = 8 (combine, ~2 yr) + start aged
+
+#### Phase D — Banker MBA gate
+- [ ] `Worker.has_mba`; MBA training branch (2 Professors + 3 Courses,
+      2 seasons, Course-gated Manager pipeline)
+- [ ] `_action_offer_loan` + AI loan path blocked unless ≥3 MBA Banker
+      Managers active
+- [ ] Banking bootstrap roster: 3 MBA Banker Managers, near-retirement
+
+#### Phase E — RULES.md + calibration handoff
+- [ ] Document all four mechanics in RULES.md
+- [ ] Re-baseline / hand `codex-tasks/balance-calibration-2026-05.md`
+      to Codex **against Phases A–D**
+
 ### Island Ledger & Ownership Model
 See [`requirements/island-ledger.md`](requirements/island-ledger.md) for the full spec.
 *Prerequisite for financial model improvements, role resale, and Banker institutional pool.*
