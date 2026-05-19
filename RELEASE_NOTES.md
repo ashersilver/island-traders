@@ -5,6 +5,33 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-phase-a
+
+Branch: `claude/economy-phase-a`
+Target: `pre-release`
+
+**Economy Lifecycle Phase A** (`requirements/economy-lifecycle-2026-05.md`)
+— constants/starting-stock only, zero new mechanics.
+
+- Per-player starting cash **700 → 1500**: `STARTING_DOLLOPS` 700→1500,
+  `TOTAL_STARTING_DOLLOPS` 700→10500 (= 1500 × 7),
+  `DEFAULT_STARTING_CAPITAL` (server) 700→1500.
+- `STARTING_INVENTORY["Miner"]["Oil"]` **4 → 8** (larger Oil buffer).
+- `STARTING_INVENTORY["Farmer"]` gains **`"Food": 15`**.
+
+Tunables accepted as first-cut per product-owner ("Accept 2").
+Suite **297 green**. Tests updated for the new economy:
+`test_economy_balance` Miner-Oil assertion 4→8;
+`test_island_guarantee` two offer-pricing tests rebased onto the 1500
+starting capital (AI prices now fall in the "low" band; floor scales
+to 0.20 × 1500).
+
+> Follow-up (not in A, flagged): `game.py` derives the CLI/sim
+> per-player default as `TOTAL_STARTING_DOLLOPS / num_players`, so a
+> non-7-player CLI/sim game won't get exactly 1500/player. Server games
+> use `DEFAULT_STARTING_CAPITAL` (1500/player) directly. Making
+> per-player the canonical constant is spec open-Q #4 — deferred.
+
 ### claude/rules-training-reconcile
 
 Branch: `claude/rules-training-reconcile`
