@@ -23,6 +23,10 @@ class Worker:
     # apprentice (Technician band) reaches their home island.  0 = at full
     # productivity.  University (Manager) graduates never settle.
     settling_seasons: int = 0
+    # Seasons this worker has existed (advanced every season, including
+    # while away at training).  Drives retirement — see
+    # WORKING_LIFE_SEASONS / Workforce.advance_age_and_retire.
+    age_seasons: int = 0
 
     @property
     def plateau(self) -> float:
@@ -87,6 +91,7 @@ class Workforce:
         count: int,
         training_level: int = 0,
         profession: str = Profession.UNSKILLED.value,
+        age_seasons: int = 0,
     ) -> list[Worker]:
         new: list[Worker] = []
         for _ in range(count):
@@ -94,11 +99,33 @@ class Workforce:
                 self._next_id,
                 training_level=training_level,
                 profession=profession,
+                age_seasons=age_seasons,
             )
             self._next_id += 1
             self.workers.append(w)
             new.append(w)
         return new
+
+    def advance_age_and_retire(
+        self, working_life_by_band: dict[str, int], default_life: int
+    ) -> list[Worker]:
+        """Age every worker one season; remove + return those who retire.
+
+        Runs once per season (including for workers away at training).
+        A worker retires when ``age_seasons >= working life`` for their
+        band; retired workers are removed from the roster entirely (the
+        seat must be re-recruited + retrained — the lifecycle pressure).
+        """
+        retired: list[Worker] = []
+        for w in self.workers:
+            w.age_seasons += 1
+            life = working_life_by_band.get(band_of(w.profession).value, default_life)
+            if w.age_seasons >= life:
+                retired.append(w)
+        if retired:
+            retired_ids = {w.worker_id for w in retired}
+            self.workers = [w for w in self.workers if w.worker_id not in retired_ids]
+        return retired
 
     @property
     def count(self) -> int:

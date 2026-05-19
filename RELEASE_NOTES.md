@@ -5,6 +5,44 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-phase-b
+
+Branch: `claude/economy-phase-b`
+Target: `pre-release`
+
+**Economy Lifecycle Phase B** — worker lifecycle / retirement (general
+age system, Agriculture bootstrap activated).
+
+- `Worker.age_seasons` field; `Workforce.add_workers(age_seasons=…)`.
+- New `Workforce.advance_age_and_retire(working_life_by_band, default)`
+  — ages **every** worker (active + in-training) one season per call,
+  removes and returns those whose age ≥ their band working life.
+- New constants: `WORKING_LIFE_SEASONS = {"Manager": 40, "Technician":
+  32, "Worker": 24}` (tunable; accepted first-cut),
+  `DEFAULT_WORKING_LIFE_SEASONS = 32`, and `STARTING_WORKER_AGES` with
+  Agriculture seeded (`Farmer`: 4 seasons from retirement,
+  `Horticulturalist`: 8).
+- `Game._process_retirements(year, season)` called each season after
+  `_process_training_returns`; logs `[RETIREMENT]` per island and drops
+  retiring in-training workers from their training batch via the new
+  `TrainingRegistry.drop_worker` (request rejects if it empties).
+- Game setup seeds starting workers' ages from `STARTING_WORKER_AGES`
+  using `band_of(profession)` → `WORKING_LIFE_SEASONS[band]`. Other
+  islands default to age 0.
+- Save format adds `age_seasons` per worker (backwards-compatible
+  default 0 on load).
+
+**Tests:** suite **305 passing** (297 baseline + 8 new in
+`tests/test_models/test_worker_lifecycle.py` — age tick, band-keyed
+retirement, in-training retirement, drop_worker behaviour, Agriculture
+bootstrap schedule check).
+
+> Bootstrap effect on simulations: the Agriculture Farmer retires ~4
+> seasons into the game and the Horticulturalist ~8 seasons, putting
+> real recruit+retrain pressure on the over-dominant Farmer role. This
+> is *intended* and feeds the open balance-calibration workstream — do
+> not interpret a Farmer win-rate dip post-merge as a regression.
+
 ### claude/economy-phase-a
 
 Branch: `claude/economy-phase-a`
