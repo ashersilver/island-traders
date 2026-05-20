@@ -7,7 +7,8 @@ from .workforce import Workforce
 from .profession import Profession
 from .insurance import InsurancePolicy
 from ..constants import (
-    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, UNSKILLED_RECRUITMENT_RATIO,
+    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
+    MAX_WORKFORCE_FRACTION_OF_POPULATION,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES, BASE_POPULATION_SELF_FED,
 )
 
@@ -150,9 +151,15 @@ class Player:
     @property
     def available_unskilled(self) -> int:
         """How many unskilled residents can be recruited as workers right now.
-        Based on the 1-per-2-unskilled-residents rule."""
-        non_workers = max(0, self.population - self.workforce.count)
-        return int(non_workers * UNSKILLED_RECRUITMENT_RATIO)
+
+        Hard cap: the total workforce (skilled + unskilled) is bounded
+        to MAX_WORKFORCE_FRACTION_OF_POPULATION × current population.
+        Available recruits = cap − current workforce, floored at 0.
+        Recruits are drawn from residents, so the cap also protects the
+        non-worker resident pool from being fully employed.
+        """
+        cap = int(self.population * MAX_WORKFORCE_FRACTION_OF_POPULATION)
+        return max(0, cap - self.workforce.count)
 
     def recruit_workers(self, count: int) -> int:
         """Draw up to count unskilled workers from the island population.

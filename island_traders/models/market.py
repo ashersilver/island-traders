@@ -145,12 +145,31 @@ class Market:
                 f"{seller.name} has only {seller.inventory.get(rtype)} {rtype.value}"
             )
         seller.give_resources(rtype, qty)
+        price = round(price_per_unit, 2)
+        # Cumulative asks: a same-season same-(seller, resource, price)
+        # standing offer absorbs the new units rather than spawning a
+        # separate book entry — keeps the book tidy when a seller adds.
+        existing = next(
+            (o for o in self._offers
+             if o.seller_id == seller.player_id
+             and o.resource == rtype
+             and o.price_per_unit == price
+             and o.season_key == self._current_season_key
+             and o.remaining > 0),
+            None,
+        )
+        if existing is not None:
+            existing.quantity += qty
+            existing.remaining += qty
+            self.post_supply(rtype, qty)
+            self._auto_match_offer(existing)
+            return existing
         offer = MarketOffer(
             offer_id=self._next_offer_id,
             seller_id=seller.player_id,
             seller_name=seller.name,
             resource=rtype,
-            price_per_unit=round(price_per_unit, 2),
+            price_per_unit=price,
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
@@ -173,12 +192,31 @@ class Market:
             raise InsufficientFundsError(
                 f"{buyer.name} has {buyer.dollops:.2f} but bid needs {total_cost:.2f}"
             )
+        price = round(price_per_unit, 2)
+        # Cumulative bids: a same-season same-(buyer, resource, price)
+        # standing bid absorbs the new units rather than spawning a
+        # separate book entry.
+        existing = next(
+            (b for b in self._bids
+             if b.buyer_id == buyer.player_id
+             and b.resource == rtype
+             and b.price_per_unit == price
+             and b.season_key == self._current_season_key
+             and b.remaining > 0),
+            None,
+        )
+        if existing is not None:
+            existing.quantity += qty
+            existing.remaining += qty
+            self.post_demand(rtype, qty)
+            self._auto_match_bid(existing)
+            return existing
         bid = MarketBid(
             bid_id=self._next_bid_id,
             buyer_id=buyer.player_id,
             buyer_name=buyer.name,
             resource=rtype,
-            price_per_unit=round(price_per_unit, 2),
+            price_per_unit=price,
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
