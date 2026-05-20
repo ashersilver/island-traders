@@ -337,6 +337,22 @@ DEFAULT_SERVICE_LIFE_SEASONS: int = 20
 # the item's purchase cost per owned unit per season.  Tunable.
 DEFAULT_MAINTENANCE_FRACTION: float = 0.03
 
+
+# ---------------------------------------------------------------------------
+# Banker capital-reserve / MBA leverage (economy-lifecycle Phase D)
+# ---------------------------------------------------------------------------
+
+# Reserve ratio applied to every loan the Banker issues — the share of
+# the loan's principal that must come from the bank's OWN capital
+# (locked until the loan resolves).  The remainder is sourced
+# externally (depositors), invisible counterparties whose principal +
+# the posted funding rate must be repaid at maturity (see
+# `_fund_bank_external_portion`).
+MBA_RESERVE_RATIO_BASE: float = 0.50       # < 3 MBA Banker Managers
+MBA_RESERVE_RATIO_QUALIFIED: float = 0.20  # >= 3 MBA Banker Managers
+# How many MBA-qualified Banker Managers it takes to drop the ratio.
+MBA_QUALIFIED_THRESHOLD: int = 3
+
 # Starting *aged* capital: role → list of (item_id, count, age_in_seasons).
 # Seeds the island with a pre-existing unit already part-aged so it must
 # be replaced from the Manufacturer within its remaining life.  Phase C

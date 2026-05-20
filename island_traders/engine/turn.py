@@ -20,6 +20,7 @@ from ..constants import (
     STARTING_WORKERS_BY_PROFESSION,
     MANUFACTURER_PRODUCT_LINES, MAX_CLASS_SIZE_PER_COURSE,
     TRAINEE_FOOD_ACCOM_PER_SEASON,
+    MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
@@ -1678,34 +1679,53 @@ class TurnManager:
                 return p
         return None
 
-    def _fund_bank_shortfall(
+    def _mba_banker_count(self, banker: Player) -> int:
+        """Active Banker-profession Manager workers holding an MBA."""
+        return sum(
+            1 for w in banker.workforce.active_workers
+            if w.profession == Profession.BANKER.value and getattr(w, "has_mba", False)
+        )
+
+    def _banker_reserve_ratio(self, banker: Player) -> float:
+        """0.50 below the MBA threshold; 0.20 at/above (Phase D)."""
+        if self._mba_banker_count(banker) >= MBA_QUALIFIED_THRESHOLD:
+            return MBA_RESERVE_RATIO_QUALIFIED
+        return MBA_RESERVE_RATIO_BASE
+
+    def _fund_bank_external_portion(
         self,
         banker: Player,
-        principal: float,
+        external_share: float,
         cost_rate: float,
         term_years: int,
         year: int,
         season_index: int,
     ) -> float:
-        """Borrow externally at the posted funding rate if the bank is short."""
-        shortfall = max(0.0, principal - banker.dollops)
-        if shortfall <= 0:
+        """Source the depositor portion of a loan at the posted funding rate.
+
+        Phase D: every loan is funded as ``own + external``; this helper
+        creates the synthetic depositor obligation (lender_id=-1) for the
+        external share and credits the bank with the cash so it can hand
+        the borrower the full principal.  Repaid at maturity via the
+        existing `_process_loan_repayments` path.
+        """
+        if external_share <= 0:
             return 0.0
         funding = self.loan_ledger.create_loan(
             borrower_id=banker.player_id,
             lender_id=-1,
-            principal=shortfall,
+            principal=external_share,
             interest_rate=cost_rate,
             issued_year=year,
             issued_season=season_index,
             term_years=term_years,
         )
-        banker.receive_dollops(shortfall)
+        banker.receive_dollops(external_share)
         self.io.print(
-            f"  Bank borrowed {shortfall:.1f} {CURRENCY_SYMBOL} externally "
-            f"at {cost_rate*100:.1f}% (funding loan #{funding.loan_id})."
+            f"  Bank sourced {external_share:.1f} {CURRENCY_SYMBOL} externally "
+            f"at {cost_rate*100:.1f}% (depositor loan #{funding.loan_id})."
         )
-        return shortfall
+        return external_share
 
     def _action_offer_loan(self, player: Player, result: TurnResult,
                            year: int, season_index: int) -> None:
@@ -1733,10 +1753,25 @@ class TurnManager:
         rate_pct = rate * 100
         rate = rate_pct / 100.0
         repay = round(principal * (1 + rate), 1)
+        # Phase D — reserve check: bank must hold r·P of own capital.
+        r = self._banker_reserve_ratio(player)
+        own_share = r * principal
+        external_share = max(0.0, principal - own_share)
+        if player.dollops < own_share:
+            mba = self._mba_banker_count(player)
+            self.io.print(
+                f"  Bank cannot back this loan at {r:.0%} reserve: needs "
+                f"{own_share:.1f} {sym} of own capital but has only "
+                f"{player.dollops:.1f} {sym} (MBA-qualified Banker Managers: "
+                f"{mba}/{MBA_QUALIFIED_THRESHOLD}). Reduce principal or train MBAs."
+            )
+            return
         self.io.print(
             f"  Offering {principal:.1f} {sym} to {target.name} "
             f"at {rate_pct:.1f}% — bank cost {funding_rate*100:.1f}%, "
-            f"repayment {repay:.1f} {sym} after {term_years} year(s)."
+            f"repayment {repay:.1f} {sym} after {term_years} year(s).\n"
+            f"  Reserve {r:.0%}: bank locks {own_share:.1f} {sym} own capital "
+            f"+ {external_share:.1f} {sym} sourced externally."
         )
         if target.is_human:
             accepted = self.io.confirm(
@@ -1755,9 +1790,13 @@ class TurnManager:
                 issued_year=year,
                 issued_season=season_index,
                 term_years=term_years,
+                own_committed=own_share,
+                external_funded=external_share,
+                posted_at_issue=funding_rate,
+                reserve_ratio_at_issue=r,
             )
-            self._fund_bank_shortfall(
-                player, principal, funding_rate, term_years, year, season_index
+            self._fund_bank_external_portion(
+                player, external_share, funding_rate, term_years, year, season_index
             )
             player.dollops -= principal
             target.dollops += principal
@@ -1789,12 +1828,35 @@ class TurnManager:
             player, self.loan_ledger, principal, term_years, year, season_index
         )
         rate_pct = rate * 100
+        rate = rate_pct / 100.0
+        # Phase D reserve check (skip when borrower IS the bank).
+        if self_lending:
+            r = 0.0
+            own_share = 0.0
+            external_share = 0.0
+        else:
+            r = self._banker_reserve_ratio(banker)
+            own_share = r * principal
+            external_share = max(0.0, principal - own_share)
+            if banker.dollops < own_share:
+                mba = self._mba_banker_count(banker)
+                self.io.print(
+                    f"  Bank cannot back this loan at {r:.0%} reserve: needs "
+                    f"{own_share:.1f} {sym} of own capital but has only "
+                    f"{banker.dollops:.1f} {sym} (MBA-qualified Banker Managers: "
+                    f"{mba}/{MBA_QUALIFIED_THRESHOLD}). Reduce principal or train MBAs."
+                )
+                return
         self.io.print(
             f"  Posted {term_years}-year funding rate: {funding_rate*100:.1f}%. "
             f"Banker quote: {rate_pct:.1f}% "
             f"(cost + minimum 2% spread plus borrower risk)."
         )
-        rate = rate_pct / 100.0
+        if not self_lending:
+            self.io.print(
+                f"  Reserve {r:.0%}: bank locks {own_share:.1f} {sym} own capital "
+                f"+ {external_share:.1f} {sym} sourced externally."
+            )
         repay = round(principal * (1 + rate), 1)
         confirm = self.io.confirm(
             f"Borrow {principal:.1f} {sym} at {rate_pct:.1f}% for {term_years} year(s)? "
@@ -1811,10 +1873,14 @@ class TurnManager:
             issued_year=year,
             issued_season=season_index,
             term_years=term_years,
+            own_committed=own_share,
+            external_funded=external_share,
+            posted_at_issue=funding_rate,
+            reserve_ratio_at_issue=r,
         )
         if not self_lending:
-            self._fund_bank_shortfall(
-                banker, principal, funding_rate, term_years, year, season_index
+            self._fund_bank_external_portion(
+                banker, external_share, funding_rate, term_years, year, season_index
             )
             banker.dollops -= principal
         player.dollops += principal

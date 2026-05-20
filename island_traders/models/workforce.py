@@ -27,6 +27,10 @@ class Worker:
     # while away at training).  Drives retirement — see
     # WORKING_LIFE_SEASONS / Workforce.advance_age_and_retire.
     age_seasons: int = 0
+    # MBA credential (Phase D).  Meaningful only for Manager-band workers
+    # whose profession is `Banker`: ≥3 MBA-qualified Banker Managers drop
+    # the bank's reserve ratio from 0.50 to 0.20 (≈2x → ≈5x leverage).
+    has_mba: bool = False
 
     @property
     def plateau(self) -> float:

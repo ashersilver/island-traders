@@ -5,6 +5,72 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-phase-d
+
+Branch: `claude/economy-phase-d`
+Target: `pre-release`
+
+**Economy Lifecycle Phase D1** — Banker capital-reserve / MBA-leverage
+model (the headline Banker nerf, the principal balance lever in this
+feature set). Supersedes the earlier "no loans without 3 MBAs" binary
+gate with a proper fractional-reserve mechanic.
+
+**Behaviour:**
+
+- `Worker.has_mba` field (Manager-band Banker workers only).
+- New constants: `MBA_RESERVE_RATIO_BASE=0.50`,
+  `MBA_RESERVE_RATIO_QUALIFIED=0.20`, `MBA_QUALIFIED_THRESHOLD=3`.
+- Helpers `TurnManager._mba_banker_count(banker)` and
+  `_banker_reserve_ratio(banker)` — `0.50` while <3 MBA Banker
+  Managers are active, `0.20` once ≥3 are.
+- Every loan now funds as **own + external**: bank commits `r·P` of
+  its own capital (locked, deducted at issue) and sources `(1−r)·P`
+  externally at the posted funding rate via the renamed
+  `_fund_bank_external_portion`. The external depositor obligation
+  matures alongside the loan and is repaid through the existing
+  `_process_loan_repayments` path — economics produce **full interest
+  on the own slice + margin (loan_rate − posted) on the external
+  slice**.
+- If the bank can't afford its own share, the loan is **refused** with
+  a clear message naming the reserve ratio, the shortfall and the MBA
+  depth (e.g., `"Bank cannot back this loan at 50% reserve: needs
+  25.0 Dp of own capital but has only 10.0 Dp (MBA-qualified Banker
+  Managers: 0/3)."`).
+- `Loan` gains `own_committed`, `external_funded`, `posted_at_issue`,
+  `reserve_ratio_at_issue` (defaulted 0.0; backward-compat in save/load).
+- Self-lending (Banker borrowing from its own Banking Island) skips
+  the reserve check — preserves the existing dollops-burn semantics for
+  that special case.
+
+**Tests:** suite **326 passing** (316 baseline + 10 net new across
+`tests/test_engine/test_loans.py` (3) and
+`tests/test_models/test_banker_reserve.py` (8); one Phase-2 shortfall
+test was replaced by `test_loan_split_into_own_and_external_per_reserve_ratio`
+since the old "fund whatever shortfall" behaviour is exactly what the
+reserve gate now forbids).
+
+**Intentionally deferred — clearly flagged D1.5 / D2 follow-ups:**
+
+- In-game **MBA training UI** (Banker Managers earn `has_mba` via a
+  University request consuming 2 Professors + 3 Courses over 2
+  seasons). The flag is settable from tests today; players can't yet
+  earn MBAs through gameplay, so the bank is **stuck at r=0.50** in
+  this MVP. That's the principal nerf the calibration brief needs —
+  full upgrade path is the next phase.
+- **Multi-year annual interest servicing** with original-amount /
+  original-rate rollover (the simple rollover rule for 2/3-yr loans).
+  Today's bullet repayment still applies; multi-year loans collect all
+  interest at maturity rather than annually.
+- **Free pricing + applicant counter-offer** loop (Banker may quote
+  any rate; applicant counters).
+- **`banker.computing_centre`** capital + indicative 1/2/3-yr term
+  quotes UI (D2).
+- **Default depositor accounting** is still simple: a defaulted
+  customer loan loses the bank's `own_committed`, but the external
+  depositor obligation continues as a separate ledger entry maturing
+  later — adequate for now; a richer "bank also owes the depositors
+  even on default" path is a follow-up.
+
 ### claude/economy-phase-c
 
 Branch: `claude/economy-phase-c`

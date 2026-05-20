@@ -427,6 +427,7 @@ class Game:
                         "in_training": w.in_training,
                         "settling_seasons": w.settling_seasons,
                         "age_seasons": w.age_seasons,
+                        "has_mba": w.has_mba,
                         "profession": w.profession,
                     }
                     for w in p.workforce.workers
@@ -492,6 +493,10 @@ class Game:
                     "maturity_season": l.maturity_season,
                     "term_years": l.term_years,
                     "status": l.status.value,
+                    "own_committed": l.own_committed,
+                    "external_funded": l.external_funded,
+                    "posted_at_issue": l.posted_at_issue,
+                    "reserve_ratio_at_issue": l.reserve_ratio_at_issue,
                 }
                 for l in self.loan_ledger.all_loans()
             ],
@@ -546,6 +551,7 @@ class Game:
                     in_training=w.get("in_training", False),
                     settling_seasons=w.get("settling_seasons", 0),
                     age_seasons=w.get("age_seasons", 0),
+                    has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
                 )
                 for w in wf_data.get("workers", [])
@@ -590,6 +596,10 @@ class Game:
                     "term_years",
                     max(1, loan_d["maturity_year"] - loan_d["issued_year"]),
                 ),
+                own_committed=loan_d.get("own_committed", 0.0),
+                external_funded=loan_d.get("external_funded", 0.0),
+                posted_at_issue=loan_d.get("posted_at_issue", 0.0),
+                reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
             )
             game.loan_ledger.loans.append(loan)
         game.training = TrainingRegistry()
