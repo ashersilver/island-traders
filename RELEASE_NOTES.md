@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/cumulative-orders-workforce-cap
+
+Branch: `claude/cumulative-orders-workforce-cap`
+Target: `pre-release`
+
+Two requirements from live `:8001` testing.
+
+**1. Cumulative bids & asks.** `Market.post_offer` / `post_bid` now
+merge a new order into an existing same-season same-(player, resource,
+price) standing order rather than spawning a separate book entry —
+adding to a position cumulates instead of cluttering the depth list.
+The matching rules already shipped with the defect-1 fix (cheapest
+asks fill first; within-price FIFO via stable sort; walk to the next
+price if still within the bid) remain in force.
+
+**2. Workforce capped at 60% of population.** `Player.available_unskilled`
+now returns `max(0, ⌊0.60 × population⌋ − workforce.count)` — a hard
+cap on the total workforce. Replaces the legacy
+`UNSKILLED_RECRUITMENT_RATIO = 0.5` rule (which scaled with non-worker
+residents rather than capping the total). New constant
+`MAX_WORKFORCE_FRACTION_OF_POPULATION = 0.60`.
+
+Suite **337 passing** (326 baseline + 5 cumulative-order tests + 6
+workforce-cap tests).
+
 ### claude/market-matcher-and-turn-label-fix
 
 Branch: `claude/market-matcher-and-turn-label-fix`
