@@ -323,6 +323,34 @@ STARTING_WORKER_AGES: dict[str, dict[str, int]] = {
     },
 }
 
+
+# ---------------------------------------------------------------------------
+# Capital lifecycle (economy-lifecycle Phase C)
+# ---------------------------------------------------------------------------
+
+# Default service life for any CapitalItem that doesn't override it.
+# 20 seasons ≈ 5 years.  Tunable (accepted first-cut).
+DEFAULT_SERVICE_LIFE_SEASONS: int = 20
+
+# Per-season maintenance rule of thumb when a CapitalItem's
+# `maintenance_per_season` is 0.0 (no override): charge this fraction of
+# the item's purchase cost per owned unit per season.  Tunable.
+DEFAULT_MAINTENANCE_FRACTION: float = 0.03
+
+# Starting *aged* capital: role → list of (item_id, count, age_in_seasons).
+# Seeds the island with a pre-existing unit already part-aged so it must
+# be replaced from the Manufacturer within its remaining life.  Phase C
+# activates Agriculture only (the combine harvester); other islands
+# default to no aged seed.  Generalises as a bootstrap balance lever.
+STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
+    "Farmer": [
+        # Combine harvester (`farmer.harvester`, 8-season life) 4 seasons
+        # old at start → expires end of Year 1 (aligns with the seeded
+        # Farmer's retirement to create a real double squeeze).
+        ("farmer.harvester", 1, 4),
+    ],
+}
+
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
 # "Skilled" means a worker whose profession appears in SKILLED_PROFESSIONS for that role.
 # The seasonal SEASONAL_WORKFORCE totals scale these requirements up/down by season.

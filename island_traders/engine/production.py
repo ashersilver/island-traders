@@ -48,7 +48,10 @@ class ProductionEngine:
             return 0.75
         return 1.0
     def _has_enhanced_metal_equipment(self, player: Player) -> bool:
-        return player.capital_inventory.get("miner.enhanced_crusher_smelter", 0) > 0
+        # Effective inventory: unmaintained units don't count this season.
+        return player.effective_capital_inventory().get(
+            "miner.enhanced_crusher_smelter", 0
+        ) > 0
 
     def _metal_recipe_multiplier(self, player: Player) -> float:
         return 3.0 if self._has_enhanced_metal_equipment(player) else 1.0
@@ -354,7 +357,7 @@ class ProductionEngine:
         cap = compute_capacity(
             recipe=recipe,
             catalogue=CAPITAL_CATALOGUE,
-            owned=player.capital_inventory,
+            owned=player.effective_capital_inventory(),
             workforce=wf_by_band,
             on_hand=on_hand,
         )

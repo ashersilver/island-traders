@@ -21,6 +21,7 @@ from ..constants import (
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
     STARTING_WORKERS_BY_PROFESSION,
     WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
+    DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
@@ -141,6 +142,12 @@ class Game:
                     player.workforce.add_workers(unskilled_count, training_level=0,
                                                  profession=Profession.UNSKILLED.value)
 
+                # Phase C — seed pre-existing aged capital for this role.
+                # acquired_tick = -age means age = 0 - (-age) at start
+                # (game starts at tick 0).
+                for item_id, qty, age in STARTING_AGED_CAPITAL.get(rname, []):
+                    player.add_capital(item_id, qty, acquired_tick=-age)
+
             self.players.append(player)
 
         charts = (
@@ -162,6 +169,7 @@ class Game:
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
                 self._process_retirements(year, season_index)
+                self._process_capital_maintenance(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters
                 )
@@ -209,6 +217,73 @@ class Game:
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
+
+    def _process_capital_maintenance(self, year: int, season: int) -> None:
+        """Expire end-of-life capital, then charge per-season maintenance.
+
+        Expiry: any unit whose age (current_tick − acquired_tick) is at
+        least its CapitalItem.service_life_seasons is removed from
+        capital_inventory (oldest units first, FIFO).  The owner must
+        re-purchase from the Manufacturer to restore that capacity.
+
+        Maintenance: each surviving unit costs
+        ``maintenance_per_season`` Dp (or DEFAULT_MAINTENANCE_FRACTION ×
+        cost when not overridden) per season.  Paid per-unit; a unit
+        the owner can't afford is flagged *unmaintained* and
+        contributes 0 capacity this season via
+        ``Player.effective_capital_inventory``.  The flag resets each
+        season.
+        """
+        current_tick = year * len(SEASONS) + season
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        for player in self.players:
+            # Reset transient unmaintained state at the start of the season.
+            player.unmaintained_capital = {}
+
+            # 1) Expiry — remove units past their service life (oldest first).
+            for item_id in list(player.capital_inventory.keys()):
+                item = catalogue.get(item_id)
+                if not item or item.service_life_seasons <= 0:
+                    continue
+                ticks = player.capital_acquired_ticks.get(item_id, [])
+                expired = sum(
+                    1 for t in ticks
+                    if current_tick - t >= item.service_life_seasons
+                )
+                if expired > 0:
+                    player.remove_capital(item_id, expired)
+                    self.io.print(
+                        f"\n[CAPITAL EXPIRED] {player.name}: {expired} × "
+                        f"{item.name} reached end of service life. "
+                        f"Repurchase from the Manufacturer to restore capacity."
+                    )
+
+            # 2) Maintenance — pay per surviving unit; mark shortfalls.
+            for item_id, count in list(player.capital_inventory.items()):
+                item = catalogue.get(item_id)
+                if not item:
+                    continue
+                per_unit = (
+                    item.maintenance_per_season
+                    if item.maintenance_per_season > 0
+                    else DEFAULT_MAINTENANCE_FRACTION * item.cost
+                )
+                if per_unit <= 0:
+                    continue
+                unmaintained = 0
+                for _ in range(count):
+                    if player.dollops >= per_unit:
+                        player.dollops -= per_unit
+                    else:
+                        unmaintained += 1
+                if unmaintained > 0:
+                    player.unmaintained_capital[item_id] = unmaintained
+                    self.io.print(
+                        f"\n[CAPITAL UNMAINTAINED] {player.name}: "
+                        f"{unmaintained} × {item.name} unmaintained this "
+                        f"season (insufficient Dp); contributes 0 capacity "
+                        f"until paid."
+                    )
 
     def _process_retirements(self, year: int, season: int) -> None:
         """Age every island's workers one season; remove retirees.

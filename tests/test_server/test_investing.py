@@ -279,7 +279,10 @@ def test_opening_investment_delayed_items_are_available_immediately():
 
     assert result["ok"] is True
     player = room.game.players[0]
-    assert player.capital_count("farmer.harvester") == 1
+    # Phase C: Farmer setup seeds 1 aged combine harvester via
+    # STARTING_AGED_CAPITAL; investing adds another → 2 total in stock,
+    # nothing in transit (delayed items arrive immediately at opening).
+    assert player.capital_count("farmer.harvester") == 2
     assert player.capital_in_transit == []
 
 
@@ -404,7 +407,7 @@ def test_player_capacity_surfaces_capital_orders_with_arrival_timing():
     cap = GameManager()._player_capacity(p, current_tick=0)
     order = cap["capital_in_transit"][0]
 
-    assert order["name"] == "Harvester"
+    assert order["name"] == "Combine Harvester"
     assert order["role"] == "Farmer"
     assert order["arrival_year"] == 1
     assert order["arrival_season"] == "Autumn"

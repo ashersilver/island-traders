@@ -5,6 +5,54 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-phase-c
+
+Branch: `claude/economy-phase-c`
+Target: `pre-release`
+
+**Economy Lifecycle Phase C** — universal capital lifecycle: every
+capital item now has a service life and a per-season maintenance cost,
+with an Agriculture **combine harvester** seeded already part-aged.
+
+- `CapitalItem` gains `service_life_seasons` (default
+  `DEFAULT_SERVICE_LIFE_SEASONS=20`, tunable accepted first-cut) and
+  `maintenance_per_season` (default 0.0 → falls back to
+  `DEFAULT_MAINTENANCE_FRACTION=0.03` × cost). Overrides bleed through
+  `_multiply_capital_capacity` (it used to drop new fields silently).
+- **`farmer.harvester` is now the "Combine Harvester"** with
+  `service_life_seasons=8` (≈2 yr) — repurchase from the Manufacturer
+  every two years.
+- `Player.unmaintained_capital` (transient, not persisted) plus
+  `Player.effective_capital_inventory()` which subtracts unmaintained
+  units. Production reads
+  `player.effective_capital_inventory()` everywhere it used
+  `capital_inventory` so unmaintained units contribute **0 capacity**
+  that season.
+- New `Game._process_capital_maintenance(year, season)` called each
+  season after `_process_retirements`:
+  - **Expiry** — units whose age ≥ `service_life_seasons` are removed
+    (oldest first / FIFO) with a `[CAPITAL EXPIRED]` log; the island
+    must repurchase from the Manufacturer to restore that capacity.
+  - **Maintenance** — per-unit Dp debit; on shortfall the unit is
+    flagged unmaintained for the season (logged `[CAPITAL
+    UNMAINTAINED]`); flag clears at the next season's maintenance step.
+- New `STARTING_AGED_CAPITAL` table seeds Agriculture with 1
+  combine harvester at age 4 — expires end of Year 1, aligning with the
+  seeded Farmer's retirement (Phase B) for a deliberate Y1 double
+  squeeze that forces real Manufacturer trade.
+
+**Tests:** suite **316 passing** (305 baseline + 11 new in
+`tests/test_engine/test_capital_lifecycle.py`). Two existing
+`test_investing` tests updated for the "Combine Harvester" rename and
+the seeded-aged-combine count.
+
+> Balance note: maintenance only bites when players actually own
+> capital, and starts modest (combine = 2.7 Dp/season at the
+> 3 %-of-cost default). With 1500/player starting cash it's
+> absorbable. The cost-pressure rises naturally with capital purchases
+> — exactly the Agriculture → Manufacture dependency the brief asks
+> for, applied game-wide.
+
 ### claude/economy-phase-b
 
 Branch: `claude/economy-phase-b`
