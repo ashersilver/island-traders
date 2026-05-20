@@ -54,6 +54,342 @@ Decisions locked via AskUserQuestion: 1500/player; general retirement
 (Agriculture first, near-retirement seeding as a tuning lever); MBA as a
 credential on existing Banker Managers; universal capital wear.
 
+### claude/order-override-and-invest
+
+Branch: `claude/order-override-and-invest`
+Target: `pre-release`
+
+Two requirements from continued live testing.
+
+**1. New bid/ask overrides the player's prior orders on that resource.**
+Replaces yesterday's cumulative-merge rule. Any new `post_bid` /
+`post_offer` now calls `Market.cancel_player_orders(player_id, rtype)`
+first, which:
+
+- Cancels every standing bid AND ask that player has on that resource.
+- Refunds resources from any resting ask back to the seller.
+- Decrements `market.supply` / `market.demand` by the unsold remainder
+  so the price formula doesn't see the cancelled depth.
+
+A player can therefore only hold one standing order per resource at a
+time. Switching sides (e.g. ask → bid) cancels the prior ask and
+refunds its inventory. Other players' orders and orders on other
+resources are untouched.
+
+The 5 cumulative-merge tests added in
+`claude/cumulative-orders-workforce-cap` are replaced with 6 override
+tests covering all four cancel-cases plus supply/demand counter
+decrement.
+
+**2. New `TurnAction.INVEST` — opening catalogue stays open.**
+Items from the player's role catalogue that they don't currently own
+remain takeable post-Investing-Phase. Adds:
+
+- `_action_invest(player, result, year, season)`: lists role-catalogue
+  items the player doesn't own; player picks; cost paid in Dp; item
+  delivered immediately (acquired_tick = current_tick — no Manufacturer
+  transit, distinct from `PURCHASE_CAPITAL`).
+- Wired into the action dispatch alongside the other turn actions, so
+  the web UI button renders automatically and the CLI menu surfaces
+  "Invest" as an option.
+- Tests cover: chosen item added + cost debited + acquired_tick set;
+  already-owned items omitted from the choice list; insufficient Dp →
+  refuse; fully-taken catalogue → "No remaining opening investments."
+
+> The action is distinct from `PURCHASE_CAPITAL` on purpose: Invest is
+> the post-Investing-Phase fast lane for items the player passed on at
+> game start; Purchase Capital is the commercial mid-game purchase from
+> the Manufacturer with its normal `delivery_seasons` transit and
+> Phase C lifecycle implications.
+
+Suite **346 passing** (337 baseline − 5 cumulative tests + 6 override
+tests + 4 invest tests + 4 other deltas).
+
+### claude/cumulative-orders-workforce-cap
+
+Branch: `claude/cumulative-orders-workforce-cap`
+Target: `pre-release`
+
+Two requirements from live `:8001` testing.
+
+**1. Cumulative bids & asks.** `Market.post_offer` / `post_bid` now
+merge a new order into an existing same-season same-(player, resource,
+price) standing order rather than spawning a separate book entry —
+adding to a position cumulates instead of cluttering the depth list.
+The matching rules already shipped with the defect-1 fix (cheapest
+asks fill first; within-price FIFO via stable sort; walk to the next
+price if still within the bid) remain in force.
+
+**2. Workforce capped at 60% of population.** `Player.available_unskilled`
+now returns `max(0, ⌊0.60 × population⌋ − workforce.count)` — a hard
+cap on the total workforce. Replaces the legacy
+`UNSKILLED_RECRUITMENT_RATIO = 0.5` rule (which scaled with non-worker
+residents rather than capping the total). New constant
+`MAX_WORKFORCE_FRACTION_OF_POPULATION = 0.60`.
+
+Suite **337 passing** (326 baseline + 5 cumulative-order tests + 6
+workforce-cap tests).
+
+### claude/market-matcher-and-turn-label-fix
+
+Branch: `claude/market-matcher-and-turn-label-fix`
+Target: `pre-release`
+
+**Defect fixes** found during live `:8001` testing.
+
+**1. Market matcher — bids and asks now actually cross.**
+`Market._auto_match_bid` / `_auto_match_offer` previously matched only
+on **exact-price equality** AND **only when the order's quantity fit
+inside the resting order entirely** (`tests/test_models/test_market.py
+::test_bid_does_not_auto_resolve_when_quantity_exceeds_offer` literally
+codified the bug as expected behaviour). Net effect on the live game:
+players reporting "trades don't settle even within a small range".
+
+Rewritten to standard exchange semantics:
+
+- Match when `bid_price >= ask_price` (cross when the bid covers the
+  ask, not just when they're equal).
+- **Resting (older) order sets the trade price** — the new order is
+  the price-taker, getting the better side of the spread.
+- **Partial fills supported**: a new order walks the opposite side in
+  best-price-first order (asks ascending / bids descending), consuming
+  `min(remaining, remaining)` slice by slice until exhausted or no
+  remaining cross.
+
+Tests: the broken-codified test is replaced with
+`test_bid_partially_fills_when_quantity_exceeds_offer`; new tests cover
+crossed-price matching at both the ask price and the bid price, a
+non-crossing "bid below all asks" case, and a multi-slice walk
+(`test_bid_walks_multiple_resting_asks_for_partial_fills`).
+
+**2. "Turn" terminology removed from per-player headers.**
+Players seeing log lines like `--- Bravo's turn (Education, Research,
+Manufacturing) ---` were reading them as sequential play, but the
+server runs `parallel_mode=True` (one thread per human, concurrent
+within a season). Renamed at all three sites:
+
+- `engine/turn.py`: `--- Bravo (roles) — actions this season ---`
+- `cli/prompts.py`: `Bravo (roles) — choose an action:`
+- `cli/display.py`: `Bravo — choose an action:`
+
+No engine behaviour change — the headers always referred to a single
+player's action menu, not a global turn order.
+
+Suite **330 passing** (326 baseline + 4 net new market tests).
+
+### claude/economy-phase-d
+
+Branch: `claude/economy-phase-d`
+Target: `pre-release`
+
+**Economy Lifecycle Phase D1** — Banker capital-reserve / MBA-leverage
+model (the headline Banker nerf, the principal balance lever in this
+feature set). Supersedes the earlier "no loans without 3 MBAs" binary
+gate with a proper fractional-reserve mechanic.
+
+**Behaviour:**
+
+- `Worker.has_mba` field (Manager-band Banker workers only).
+- New constants: `MBA_RESERVE_RATIO_BASE=0.50`,
+  `MBA_RESERVE_RATIO_QUALIFIED=0.20`, `MBA_QUALIFIED_THRESHOLD=3`.
+- Helpers `TurnManager._mba_banker_count(banker)` and
+  `_banker_reserve_ratio(banker)` — `0.50` while <3 MBA Banker
+  Managers are active, `0.20` once ≥3 are.
+- Every loan now funds as **own + external**: bank commits `r·P` of
+  its own capital (locked, deducted at issue) and sources `(1−r)·P`
+  externally at the posted funding rate via the renamed
+  `_fund_bank_external_portion`. The external depositor obligation
+  matures alongside the loan and is repaid through the existing
+  `_process_loan_repayments` path — economics produce **full interest
+  on the own slice + margin (loan_rate − posted) on the external
+  slice**.
+- If the bank can't afford its own share, the loan is **refused** with
+  a clear message naming the reserve ratio, the shortfall and the MBA
+  depth (e.g., `"Bank cannot back this loan at 50% reserve: needs
+  25.0 Dp of own capital but has only 10.0 Dp (MBA-qualified Banker
+  Managers: 0/3)."`).
+- `Loan` gains `own_committed`, `external_funded`, `posted_at_issue`,
+  `reserve_ratio_at_issue` (defaulted 0.0; backward-compat in save/load).
+- Self-lending (Banker borrowing from its own Banking Island) skips
+  the reserve check — preserves the existing dollops-burn semantics for
+  that special case.
+
+**Tests:** suite **326 passing** (316 baseline + 10 net new across
+`tests/test_engine/test_loans.py` (3) and
+`tests/test_models/test_banker_reserve.py` (8); one Phase-2 shortfall
+test was replaced by `test_loan_split_into_own_and_external_per_reserve_ratio`
+since the old "fund whatever shortfall" behaviour is exactly what the
+reserve gate now forbids).
+
+**Intentionally deferred — clearly flagged D1.5 / D2 follow-ups:**
+
+- In-game **MBA training UI** (Banker Managers earn `has_mba` via a
+  University request consuming 2 Professors + 3 Courses over 2
+  seasons). The flag is settable from tests today; players can't yet
+  earn MBAs through gameplay, so the bank is **stuck at r=0.50** in
+  this MVP. That's the principal nerf the calibration brief needs —
+  full upgrade path is the next phase.
+- **Multi-year annual interest servicing** with original-amount /
+  original-rate rollover (the simple rollover rule for 2/3-yr loans).
+  Today's bullet repayment still applies; multi-year loans collect all
+  interest at maturity rather than annually.
+- **Free pricing + applicant counter-offer** loop (Banker may quote
+  any rate; applicant counters).
+- **`banker.computing_centre`** capital + indicative 1/2/3-yr term
+  quotes UI (D2).
+- **Default depositor accounting** is still simple: a defaulted
+  customer loan loses the bank's `own_committed`, but the external
+  depositor obligation continues as a separate ledger entry maturing
+  later — adequate for now; a richer "bank also owes the depositors
+  even on default" path is a follow-up.
+
+### claude/economy-phase-c
+
+Branch: `claude/economy-phase-c`
+Target: `pre-release`
+
+**Economy Lifecycle Phase C** — universal capital lifecycle: every
+capital item now has a service life and a per-season maintenance cost,
+with an Agriculture **combine harvester** seeded already part-aged.
+
+- `CapitalItem` gains `service_life_seasons` (default
+  `DEFAULT_SERVICE_LIFE_SEASONS=20`, tunable accepted first-cut) and
+  `maintenance_per_season` (default 0.0 → falls back to
+  `DEFAULT_MAINTENANCE_FRACTION=0.03` × cost). Overrides bleed through
+  `_multiply_capital_capacity` (it used to drop new fields silently).
+- **`farmer.harvester` is now the "Combine Harvester"** with
+  `service_life_seasons=8` (≈2 yr) — repurchase from the Manufacturer
+  every two years.
+- `Player.unmaintained_capital` (transient, not persisted) plus
+  `Player.effective_capital_inventory()` which subtracts unmaintained
+  units. Production reads
+  `player.effective_capital_inventory()` everywhere it used
+  `capital_inventory` so unmaintained units contribute **0 capacity**
+  that season.
+- New `Game._process_capital_maintenance(year, season)` called each
+  season after `_process_retirements`:
+  - **Expiry** — units whose age ≥ `service_life_seasons` are removed
+    (oldest first / FIFO) with a `[CAPITAL EXPIRED]` log; the island
+    must repurchase from the Manufacturer to restore that capacity.
+  - **Maintenance** — per-unit Dp debit; on shortfall the unit is
+    flagged unmaintained for the season (logged `[CAPITAL
+    UNMAINTAINED]`); flag clears at the next season's maintenance step.
+- New `STARTING_AGED_CAPITAL` table seeds Agriculture with 1
+  combine harvester at age 4 — expires end of Year 1, aligning with the
+  seeded Farmer's retirement (Phase B) for a deliberate Y1 double
+  squeeze that forces real Manufacturer trade.
+
+**Tests:** suite **316 passing** (305 baseline + 11 new in
+`tests/test_engine/test_capital_lifecycle.py`). Two existing
+`test_investing` tests updated for the "Combine Harvester" rename and
+the seeded-aged-combine count.
+
+> Balance note: maintenance only bites when players actually own
+> capital, and starts modest (combine = 2.7 Dp/season at the
+> 3 %-of-cost default). With 1500/player starting cash it's
+> absorbable. The cost-pressure rises naturally with capital purchases
+> — exactly the Agriculture → Manufacture dependency the brief asks
+> for, applied game-wide.
+
+### claude/economy-phase-b
+
+Branch: `claude/economy-phase-b`
+Target: `pre-release`
+
+**Economy Lifecycle Phase B** — worker lifecycle / retirement (general
+age system, Agriculture bootstrap activated).
+
+- `Worker.age_seasons` field; `Workforce.add_workers(age_seasons=…)`.
+- New `Workforce.advance_age_and_retire(working_life_by_band, default)`
+  — ages **every** worker (active + in-training) one season per call,
+  removes and returns those whose age ≥ their band working life.
+- New constants: `WORKING_LIFE_SEASONS = {"Manager": 40, "Technician":
+  32, "Worker": 24}` (tunable; accepted first-cut),
+  `DEFAULT_WORKING_LIFE_SEASONS = 32`, and `STARTING_WORKER_AGES` with
+  Agriculture seeded (`Farmer`: 4 seasons from retirement,
+  `Horticulturalist`: 8).
+- `Game._process_retirements(year, season)` called each season after
+  `_process_training_returns`; logs `[RETIREMENT]` per island and drops
+  retiring in-training workers from their training batch via the new
+  `TrainingRegistry.drop_worker` (request rejects if it empties).
+- Game setup seeds starting workers' ages from `STARTING_WORKER_AGES`
+  using `band_of(profession)` → `WORKING_LIFE_SEASONS[band]`. Other
+  islands default to age 0.
+- Save format adds `age_seasons` per worker (backwards-compatible
+  default 0 on load).
+
+**Tests:** suite **305 passing** (297 baseline + 8 new in
+`tests/test_models/test_worker_lifecycle.py` — age tick, band-keyed
+retirement, in-training retirement, drop_worker behaviour, Agriculture
+bootstrap schedule check).
+
+> Bootstrap effect on simulations: the Agriculture Farmer retires ~4
+> seasons into the game and the Horticulturalist ~8 seasons, putting
+> real recruit+retrain pressure on the over-dominant Farmer role. This
+> is *intended* and feeds the open balance-calibration workstream — do
+> not interpret a Farmer win-rate dip post-merge as a regression.
+
+### claude/economy-phase-a
+
+Branch: `claude/economy-phase-a`
+Target: `pre-release`
+
+**Economy Lifecycle Phase A** (`requirements/economy-lifecycle-2026-05.md`)
+— constants/starting-stock only, zero new mechanics.
+
+- Per-player starting cash **700 → 1500**: `STARTING_DOLLOPS` 700→1500,
+  `TOTAL_STARTING_DOLLOPS` 700→10500 (= 1500 × 7),
+  `DEFAULT_STARTING_CAPITAL` (server) 700→1500.
+- `STARTING_INVENTORY["Miner"]["Oil"]` **4 → 8** (larger Oil buffer).
+- `STARTING_INVENTORY["Farmer"]` gains **`"Food": 15`**.
+
+Tunables accepted as first-cut per product-owner ("Accept 2").
+Suite **297 green**. Tests updated for the new economy:
+`test_economy_balance` Miner-Oil assertion 4→8;
+`test_island_guarantee` two offer-pricing tests rebased onto the 1500
+starting capital (AI prices now fall in the "low" band; floor scales
+to 0.20 × 1500).
+
+> Follow-up (not in A, flagged): `game.py` derives the CLI/sim
+> per-player default as `TOTAL_STARTING_DOLLOPS / num_players`, so a
+> non-7-player CLI/sim game won't get exactly 1500/player. Server games
+> use `DEFAULT_STARTING_CAPITAL` (1500/player) directly. Making
+> per-player the canonical constant is spec open-Q #4 — deferred.
+
+### claude/rules-training-reconcile
+
+Branch: `claude/rules-training-reconcile`
+Target: `pre-release`
+
+**Docs-only** (RULES.md). No code/test changes (suite unchanged at
+297). Reconciles the player-facing rulebook's training chapter with the
+shipped Education Phase 1–3 + personnel-sidebar mechanics — it had been
+left describing the pre-Phase-3 model.
+
+- **Two-pipeline model documented:** Manager-tier = Course-gated
+  university (1 Course per class ≤12); Technician-tier = Apprenticeship
+  Programme slot-pool + Instructor gated, never Course-gated.
+- **Profession-dependent durations** added to the capacity table
+  (Doctor **3** seasons away, other Managers 2, Nurse 1, all Technicians
+  1) and the full annual-quota table now lists every profession
+  (previously a stale "caps added in a future balance pass" note).
+- **Apprenticeship settling season** (1 season home @ 75% before 100%),
+  **itemised fee** (base + food/accom 5 Dp/trainee/season + ticket +
+  Manager-tier Expertise), **campus load**, and the **"All visible
+  skill deficits"** bundled-request option all documented.
+- Steps rewritten (the old duplicated "Educator Approval" Steps 2 & 4
+  and the charter-flight-as-default were inaccurate); air ticket is now
+  correctly the default transport. Quick Reference transport block
+  aligned.
+- Stale fixes: Educator starting workforce `4 → 8` (4 Professors + 4
+  Instructors); profession table `Tutor → Instructor`; turn-action
+  one-liner no longer claims "one season".
+
+Clears the second-order release-gate item flagged in
+`claude/release-prep` — the v0.1.0 rulebook training chapter is now
+trustworthy. (Balance calibration remains the outstanding release
+blocker.)
+
 ### claude/release-prep
 
 Branch: `claude/release-prep`

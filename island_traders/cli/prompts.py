@@ -33,7 +33,7 @@ class IOAdapter:
         return input(prompt)
 
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
-        self.print(f"\n  {player.name}'s turn ({player.role_names()}) — choose:")
+        self.print(f"\n  {player.name} ({player.role_names()}) — choose an action:")
         for i, action in enumerate(available, 1):
             self.print(f"    {i}. {action_label(action)}")
         while True:

@@ -7,7 +7,8 @@ from .workforce import Workforce
 from .profession import Profession
 from .insurance import InsurancePolicy
 from ..constants import (
-    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, UNSKILLED_RECRUITMENT_RATIO,
+    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
+    MAX_WORKFORCE_FRACTION_OF_POPULATION,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES, BASE_POPULATION_SELF_FED,
 )
 
@@ -45,10 +46,29 @@ class Player:
     # Capital items purchased mid-game that are still in transit.
     # Each entry: {"item_id": str, "arrives_at_tick": int (year*4 + season_index)}.
     capital_in_transit: list[dict] = field(default_factory=list)
+    # Transient per-season flag (Phase C capital lifecycle): item_id ->
+    # number of units the player couldn't pay maintenance for this season.
+    # Unmaintained units contribute 0 capacity until paid; reset by the
+    # next season's maintenance step.  Not persisted in save files.
+    unmaintained_capital: dict[str, int] = field(default_factory=dict)
     # Active patents this player has bought, keyed by output resource name.
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
+
+    def effective_capital_inventory(self) -> dict[str, int]:
+        """Capital available for production this season.
+
+        Identical to ``capital_inventory`` minus this season's
+        ``unmaintained_capital`` counts — unmaintained units contribute
+        zero capacity until paid (Phase C capital lifecycle).
+        """
+        if not self.unmaintained_capital:
+            return self.capital_inventory
+        return {
+            item_id: max(0, count - self.unmaintained_capital.get(item_id, 0))
+            for item_id, count in self.capital_inventory.items()
+        }
 
     def add_capital(self, item_id: str, count: int = 1, acquired_tick: int = 0) -> None:
         """Add `count` of a capital item to the inventory (e.g. on delivery)."""
@@ -131,9 +151,15 @@ class Player:
     @property
     def available_unskilled(self) -> int:
         """How many unskilled residents can be recruited as workers right now.
-        Based on the 1-per-2-unskilled-residents rule."""
-        non_workers = max(0, self.population - self.workforce.count)
-        return int(non_workers * UNSKILLED_RECRUITMENT_RATIO)
+
+        Hard cap: the total workforce (skilled + unskilled) is bounded
+        to MAX_WORKFORCE_FRACTION_OF_POPULATION × current population.
+        Available recruits = cap − current workforce, floored at 0.
+        Recruits are drawn from residents, so the cap also protects the
+        non-worker resident pool from being fully employed.
+        """
+        cap = int(self.population * MAX_WORKFORCE_FRACTION_OF_POPULATION)
+        return max(0, cap - self.workforce.count)
 
     def recruit_workers(self, count: int) -> int:
         """Draw up to count unskilled workers from the island population.

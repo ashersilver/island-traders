@@ -4,8 +4,8 @@ CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
 
-STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 total)
-TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
+STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
+TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 BASE_POPULATION_SELF_FED: int = 100
 
@@ -20,10 +20,10 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Farmer: Spring outputs to sell + 2 seasons of inputs
-    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3,           # to sell (Spring outputs)
+    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
                       "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
     # Miner: partial output to sell + 2 seasons of inputs
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
                       "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
     # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
@@ -298,6 +298,75 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
 }
 
+# ---------------------------------------------------------------------------
+# Worker lifecycle (economy-lifecycle Phase B)
+# ---------------------------------------------------------------------------
+
+# Working life in seasons per worker band; a worker retires (is removed
+# from the roster — the seat must be re-recruited + retrained) once their
+# age reaches this.  First-cut tunable (accepted 2026-05-19).
+WORKING_LIFE_SEASONS: dict[str, int] = {
+    "Manager":    40,   # ~10 years
+    "Technician": 32,   # ~8 years
+    "Worker":     24,   # ~6 years (Unskilled)
+}
+DEFAULT_WORKING_LIFE_SEASONS: int = 32
+
+# Bootstrap seeding: starting workers of (role → profession) begin this
+# many seasons *from retirement* (seed age = working_life(band) − value).
+# Phase B activates Agriculture only; other islands default to age 0.
+# This is also the model's near-retirement balance lever.
+STARTING_WORKER_AGES: dict[str, dict[str, int]] = {
+    "Farmer": {
+        "Farmer":          4,   # Manager ~1 year from retirement
+        "Horticulturalist": 8,  # Technician ~2 years from retirement
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Capital lifecycle (economy-lifecycle Phase C)
+# ---------------------------------------------------------------------------
+
+# Default service life for any CapitalItem that doesn't override it.
+# 20 seasons ≈ 5 years.  Tunable (accepted first-cut).
+DEFAULT_SERVICE_LIFE_SEASONS: int = 20
+
+# Per-season maintenance rule of thumb when a CapitalItem's
+# `maintenance_per_season` is 0.0 (no override): charge this fraction of
+# the item's purchase cost per owned unit per season.  Tunable.
+DEFAULT_MAINTENANCE_FRACTION: float = 0.03
+
+
+# ---------------------------------------------------------------------------
+# Banker capital-reserve / MBA leverage (economy-lifecycle Phase D)
+# ---------------------------------------------------------------------------
+
+# Reserve ratio applied to every loan the Banker issues — the share of
+# the loan's principal that must come from the bank's OWN capital
+# (locked until the loan resolves).  The remainder is sourced
+# externally (depositors), invisible counterparties whose principal +
+# the posted funding rate must be repaid at maturity (see
+# `_fund_bank_external_portion`).
+MBA_RESERVE_RATIO_BASE: float = 0.50       # < 3 MBA Banker Managers
+MBA_RESERVE_RATIO_QUALIFIED: float = 0.20  # >= 3 MBA Banker Managers
+# How many MBA-qualified Banker Managers it takes to drop the ratio.
+MBA_QUALIFIED_THRESHOLD: int = 3
+
+# Starting *aged* capital: role → list of (item_id, count, age_in_seasons).
+# Seeds the island with a pre-existing unit already part-aged so it must
+# be replaced from the Manufacturer within its remaining life.  Phase C
+# activates Agriculture only (the combine harvester); other islands
+# default to no aged seed.  Generalises as a bootstrap balance lever.
+STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
+    "Farmer": [
+        # Combine harvester (`farmer.harvester`, 8-season life) 4 seasons
+        # old at start → expires end of Year 1 (aligns with the seeded
+        # Farmer's retirement to create a real double squeeze).
+        ("farmer.harvester", 1, 4),
+    ],
+}
+
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
 # "Skilled" means a worker whose profession appears in SKILLED_PROFESSIONS for that role.
 # The seasonal SEASONAL_WORKFORCE totals scale these requirements up/down by season.
@@ -354,7 +423,10 @@ STARTING_PRODUCTION_CAPACITY: dict[str, float] = {
 STARTING_POPULATION: int = 20
 
 # How many unskilled people can be drawn into the workforce per 2 unskilled residents.
-UNSKILLED_RECRUITMENT_RATIO: float = 0.5   # 1 recruitable worker per 2 unskilled residents
+# An island can employ up to this fraction of its current population as
+# workers (skilled + unskilled).  Tightens recruit availability so the
+# workforce can't outgrow the populace.
+MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 
 # ---------------------------------------------------------------------------
 # University (Education Island) training capacity

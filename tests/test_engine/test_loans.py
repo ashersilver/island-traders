@@ -115,20 +115,17 @@ def test_banker_quote_uses_posted_term_rate_plus_minimum_spread():
     assert loan.interest_rate == posted_funding_rates(0, 0)[3] + 0.02
 
 
-def test_bank_can_fund_external_shortfall_at_posted_rate():
+def test_loan_split_into_own_and_external_per_reserve_ratio():
+    """Phase D: bank ALWAYS funds r·P from own capital and (1−r)·P
+    externally — not just on shortfall. With no MBA-qualified Banker
+    Managers, r = 0.50 → own=25 / external=25 on a 50 Dp loan."""
     banker = Player(
-        player_id=0,
-        name="Banker",
-        roles=[ROLES["Banker"]],
-        dollops=10.0,
-        is_human=True,
+        player_id=0, name="Banker", roles=[ROLES["Banker"]],
+        dollops=50.0, is_human=True,
     )
     farmer = Player(
-        player_id=1,
-        name="Farmer",
-        roles=[ROLES["Farmer"]],
-        dollops=100.0,
-        is_human=True,
+        player_id=1, name="Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0, is_human=True,
     )
     loans = LoanLedger()
     tm = _turn_manager([farmer, banker], loans, LoanIO([50.0], quantities=[2]))
@@ -136,8 +133,7 @@ def test_bank_can_fund_external_shortfall_at_posted_rate():
     tm._action_take_loan(
         farmer,
         TurnResult(player_id=farmer.player_id, season=0, year=0),
-        year=0,
-        season_index=0,
+        year=0, season_index=0,
     )
 
     customer_loan, funding_loan = loans.all_loans()
@@ -145,9 +141,76 @@ def test_bank_can_fund_external_shortfall_at_posted_rate():
     assert customer_loan.lender_id == banker.player_id
     assert customer_loan.term_years == 2
     assert customer_loan.interest_rate == posted_funding_rates(0, 0)[2] + 0.02
+    # Phase D bookkeeping populated on the customer loan.
+    assert customer_loan.own_committed == 25.0
+    assert customer_loan.external_funded == 25.0
+    assert customer_loan.reserve_ratio_at_issue == 0.50
+    assert customer_loan.posted_at_issue == posted_funding_rates(0, 0)[2]
+    # External depositor loan exists at the posted rate.
     assert funding_loan.borrower_id == banker.player_id
     assert funding_loan.lender_id == -1
-    assert funding_loan.principal == 40.0
+    assert funding_loan.principal == 25.0
     assert funding_loan.interest_rate == posted_funding_rates(0, 0)[2]
-    assert banker.dollops == 0.0
+    # Bank ends holding only its locked own share (50 + 25 external − 50 to farmer).
+    assert banker.dollops == 25.0
     assert farmer.dollops == 150.0
+
+
+def test_bank_refuses_loan_when_own_capital_below_reserve():
+    """With r=0.50 and only 10 Dp on hand, the bank cannot back a 50 Dp
+    loan (would need 25 Dp of own capital) — request is refused, no
+    loans created, no cash moves."""
+    banker = Player(
+        player_id=0, name="Banker", roles=[ROLES["Banker"]],
+        dollops=10.0, is_human=True,
+    )
+    farmer = Player(
+        player_id=1, name="Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0, is_human=True,
+    )
+    loans = LoanLedger()
+    io = LoanIO([50.0], quantities=[2])
+    tm = _turn_manager([farmer, banker], loans, io)
+
+    tm._action_take_loan(
+        farmer,
+        TurnResult(player_id=farmer.player_id, season=0, year=0),
+        year=0, season_index=0,
+    )
+
+    assert loans.all_loans() == []
+    assert banker.dollops == 10.0
+    assert farmer.dollops == 100.0
+    log = "\n".join(io.printed)
+    assert "reserve" in log.lower()
+
+
+def test_three_mbas_drop_reserve_to_twenty_percent():
+    """≥3 MBA Banker Managers → r = 0.20: own=10 / external=40 on 50 Dp."""
+    banker = Player(
+        player_id=0, name="Banker", roles=[ROLES["Banker"]],
+        dollops=50.0, is_human=True,
+    )
+    # Seed 3 Banker-profession Manager workers with MBAs.
+    banker.workforce.add_workers(3, training_level=1, profession="Banker")
+    for w in banker.workforce.workers:
+        w.has_mba = True
+    farmer = Player(
+        player_id=1, name="Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0, is_human=True,
+    )
+    loans = LoanLedger()
+    tm = _turn_manager([farmer, banker], loans, LoanIO([50.0], quantities=[2]))
+
+    tm._action_take_loan(
+        farmer,
+        TurnResult(player_id=farmer.player_id, season=0, year=0),
+        year=0, season_index=0,
+    )
+
+    customer_loan, funding_loan = loans.all_loans()
+    assert customer_loan.own_committed == 10.0
+    assert customer_loan.external_funded == 40.0
+    assert customer_loan.reserve_ratio_at_issue == 0.20
+    assert funding_loan.principal == 40.0
+    assert banker.dollops == 40.0   # 50 + 40 external − 50 to farmer

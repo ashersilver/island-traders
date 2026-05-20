@@ -31,12 +31,14 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
     ),
     CapitalItem(
         item_id="farmer.harvester",
-        name="Harvester",
+        name="Combine Harvester",
         role="Farmer",
         cost=90.0,
         delivery_seasons=2,
         effects={"capacity": {"Grain": 6, "Produce": 4}, "labour_relief": {"Technician": 1}},
-        description="+6 Grain, +4 Produce, -1 Technician need",
+        description="+6 Grain, +4 Produce, -1 Technician need (~2-year service life, must be replaced)",
+        # Phase C: shorter life than the default 20 — a combine wears out fast.
+        service_life_seasons=8,
     ),
     CapitalItem(
         item_id="farmer.fishing_boat",
@@ -526,6 +528,8 @@ def _multiply_capital_capacity(
             delivery_seasons=item.delivery_seasons,
             effects=effects,
             description=description,
+            service_life_seasons=item.service_life_seasons,
+            maintenance_per_season=item.maintenance_per_season,
         ))
     return scaled
 

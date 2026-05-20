@@ -9,7 +9,7 @@ from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.profession import Profession
+from ..models.profession import Profession, band_of
 from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
@@ -20,6 +20,8 @@ from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
     STARTING_WORKERS_BY_PROFESSION,
+    WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
+    DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
@@ -117,9 +119,21 @@ class Game:
                 profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
 
                 allocated = 0
+                role_age_seed = STARTING_WORKER_AGES.get(rname, {})
                 for profession_name, count in profession_breakdown:
                     scaled_count = max(1, round(count * workforce_scale))
-                    player.workforce.add_workers(scaled_count, training_level=1, profession=profession_name)
+                    seed_age = 0
+                    seasons_left = role_age_seed.get(profession_name)
+                    if seasons_left is not None:
+                        life = WORKING_LIFE_SEASONS.get(
+                            band_of(profession_name).value,
+                            DEFAULT_WORKING_LIFE_SEASONS,
+                        )
+                        seed_age = max(0, life - seasons_left)
+                    player.workforce.add_workers(
+                        scaled_count, training_level=1,
+                        profession=profession_name, age_seasons=seed_age,
+                    )
                     allocated += scaled_count
 
                 # Remaining slots are Unskilled
@@ -127,6 +141,12 @@ class Game:
                 if unskilled_count > 0:
                     player.workforce.add_workers(unskilled_count, training_level=0,
                                                  profession=Profession.UNSKILLED.value)
+
+                # Phase C — seed pre-existing aged capital for this role.
+                # acquired_tick = -age means age = 0 - (-age) at start
+                # (game starts at tick 0).
+                for item_id, qty, age in STARTING_AGED_CAPITAL.get(rname, []):
+                    player.add_capital(item_id, qty, acquired_tick=-age)
 
             self.players.append(player)
 
@@ -148,6 +168,8 @@ class Game:
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
+                self._process_retirements(year, season_index)
+                self._process_capital_maintenance(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters
                 )
@@ -195,6 +217,94 @@ class Game:
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
+
+    def _process_capital_maintenance(self, year: int, season: int) -> None:
+        """Expire end-of-life capital, then charge per-season maintenance.
+
+        Expiry: any unit whose age (current_tick − acquired_tick) is at
+        least its CapitalItem.service_life_seasons is removed from
+        capital_inventory (oldest units first, FIFO).  The owner must
+        re-purchase from the Manufacturer to restore that capacity.
+
+        Maintenance: each surviving unit costs
+        ``maintenance_per_season`` Dp (or DEFAULT_MAINTENANCE_FRACTION ×
+        cost when not overridden) per season.  Paid per-unit; a unit
+        the owner can't afford is flagged *unmaintained* and
+        contributes 0 capacity this season via
+        ``Player.effective_capital_inventory``.  The flag resets each
+        season.
+        """
+        current_tick = year * len(SEASONS) + season
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        for player in self.players:
+            # Reset transient unmaintained state at the start of the season.
+            player.unmaintained_capital = {}
+
+            # 1) Expiry — remove units past their service life (oldest first).
+            for item_id in list(player.capital_inventory.keys()):
+                item = catalogue.get(item_id)
+                if not item or item.service_life_seasons <= 0:
+                    continue
+                ticks = player.capital_acquired_ticks.get(item_id, [])
+                expired = sum(
+                    1 for t in ticks
+                    if current_tick - t >= item.service_life_seasons
+                )
+                if expired > 0:
+                    player.remove_capital(item_id, expired)
+                    self.io.print(
+                        f"\n[CAPITAL EXPIRED] {player.name}: {expired} × "
+                        f"{item.name} reached end of service life. "
+                        f"Repurchase from the Manufacturer to restore capacity."
+                    )
+
+            # 2) Maintenance — pay per surviving unit; mark shortfalls.
+            for item_id, count in list(player.capital_inventory.items()):
+                item = catalogue.get(item_id)
+                if not item:
+                    continue
+                per_unit = (
+                    item.maintenance_per_season
+                    if item.maintenance_per_season > 0
+                    else DEFAULT_MAINTENANCE_FRACTION * item.cost
+                )
+                if per_unit <= 0:
+                    continue
+                unmaintained = 0
+                for _ in range(count):
+                    if player.dollops >= per_unit:
+                        player.dollops -= per_unit
+                    else:
+                        unmaintained += 1
+                if unmaintained > 0:
+                    player.unmaintained_capital[item_id] = unmaintained
+                    self.io.print(
+                        f"\n[CAPITAL UNMAINTAINED] {player.name}: "
+                        f"{unmaintained} × {item.name} unmaintained this "
+                        f"season (insufficient Dp); contributes 0 capacity "
+                        f"until paid."
+                    )
+
+    def _process_retirements(self, year: int, season: int) -> None:
+        """Age every island's workers one season; remove retirees.
+
+        A worker away at training who retires is also dropped from its
+        training batch so it cannot 'return' (it no longer exists).
+        """
+        for player in self.players:
+            retired = player.workforce.advance_age_and_retire(
+                WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS
+            )
+            if not retired:
+                continue
+            for w in retired:
+                if w.in_training:
+                    self.training.drop_worker(w.worker_id)
+            professions = ", ".join(sorted({w.profession for w in retired}))
+            self.io.print(
+                f"\n[RETIREMENT] {player.name}: {len(retired)} worker(s) "
+                f"retired ({professions}). Recruit + retrain to replace."
+            )
 
     def _process_training_returns(self, year: int, season: int) -> None:
         player_map = {p.player_id: p for p in self.players}
@@ -316,6 +426,8 @@ class Game:
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
                         "settling_seasons": w.settling_seasons,
+                        "age_seasons": w.age_seasons,
+                        "has_mba": w.has_mba,
                         "profession": w.profession,
                     }
                     for w in p.workforce.workers
@@ -381,6 +493,10 @@ class Game:
                     "maturity_season": l.maturity_season,
                     "term_years": l.term_years,
                     "status": l.status.value,
+                    "own_committed": l.own_committed,
+                    "external_funded": l.external_funded,
+                    "posted_at_issue": l.posted_at_issue,
+                    "reserve_ratio_at_issue": l.reserve_ratio_at_issue,
                 }
                 for l in self.loan_ledger.all_loans()
             ],
@@ -434,6 +550,8 @@ class Game:
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
                     settling_seasons=w.get("settling_seasons", 0),
+                    age_seasons=w.get("age_seasons", 0),
+                    has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
                 )
                 for w in wf_data.get("workers", [])
@@ -478,6 +596,10 @@ class Game:
                     "term_years",
                     max(1, loan_d["maturity_year"] - loan_d["issued_year"]),
                 ),
+                own_committed=loan_d.get("own_committed", 0.0),
+                external_funded=loan_d.get("external_funded", 0.0),
+                posted_at_issue=loan_d.get("posted_at_issue", 0.0),
+                reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
             )
             game.loan_ledger.loans.append(loan)
         game.training = TrainingRegistry()

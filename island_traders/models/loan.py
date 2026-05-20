@@ -70,6 +70,13 @@ class Loan:
     # If this loan was created by rolling over a previous one, the original
     # loan's id is recorded here for traceability.
     rolled_over_from_loan_id: int | None = None
+    # Phase D — capital-reserve bookkeeping (all default 0.0 for
+    # backward compat / for synthetic depositor loans where they don't
+    # apply).  See economy-lifecycle-2026-05.md §3.
+    own_committed: float = 0.0     # bank's own capital locked into this loan
+    external_funded: float = 0.0   # depositor portion (principal − own)
+    posted_at_issue: float = 0.0   # base/posted funding rate at issuance
+    reserve_ratio_at_issue: float = 0.0  # r at the time the loan was issued
 
     @property
     def repayment_amount(self) -> float:
@@ -107,6 +114,10 @@ class LoanLedger:
         issued_year: int,
         issued_season: int,
         term_years: int = 1,
+        own_committed: float = 0.0,
+        external_funded: float = 0.0,
+        posted_at_issue: float = 0.0,
+        reserve_ratio_at_issue: float = 0.0,
     ) -> Loan:
         maturity_year = issued_year + term_years
         maturity_season = issued_season
@@ -121,6 +132,10 @@ class LoanLedger:
             maturity_year=maturity_year,
             maturity_season=maturity_season,
             term_years=term_years,
+            own_committed=own_committed,
+            external_funded=external_funded,
+            posted_at_issue=posted_at_issue,
+            reserve_ratio_at_issue=reserve_ratio_at_issue,
         )
         self.loans.append(loan)
         self._next_id += 1
