@@ -134,36 +134,49 @@ class Market:
     def set_season(self, year: int, season: int) -> None:
         self._current_season_key = (year, season)
 
+    def cancel_player_orders(self, player_id: int, rtype: ResourceType) -> None:
+        """Cancel every standing bid AND ask by ``player_id`` on ``rtype``.
+
+        Resting asks refund their unsold remainder of resources to the
+        seller; supply / demand counters are decremented by the unsold
+        portion so the price formula doesn't pretend the cancelled
+        depth is still on the book.  Used by post_offer / post_bid to
+        enforce the "a new order overrides the player's prior orders"
+        rule.
+        """
+        for offer in self._offers:
+            if (offer.seller_id == player_id
+                    and offer.resource == rtype
+                    and offer.remaining > 0):
+                qty = offer.remaining
+                if offer._seller is not None:
+                    offer._seller.receive_resources(rtype, qty)
+                offer.remaining = 0
+                self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
+        for bid in self._bids:
+            if (bid.buyer_id == player_id
+                    and bid.resource == rtype
+                    and bid.remaining > 0):
+                qty = bid.remaining
+                bid.remaining = 0
+                self.demand[rtype] = max(0, self.demand.get(rtype, 0) - qty)
+
     def post_offer(self, seller: Player, rtype: ResourceType,
                    price_per_unit: float, qty: int) -> MarketOffer:
         if qty <= 0:
             raise ValueError("Offer quantity must be positive")
         if price_per_unit <= 0:
             raise ValueError("Offer price must be positive")
+        # A new ask overrides this player's prior bids AND asks on this
+        # resource — cancel them first so any refunded units from a
+        # prior ask are visible to the inventory check below.
+        self.cancel_player_orders(seller.player_id, rtype)
         if seller.inventory.get(rtype) < qty:
             raise InsufficientSupplyError(
                 f"{seller.name} has only {seller.inventory.get(rtype)} {rtype.value}"
             )
         seller.give_resources(rtype, qty)
         price = round(price_per_unit, 2)
-        # Cumulative asks: a same-season same-(seller, resource, price)
-        # standing offer absorbs the new units rather than spawning a
-        # separate book entry — keeps the book tidy when a seller adds.
-        existing = next(
-            (o for o in self._offers
-             if o.seller_id == seller.player_id
-             and o.resource == rtype
-             and o.price_per_unit == price
-             and o.season_key == self._current_season_key
-             and o.remaining > 0),
-            None,
-        )
-        if existing is not None:
-            existing.quantity += qty
-            existing.remaining += qty
-            self.post_supply(rtype, qty)
-            self._auto_match_offer(existing)
-            return existing
         offer = MarketOffer(
             offer_id=self._next_offer_id,
             seller_id=seller.player_id,
@@ -192,25 +205,11 @@ class Market:
             raise InsufficientFundsError(
                 f"{buyer.name} has {buyer.dollops:.2f} but bid needs {total_cost:.2f}"
             )
+        # A new bid overrides this player's prior bids AND asks on this
+        # resource (cancels both).  Resources from any cancelled ask
+        # refund to the buyer/seller.
+        self.cancel_player_orders(buyer.player_id, rtype)
         price = round(price_per_unit, 2)
-        # Cumulative bids: a same-season same-(buyer, resource, price)
-        # standing bid absorbs the new units rather than spawning a
-        # separate book entry.
-        existing = next(
-            (b for b in self._bids
-             if b.buyer_id == buyer.player_id
-             and b.resource == rtype
-             and b.price_per_unit == price
-             and b.season_key == self._current_season_key
-             and b.remaining > 0),
-            None,
-        )
-        if existing is not None:
-            existing.quantity += qty
-            existing.remaining += qty
-            self.post_demand(rtype, qty)
-            self._auto_match_bid(existing)
-            return existing
         bid = MarketBid(
             bid_id=self._next_bid_id,
             buyer_id=buyer.player_id,
