@@ -423,7 +423,10 @@ STARTING_PRODUCTION_CAPACITY: dict[str, float] = {
 STARTING_POPULATION: int = 20
 
 # How many unskilled people can be drawn into the workforce per 2 unskilled residents.
-UNSKILLED_RECRUITMENT_RATIO: float = 0.5   # 1 recruitable worker per 2 unskilled residents
+# An island can employ up to this fraction of its current population as
+# workers (skilled + unskilled).  Tightens recruit availability so the
+# workforce can't outgrow the populace.
+MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 
 # ---------------------------------------------------------------------------
 # University (Education Island) training capacity

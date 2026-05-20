@@ -262,3 +262,76 @@ def test_sell_to_bids_transfers_to_highest_bidder():
     assert low.inventory.get(ResourceType.FOOD) == 1
     assert seller.inventory.get(ResourceType.FOOD) == 2
     assert seller.dollops == 230.0
+
+
+# ---------------------------------------------------------------------------
+# Cumulative orders — same (player, resource, price, season) merges
+# ---------------------------------------------------------------------------
+
+def test_same_seller_same_price_offers_accumulate_into_one_book_entry():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 7)
+
+    a = m.post_offer(seller, ResourceType.FOOD, 12.5, 3)
+    b = m.post_offer(seller, ResourceType.FOOD, 12.5, 4)
+
+    # Same logical resting offer — single entry, cumulative quantity.
+    assert a is b
+    assert a.remaining == 7
+    assert a.quantity == 7
+    assert len([o for o in m._offers if o.remaining > 0]) == 1
+
+
+def test_same_buyer_same_price_bids_accumulate_into_one_book_entry():
+    m = Market()
+    buyer = make_player(1, "Banker", dollops=200.0)
+
+    a = m.post_bid(buyer, ResourceType.FOOD, 10.0, 3)
+    b = m.post_bid(buyer, ResourceType.FOOD, 10.0, 2)
+
+    assert a is b
+    assert a.remaining == 5
+    assert a.quantity == 5
+    assert len([x for x in m._bids if x.remaining > 0]) == 1
+
+
+def test_different_prices_do_not_accumulate():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 6)
+    a = m.post_offer(seller, ResourceType.FOOD, 10.0, 3)
+    b = m.post_offer(seller, ResourceType.FOOD, 11.0, 3)
+    assert a is not b
+    assert len([o for o in m._offers if o.remaining > 0]) == 2
+
+
+def test_different_sellers_do_not_accumulate():
+    m = Market()
+    s1 = make_player(1, "Farmer")
+    s2 = make_player(2, "Farmer", dollops=100.0)
+    s1.receive_resources(ResourceType.FOOD, 3)
+    s2.receive_resources(ResourceType.FOOD, 3)
+    a = m.post_offer(s1, ResourceType.FOOD, 12.5, 3)
+    b = m.post_offer(s2, ResourceType.FOOD, 12.5, 3)
+    assert a is not b
+    assert len([o for o in m._offers if o.remaining > 0]) == 2
+
+
+def test_topping_up_a_resting_bid_immediately_settles_against_existing_ask():
+    """First bid at 8 doesn't cross a resting 10 ask. Topping up the same
+    bid to 10 (per the new cumulative rule, by posting a second 10-price
+    bid) should still leave them as distinct entries (different prices).
+    But topping up the SAME-PRICE bid past a price-update isn't supported
+    here — separate orders by design. This test guards against accidental
+    cross-price merging."""
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+    m.post_offer(seller, ResourceType.FOOD, 10.0, 5)
+    b1 = m.post_bid(buyer, ResourceType.FOOD, 8.0, 2)    # doesn't cross
+    b2 = m.post_bid(buyer, ResourceType.FOOD, 10.0, 2)   # crosses immediately
+    assert b1 is not b2
+    assert b1.remaining == 2
+    assert b2.remaining == 0   # filled against resting ask at ask price
