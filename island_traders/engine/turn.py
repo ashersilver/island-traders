@@ -46,6 +46,7 @@ class TurnAction(Enum):
     BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
     MANAGE_INSURANCE   = "manage_insurance"    # any holder: review/cancel active policies (#5)
     PURCHASE_CAPITAL   = "purchase_capital"    # any player: buy named equipment from Manufacturer
+    INVEST             = "invest"              # take up an opening-catalogue item not yet owned (immediate, no transit)
     OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
     TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
     ROLLOVER_LOAN      = "rollover_loan"       # borrower: refinance an active loan (#6)
@@ -313,6 +314,8 @@ class TurnManager:
                     self._action_manage_insurance(player, result, year, season_index)
                 elif action == TurnAction.PURCHASE_CAPITAL:
                     self._action_purchase_capital(player, result, year, season_index)
+                elif action == TurnAction.INVEST:
+                    self._action_invest(player, result, year, season_index)
                 elif action == TurnAction.OFFER_LOAN:
                     self._action_offer_loan(player, result, year, season_index)
                 elif action == TurnAction.TAKE_LOAN:
@@ -440,6 +443,73 @@ class TurnManager:
             f"  Purchased {item.name}; consumed 1x {manufactured_resource.value}; {arrival}."
         )
         result.actions_taken.append(f"purchase_capital:{item.item_id}:{manufacturer.name}")
+
+    def _action_invest(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Take up an opening-catalogue item the island didn't pick.
+
+        Items from the player's role catalogue that they don't currently
+        own are still on offer (the "opening investments remain
+        available if not chosen" rule).  Investing here is immediate
+        delivery + cost paid in Dp — no Manufacturer transit, no
+        Manufacturer side-effects (the Investing Phase already treats
+        opening picks as immediately available).
+        """
+        sym = CURRENCY_SYMBOL
+        seen: set[str] = set()
+        available: list = []
+        for role in player.roles:
+            for item in items_for_role(CAPITAL_CATALOGUE, role.name):
+                if item.item_id in seen:
+                    continue
+                seen.add(item.item_id)
+                if player.capital_inventory.get(item.item_id, 0) <= 0:
+                    available.append(item)
+        if not available:
+            self.io.print(
+                "  No remaining opening investments — your roles' catalogues "
+                "are fully taken up (or expired items can be repurchased via "
+                "Purchase Equipment from the Manufacturer)."
+            )
+            return
+        self.io.print(
+            "\n  Open investments — choices from your opening catalogue you "
+            "haven't taken yet (immediate delivery, paid in Dp):"
+        )
+        options = []
+        for item in available:
+            options.append({
+                "value": item.item_id,
+                "label": (
+                    f"{item.name} — {item.cost:.0f} {sym}  "
+                    f"({item.description})"
+                ),
+            })
+        chosen_id = self.io.choose_option(
+            "Invest in which item?", options
+        )
+        if chosen_id is None:
+            self.io.print("  No selection — cancelled.")
+            return
+        item = next((it for it in available if it.item_id == chosen_id), None)
+        if item is None:
+            self.io.print("  Unknown selection.")
+            return
+        if player.dollops < item.cost:
+            self.io.print(
+                f"  Cannot afford {item.name}: cost {item.cost:.0f} {sym}, "
+                f"you have {player.dollops:.1f} {sym}."
+            )
+            return
+        player.dollops -= item.cost
+        current_tick = year * len(SEASONS) + season_index
+        player.add_capital(item.item_id, 1, acquired_tick=current_tick)
+        self.io.print(
+            f"  Invested {item.cost:.0f} {sym} in {item.name} "
+            f"— delivered now."
+        )
+        result.actions_taken.append(f"invest:{item.item_id}")
 
     def _choose_product_line_human(self) -> str:
         """Prompt the human Manufacturer player to choose a product line.

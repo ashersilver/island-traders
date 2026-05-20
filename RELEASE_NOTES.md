@@ -5,6 +5,57 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/order-override-and-invest
+
+Branch: `claude/order-override-and-invest`
+Target: `pre-release`
+
+Two requirements from continued live testing.
+
+**1. New bid/ask overrides the player's prior orders on that resource.**
+Replaces yesterday's cumulative-merge rule. Any new `post_bid` /
+`post_offer` now calls `Market.cancel_player_orders(player_id, rtype)`
+first, which:
+
+- Cancels every standing bid AND ask that player has on that resource.
+- Refunds resources from any resting ask back to the seller.
+- Decrements `market.supply` / `market.demand` by the unsold remainder
+  so the price formula doesn't see the cancelled depth.
+
+A player can therefore only hold one standing order per resource at a
+time. Switching sides (e.g. ask → bid) cancels the prior ask and
+refunds its inventory. Other players' orders and orders on other
+resources are untouched.
+
+The 5 cumulative-merge tests added in
+`claude/cumulative-orders-workforce-cap` are replaced with 6 override
+tests covering all four cancel-cases plus supply/demand counter
+decrement.
+
+**2. New `TurnAction.INVEST` — opening catalogue stays open.**
+Items from the player's role catalogue that they don't currently own
+remain takeable post-Investing-Phase. Adds:
+
+- `_action_invest(player, result, year, season)`: lists role-catalogue
+  items the player doesn't own; player picks; cost paid in Dp; item
+  delivered immediately (acquired_tick = current_tick — no Manufacturer
+  transit, distinct from `PURCHASE_CAPITAL`).
+- Wired into the action dispatch alongside the other turn actions, so
+  the web UI button renders automatically and the CLI menu surfaces
+  "Invest" as an option.
+- Tests cover: chosen item added + cost debited + acquired_tick set;
+  already-owned items omitted from the choice list; insufficient Dp →
+  refuse; fully-taken catalogue → "No remaining opening investments."
+
+> The action is distinct from `PURCHASE_CAPITAL` on purpose: Invest is
+> the post-Investing-Phase fast lane for items the player passed on at
+> game start; Purchase Capital is the commercial mid-game purchase from
+> the Manufacturer with its normal `delivery_seasons` transit and
+> Phase C lifecycle implications.
+
+Suite **346 passing** (337 baseline − 5 cumulative tests + 6 override
+tests + 4 invest tests + 4 other deltas).
+
 ### claude/cumulative-orders-workforce-cap
 
 Branch: `claude/cumulative-orders-workforce-cap`

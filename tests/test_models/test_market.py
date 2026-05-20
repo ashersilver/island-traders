@@ -265,73 +265,105 @@ def test_sell_to_bids_transfers_to_highest_bidder():
 
 
 # ---------------------------------------------------------------------------
-# Cumulative orders — same (player, resource, price, season) merges
+# New-order-overrides rule (a player can only have one standing order per
+# resource — a new bid/ask cancels their prior bids AND asks on it).
 # ---------------------------------------------------------------------------
 
-def test_same_seller_same_price_offers_accumulate_into_one_book_entry():
+def test_new_offer_cancels_prior_player_offer_on_same_resource():
     m = Market()
     seller = make_player(1, "Farmer")
-    seller.receive_resources(ResourceType.FOOD, 7)
+    seller.receive_resources(ResourceType.FOOD, 10)
 
-    a = m.post_offer(seller, ResourceType.FOOD, 12.5, 3)
-    b = m.post_offer(seller, ResourceType.FOOD, 12.5, 4)
+    a = m.post_offer(seller, ResourceType.FOOD, 10.0, 4)
+    b = m.post_offer(seller, ResourceType.FOOD, 11.0, 3)
 
-    # Same logical resting offer — single entry, cumulative quantity.
-    assert a is b
-    assert a.remaining == 7
-    assert a.quantity == 7
-    assert len([o for o in m._offers if o.remaining > 0]) == 1
+    # First ask is cancelled (refunded), only the new one is live.
+    assert a.remaining == 0
+    assert b.remaining == 3
+    live = [o for o in m._offers if o.remaining > 0]
+    assert live == [b]
+    # Refund: seller had 10, gave 4 (qty in first offer), refunded 4 on
+    # cancel, then gave 3 to the new offer → 10 − 4 + 4 − 3 = 7 left.
+    assert seller.inventory.get(ResourceType.FOOD) == 7
 
 
-def test_same_buyer_same_price_bids_accumulate_into_one_book_entry():
+def test_new_bid_cancels_prior_player_bid_on_same_resource():
     m = Market()
     buyer = make_player(1, "Banker", dollops=200.0)
 
     a = m.post_bid(buyer, ResourceType.FOOD, 10.0, 3)
-    b = m.post_bid(buyer, ResourceType.FOOD, 10.0, 2)
+    b = m.post_bid(buyer, ResourceType.FOOD, 12.0, 2)
 
-    assert a is b
-    assert a.remaining == 5
-    assert a.quantity == 5
-    assert len([x for x in m._bids if x.remaining > 0]) == 1
+    assert a.remaining == 0
+    assert b.remaining == 2
+    live = [x for x in m._bids if x.remaining > 0]
+    assert live == [b]
 
 
-def test_different_prices_do_not_accumulate():
+def test_new_bid_also_cancels_prior_player_offer_on_same_resource():
+    """A player flipping sides on a resource has both their prior bid AND
+    prior ask cancelled by a new order (asks refund resources)."""
     m = Market()
-    seller = make_player(1, "Farmer")
-    seller.receive_resources(ResourceType.FOOD, 6)
-    a = m.post_offer(seller, ResourceType.FOOD, 10.0, 3)
-    b = m.post_offer(seller, ResourceType.FOOD, 11.0, 3)
-    assert a is not b
-    assert len([o for o in m._offers if o.remaining > 0]) == 2
+    player = make_player(1, "Farmer", dollops=200.0)
+    player.receive_resources(ResourceType.FOOD, 5)
+
+    # Player puts up an ask, then changes their mind and bids on the same
+    # resource — the ask should be cancelled and 5 FOOD refunded.
+    ask = m.post_offer(player, ResourceType.FOOD, 12.0, 5)
+    bid = m.post_bid(player, ResourceType.FOOD, 8.0, 3)
+
+    assert ask.remaining == 0
+    assert bid.remaining == 3
+    assert player.inventory.get(ResourceType.FOOD) == 5    # refunded
 
 
-def test_different_sellers_do_not_accumulate():
+def test_new_offer_also_cancels_prior_player_bid_on_same_resource():
     m = Market()
-    s1 = make_player(1, "Farmer")
-    s2 = make_player(2, "Farmer", dollops=100.0)
-    s1.receive_resources(ResourceType.FOOD, 3)
-    s2.receive_resources(ResourceType.FOOD, 3)
-    a = m.post_offer(s1, ResourceType.FOOD, 12.5, 3)
-    b = m.post_offer(s2, ResourceType.FOOD, 12.5, 3)
-    assert a is not b
-    assert len([o for o in m._offers if o.remaining > 0]) == 2
+    player = make_player(1, "Farmer", dollops=200.0)
+    player.receive_resources(ResourceType.FOOD, 3)
+
+    bid = m.post_bid(player, ResourceType.FOOD, 10.0, 4)
+    ask = m.post_offer(player, ResourceType.FOOD, 14.0, 3)
+
+    assert bid.remaining == 0
+    assert ask.remaining == 3
 
 
-def test_topping_up_a_resting_bid_immediately_settles_against_existing_ask():
-    """First bid at 8 doesn't cross a resting 10 ask. Topping up the same
-    bid to 10 (per the new cumulative rule, by posting a second 10-price
-    bid) should still leave them as distinct entries (different prices).
-    But topping up the SAME-PRICE bid past a price-update isn't supported
-    here — separate orders by design. This test guards against accidental
-    cross-price merging."""
+def test_new_order_does_not_affect_other_players_or_other_resources():
+    m = Market()
+    a_seller = make_player(1, "Farmer")
+    b_seller = make_player(2, "Farmer", dollops=100.0)
+    a_seller.receive_resources(ResourceType.FOOD, 3)
+    a_seller.receive_resources(ResourceType.FISH, 2)
+    b_seller.receive_resources(ResourceType.FOOD, 3)
+
+    a_food = m.post_offer(a_seller, ResourceType.FOOD, 12.0, 3)
+    a_fish = m.post_offer(a_seller, ResourceType.FISH, 9.0, 2)
+    b_food = m.post_offer(b_seller, ResourceType.FOOD, 12.0, 3)
+    # A new ask from a_seller on FOOD should override only their FOOD ask
+    # — not their FISH ask, and not b_seller's FOOD ask.
+    a_seller.receive_resources(ResourceType.FOOD, 1)   # restock so we can re-post
+    a_food2 = m.post_offer(a_seller, ResourceType.FOOD, 13.0, 1)
+
+    assert a_food.remaining == 0
+    assert a_fish.remaining == 2     # other resource, untouched
+    assert b_food.remaining == 3     # other player, untouched
+    assert a_food2.remaining == 1
+
+
+def test_supply_and_demand_counters_decrement_on_cancelled_orders():
     m = Market()
     seller = make_player(1, "Farmer")
     buyer = make_player(2, "Banker", dollops=200.0)
     seller.receive_resources(ResourceType.FOOD, 5)
-    m.post_offer(seller, ResourceType.FOOD, 10.0, 5)
-    b1 = m.post_bid(buyer, ResourceType.FOOD, 8.0, 2)    # doesn't cross
-    b2 = m.post_bid(buyer, ResourceType.FOOD, 10.0, 2)   # crosses immediately
-    assert b1 is not b2
-    assert b1.remaining == 2
-    assert b2.remaining == 0   # filled against resting ask at ask price
+
+    m.post_offer(seller, ResourceType.FOOD, 15.0, 4)
+    m.post_bid(buyer, ResourceType.FOOD, 8.0, 3)
+    assert m.supply[ResourceType.FOOD] == 4
+    assert m.demand[ResourceType.FOOD] == 3
+
+    # New orders override their respective sides.
+    m.post_offer(seller, ResourceType.FOOD, 15.0, 2)   # cancels first 4
+    m.post_bid(buyer, ResourceType.FOOD, 8.0, 1)       # cancels first 3
+    assert m.supply[ResourceType.FOOD] == 2
+    assert m.demand[ResourceType.FOOD] == 1
