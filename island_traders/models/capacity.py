@@ -38,6 +38,17 @@ class CapitalItem:
     delivery_seasons: int          # 0 = arrives immediately, 2 = complex item
     effects: dict = field(default_factory=dict)
     description: str = ""
+    # Phase C — capital lifecycle.
+    # Useful life in seasons; once a unit's age reaches this it is removed
+    # from the owner's capital_inventory and must be repurchased from the
+    # Manufacturer. <= 0 means "never expires".
+    service_life_seasons: int = 20
+    # Dp charged each season per owned unit while in service.  0.0 = fall
+    # back to DEFAULT_MAINTENANCE_FRACTION × cost (the engine's rule of
+    # thumb).  Set explicitly to override or to zero out (use a negative
+    # sentinel like -1.0 to mean "actually nothing" if needed — for now
+    # 0.0 triggers the default).
+    maintenance_per_season: float = 0.0
 
 
 @dataclass(frozen=True)
