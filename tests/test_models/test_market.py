@@ -148,7 +148,8 @@ def test_exact_offer_auto_resolves_against_existing_bid():
     assert seller.dollops == 237.5
 
 
-def test_bid_does_not_auto_resolve_when_quantity_exceeds_offer():
+def test_bid_partially_fills_when_quantity_exceeds_offer():
+    """Partial fill: bid for 3 against offer of 2 → fills 2, leaves 1 resting."""
     m = Market()
     seller = make_player(1, "Farmer")
     buyer = make_player(2, "Banker", dollops=200.0)
@@ -157,11 +158,91 @@ def test_bid_does_not_auto_resolve_when_quantity_exceeds_offer():
     offer = m.post_offer(seller, ResourceType.FOOD, 12.5, 2)
     bid = m.post_bid(buyer, ResourceType.FOOD, 12.5, 3)
 
-    assert bid.remaining == 3
+    assert bid.remaining == 1
+    assert offer.remaining == 0
+    assert buyer.inventory.get(ResourceType.FOOD) == 2
+    assert buyer.dollops == 175.0           # 200 − 2 × 12.5
+    assert seller.dollops == 225.0          # 200 + 2 × 12.5
+
+
+def test_new_bid_crosses_lower_resting_ask_and_trades_at_ask_price():
+    """Resting (older) order sets price → buyer bidding 12 against ask 8 pays 8."""
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+
+    offer = m.post_offer(seller, ResourceType.FOOD, 8.0, 5)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 12.0, 3)
+
+    assert bid.remaining == 0
     assert offer.remaining == 2
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert buyer.dollops == 176.0           # 200 − 3 × 8 (paid ask price)
+    assert seller.dollops == 224.0
+
+
+def test_new_ask_crosses_higher_resting_bid_and_trades_at_bid_price():
+    """Resting bid sets price → seller asking 8 against resting bid 12 receives 12."""
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+
+    bid = m.post_bid(buyer, ResourceType.FOOD, 12.0, 3)
+    offer = m.post_offer(seller, ResourceType.FOOD, 8.0, 5)
+
+    assert bid.remaining == 0
+    assert offer.remaining == 2
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert buyer.dollops == 164.0           # 200 − 3 × 12 (paid resting bid)
+    assert seller.dollops == 236.0
+
+
+def test_bid_does_not_cross_more_expensive_resting_asks():
+    """Bid below all asks: no trades, both books retain their orders."""
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 5)
+
+    offer = m.post_offer(seller, ResourceType.FOOD, 15.0, 5)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 10.0, 3)
+
+    assert bid.remaining == 3
+    assert offer.remaining == 5
     assert buyer.inventory.get(ResourceType.FOOD) == 0
     assert buyer.dollops == 200.0
     assert seller.dollops == 200.0
+
+
+def test_bid_walks_multiple_resting_asks_for_partial_fills():
+    """Bid 5 @ 10 sweeps asks at 8 (qty 2) + 9 (qty 2) + 10 (qty 2) = 5 filled
+    across three trades at the respective ask prices."""
+    m = Market()
+    s_a = make_player(1, "Farmer", dollops=100.0)
+    s_b = make_player(2, "Farmer", dollops=100.0)
+    s_c = make_player(3, "Farmer", dollops=100.0)
+    buyer = make_player(4, "Banker", dollops=200.0)
+    s_a.receive_resources(ResourceType.FOOD, 2)
+    s_b.receive_resources(ResourceType.FOOD, 2)
+    s_c.receive_resources(ResourceType.FOOD, 2)
+
+    o1 = m.post_offer(s_a, ResourceType.FOOD, 8.0, 2)
+    o2 = m.post_offer(s_b, ResourceType.FOOD, 9.0, 2)
+    o3 = m.post_offer(s_c, ResourceType.FOOD, 10.0, 2)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 10.0, 5)
+
+    assert bid.remaining == 0
+    assert o1.remaining == 0
+    assert o2.remaining == 0
+    assert o3.remaining == 1                # one unit left on the costliest
+    # Buyer paid 2*8 + 2*9 + 1*10 = 16 + 18 + 10 = 44.
+    assert buyer.inventory.get(ResourceType.FOOD) == 5
+    assert buyer.dollops == 156.0           # 200 − 44
+    assert s_a.dollops == 116.0             # 100 + 16
+    assert s_b.dollops == 118.0             # 100 + 18
+    assert s_c.dollops == 110.0             # 100 + 10
 
 
 def test_sell_to_bids_transfers_to_highest_bidder():

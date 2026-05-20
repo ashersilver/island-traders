@@ -5,6 +5,53 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/market-matcher-and-turn-label-fix
+
+Branch: `claude/market-matcher-and-turn-label-fix`
+Target: `pre-release`
+
+**Defect fixes** found during live `:8001` testing.
+
+**1. Market matcher — bids and asks now actually cross.**
+`Market._auto_match_bid` / `_auto_match_offer` previously matched only
+on **exact-price equality** AND **only when the order's quantity fit
+inside the resting order entirely** (`tests/test_models/test_market.py
+::test_bid_does_not_auto_resolve_when_quantity_exceeds_offer` literally
+codified the bug as expected behaviour). Net effect on the live game:
+players reporting "trades don't settle even within a small range".
+
+Rewritten to standard exchange semantics:
+
+- Match when `bid_price >= ask_price` (cross when the bid covers the
+  ask, not just when they're equal).
+- **Resting (older) order sets the trade price** — the new order is
+  the price-taker, getting the better side of the spread.
+- **Partial fills supported**: a new order walks the opposite side in
+  best-price-first order (asks ascending / bids descending), consuming
+  `min(remaining, remaining)` slice by slice until exhausted or no
+  remaining cross.
+
+Tests: the broken-codified test is replaced with
+`test_bid_partially_fills_when_quantity_exceeds_offer`; new tests cover
+crossed-price matching at both the ask price and the bid price, a
+non-crossing "bid below all asks" case, and a multi-slice walk
+(`test_bid_walks_multiple_resting_asks_for_partial_fills`).
+
+**2. "Turn" terminology removed from per-player headers.**
+Players seeing log lines like `--- Bravo's turn (Education, Research,
+Manufacturing) ---` were reading them as sequential play, but the
+server runs `parallel_mode=True` (one thread per human, concurrent
+within a season). Renamed at all three sites:
+
+- `engine/turn.py`: `--- Bravo (roles) — actions this season ---`
+- `cli/prompts.py`: `Bravo (roles) — choose an action:`
+- `cli/display.py`: `Bravo — choose an action:`
+
+No engine behaviour change — the headers always referred to a single
+player's action menu, not a global turn order.
+
+Suite **330 passing** (326 baseline + 4 net new market tests).
+
 ### claude/economy-phase-d
 
 Branch: `claude/economy-phase-d`

@@ -191,58 +191,80 @@ class Market:
         return bid
 
     def _auto_match_bid(self, bid: MarketBid) -> None:
-        """Immediately fill exact-price bids when one offer can satisfy them."""
+        """Cross a new bid against resting asks while the price covers them.
+
+        Standard exchange semantics: the resting (older) order sets the
+        trade price; the new order is the price-taker.  Partial fills are
+        supported — the bid consumes asks in best-price (ascending) order
+        until either the bid is filled or the next ask is too expensive.
+        """
         buyer = bid._buyer
         if buyer is None or bid.remaining <= 0:
             return
+        # `available_offers` returns asks sorted ascending by price.
         for offer in self.available_offers(bid.resource):
+            if bid.remaining <= 0:
+                break
             if offer.seller_id == bid.buyer_id:
                 continue
-            if offer.price_per_unit != bid.price_per_unit:
-                continue
-            if bid.remaining > offer.remaining:
-                continue
+            if offer.price_per_unit > bid.price_per_unit:
+                # No further asks will cross — they're all >= this one.
+                break
             seller = offer._seller
             if seller is None:
                 continue
-            qty = bid.remaining
-            cost = round(bid.price_per_unit * qty, 2)
-            if buyer.dollops < cost:
+            qty = min(bid.remaining, offer.remaining)
+            if qty <= 0:
                 continue
+            trade_price = offer.price_per_unit   # resting ask sets price
+            cost = round(trade_price * qty, 2)
+            if buyer.dollops < cost:
+                # Even the cheapest crossing ask is unaffordable — stop.
+                break
             buyer.spend_dollops(cost)
             buyer.receive_resources(bid.resource, qty)
             seller.receive_dollops(cost)
             offer.remaining -= qty
-            bid.remaining = 0
-            return
+            bid.remaining -= qty
 
     def _auto_match_offer(self, offer: MarketOffer) -> None:
-        """Immediately fill exact-price bids that fit inside this offer."""
+        """Cross a new ask against resting bids while the price covers them.
+
+        Resting bid sets the trade price; new ask is the price-taker.
+        Partial fills supported — the ask consumes bids in best-price
+        (descending) order until the ask is filled or the next bid is
+        too low.
+        """
         seller = offer._seller
         if seller is None or offer.remaining <= 0:
             return
+        # `available_bids` returns bids sorted descending by price.
         for bid in self.available_bids(offer.resource):
+            if offer.remaining <= 0:
+                break
             if bid.buyer_id == offer.seller_id:
                 continue
-            if bid.price_per_unit != offer.price_per_unit:
-                continue
-            if bid.remaining > offer.remaining:
-                continue
+            if bid.price_per_unit < offer.price_per_unit:
+                # No further bids will cross — they're all <= this one.
+                break
             buyer = bid._buyer
             if buyer is None:
                 continue
-            qty = bid.remaining
-            cost = round(offer.price_per_unit * qty, 2)
+            qty = min(bid.remaining, offer.remaining)
+            if qty <= 0:
+                continue
+            trade_price = bid.price_per_unit   # resting bid sets price
+            cost = round(trade_price * qty, 2)
             if buyer.dollops < cost:
+                # This buyer can no longer pay their bid — drop it and
+                # continue to the next-best resting bid.
                 bid.remaining = 0
                 continue
             buyer.spend_dollops(cost)
             buyer.receive_resources(offer.resource, qty)
             seller.receive_dollops(cost)
             offer.remaining -= qty
-            bid.remaining = 0
-            if offer.remaining == 0:
-                return
+            bid.remaining -= qty
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
         return sorted(
