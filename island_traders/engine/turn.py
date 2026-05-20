@@ -259,7 +259,10 @@ class TurnManager:
         season_index: int = 0,
     ) -> None:
         sym = CURRENCY_SYMBOL
-        self.io.print(f"\n--- {player.name}'s turn ({player.role_names()}) ---")
+        # Per-player action section header.  All humans run concurrently
+        # within a season (parallel_mode); this header just frames one
+        # island's actions in the shared log.
+        self.io.print(f"\n--- {player.name} ({player.role_names()}) — actions this season ---")
         prices = self.market.current_prices()
         current_tick = year * len(SEASONS) + season_index
         self.io.print(

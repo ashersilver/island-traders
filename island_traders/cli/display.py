@@ -88,7 +88,7 @@ class Display:
 
     @staticmethod
     def turn_menu(player: Player, available_actions) -> str:
-        lines = [f"\n  {player.name}'s turn — choose an action:"]
+        lines = [f"\n  {player.name} — choose an action:"]
         for i, action in enumerate(available_actions, 1):
             lines.append(f"    {i}. {action.value.replace('_', ' ').title()}")
         return "\n".join(lines)
