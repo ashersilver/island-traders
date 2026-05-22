@@ -22,6 +22,42 @@ Server-side payload support for the UX review mockups:
 - Decision hints now include structured targets so clients can open focused
   popups without parsing display text.
 
+### claude/ux-popup-shell
+
+Branch: `claude/ux-popup-shell`
+Target: `pre-release`
+
+UX review Phase 6 starter — standardised info-popup shell. Lands the
+shared modal chrome that subsequent UI phases (Personnel popup, etc.)
+will plug into.
+
+**What:**
+
+- New `showPopup(title, body, opts)` helper in
+  `island_traders/server/static/index.html`. Adds a standard
+  right-aligned footer with a Close button by default; callers can pass
+  `footerActions` for custom buttons (Market Buy uses Total + Buy +
+  Cancel).
+- New `.popup-footer` CSS rule (flex, right-aligned, gap, top-margin).
+- Refactored three existing popups to use the shell:
+  - `showConstraintPopup` — was manipulating `dlg-title` / `dlg-body`
+    directly and baking its own Close button.
+  - `showMarketBoardPopup` — was baking its own Close button into the
+    body.
+  - `showMarketBuyPopup` — now uses `footerActions` so the Total / Buy /
+    Cancel line is in the standard footer rather than the body.
+
+**Scope discipline:** `showDlg` is untouched and remains the helper for
+IO-driven prompts (option pickers, quantity input, confirm) — those
+have a different lifecycle (`sendResponse` / `CANCEL_SENTINEL`). The
+unrelated player-onboarding modal (`hideOverlay` flow at line ~1394)
+was not touched. New popups (Personnel, Loans, Insurance, Inventory)
+are scheduled for follow-up branches alongside Phase 3, per the plan
+in `requirements/implementation-plans/review-ux-plan.md`.
+
+Suite **352 passing** (no test changes — pure client refactor; suite
+size matches Codex's Phase 1 baseline).
+
 ### claude/order-override-and-invest
 
 Branch: `claude/order-override-and-invest`
