@@ -5,6 +5,30 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-plan-status-update
+
+Branch: `claude/ux-plan-status-update`
+Target: `pre-release`
+
+Docs-only — annotate `requirements/implementation-plans/review-ux-plan.md`
+with a 2026-05-24 status block now that every in-scope UX phase has
+shipped to `pre-release`. Adds:
+
+- Status table per phase with merge commit references.
+- Note on the training-return defect (incidental fix surfaced by the
+  Phase 3 Personnel popup) — merged as `399165e`.
+- "Follow-ups identified during implementation" section listing the
+  five seams worth picking up next (state-based action gating, server
+  hint adoption, in-modal preselection for non-Market actions, inventory
+  valuation rule, capacity/deficit section, inline action affordances
+  inside Loans / Insurance popups).
+- Replaces the as-planned sequencing diagram with the as-shipped order
+  (popup-shell landed in parallel with Codex Phase 1; Phase 6 split
+  into 6a starter + 6b followups).
+- Marks the "Coordination" section as historical.
+
+No code / tests change. Suite still **355 passing**.
+
 ### claude/training-return-bug
 
 Branch: `claude/training-return-bug`
