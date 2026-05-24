@@ -14,6 +14,17 @@
       TLS/thread race in ws_adapter — `set_active_player` called on wrong thread
       or `_ensure_player` races, causing `_send_and_wait` to silently return None.
       Reconnect/replay work may help but needs a dedicated investigation.
+- [ ] **Trainees never return from training** *(playtest 2026-05-24)*
+      Workers dispatched for training stay in the `dispatched` state past
+      their designated `return_year` / `return_season` and never re-join the
+      home island's active workforce. Suspect a missing per-season sweep
+      that should advance dispatched batches whose `return_*` ≤ current
+      tick into `COMPLETED`, mint the upgraded workers, and credit them
+      back to the requester. Likely lives in `engine/turn.py` season
+      bookkeeping or `models/training.py` (no `advance_completions(...)`
+      call wired into the season loop). The new Personnel popup (Phase 3)
+      makes this defect visible: dispatched batches accumulate with
+      `seasons_remaining = 0` and a return season already in the past.
 - [x] **Educator self-training** *(playtest 2026-05-15, fixed)* —
       `_action_request_training` short-circuits when requester is the
       Educator: no fee, no air ticket, auto-approve + auto-dispatch.

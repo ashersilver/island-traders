@@ -839,7 +839,11 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
       </div>
       <div class="section">
-        <h3>Inventory</h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Inventory
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showInventoryPopup()" title="Show full inventory with market values">⊕</button>
+        </h3>
         <div id="s-inventory">—</div>
       </div>
       <div class="section">
@@ -852,11 +856,19 @@ button:active{transform:scale(.97)}
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
       <div class="section">
-        <h3>Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span></h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showInsurancePopup()" title="Show all policies in a detail view">⊕</button>
+        </h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
       </div>
       <div class="section">
-        <h3>Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span></h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showLoansPopup()" title="Show all loans in a detail view">⊕</button>
+        </h3>
         <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
       </div>
     </div>
@@ -1993,6 +2005,175 @@ function showPersonnelPopup() {
     _renderTrainingPipelineSection(me.training_pipeline || []) +
     _renderStaffingSection(me);
   showPopup(`Personnel — ${esc(me.name)}`, body);
+}
+
+// ==================== INVENTORY / INSURANCE / LOANS POPUPS (Phase 6 §5) ====================
+// Sidebar surfaces keep their compact summaries; these "Details" popups
+// surface the same data in a denser, more readable table format using the
+// shared popup-shell + .popup-table styling from Phases 3 / 6.
+
+function _playerNameLookup() {
+  const map = {};
+  for (const p of (gameState?.players || [])) map[p.player_id] = p.name;
+  return map;
+}
+
+function showInventoryPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const inv = me.inventory || {};
+  const rows = Object.entries(inv).filter(([, q]) => q > 0);
+  if (!rows.length) {
+    showPopup(`Inventory — ${esc(me.name)}`,
+      `<section class="popup-section">
+        <h4>Holdings</h4>
+        <p class="empty-state">Inventory is empty.</p>
+      </section>`);
+    return;
+  }
+  // Sort by quantity descending so the largest holdings surface first.
+  rows.sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  let totalValue = 0;
+  const tbody = rows.map(([r, q]) => {
+    const info = gameState.market?.[r] || {};
+    const ask = info.ask_price ?? info.best_price ?? info.formula_price ?? null;
+    const value = (typeof ask === 'number') ? ask * q : null;
+    if (value !== null) totalValue += value;
+    return `<tr>
+      <td>${esc(r)}</td>
+      <td style="text-align:right">${q}</td>
+      <td style="text-align:right">${typeof ask === 'number' ? ask.toFixed(2) + ' Dp' : '—'}</td>
+      <td style="text-align:right">${value !== null ? value.toFixed(1) + ' Dp' : '—'}</td>
+    </tr>`;
+  }).join('');
+  const body = `<section class="popup-section">
+    <h4>Holdings</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Resource</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Market price (ask)</th>
+        <th style="text-align:right">Est. value</th>
+      </tr></thead>
+      <tbody>
+        ${tbody}
+        <tr class="total-row">
+          <td>Total</td>
+          <td style="text-align:right">${rows.reduce((s, [, q]) => s + q, 0)}</td>
+          <td></td>
+          <td style="text-align:right">${totalValue.toFixed(1)} Dp</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Estimated value uses the current ask price; row drops to "—" when no ask is listed.</span>
+    </div>
+  </section>`;
+  showPopup(`Inventory — ${esc(me.name)}`, body);
+}
+
+function showInsurancePopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const pols = me.policies_detail || [];
+  if (!pols.length) {
+    showPopup(`Insurance — ${esc(me.name)}`,
+      `<section class="popup-section">
+        <h4>Active policies</h4>
+        <p class="empty-state">No active policies.</p>
+      </section>`);
+    return;
+  }
+  const names = _playerNameLookup();
+  const tbody = pols.map(pol => {
+    const expiring = pol.seasons_remaining <= 1;
+    const typeLabel = pol.policy_type.charAt(0).toUpperCase() + pol.policy_type.slice(1);
+    const banker = names[pol.banker_player_id] || `Player ${pol.banker_player_id}`;
+    return `<tr${expiring ? ' style="background:rgba(246,185,59,.10)"' : ''}>
+      <td>#${pol.policy_id}</td>
+      <td>${esc(typeLabel)}</td>
+      <td>${esc(banker)}</td>
+      <td style="text-align:right">${pol.premium_paid.toFixed(1)} Dp</td>
+      <td>Y${pol.expires_year} ${esc(pol.expires_season)}</td>
+      <td style="text-align:right;${expiring ? 'color:var(--gold);font-weight:600' : ''}">${pol.seasons_remaining}</td>
+      <td style="text-align:right" title="Pro-rata refund if cancelled now">${pol.cancel_refund.toFixed(1)} Dp</td>
+    </tr>`;
+  }).join('');
+  const body = `<section class="popup-section">
+    <h4>Active policies</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>ID</th><th>Type</th><th>Insurer</th>
+        <th style="text-align:right">Premium paid</th>
+        <th>Expires</th>
+        <th style="text-align:right">Seasons left</th>
+        <th style="text-align:right">Cancel refund</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Use <strong>Manage Insurance</strong> from the action menu to cancel a policy and collect the refund, or to renew.</span>
+    </div>
+  </section>`;
+  showPopup(`Insurance — ${esc(me.name)}`, body);
+}
+
+function showLoansPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const loans = me.loans_detail || [];
+  if (!loans.length) {
+    showPopup(`Loans — ${esc(me.name)}`,
+      `<section class="popup-section">
+        <h4>Active loans</h4>
+        <p class="empty-state">No active loans.</p>
+      </section>`);
+    return;
+  }
+  const names = _playerNameLookup();
+  let totalBorrowed = 0, totalLent = 0;
+  const tbody = loans.map(loan => {
+    const isBorrower = loan.role === 'borrower';
+    if (isBorrower) totalBorrowed += loan.repayment_amount;
+    else totalLent += loan.repayment_amount;
+    const due = loan.seasons_to_maturity <= 1;
+    const counterparty = names[loan.counterparty_id] || `Player ${loan.counterparty_id}`;
+    return `<tr${due ? ' style="background:rgba(246,185,59,.10)"' : ''}>
+      <td>#${loan.loan_id}</td>
+      <td style="color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</td>
+      <td>${esc(counterparty)}</td>
+      <td style="text-align:right">${loan.principal.toFixed(1)} Dp</td>
+      <td style="text-align:right">${(loan.interest_rate * 100).toFixed(2)}%</td>
+      <td>${loan.term_years}y</td>
+      <td style="text-align:right;font-weight:600">${loan.repayment_amount.toFixed(1)} Dp</td>
+      <td>Y${loan.maturity_year} ${esc(loan.maturity_season)}</td>
+      <td style="text-align:right;${due ? 'color:var(--gold);font-weight:600' : ''}">${loan.seasons_to_maturity}</td>
+    </tr>`;
+  }).join('');
+  const body = `<section class="popup-section">
+    <h4>Active loans</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>ID</th><th>Role</th><th>Counterparty</th>
+        <th style="text-align:right">Principal</th>
+        <th style="text-align:right">Rate</th>
+        <th>Term</th>
+        <th style="text-align:right">Repay</th>
+        <th>Matures</th>
+        <th style="text-align:right">Seasons</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Borrowing repay due: <strong>${totalBorrowed.toFixed(1)} Dp</strong></span>
+      <span>Lending repay incoming: <strong>${totalLent.toFixed(1)} Dp</strong></span>
+      <span>Use <strong>Roll Over Loan</strong> from the action menu near maturity to refinance.</span>
+    </div>
+  </section>`;
+  showPopup(`Loans — ${esc(me.name)}`, body);
 }
 
 function marketPriceOf(resourceName) {

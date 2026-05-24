@@ -139,6 +139,70 @@ opens / closes. Cheap re-render — gameState is already cached.
   and `triggers_action` are added per hint.
 
 Suite **352 passing** (no test changes — pure client refactor).
+### claude/ux-popup-followups
+
+Branch: `claude/ux-popup-followups`
+Target: `pre-release`
+Independent of Phases 4/5 — branched directly off `pre-release` so it can
+merge in any order.
+
+UX review Phase 6 follow-up — Loans / Insurance / Inventory detail
+popups, closing out the §5 "standardize detail surfaces" punch list.
+
+**What:** Each of the three sidebar sections grows a small `⊕`
+"Details" button in its header (matching the existing Production
+Capacity `⚠` pattern). Click opens a popup using the shared
+`showPopup` shell and the `.popup-table` styling from
+`claude/ux-personnel-popup`.
+
+- **Inventory popup** — table of held resources sorted by quantity
+  descending, with current ask price and estimated value (qty × ask)
+  per row. Footer row shows totals.
+- **Insurance popup** — table of active policies with insurer name,
+  premium paid, expiration, seasons remaining, and cancel refund.
+  Policies expiring next season (`seasons_remaining ≤ 1`) get a
+  gold-tinted row.
+- **Loans popup** — table of active loans with role
+  (Borrowing / Lending), counterparty name, principal, rate, term,
+  repayment amount, maturity, seasons to maturity. Loans maturing
+  next season get a gold-tinted row. Footer shows totals: borrowing
+  repay due, lending repay incoming.
+
+**Plumbing:**
+
+- New `_playerNameLookup()` helper builds an `{id → name}` map from
+  `gameState.players` for counterparty / insurer display.
+- Empty states: "Inventory is empty.", "No active policies.", "No
+  active loans." — same `empty-state` styling as the Personnel
+  popup.
+- Sidebar summaries are unchanged (still render their compact view);
+  the popup is purely additive.
+
+**Notes against the brief (`review-ux.md` §5):**
+
+- Production Constraints, Market Board, Market Buy, Personnel
+  already use the shared shell from earlier branches. With this
+  branch landing, all six surfaces named in §5 (Production,
+  Personnel, Market Board, Loans, Insurance, Inventory) share the
+  same modal chrome.
+- Action entry points inside the popups (e.g. an inline "Cancel
+  policy" button) are deferred — those require Phase-4-style
+  send-response-during-prompt plumbing and the existing
+  `MANAGE_INSURANCE` / `ROLLOVER_LOAN` actions already cover the
+  workflows.
+
+**Defect note (separate to the popup work):** `TODO.md` Bugs section
+gains a new entry — *"Trainees never return from training"* —
+flagged during playtest 2026-05-24. Workers dispatched for training
+stay in the `dispatched` state past their `return_year` /
+`return_season` and never re-join the home workforce. Likely a
+missing per-season sweep in the season bookkeeping that should
+advance dispatched batches whose `return_*` ≤ current tick into
+`COMPLETED`. The new Personnel popup makes this visible:
+`seasons_remaining = 0` rows accumulate. Not fixed in this branch.
+
+Suite **352 passing** (no test changes — pure client refactor
+plus a TODO entry).
 
 ### claude/ux-personnel-popup
 
