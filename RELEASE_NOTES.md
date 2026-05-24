@@ -5,6 +5,59 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/training-return-bug
+
+Branch: `claude/training-return-bug`
+Target: `pre-release`
+
+**Fixes the playtest 2026-05-24 defect** flagged in
+`claude/ux-popup-followups`'s RELEASE_NOTES and `TODO.md` Bugs:
+self-trained workers never graduated / advanced their `training_level`.
+
+**Diagnosis.** The defect was **only** in the self-training path
+(`engine/turn.py::_action_request_training` Educator shortcut at line
+~828). The cross-island path was always wired correctly:
+
+| Path | Registry side | Workforce side |
+|---|---|---|
+| Cross-island (`_dispatch_training`) | `training.dispatch(...)` | `workforce.dispatch_for_training(worker_ids)` |
+| Self-training (Educator shortcut) | `training.dispatch(...)` | **missing** ← bug |
+
+At the return tick, `Game._process_training_returns` correctly flips
+the registry-side status from `DISPATCHED → COMPLETED` and then calls
+`workforce.return_from_training(worker_ids, target_profession)`. But
+`return_from_training` is a guarded no-op for workers whose
+`in_training` flag is still False — so the self-trained worker stays
+at their original profession / training level. The new Personnel popup
+(Phase 3) made this visible: dispatched batches accumulated with
+`seasons_remaining = 0` and a `return_season` already in the past.
+
+**Fix.** One-line addition in the self-training shortcut, mirroring
+what `_dispatch_training` already does for the cross-island path:
+
+```python
+self.training.dispatch(req.batch_id, year, season_index)
+player.workforce.dispatch_for_training(req.worker_ids)   # ← added
+```
+
+On-island training still happens at the Educator's college; the
+worker is "in class" for the course duration (`in_training=True`,
+out of `active_workers`) rather than at their normal job, then
+returns and graduates exactly like a cross-island trainee.
+
+**Regression tests** in `tests/test_engine/test_training_returns.py`
+(3 new tests, end-to-end through `Game._process_training_returns`):
+
+1. `test_cross_island_trainee_returns_at_return_season_with_upgraded_profession`
+   — Nurse, 1 season away, correct Y/S match required.
+2. `test_cross_island_doctor_three_season_round_trip` — Doctor,
+   3 seasons; verifies the longer course only releases at S3.
+3. `test_self_training_round_trip_advances_worker_training_level` —
+   exercises the actual `_action_request_training` path so the new
+   workforce dispatch is verified end-to-end.
+
+Suite **355 passing** (was 352 + 3 new tests).
+
 ### claude/ux-market-filter
 
 Branch: `claude/ux-market-filter`
