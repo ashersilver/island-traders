@@ -5,6 +5,26 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/ai-trading-v2
+
+Branch: `codex/ai-trading-v2`
+Target: `pre-release`
+
+AI finance + investment lifecycle pass:
+
+- AI Bankers now offer one-year loans to capital-short AI borrowers,
+  using the real `banker_quote_rate` and Phase D1 reserve/MBA gate.
+- Capital-short AI borrowers now take AI Banker loans when they do not
+  already have an active borrowing position.
+- AI borrowers now roll over loans one season before maturity when they
+  cannot afford repayment.
+- AI players now use `INVEST` mid-game to claim the cheapest unowned
+  opening-catalogue item when they have sufficient cash.
+- Dynamic offer markup was left deferred; this branch keeps the pricing
+  model unchanged and focuses on the required finance/invest behaviours.
+
+Added 5 AI tests; expected suite count is 365 passing.
+
 ### claude/codex-brief-ai-trading-v2
 
 Branch: `claude/codex-brief-ai-trading-v2`
