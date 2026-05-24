@@ -5,6 +5,77 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-market-filter
+
+Branch: `claude/ux-market-filter`
+Target: `pre-release`
+Depends on: `claude/ux-hints-to-actions` (built on Phase 4's hint state;
+merge Phase 4 first).
+
+UX review Phase 5 — Market Buy first-viewport filtering + hint focus
+(Mockup 3).
+
+**What:** The Market Buy modal no longer renders one flat 11-row
+table where dormant commodities crowd the urgent ones. Rows now sit
+in three tiers:
+
+1. **Hint-mentioned** — resources currently surfaced by a Decision
+   Hint (sustenance runway, input shortfall, or the resource the
+   player clicked Open on).
+2. **Live market** — resources with at least one standing ask or bid.
+3. **Dormant** — everything else, hidden behind a *"Show all other
+   commodities (N dormant)"* `<details>` expander so they don't
+   dominate the first viewport.
+
+When the modal is opened via a hint's Open button, the hinted resource
+floats to the top of Tier 1, picks up a gold left-edge ring + tinted
+background (`.mkt-row-focus`), and the row auto-scrolls into view.
+A one-line banner above the table names the hinted resource so the
+player sees why the modal opened where it did.
+
+**Hint state plumbing (Phase 4 follow-through):**
+
+- `_currentHintResources` (Set, populated by `renderDecisionHints`)
+  drives Tier 1 detection independent of which player clicks.
+- `_pendingHintTarget` (one-shot global, set in `_actOnHint`, cleared
+  on first read in the next modal) carries `{action, resource}` —
+  e.g. `{action: 'buy_market', resource: 'Oil'}` — so the modal
+  knows which row to focus.
+- Sustenance hints now carry `target_resource: alert.resource`;
+  input-shortfall hints carry `target_resource` = first key of
+  `inputs_short`.
+- `_renderHintOpenButton` accepts an optional `payload` arg passed
+  through to `_actOnHint`.
+
+**Refactor:** Extracted `_renderMarketBuyRow(res, d, focusResource)`
+and `_marketBuyHeaderRow()` so the tier 1+2 and tier 3 tables share a
+single row implementation (identical columns, same input names — the
+existing `submitMarketBuy()` aggregation still picks up inputs from
+both sub-tables via `document.querySelectorAll`).
+
+**CSS additions:** `.mkt-row-focus` (focused-row gold ring + tint),
+`.mkt-dormant` (collapsed expander styling with a rotating chevron).
+
+**Edge cases:**
+
+- If every commodity is dormant (no hints + no live depth), the
+  primary table is replaced with a one-line empty-state notice and
+  every row lives in the collapsed expander.
+- If there are no dormant commodities (everything has activity or is
+  hinted), the expander is omitted entirely.
+- If `_pendingHintTarget` is set for a non-`buy_market` action and
+  Market Buy happens to open afterwards anyway, focus is left null —
+  the target only applies to its matching modal type.
+
+**Scope discipline:**
+
+- No engine / server changes. Pure client.
+- The `<details>` element is uncontrolled — collapsed state doesn't
+  persist across modal close/reopen. Matches the brief's
+  "*should not dominate the first viewport*" requirement.
+
+Suite **352 passing** (no test changes — pure client refactor).
+
 ### claude/ux-hints-to-actions
 
 Branch: `claude/ux-hints-to-actions`
