@@ -826,6 +826,14 @@ class TurnManager:
                 used_desc = self._consume_training_capacity(player, req)
                 self.training.educator_approve(req.batch_id)
                 self.training.dispatch(req.batch_id, year, season_index)
+                # Mark workers as in-training on the workforce side too.
+                # Without this, _process_training_returns at the return tick
+                # is a no-op for these workers (return_from_training requires
+                # in_training == True), so a self-trained worker would never
+                # graduate / advance their training_level — observed in
+                # playtest 2026-05-24.  On-island training still means the
+                # worker is in class for the duration, not at their job.
+                player.workforce.dispatch_for_training(req.worker_ids)
                 self.io.print(
                     f"  {len(req.worker_ids)} worker(s) entered on-island "
                     f"training as {self._profession_label(req.target_profession)} "
