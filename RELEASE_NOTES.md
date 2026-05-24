@@ -5,6 +5,47 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/refresh-codex-calibration-brief
+
+Branch: `claude/refresh-codex-calibration-brief`
+Target: `pre-release`
+
+Docs-only — refresh of
+`requirements/codex-tasks/balance-calibration-2026-05.md` to reflect
+the work that landed between the brief's original 2026-05-18 draft and
+today's `pre-release` tip (`4e56ead`). Headlines:
+
+- **Sequencing dependencies marked satisfied** — both prerequisites
+  the brief originally waited on (Economy Lifecycle Phases A–D, AI
+  Trading v1+v2) are now merged. Brief is unblocked.
+- **Baseline table flagged as historical-stale** — the old win-rate
+  numbers (Banker 54.6%, Farmer 42.5%, Transporter / Doctor 0%) were
+  measured pre-A-D and pre-AI-v2 and should not be taken as ground
+  truth. New "What is expected to shift" subsection lists testable
+  hypotheses (Banker should come down from MBA reserve gate, Farmer
+  should come down from combine maintenance, all roles should shift
+  from 700→1500 cash).
+- **Mini-changelog added** — covers Economy A–D, AI Trading v1 + v2,
+  UX phases 1–6, training-return defect fix, WS reconnect race fix,
+  order override rule, market matcher fix. Saves Codex an
+  archaeology pass.
+- **Branch tip + suite baseline refreshed** — `pre-release` at
+  `4e56ead`, **365 passing**.
+- **Three-table RELEASE_NOTES requirement** — historical-stale,
+  fresh-pre-tune-baseline, final-post-tune. Forces Codex to record
+  what shifted just from the prereq work (without their tuning).
+- **Hand-off + after-this-lands sections** — explicit do-not-merge
+  rule (Claude wants a final read before tagging `v0.1.0`) plus the
+  v0.1.0 ship path (pre-release → master → tag) called out.
+- **Out-of-scope list expanded** — adds `server/` (WS reconnect
+  hardening), `models/loan.py`, `models/insurance.py`,
+  `models/market.py` matching semantics.
+- **AI markup constants flagged as tuning levers** — `AI_OFFER_MARKUP`,
+  `AI_ARBITRAGE_MIN_MARGIN`, `AI_MIN_LOAN_PRINCIPAL`,
+  `AI_DEBT_CEILING_MULTIPLIER`.
+
+No code / tests change. Suite still **365 passing**.
+
 ### codex/ai-trading-v2
 
 Branch: `codex/ai-trading-v2`
