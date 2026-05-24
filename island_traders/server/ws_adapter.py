@@ -26,6 +26,64 @@ from ..engine.turn import TurnAction
 logger = logging.getLogger("island_traders.ws_adapter")
 
 
+ACTION_GROUPS: dict[TurnAction, str] = {
+    TurnAction.PRODUCE: "Production",
+    TurnAction.APPLY_PATENT: "Production",
+    TurnAction.MARKET_BUY: "Trade",
+    TurnAction.MARKET_SELL: "Trade",
+    TurnAction.PROPOSE_DEAL: "Trade",
+    TurnAction.REQUEST_TRAINING: "People",
+    TurnAction.REVIEW_TRAINING: "People",
+    TurnAction.ARRANGE_TRANSPORT: "People",
+    TurnAction.RECRUIT_WORKERS: "People",
+    TurnAction.PURCHASE_CAPITAL: "Capital",
+    TurnAction.INVEST: "Capital",
+    TurnAction.TAKE_LOAN: "Finance",
+    TurnAction.OFFER_LOAN: "Finance",
+    TurnAction.ROLLOVER_LOAN: "Finance",
+    TurnAction.VIEW_LOANS: "Finance",
+    TurnAction.BUY_INSURANCE: "Finance",
+    TurnAction.SELL_INSURANCE: "Finance",
+    TurnAction.MANAGE_INSURANCE: "Finance",
+    TurnAction.VIEW_MARKET: "Info",
+    TurnAction.VIEW_PLAYERS: "Info",
+    TurnAction.INVENTORY: "Info",
+    TurnAction.END_TURN: "Info",
+}
+
+
+def _player_has_role(player, role_name: str) -> bool:
+    return any(getattr(role, "name", None) == role_name for role in getattr(player, "roles", []))
+
+
+def action_option_payload(action: TurnAction, player) -> dict:
+    """Structured action option metadata for dashboard clients."""
+    enabled = True
+    disabled_reason = ""
+
+    if action == TurnAction.OFFER_LOAN and not _player_has_role(player, "Banker"):
+        enabled = False
+        disabled_reason = "Only Banking can offer loans."
+    elif action == TurnAction.SELL_INSURANCE and not _player_has_role(player, "Banker"):
+        enabled = False
+        disabled_reason = "Only Banking can sell insurance."
+    elif action == TurnAction.ARRANGE_TRANSPORT and not _player_has_role(player, "Transporter"):
+        enabled = False
+        disabled_reason = "Only Transportation can arrange training transport."
+    elif action == TurnAction.APPLY_PATENT and player.inventory.get(ResourceType.PATENTS) <= 0:
+        enabled = False
+        disabled_reason = "No Patents available to apply."
+
+    return {
+        "value": action.value,
+        "label": action_label(action),
+        "group": ACTION_GROUPS.get(action, "Info"),
+        "enabled": enabled,
+        "disabled_reason": disabled_reason,
+        "recommended": False,
+    }
+
+
 class WebSocketIOAdapter(IOAdapter):
     """Per-player, thread-safe IO adapter for online play.
 
@@ -216,10 +274,7 @@ class WebSocketIOAdapter(IOAdapter):
             logger.debug("Player %d (%s): season interrupted, returning END_TURN",
                          player.player_id, player.name)
             return TurnAction.END_TURN
-        options = [
-            {"value": a.value, "label": action_label(a)}
-            for a in available
-        ]
+        options = [action_option_payload(a, player) for a in available]
         resp = self._send_and_wait({
             "type": "choose_action",
             "player_id": player.player_id,
