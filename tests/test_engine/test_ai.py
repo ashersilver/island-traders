@@ -3,6 +3,7 @@ from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
 from island_traders.engine.trading import TradingEngine
 from island_traders.models.deal import DealLedger
+from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.resource import ResourceType
@@ -175,3 +176,148 @@ def test_ai_accepts_profitable_deal_and_rejects_unprofitable_one():
 
     assert profitable.status.value == "accepted"
     assert unprofitable.status.value == "rejected"
+
+
+def test_ai_banker_offers_loan_to_capital_short_ai_borrower():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=100.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+
+    actions = ai.take_turn(
+        banker,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans
+    assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_banker_does_not_offer_loan_when_reserve_short():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=20.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+
+    ai.take_turn(
+        banker,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans == []
+
+
+def test_ai_borrower_accepts_loan_when_capital_short():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=100.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans
+    assert farmer.dollops > 0
+    assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_rollover_loan_when_cannot_repay_at_maturity():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=300.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=10.0)
+    old = loan_ledger.create_loan(
+        borrower_id=farmer.player_id,
+        lender_id=banker.player_id,
+        principal=100.0,
+        interest_rate=0.10,
+        issued_year=0,
+        issued_season=0,
+        term_years=1,
+    )
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Winter",
+        0,
+        3,
+        loan_ledger,
+    )
+
+    rolled = [
+        loan for loan in loan_ledger.all_loans()
+        if loan.rolled_over_from_loan_id == old.loan_id
+    ]
+    assert old.status == LoanStatus.ROLLED_OVER
+    assert rolled
+    assert any("rolled over Loan" in action for action in actions)
+
+
+def test_ai_invests_in_unclaimed_catalogue_item():
+    ai = AIStrategy()
+    market = Market()
+    farmer = make_player(1, "Farmer AI", ["Farmer"], dollops=1500.0)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        LoanLedger(),
+    )
+
+    assert farmer.capital_inventory
+    assert "farmer.storage_building" in farmer.capital_inventory
+    assert any("invested" in action for action in actions)

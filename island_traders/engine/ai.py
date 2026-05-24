@@ -7,14 +7,22 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..models.insurance import InsurancePolicy
+from ..models.loan import LoanLedger, banker_quote_rate, posted_funding_rates
+from ..models.profession import Profession
 from ..constants import (
     BASE_PRICES, MANUFACTURER_PRODUCT_LINES,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
+    MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
+    MBA_QUALIFIED_THRESHOLD,
 )
+from ..constants_capacity import CAPITAL_CATALOGUE
+from ..models.capacity import items_for_role
 
 AI_TARGET_PRODUCTION_RUNS = 2
 AI_OFFER_MARKUP = 1.0
 AI_ARBITRAGE_MIN_MARGIN = 0.05
+AI_MIN_LOAN_PRINCIPAL = 50.0
+AI_DEBT_CEILING_MULTIPLIER = 2.0
 
 
 class AIStrategy:
@@ -35,6 +43,237 @@ class AIStrategy:
 
     def __init__(self, target_production_runs: int = AI_TARGET_PRODUCTION_RUNS):
         self.target_production_runs = max(1, target_production_runs)
+
+    def _mba_banker_count(self, banker: Player) -> int:
+        return sum(
+            1 for worker in banker.workforce.active_workers
+            if worker.profession == Profession.BANKER.value
+            and getattr(worker, "has_mba", False)
+        )
+
+    def _banker_reserve_ratio(self, banker: Player) -> float:
+        if self._mba_banker_count(banker) >= MBA_QUALIFIED_THRESHOLD:
+            return MBA_RESERVE_RATIO_QUALIFIED
+        return MBA_RESERVE_RATIO_BASE
+
+    def _one_season_input_cost(
+        self,
+        player: Player,
+        market: Market,
+        season_name: str,
+        product_line: str | None = None,
+    ) -> float:
+        inputs = player.all_required_inputs(season_name, product_line)
+        cost = sum(market.current_price(rtype) * qty for rtype, qty in inputs.items())
+        return round(max(AI_MIN_LOAN_PRINCIPAL, cost), 1)
+
+    def _capital_short_threshold(
+        self,
+        player: Player,
+        market: Market,
+        season_name: str,
+        product_line: str | None = None,
+    ) -> float:
+        return self._one_season_input_cost(player, market, season_name, product_line)
+
+    def _find_ai_banker(
+        self,
+        players: list[Player],
+        exclude_player_id: int | None = None,
+    ) -> Player | None:
+        for candidate in players:
+            if candidate.is_human or candidate.player_id == exclude_player_id:
+                continue
+            if any(role.name == "Banker" for role in candidate.roles):
+                return candidate
+        return None
+
+    def _ai_issue_loan(
+        self,
+        banker: Player,
+        borrower: Player,
+        principal: float,
+        loan_ledger: LoanLedger,
+        year: int,
+        season_index: int,
+    ) -> str | None:
+        if borrower.is_human or banker.player_id == borrower.player_id:
+            return None
+        if principal <= 0:
+            return None
+        term_years = 1
+        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        rate = banker_quote_rate(
+            borrower, loan_ledger, principal, term_years, year, season_index
+        )
+        reserve_ratio = self._banker_reserve_ratio(banker)
+        own_share = round(reserve_ratio * principal, 2)
+        if banker.dollops < own_share:
+            return None
+        external_share = max(0.0, round(principal - own_share, 2))
+
+        loan = loan_ledger.create_loan(
+            borrower_id=borrower.player_id,
+            lender_id=banker.player_id,
+            principal=principal,
+            interest_rate=rate,
+            issued_year=year,
+            issued_season=season_index,
+            term_years=term_years,
+            own_committed=own_share,
+            external_funded=external_share,
+            posted_at_issue=funding_rate,
+            reserve_ratio_at_issue=reserve_ratio,
+        )
+        if external_share > 0:
+            loan_ledger.create_loan(
+                borrower_id=banker.player_id,
+                lender_id=-1,
+                principal=external_share,
+                interest_rate=funding_rate,
+                issued_year=year,
+                issued_season=season_index,
+                term_years=term_years,
+            )
+            banker.receive_dollops(external_share)
+        banker.dollops -= principal
+        borrower.receive_dollops(principal)
+        return (
+            f"[AI] {banker.name} issued Loan #{loan.loan_id} to {borrower.name} "
+            f"for {principal:.1f} Dp at {rate*100:.1f}%"
+        )
+
+    def _ai_offer_loans(
+        self,
+        banker: Player,
+        other_players: list[Player],
+        market: Market,
+        loan_ledger: LoanLedger | None,
+        season_name: str,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        if loan_ledger is None:
+            return []
+        actions: list[str] = []
+        for borrower in other_players:
+            if borrower.player_id == banker.player_id or borrower.is_human:
+                continue
+            if any(
+                loan.borrower_id == borrower.player_id
+                for loan in loan_ledger.active_loans_for(borrower.player_id)
+            ):
+                continue
+            threshold = self._capital_short_threshold(borrower, market, season_name)
+            if borrower.dollops >= threshold:
+                continue
+            if loan_ledger.outstanding_debt(borrower.player_id) > (
+                threshold * AI_DEBT_CEILING_MULTIPLIER
+            ):
+                continue
+            principal = round(threshold - borrower.dollops, 1)
+            action = self._ai_issue_loan(
+                banker, borrower, principal, loan_ledger, year, season_index
+            )
+            if action:
+                actions.append(action)
+        return actions
+
+    def _ai_take_loan_if_short(
+        self,
+        player: Player,
+        market: Market,
+        other_players: list[Player],
+        loan_ledger: LoanLedger | None,
+        season_name: str,
+        year: int,
+        season_index: int,
+        product_line: str | None = None,
+    ) -> list[str]:
+        if loan_ledger is None:
+            return []
+        if any(role.name == "Banker" for role in player.roles):
+            return []
+        if any(
+            loan.borrower_id == player.player_id
+            for loan in loan_ledger.active_loans_for(player.player_id)
+        ):
+            return []
+        threshold = self._capital_short_threshold(
+            player, market, season_name, product_line
+        )
+        if player.dollops >= threshold:
+            return []
+        banker = self._find_ai_banker(other_players, exclude_player_id=player.player_id)
+        if banker is None:
+            return []
+        principal = round(threshold - player.dollops, 1)
+        action = self._ai_issue_loan(
+            banker, player, principal, loan_ledger, year, season_index
+        )
+        return [action] if action else []
+
+    def _ai_rollover_due_loans(
+        self,
+        player: Player,
+        loan_ledger: LoanLedger | None,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        if loan_ledger is None:
+            return []
+        actions: list[str] = []
+        for loan in loan_ledger.active_loans_for(player.player_id):
+            if loan.borrower_id != player.player_id or loan.lender_id < 0:
+                continue
+            seasons_to_maturity = (
+                (loan.maturity_year - year) * 4
+                + (loan.maturity_season - season_index)
+            )
+            if seasons_to_maturity > 1 or player.dollops >= loan.repayment_amount:
+                continue
+            new_rate = banker_quote_rate(
+                player, loan_ledger, loan.repayment_amount, 1, year, season_index
+            )
+            try:
+                new_loan = loan_ledger.rollover_loan(
+                    loan.loan_id, new_rate, 1, year, season_index
+                )
+            except ValueError:
+                continue
+            actions.append(
+                f"[AI] {player.name} rolled over Loan #{loan.loan_id} "
+                f"into Loan #{new_loan.loan_id}"
+            )
+            break
+        return actions
+
+    def _ai_invest_unclaimed_catalogue_item(
+        self,
+        player: Player,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        seen: set[str] = set()
+        unclaimed = []
+        for role in player.roles:
+            for item in items_for_role(CAPITAL_CATALOGUE, role.name):
+                if item.item_id in seen:
+                    continue
+                seen.add(item.item_id)
+                if player.capital_inventory.get(item.item_id, 0) <= 0:
+                    unclaimed.append(item)
+        if not unclaimed:
+            return []
+        item = min(unclaimed, key=lambda catalogue_item: catalogue_item.cost)
+        if player.dollops <= item.cost * 2:
+            return []
+        player.dollops -= item.cost
+        current_tick = year * 4 + season_index
+        player.add_capital(item.item_id, 1, acquired_tick=current_tick)
+        return [
+            f"[AI] {player.name} invested {item.cost:.0f} Dp in {item.name}"
+        ]
 
     def _ai_offer_insurance(
         self,
@@ -176,6 +415,8 @@ class AIStrategy:
         """Buy the cheapest ask and immediately fill richer bids when the spread is visible."""
         actions: list[str] = []
         for rtype in ResourceType:
+            if rtype == ResourceType.FINANCE:
+                continue
             offer = market.best_offer(rtype)
             bid = market.best_bid(rtype)
             if offer is None or bid is None:
@@ -210,6 +451,7 @@ class AIStrategy:
         season_name: str = "Spring",
         year: int = 0,
         season_index: int = 0,
+        loan_ledger: LoanLedger | None = None,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -224,8 +466,23 @@ class AIStrategy:
         if is_manufacturer:
             chosen_line = self._choose_product_line(player, market)
 
+        actions.extend(
+            self._ai_rollover_due_loans(player, loan_ledger, year, season_index)
+        )
+        actions.extend(
+            self._ai_take_loan_if_short(
+                player, market, other_players, loan_ledger, season_name,
+                year, season_index, chosen_line,
+            )
+        )
+        actions.extend(
+            self._ai_invest_unclaimed_catalogue_item(player, year, season_index)
+        )
+
         inputs_needed = player.all_required_inputs(season_name, chosen_line)
         for rtype, qty_needed in inputs_needed.items():
+            if rtype == ResourceType.FINANCE:
+                continue
             target_qty = qty_needed * self.target_production_runs
             have = player.inventory.get(rtype)
             if have >= target_qty:
@@ -286,10 +543,18 @@ class AIStrategy:
             actions.extend(
                 self._ai_offer_insurance(player, other_players, season_name, year, season_index)
             )
+            actions.extend(
+                self._ai_offer_loans(
+                    player, other_players, market, loan_ledger,
+                    season_name, year, season_index,
+                )
+            )
 
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
         for rtype in listable_resources:
+            if rtype == ResourceType.FINANCE:
+                continue
             qty = max(0, player.inventory.get(rtype) - reserve_inputs.get(rtype, 0))
             if qty <= 0:
                 continue

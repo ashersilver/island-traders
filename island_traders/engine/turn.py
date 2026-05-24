@@ -239,7 +239,7 @@ class TurnManager:
         if not player.is_human:
             actions = self._ai.take_turn(
                 player, self.market, self.players, self.production, self.trading,
-                event_result, season_name, year, season_index,
+                event_result, season_name, year, season_index, self.loan_ledger,
             )
             result.actions_taken = actions
             for a in actions:
