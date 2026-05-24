@@ -98,6 +98,55 @@ Python tests exercise the prompt rendering. Browser pass deferred to
 the PR review (no automated DOM-level test scaffolding exists in this
 repo today).
 
+### claude/economy-lifecycle-spec
+
+Branch: `claude/economy-lifecycle-spec`
+Target: `pre-release`
+
+**Docs-only — requirements spec.** No code/test changes (suite
+unchanged at 297). Captures product-owner direction (2026-05-18) for a
+cross-island economic-dependency feature set:
+
+- New `requirements/economy-lifecycle-2026-05.md`: worker
+  lifecycle/retirement (general age system, Agriculture bootstrap),
+  universal capital lifespan + per-season maintenance, a Banker
+  **capital-reserve / MBA leverage** model, and an economy rebalance
+  (per-player cash 700→1500, Mining Oil 4→8, Agriculture Food →15).
+  Phased A–E, independently mergeable; A–D engine work, E = RULES.md +
+  calibration handoff.
+- **Banker model (refined 2026-05-18):** fractional-reserve, not a
+  binary gate. Loans are backed by the bank's own capital at a reserve
+  ratio (**0.50** with <3 MBA Banker Managers, **0.20** with ≥3); own
+  capital earns full interest, externally-sourced capital earns only
+  the margin over the posted rate at issuance; reserved own capital is
+  locked until the loan resolves. Banking starts with **0** MBA
+  managers (intentional early constraint, ~2× leverage) and trains up
+  (2 Professors + 3 Courses, 2 seasons) to ~5×. Without a
+  `banker.computing_centre` capital item, loan applications take +1
+  season to disburse. No MBA bootstrap roster.
+- **Loan terms & negotiation (refined 2026-05-19):** Banker may quote
+  any rate (formula = suggested default) and the applicant can
+  **counter** (reuses the training counter pattern); indicative
+  **1/2/3-year** term-rate quotes; 2/3-year loans settle interest
+  annually and roll the **original amount at the original rate** until
+  the final year (rate locked at origination) — distinct from the
+  shipped #6 post-maturity opt-in refinance.
+- New `requirements/role-player-guides.md`: on-demand per-role
+  instruction beyond the acquisition intro (esp. the Banker lending
+  rules), single content source shared with RULES.md; scheduled after
+  economy Phase D / paired with Phase E. TODO entry under Dashboard &
+  UX.
+- `TODO.md`: Economy Lifecycle section with the A–E checklist.
+- Annotates `codex-tasks/balance-calibration-2026-05.md` with a
+  **sequencing dependency**: calibration must run *after* economy
+  Phases A–D land (this feature deliberately re-balances the
+  over-dominant Banker/Farmer, so calibrating the current economy would
+  be wasted).
+
+Decisions locked via AskUserQuestion: 1500/player; general retirement
+(Agriculture first, near-retirement seeding as a tuning lever); MBA as a
+credential on existing Banker Managers; universal capital wear.
+
 ### codex/ux-server-payload
 
 Branch: `codex/ux-server-payload`
