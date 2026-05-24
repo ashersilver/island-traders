@@ -389,7 +389,13 @@ button:active{transform:scale(.97)}
 .action-btns{display:flex;flex-wrap:wrap;gap:.35rem}
 .action-btns button{font-size:.8rem;padding:.35rem .8rem;background:var(--panel2);color:var(--text);border:1px solid var(--border)}
 .action-btns button.highlight{background:var(--gold);color:#000;border:none}
-.action-btns button:hover{border-color:var(--accent)}
+.action-btns button.recommended{border-color:var(--gold);box-shadow:0 0 0 1px rgba(246,185,59,.45)}
+.action-btns button:hover:not([disabled]){border-color:var(--accent)}
+.action-btns button[disabled]{opacity:.45;cursor:not-allowed}
+/* Grouped action layout (Phase 2 of the UX review) */
+.action-groups{display:flex;flex-direction:column;gap:.45rem}
+.action-group{border:1px solid var(--border);border-radius:6px;padding:.45rem .55rem;background:rgba(0,0,0,.15)}
+.action-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:.3rem;font-weight:700}
 
 /* island map */
 .island-map-container{width:100%;margin-bottom:.5rem}
@@ -2713,13 +2719,53 @@ function buildIslandMap() {
 }
 
 // ==================== INPUT PROMPTS ====================
+// Canonical render order for the grouped action menu (Phase 2 of UX review).
+// Source of truth for grouping is the server payload (option.group);
+// see ws_adapter.action_option_payload + ACTION_GROUPS.
+const ACTION_GROUP_ORDER = ['Production', 'Trade', 'People', 'Capital', 'Finance', 'Info'];
+
+function _renderActionButton(o) {
+  const classes = [];
+  if (o.value === 'produce') classes.push('highlight');
+  if (o.recommended) classes.push('recommended');
+  const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+  const disabled = o.enabled === false;
+  const disabledAttr = disabled ? ' disabled' : '';
+  const titleAttr = (disabled && o.disabled_reason)
+    ? ` title="${esc(o.disabled_reason)}"`
+    : '';
+  const onclick = disabled ? '' : ` onclick="sendResponse('${o.value}')"`;
+  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
+}
+
 function showActionPrompt(msg) {
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
-  document.getElementById('prompt-btns').innerHTML = msg.options.map(o =>
-    `<button class="${o.value==='produce'?'highlight':''}" onclick="sendResponse('${o.value}')">${o.label}</button>`
-  ).join('');
+
+  // Bucket options by their server-supplied group, defaulting to 'Info' for
+  // any older payload that predates the Phase 1 server contract.
+  const buckets = {};
+  for (const opt of msg.options) {
+    const group = opt.group || 'Info';
+    (buckets[group] = buckets[group] || []).push(opt);
+  }
+
+  // Render groups in the canonical order, skipping empty groups.  Any
+  // unexpected group label (forward-compat) gets appended at the end.
+  const knownGroups = ACTION_GROUP_ORDER.filter(g => buckets[g] && buckets[g].length);
+  const unknownGroups = Object.keys(buckets).filter(g => !ACTION_GROUP_ORDER.includes(g));
+  const groups = knownGroups.concat(unknownGroups);
+
+  const groupsHtml = groups.map(g => {
+    const buttons = buckets[g].map(_renderActionButton).join('');
+    return `<div class="action-group">
+      <div class="action-group-label">${esc(g)}</div>
+      <div class="action-btns">${buttons}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('prompt-btns').innerHTML = `<div class="action-groups">${groupsHtml}</div>`;
   document.getElementById('prompt-input').innerHTML = '';
 }
 

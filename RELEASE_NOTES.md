@@ -5,6 +5,48 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-action-grouping
+
+Branch: `claude/ux-action-grouping`
+Target: `pre-release`
+
+UX review Phase 2 — grouped action menu (Mockup 1).
+
+**What:** Rewrites `showActionPrompt` in
+`island_traders/server/static/index.html` to render the per-season
+action prompt as labelled groups instead of one flat button row.
+Consumes the structured option payload that Codex's Phase 1 branch
+(`codex/ux-server-payload`) added: each option's `group`, `enabled`,
+`disabled_reason`, and `recommended` fields drive the layout directly.
+
+- Canonical group order: Production / Trade / People / Capital /
+  Finance / Info (stable, defined client-side in
+  `ACTION_GROUP_ORDER`).
+- Empty groups are skipped; unknown-group labels (forward-compat) are
+  appended at the end.
+- `Produce` keeps the existing gold `.highlight` style.
+- `recommended: true` adds a `.recommended` outline (Phase 4 will set
+  this from Decision Hint targets — currently always false).
+- `enabled: false` disables the button and shows the
+  `disabled_reason` as a native tooltip (`title` attribute). Disabled
+  buttons do not bind a click handler so the user can't accidentally
+  send a server message that the engine would reject anyway.
+
+**CSS additions:** `.action-groups`, `.action-group`,
+`.action-group-label`, `.action-btns button.recommended`,
+`.action-btns button[disabled]`. The existing `.action-btns` flex-wrap
+layout is unchanged inside each group, so buttons reflow naturally on
+narrow widths and groups stack vertically.
+
+**Back-compat:** options that arrive without `group` fall through to
+the `Info` bucket — keeps the dashboard functional even if rolled
+back to a pre-Phase-1 server.
+
+**Verification:** Suite **352 passing**. Pure client refactor; no
+Python tests exercise the prompt rendering. Browser pass deferred to
+the PR review (no automated DOM-level test scaffolding exists in this
+repo today).
+
 ### codex/ux-server-payload
 
 Branch: `codex/ux-server-payload`
