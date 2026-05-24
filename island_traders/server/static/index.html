@@ -440,6 +440,13 @@ button:active{transform:scale(.97)}
 .market-buy-table{min-width:940px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:.8rem}
 .market-buy-table th,.market-buy-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:.42rem .5rem;vertical-align:middle}
 .market-buy-table th:last-child,.market-buy-table td:last-child{border-right:none}
+/* Phase 5 — Market Buy row tiering / focus highlight */
+.market-buy-table tr.mkt-row-focus td{background:rgba(246,185,59,.14);box-shadow:inset 3px 0 0 var(--gold)}
+.mkt-dormant{margin-top:.8rem}
+.mkt-dormant>summary{cursor:pointer;font-size:.78rem;color:var(--dim);padding:.35rem .5rem;background:rgba(0,0,0,.18);border:1px solid var(--border);border-radius:4px;list-style:none}
+.mkt-dormant>summary::before{content:"▸ ";display:inline-block;transition:transform .15s ease}
+.mkt-dormant[open]>summary::before{transform:rotate(90deg)}
+.mkt-dormant>summary:hover{color:var(--text);border-color:var(--accent)}
 .market-buy-table tbody tr:last-child td{border-bottom:none}
 .market-buy-table th{background:rgba(10,189,227,.08);color:var(--heading);font-weight:700}
 .market-buy-table input{height:2rem;margin:0!important}
@@ -2434,25 +2441,35 @@ const _HINT_OPEN_LABEL = {
   produce:           'Produce',
 };
 let _currentHintActions = new Set();
+// Resources currently mentioned by hints (Phase 5: drives Market Buy row
+// tiering and per-hint focus when an Open button is clicked).
+let _currentHintResources = new Set();
+// Set when an Open button is clicked; consumed (and cleared) by the next
+// modal that opens for the chosen action.  One-shot, per-click.
+let _pendingHintTarget = null;
 
 function _isActionPromptOpen() {
   const area = document.getElementById('prompt-area');
   return !!(area && !area.classList.contains('hidden'));
 }
 
-function _actOnHint(action) {
+function _actOnHint(action, payload = {}) {
   if (!_isActionPromptOpen()) return;
+  _pendingHintTarget = Object.assign({ action }, payload);
   sendResponse(action);
 }
 
-function _renderHintOpenButton(action) {
+function _renderHintOpenButton(action, payload = {}) {
   if (!action) return '';
   const label = _HINT_OPEN_LABEL[action] || 'Open';
   const open = _isActionPromptOpen();
   const disabled = open ? '' : 'disabled';
   const title = open ? '' : 'title="Wait for your action prompt"';
+  // JSON-encode both args so the onclick survives any quotes / unicode in
+  // the payload values (resource names are ASCII today but defensive).
+  const argsJson = `${JSON.stringify(action)}, ${JSON.stringify(payload)}`;
   return `<div class="hint-actions">
-    <button class="btn-gold btn-sm hint-open" ${disabled} ${title} onclick="_actOnHint('${esc(action)}')">${esc(label)} →</button>
+    <button class="btn-gold btn-sm hint-open" ${disabled} ${title} onclick='_actOnHint(${esc(argsJson)})'>${esc(label)} →</button>
   </div>`;
 }
 
@@ -2471,6 +2488,7 @@ function renderDecisionHints(player, role) {
       title: `${alert.resource} runway: ${fmtQty(alert.runway_seasons)} season${alert.runway_seasons === 1 ? '' : 's'}`,
       why: `You have ${alert.on_hand}; projected population need is ${alert.seasonal_need}/season. Buy ${alert.recommended_purchase} ${alert.resource} to cover next season plus a one-season buffer.`,
       triggers_action: 'buy_market',
+      target_resource: alert.resource,
     });
   }
 
@@ -2512,11 +2530,17 @@ function renderDecisionHints(player, role) {
         }
         return `${qty} ${resource} needed`;
       });
+      // First shortfall resource drives the Market Buy focus when the Open
+      // button is clicked.  Multi-resource shortfalls still surface all of
+      // them in `why`; only the first jumps to the top of the Market Buy
+      // table (Phase 5 — Tier 1).
+      const firstResource = Object.keys(inputShort)[0];
       hints.push({
         tone: 'blocked',
         title: `Unblock ${output.output}`,
         why: buys.join('; '),
         triggers_action: 'buy_market',
+        target_resource: firstResource,
       });
     } else if (Object.keys(workforceShort).length) {
       hints.push({
@@ -2548,14 +2572,17 @@ function renderDecisionHints(player, role) {
   // from that visible slice (a hint that doesn't render shouldn't recommend).
   const visible = hints.slice(0, 4);
   _currentHintActions = new Set(visible.map(h => h.triggers_action).filter(Boolean));
+  _currentHintResources = new Set(visible.map(h => h.target_resource).filter(Boolean));
 
-  el.innerHTML = visible.map(h => `
+  el.innerHTML = visible.map(h => {
+    const payload = h.target_resource ? { resource: h.target_resource } : {};
+    return `
     <div class="decision-card ${h.tone}">
       <strong>${esc(h.title)}</strong>
       <div class="why">${esc(h.why)}</div>
-      ${_renderHintOpenButton(h.triggers_action)}
-    </div>
-  `).join('');
+      ${_renderHintOpenButton(h.triggers_action, payload)}
+    </div>`;
+  }).join('');
 }
 
 function fmtMarketPrice(v) {
@@ -3042,10 +3069,72 @@ function showGameOver(msg) {
   `;
 }
 
+// Single row of the Market Buy table.  Extracted so the tiered layout
+// (Phase 5) can render identical rows in two sub-tables (Focused / live
+// vs. dormant).
+function _renderMarketBuyRow(res, d, focusResource) {
+  const askQty = d.ask_quantity ?? d.quantity ?? 0;
+  const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
+  const bidQty = d.bid_quantity ?? 0;
+  const bidPrice = d.bid_price;
+  // #22.3 — when an ask exists, pre-fill the new-bid price with the ask
+  // (the buyer starts from the price that would clear), else the formula
+  // price as a sensible default.
+  const bidPrefill = (askQty && askPrice) ? Number(askPrice).toFixed(2) : (d.formula_price || 0);
+  const focusClass = (focusResource && res === focusResource) ? ' class="mkt-row-focus"' : '';
+  return `<tr${focusClass}>
+    <td>${esc(res)}</td>
+    <td style="color:var(--green);border-left:2px solid var(--border)">${fmtMarketPrice(bidPrice)}</td>
+    <td>${bidQty || '—'}</td>
+    <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+    <td>${askQty || '—'}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
+  </tr>`;
+}
+
+function _marketBuyHeaderRow() {
+  return '<thead><tr>'
+    + '<th style="width:170px">Commodity</th>'
+    + '<th colspan="2" style="color:var(--green);border-left:2px solid var(--border)">Current Bid</th>'
+    + '<th colspan="2" style="color:var(--gold);border-left:2px solid var(--border)">Current Ask</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">⬤ Buy Now (qty @ ask)</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">⬤ Place Bid (qty @ your price)</th>'
+    + '</tr></thead>';
+}
+
 function showMarketBuyPopup(msg) {
+  // Phase 5: consume any pending hint target so we can both highlight the
+  // hinted resource AND ensure it appears in the visible tier.  One-shot:
+  // clear immediately so a manual Market Buy open after this doesn't
+  // inherit the focus.
+  const hint = _pendingHintTarget;
+  _pendingHintTarget = null;
+  const focusResource = (hint && hint.action === 'buy_market') ? hint.resource : null;
+
   const market = msg.market || {};
   const budget = msg.budget || 0;
   const entries = Object.entries(market);
+
+  // Tier each commodity row by current relevance.
+  //   Tier 1: hint-mentioned (sustenance / input shortfalls) — these are
+  //           what the player most likely needs right now.
+  //   Tier 2: live market — at least one side has standing depth.
+  //   Tier 3: dormant — no bids, no asks, not currently flagged.  Hidden
+  //           behind a "Show all other commodities" expander so the first
+  //           viewport stays focused.
+  const tier1 = [], tier2 = [], tier3 = [];
+  for (const e of entries) {
+    const [res, d] = e;
+    if (_currentHintResources.has(res) || res === focusResource) tier1.push(e);
+    else if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) tier2.push(e);
+    else tier3.push(e);
+  }
+  // Within Tier 1, float the explicitly clicked hint resource to the top.
+  if (focusResource) {
+    tier1.sort((a, b) => (a[0] === focusResource) ? -1 : (b[0] === focusResource ? 1 : 0));
+  }
+
   let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
   // #22.2 — make it explicit which side is an immediate purchase vs a limit
   // bid.  The two actions are visually separated and explained.
@@ -3053,33 +3142,35 @@ function showMarketBuyPopup(msg) {
     <span style="color:var(--gold)">⬤ Buy Now</span> — purchases immediately at the seller's <em>Ask</em> price (only available when there's an ask).
     &nbsp;&nbsp;<span style="color:var(--green)">⬤ Place Bid</span> — posts a limit order at <em>your</em> price; it fills when a seller's ask meets it.
   </div>`;
-  html += '<div class="market-buy-wrap"><table class="market-buy-table"><thead><tr>'
-    + '<th style="width:170px">Commodity</th>'
-    + '<th colspan="2" style="color:var(--green);border-left:2px solid var(--border)">Current Bid</th>'
-    + '<th colspan="2" style="color:var(--gold);border-left:2px solid var(--border)">Current Ask</th>'
-    + '<th style="color:var(--gold);border-left:2px solid var(--border)">⬤ Buy Now (qty @ ask)</th>'
-    + '<th style="color:var(--green);border-left:2px solid var(--border)">⬤ Place Bid (qty @ your price)</th>'
-    + '</tr></thead><tbody>';
-  for (const [res, d] of entries) {
-    const askQty = d.ask_quantity ?? d.quantity ?? 0;
-    const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
-    const bidQty = d.bid_quantity ?? 0;
-    const bidPrice = d.bid_price;
-    // #22.3 — when an ask exists, pre-fill the new-bid price with the ask
-    // (the buyer starts from the price that would clear), else the formula
-    // price as a sensible default.
-    const bidPrefill = (askQty && askPrice) ? Number(askPrice).toFixed(2) : (d.formula_price || 0);
-    html += `<tr>
-      <td>${esc(res)}</td>
-      <td style="color:var(--green);border-left:2px solid var(--border)">${fmtMarketPrice(bidPrice)}</td>
-      <td>${bidQty || '—'}</td>
-      <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
-      <td>${askQty || '—'}</td>
-      <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-      <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
-    </tr>`;
+  if (focusResource) {
+    html += `<div style="font-size:.76rem;color:var(--gold);margin-bottom:.5rem">
+      Opened from a Decision Hint about <strong>${esc(focusResource)}</strong> — the row is pinned at the top and highlighted.
+    </div>`;
   }
-  html += '</tbody></table></div>';
+
+  // Primary table: hint-mentioned + live market rows.
+  const primary = tier1.concat(tier2);
+  if (primary.length) {
+    html += '<div class="market-buy-wrap"><table class="market-buy-table">'
+      + _marketBuyHeaderRow()
+      + '<tbody>'
+      + primary.map(([res, d]) => _renderMarketBuyRow(res, d, focusResource)).join('')
+      + '</tbody></table></div>';
+  } else {
+    html += '<div style="font-size:.8rem;color:var(--dim);margin:.5rem 0">No live market activity right now — every commodity is in the collapsed section below.</div>';
+  }
+
+  // Secondary collapsed table: dormant commodities.  Only render the
+  // expander when there's anything to expand to.
+  if (tier3.length) {
+    html += `<details class="mkt-dormant"><summary>Show all other commodities (${tier3.length} dormant)</summary>`
+      + '<div class="market-buy-wrap" style="margin-top:.5rem"><table class="market-buy-table">'
+      + _marketBuyHeaderRow()
+      + '<tbody>'
+      + tier3.map(([res, d]) => _renderMarketBuyRow(res, d, focusResource)).join('')
+      + '</tbody></table></div></details>';
+  }
+
   // Custom footer: total readout on the left, Buy + Cancel on the right.
   const footer =
     '<span style="font-size:.85rem;margin-right:auto">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>'
@@ -3089,6 +3180,15 @@ function showMarketBuyPopup(msg) {
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
     inp.addEventListener('input', updateMarketBuyTotals);
   });
+
+  // Scroll the focused row into view — the hint click opens the modal a
+  // few hundred ms after sendResponse, so the DOM is fresh at this point.
+  if (focusResource) {
+    const focusRow = document.querySelector('.mkt-row-focus');
+    if (focusRow && focusRow.scrollIntoView) {
+      focusRow.scrollIntoView({ block: 'nearest' });
+    }
+  }
 }
 
 function updateMarketBuyTotals() {
