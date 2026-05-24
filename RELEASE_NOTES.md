@@ -5,6 +5,66 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/bug-action-menu-race
+
+Branch: `claude/bug-action-menu-race`
+Target: `pre-release`
+
+**Fixes TODO bug #2 — "Action menu stops displaying for some players"**
+(multiplayer blocker).
+
+**Diagnosis.** Not the TLS / `_send_and_wait` surface the original TODO
+note suspected — those paths were already hardened in earlier work.
+The real root cause was a reconnect race in
+`island_traders/server/app.py` around the WebSocket-to-player table:
+
+1. Browser tab A opens, registers WS_A: `_ws_connections[R][P] = WS_A`.
+2. User refreshes / loses network briefly / opens a second tab. The
+   new connection arrives and `register_ws` runs on the asyncio loop
+   thread: `_ws_connections[R][P] = WS_B`.
+3. Some time later WS_A's network handler finally notices the
+   disconnect and its `finally` block fires
+   `manager.unregister_ws(room_id, player_id)`.
+4. The old code blindly `pop`'d the entry — **evicting WS_B from the
+   table even though WS_B was still alive and connected.**
+5. Subsequent `_thread_safe_send` (including the `choose_action`
+   payload) found `None` for the slot and silently dropped every
+   message. Player saw an empty action panel.
+
+The fix is two parts:
+
+- **Identity-aware unregister.**
+  `unregister_ws(room_id, player_id, ws=None)` now takes an optional
+  socket argument and only removes the entry if the stored socket is
+  the same object. Returns `True` iff something was actually removed.
+  The endpoint's `finally` passes `websocket` so a late unregister
+  from an already-superseded socket is a no-op.
+- **Lock around the connection table.**
+  New `GameManager._ws_lock` (a `threading.Lock`) wraps every read /
+  write of `_ws_connections` — `register_ws`, `unregister_ws`,
+  `_thread_safe_send`, `_thread_safe_broadcast`. The asyncio loop
+  thread (endpoint handlers) and the game thread (server-to-client
+  sends) both touch this table, so a plain dict isn't enough.
+
+Bonus side-effect: `lp.connected = False` in the endpoint's `finally`
+now also only fires when the unregister succeeded, so the lobby
+display no longer falsely flips to "disconnected" right after a
+quick reconnect.
+
+**Regression tests** in `tests/test_server/test_ws_reconnect_race.py`
+(5 new tests):
+
+1. `test_register_then_unregister_removes_the_entry` — happy path
+2. `test_unregister_does_not_remove_newer_replacement` — the bug
+3. `test_unregister_without_ws_arg_falls_back_to_force_pop` —
+   legacy / forced-cleanup signature preserved
+4. `test_unregister_returns_false_when_slot_already_empty` —
+   double-disconnect doesn't raise
+5. `test_thread_safe_send_uses_current_socket_after_reconnect` —
+   table lookup returns the reconnected socket, not the old one
+
+Suite **360 passing** (was 355 + 5 new tests).
+
 ### claude/training-return-bug
 
 Branch: `claude/training-return-bug`
