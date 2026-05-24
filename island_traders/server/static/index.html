@@ -411,6 +411,7 @@ button:active{transform:scale(.97)}
 .dialog .opts button{text-align:left;background:var(--bg);border:1px solid var(--border);color:var(--text)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
+.popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
 .market-buy-wrap{overflow:auto;border:1px solid var(--border);border-radius:6px}
 .market-buy-table{min-width:940px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:.8rem}
 .market-buy-table th,.market-buy-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:.42rem .5rem;vertical-align:middle}
@@ -1860,11 +1861,7 @@ function showConstraintPopup() {
     }).join('');
   }
 
-  document.getElementById('dlg-title').textContent = `Production Constraints — ${roleLabel}`;
-  document.getElementById('dlg-body').innerHTML = body
-    + '<div style="margin-top:1rem;text-align:right">'
-    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
-  document.getElementById('overlay').classList.add('active');
+  showPopup(`Production Constraints — ${roleLabel}`, body);
 }
 
 function marketPriceOf(resourceName) {
@@ -2428,10 +2425,8 @@ function renderBarterMarket(compact = false) {
 
 function showMarketBoardPopup() {
   if (!gameState) return;
-  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket()
-    + '<div style="margin-top:1rem;text-align:right">'
-    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
-  showDlg('Market Board', html);
+  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket();
+  showPopup('Market Board', html);
 }
 
 function buildIslandTabs(players) {
@@ -2857,11 +2852,12 @@ function showMarketBuyPopup(msg) {
     </tr>`;
   }
   html += '</tbody></table></div>';
-  html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
-  html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
-  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button></div>';
-  html += '</div>';
-  showDlg('Market Buy', html, 'market-dialog');
+  // Custom footer: total readout on the left, Buy + Cancel on the right.
+  const footer =
+    '<span style="font-size:.85rem;margin-right:auto">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>'
+    + '<button class="btn-gold" onclick="submitMarketBuy()">Buy</button>'
+    + '<button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button>';
+  showPopup('Market Buy', html, { className: 'market-dialog', footerActions: footer });
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
     inp.addEventListener('input', updateMarketBuyTotals);
   });
@@ -2907,6 +2903,27 @@ function showDlg(title, bodyHtml, className = '') {
   document.getElementById('dlg-title').textContent = title;
   document.getElementById('dlg-body').innerHTML = bodyHtml;
   document.getElementById('overlay').classList.add('active');
+}
+
+// Standardized info-popup shell (Phase 6 of the UX review).
+// Used by read-only or action-on-confirm popups (Production Constraints,
+// Market Board, Market Buy, etc.).  IO-driven prompt dialogs (option picker,
+// quantity input, confirm) keep using showDlg directly — they have their own
+// sendResponse / CANCEL_SENTINEL lifecycle.
+//
+// opts:
+//   className      — extra dialog class (e.g. 'market-dialog' for wide layout)
+//   footerActions  — HTML for the footer area.  Defaults to a single Close
+//                    button that calls closeOverlay().  Pass an empty string
+//                    to render no footer.
+function showPopup(title, bodyHtml, opts = {}) {
+  const { className = '', footerActions } = opts;
+  const footer = footerActions !== undefined
+    ? (footerActions
+        ? `<div class="popup-footer">${footerActions}</div>`
+        : '')
+    : `<div class="popup-footer"><button class="btn-primary" onclick="closeOverlay()">Close</button></div>`;
+  showDlg(title, bodyHtml + footer, className);
 }
 
 function hideOverlay() {
