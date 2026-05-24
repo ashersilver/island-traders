@@ -5,6 +5,58 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-personnel-popup
+
+Branch: `claude/ux-personnel-popup`
+Target: `pre-release`
+Depends on: `claude/ux-popup-shell` (merge popup-shell first).
+
+UX review Phase 3 — Personnel detail popup (Mockup 2).
+
+**What:** The sidebar Personnel summary is now clickable. Click opens
+a popup with two sections, both driven entirely by the existing game
+state payload:
+
+- **Training Pipeline** — table of in-flight batches consuming the
+  `training_pipeline` field added by `codex/ux-server-payload`. One
+  row per batch with: trainee count, target profession, status,
+  educator, transport mode, fee (Dp), return season/year, seasons
+  remaining. Counter-messages (e.g. "Try 30 Dp instead") render
+  beneath the table, one per batch that has one. Empty pipeline
+  degrades to *"No workers currently in training."*
+- **Staffing** — band table (Managers / Technicians / Workers) with
+  active and in-training counts, plus a total row. Footer shows
+  workforce active/total, efficiency %, and population — the same
+  numbers the sidebar shows individually, gathered in one place.
+
+**UI plumbing:**
+
+- `s-personnel` sidebar element gets `onclick="showPersonnelPopup()"`
+  and a tooltip; the existing `personnel-breakdown` CSS class gets
+  `cursor:pointer` + a subtle hover brightness.
+- New popup uses the `showPopup` shell from
+  `claude/ux-popup-shell` — single Close button in the standard
+  footer, no per-popup chrome.
+- New `.popup-section`, `.popup-table`, `.empty-state`, `.batch-notes`,
+  `.staffing-extras` CSS rules — reusable by the remaining Phase 6
+  popups (Loans / Insurance / Inventory) when they land.
+- `_TRAINING_STATUS_LABEL` table maps the enum values from
+  `island_traders/models/training.py::TrainingStatus` to display
+  text (`awaiting_educator` → "Awaiting educator", etc.).
+
+**Scope discipline:**
+
+- No engine or server-payload changes. Pure client refactor.
+- "Capacity/deficit summary: missing professions for the island
+  staffing plan and current university slot availability" from the
+  brief is deferred — the data is in `pd["capacity"]` but adding a
+  third popup section is out of scope for this branch and depends on
+  Phase 4 hint plumbing to be meaningful.
+- Inventory popup (also Phase 6 §5) is deferred to a follow-up branch
+  to keep this one focused on Personnel.
+
+Suite **352 passing** (no test changes — pure client refactor).
+
 ### codex/ux-server-payload
 
 Branch: `codex/ux-server-payload`

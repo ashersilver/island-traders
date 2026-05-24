@@ -412,6 +412,21 @@ button:active{transform:scale(.97)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 .popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+/* Personnel popup + general popup section styling (Phase 3) */
+.popup-section{margin-bottom:1rem}
+.popup-section:last-child{margin-bottom:0}
+.popup-section h4{margin:0 0 .45rem;font-size:.78rem;color:var(--heading);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.popup-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.popup-table th{text-align:left;padding:.3rem .5rem;background:var(--panel2);color:var(--dim);font-weight:600;border-bottom:1px solid var(--border)}
+.popup-table td{padding:.3rem .5rem;border-bottom:1px solid var(--border)}
+.popup-table tr:last-child td{border-bottom:none}
+.popup-table .total-row td{font-weight:700;background:rgba(0,0,0,.15)}
+.empty-state{color:var(--dim);font-style:italic;margin:.4rem 0}
+.batch-notes{margin-top:.5rem;padding:.4rem .6rem;background:rgba(246,185,59,.08);border-left:3px solid var(--gold);font-size:.76rem;border-radius:0 4px 4px 0}
+.batch-notes+.batch-notes{margin-top:.3rem}
+.staffing-extras{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.5rem;font-size:.76rem;color:var(--dim)}
+.personnel-breakdown{cursor:pointer}
+.personnel-breakdown:hover{filter:brightness(1.25)}
 .market-buy-wrap{overflow:auto;border:1px solid var(--border);border-radius:6px}
 .market-buy-table{min-width:940px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:.8rem}
 .market-buy-table th,.market-buy-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:.42rem .5rem;vertical-align:middle}
@@ -802,7 +817,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span></div>
-        <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel">—</div></div>
+        <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
@@ -1862,6 +1877,106 @@ function showConstraintPopup() {
   }
 
   showPopup(`Production Constraints — ${roleLabel}`, body);
+}
+
+// ==================== PERSONNEL POPUP (Phase 3 of UX review) ====================
+// Surfaces the training_pipeline + workforce_bands data the server payload
+// already provides (see codex/ux-server-payload).  Triggered from the sidebar
+// Personnel summary; opens inside the standard popup shell from Phase 6.
+
+// Display-friendly label for TrainingStatus enum values
+// (matches island_traders/models/training.py::TrainingStatus).
+const _TRAINING_STATUS_LABEL = {
+  awaiting_educator:  'Awaiting educator',
+  countered:          'Countered',
+  awaiting_transport: 'Awaiting transport',
+  dispatched:         'Dispatched',
+  completed:          'Completed',  // pipeline filters this out, but be defensive
+  rejected:           'Rejected',
+};
+
+function _formatTrainingStatus(status) {
+  return _TRAINING_STATUS_LABEL[status] || status || '—';
+}
+
+function _formatReturnTiming(batch) {
+  if (!batch.return_season || batch.return_year == null) return '—';
+  return `${esc(batch.return_season)} Y${batch.return_year}`;
+}
+
+function _renderTrainingPipelineSection(pipeline) {
+  if (!pipeline || !pipeline.length) {
+    return `<section class="popup-section">
+      <h4>Training Pipeline</h4>
+      <p class="empty-state">No workers currently in training.</p>
+    </section>`;
+  }
+  const rows = pipeline.map(b => `
+    <tr>
+      <td>${b.worker_count}</td>
+      <td>${esc(b.target_profession || '—')}</td>
+      <td>${esc(_formatTrainingStatus(b.status))}</td>
+      <td>${esc(b.educator_name || '—')}</td>
+      <td>${esc(b.transport_mode || '—')}</td>
+      <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
+      <td>${_formatReturnTiming(b)}</td>
+      <td>${b.seasons_remaining == null ? '—' : b.seasons_remaining}</td>
+    </tr>`).join('');
+  const notes = pipeline
+    .filter(b => b.counter_message)
+    .map(b => `<div class="batch-notes"><strong>Batch #${b.batch_id}:</strong> ${esc(b.counter_message)}</div>`)
+    .join('');
+  return `<section class="popup-section">
+    <h4>Training Pipeline</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Trainees</th><th>Target</th><th>Status</th><th>Educator</th>
+        <th>Transport</th><th>Fee</th><th>Return</th><th>Wait</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${notes}
+  </section>`;
+}
+
+function _renderStaffingSection(player) {
+  const wb = player.workforce_bands || {};
+  const tb = player.workforce_training_bands || {};
+  const bands = [
+    ['Managers',    wb.Manager    ?? 0, tb.Manager    ?? 0],
+    ['Technicians', wb.Technician ?? 0, tb.Technician ?? 0],
+    ['Workers',     wb.Worker     ?? 0, tb.Worker     ?? 0],
+  ];
+  const totalActive   = bands.reduce((s, [, a]) => s + a, 0);
+  const totalTraining = bands.reduce((s, [, , t]) => s + t, 0);
+  const rows = bands.map(([label, active, training]) =>
+    `<tr><td>${label}</td><td>${active}</td><td>${training}</td></tr>`
+  ).join('');
+  return `<section class="popup-section">
+    <h4>Staffing</h4>
+    <table class="popup-table">
+      <thead><tr><th>Band</th><th>Active</th><th>In training</th></tr></thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row"><td>Total</td><td>${totalActive}</td><td>${totalTraining}</td></tr>
+      </tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Workers active/total: <strong>${player.workforce_active}/${player.workforce_count}</strong></span>
+      <span>Efficiency: <strong>${player.workforce_efficiency}%</strong></span>
+      <span>Population: <strong>${player.population}</strong></span>
+    </div>
+  </section>`;
+}
+
+function showPersonnelPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const body =
+    _renderTrainingPipelineSection(me.training_pipeline || []) +
+    _renderStaffingSection(me);
+  showPopup(`Personnel — ${esc(me.name)}`, body);
 }
 
 function marketPriceOf(resourceName) {
