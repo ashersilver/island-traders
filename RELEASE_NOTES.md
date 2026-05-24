@@ -5,6 +5,48 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-brief-ai-trading-v2
+
+Branch: `claude/codex-brief-ai-trading-v2`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/ai-trading-v2.md` for the finance + invest
+follow-up to the shipped `codex/ai-trading` work.
+
+**Why a v2 brief.** The original `requirements/codex-tasks/ai-trading.md`
+brief was fully executed in commit `4a65a9a` ("Add proactive AI market
+trading", 2026-05-17). All five behaviours it scoped (lists offers,
+places bids, Transporter air tickets, cross-island arbitrage, deal
+valuation via last-deal / best-offer / formula) are live, covered by
+six green tests in `tests/test_engine/test_ai.py`. The v2 brief picks
+up the finance + investment lifecycle actions the original deferred:
+
+1. **AI Banker proactively offers loans** to capital-short AI
+   borrowers (mirrors the existing `_ai_offer_insurance` pattern).
+   Honours the Phase D1 Banker capital-reserve / MBA gate.
+2. **AI borrowers take loans** when capital-short and no active
+   borrowing position exists.
+3. **AI rolls over loans near maturity** when it can't repay the
+   `repayment_amount`.
+4. **AI uses INVEST mid-game** for opening-catalogue items it didn't
+   claim during the Investing Phase.
+5. *(optional)* Dynamic per-(player, resource) offer markup that
+   adapts to last-season fill rate.
+
+The brief also includes a mini-changelog of everything that has
+shipped since the original AI-trading brief was drafted (Economy
+Phases A–D, order override rule, market matcher fix, 60% workforce
+cap, UX phases 1–6 server payload, training-return fix, WS
+reconnect-race fix) so Codex has accurate context.
+
+**Sequencing note in the brief.** AI Trading v2 lands *before* the
+release-blocker sim calibration
+(`requirements/codex-tasks/balance-calibration-2026-05.md`) so the
+balance pass tunes against the final AI behaviour.
+
+No code / tests touched. Suite still **360 passing**.
+
 ### claude/bug-action-menu-race
 
 Branch: `claude/bug-action-menu-race`
