@@ -53,6 +53,22 @@ cross-island economic-dependency feature set:
 Decisions locked via AskUserQuestion: 1500/player; general retirement
 (Agriculture first, near-retirement seeding as a tuning lever); MBA as a
 credential on existing Banker Managers; universal capital wear.
+### codex/ux-server-payload
+
+Branch: `codex/ux-server-payload`
+Target: `pre-release`
+
+Server-side payload support for the UX review mockups:
+
+- Action prompts now include grouped option metadata with enabled state,
+  disabled reasons, and a default `recommended` flag.
+- Game state now exposes each player's active training pipeline, including
+  canonical training status, educator, transport, return timing, and counter
+  message fields.
+- Finance is hidden from market quote/history data while retaining the enum
+  for compatibility with the Banker service model.
+- Decision hints now include structured targets so clients can open focused
+  popups without parsing display text.
 
 ### claude/order-override-and-invest
 

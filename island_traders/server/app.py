@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
+from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.loan import posted_funding_rates
@@ -1571,6 +1572,141 @@ class GameManager:
             "band_counts":     band_counts,
         }
 
+    @staticmethod
+    def _profession_label(profession: str) -> str:
+        try:
+            return PROFESSION_LABEL.get(Profession(profession), profession)
+        except ValueError:
+            return profession
+
+    def _training_pipeline_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        player_names: dict[int, str],
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        pipeline = []
+        training = getattr(game, "training", None)
+        if not training:
+            return pipeline
+
+        for req in training.active_for_player(player_id):
+            if req.return_year >= 0 and req.return_season >= 0:
+                seasons_remaining = max(
+                    0,
+                    (req.return_year - current_year_idx) * len(SEASONS)
+                    + (req.return_season - current_season_idx),
+                )
+                return_year = req.return_year + 1
+                return_season = (
+                    SEASONS[req.return_season]
+                    if req.return_season < len(SEASONS)
+                    else str(req.return_season)
+                )
+            else:
+                seasons_remaining = None
+                return_year = None
+                return_season = None
+
+            pipeline.append({
+                "batch_id": req.batch_id,
+                "worker_count": len(req.worker_ids),
+                "target_profession": self._profession_label(req.target_profession),
+                # Status is the canonical TrainingStatus enum value.
+                "status": req.status.value,
+                "educator_player_id": req.educator_id,
+                "educator_name": player_names.get(
+                    req.educator_id,
+                    f"Player {req.educator_id}",
+                ),
+                "transport_mode": req.transport_mode,
+                "dollops_to_educator": round(req.dollops_to_educator, 1),
+                "return_year": return_year,
+                "return_season": return_season,
+                "seasons_remaining": seasons_remaining,
+                "counter_message": req.counter_message or None,
+            })
+        return pipeline
+
+    def _decision_hints_for_player(self, pd: dict) -> list[dict]:
+        hints: list[dict] = []
+        capacity = pd.get("capacity", {})
+        for output in capacity.get("outputs", []):
+            inputs_short = output.get("inputs_short") or {}
+            if inputs_short:
+                resource = next(iter(inputs_short))
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Unblock {output.get('output')}",
+                    "why": f"{resource} is limiting this production line.",
+                    "text": f"{resource} is limiting this production line.",
+                    "target": {
+                        "type": "resource_shortfall",
+                        "resource": resource,
+                    },
+                })
+                continue
+
+            equipment_options = (output.get("equipment_short") or {}).get("options") or []
+            if equipment_options:
+                item = equipment_options[0]
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Expand {output.get('output')}",
+                    "why": f"{item.get('name')} would increase this line's capacity.",
+                    "text": f"{item.get('name')} would increase this line's capacity.",
+                    "target": {
+                        "type": "equipment_shortfall",
+                        "capital_item": item.get("item_id"),
+                    },
+                })
+                continue
+
+            workforce_short = output.get("workforce_short") or {}
+            if workforce_short:
+                profession = next(iter(workforce_short))
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Train for {output.get('output')}",
+                    "why": f"{profession} is the tight workforce constraint.",
+                    "text": f"{profession} is the tight workforce constraint.",
+                    "target": {
+                        "type": "workforce_shortfall",
+                        "profession": profession,
+                    },
+                })
+
+        for loan in pd.get("loans_detail", []):
+            target_type = "loan_due" if loan.get("role") == "borrower" else "loan_offer"
+            hints.append({
+                "tone": "watch",
+                "title": "Review loan position",
+                "why": "There is an active loan to monitor.",
+                "text": "There is an active loan to monitor.",
+                "target": {
+                    "type": target_type,
+                    "loan_id": loan.get("loan_id"),
+                },
+            })
+            break
+
+        for policy in pd.get("policies_detail", []):
+            hints.append({
+                "tone": "watch",
+                "title": "Review insurance",
+                "why": "There is an active insurance policy to monitor.",
+                "text": "There is an active insurance policy to monitor.",
+                "target": {
+                    "type": "insurance_review",
+                    "policy_id": policy.get("policy_id"),
+                },
+            })
+            break
+
+        return hints
+
     def get_game_state(self, room_id: str, player_id: str | None = None) -> dict | None:
         room = self.rooms.get(room_id)
         if not room or not room.game:
@@ -1585,6 +1721,7 @@ class GameManager:
         current_year_idx = getattr(room, "current_year_index", 0)
         current_season_idx = getattr(room, "current_season_index", 0)
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
+        player_names = {p.player_id: p.name for p in game.players}
 
         players_data = []
         for p in game.players:
@@ -1631,6 +1768,13 @@ class GameManager:
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
                 "workforce_training_bands": p.workforce.training_band_summary(),
+                "training_pipeline": self._training_pipeline_for_player(
+                    game,
+                    p.player_id,
+                    player_names,
+                    current_year_idx,
+                    current_season_idx,
+                ),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
@@ -1672,11 +1816,16 @@ class GameManager:
                 }
             # Production capacity panel + constraint data
             pd["capacity"] = self._player_capacity(p, current_tick=current_tick)
+            pd["decision_hints"] = self._decision_hints_for_player(pd)
             players_data.append(pd)
 
         mkt_summary = game.market.market_summary()
         market_data = {}
         for r in ResourceType:
+            # Phase D1 Banker service model: Finance is no longer a tradable
+            # market commodity, but the enum remains for saved-game/back-compat.
+            if r == ResourceType.FINANCE:
+                continue
             info = mkt_summary.get(r.value, {})
             formula_price = round(game.market.current_price(r), 2)
             ask_price = info.get("ask_price")
@@ -1692,7 +1841,6 @@ class GameManager:
                 "formula_price": formula_price,
             }
 
-        player_names = {p.player_id: p.name for p in game.players}
         player_by_id = {p.player_id: p for p in game.players}
         barter_deals = []
         for deal in getattr(game.ledger, "deals", []):
@@ -1809,7 +1957,11 @@ class GameManager:
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "price_history": [
                 {"year": s.year, "season": s.season,
-                 "prices": {r.value: round(p, 2) for r, p in s.prices.items()}}
+                 "prices": {
+                     r.value: round(p, 2)
+                     for r, p in s.prices.items()
+                     if r != ResourceType.FINANCE
+                 }}
                 for s in game.market.price_history[-8:]
             ],
             # Replay a bounded slice of the ticker so late/reconnecting tabs
