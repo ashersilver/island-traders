@@ -359,6 +359,14 @@ class GameManager:
         self.rooms: dict[str, GameRoom] = {}
         self._code_index: dict[str, str] = {}  # join_code -> room_id
         self._ws_connections: dict[str, dict[str, Any]] = {}
+        # Protects _ws_connections against concurrent register / unregister /
+        # send / broadcast — these run on the asyncio loop thread (endpoint
+        # handlers) and on the game thread (via _thread_safe_send) so a
+        # plain dict isn't enough.  Without this, a quick reconnect could
+        # interleave the new connection's register with the old connection's
+        # finally-unregister and drop the live socket from the table — the
+        # bug #2 symptom of "action menu stops displaying for some players".
+        self._ws_lock: threading.Lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -1973,16 +1981,21 @@ class GameManager:
     # ---- Thread-safe WebSocket sending ----
 
     def _thread_safe_send(self, room_id: str, lobby_player_id: str, msg: dict) -> None:
-        ws = self._ws_connections.get(room_id, {}).get(lobby_player_id)
+        with self._ws_lock:
+            ws = self._ws_connections.get(room_id, {}).get(lobby_player_id)
         if ws and self._loop:
             asyncio.run_coroutine_threadsafe(
                 self._async_send(ws, msg), self._loop
             )
 
     def _thread_safe_broadcast(self, room_id: str, msg: dict) -> None:
-        connections = self._ws_connections.get(room_id, {})
+        # Snapshot the values inside the lock so the loop iterates an
+        # immutable list (asyncio.run_coroutine_threadsafe is fast enough
+        # to do outside the lock — we just need the values, not the dict).
+        with self._ws_lock:
+            connections = list(self._ws_connections.get(room_id, {}).values())
         if self._loop:
-            for ws in connections.values():
+            for ws in connections:
                 asyncio.run_coroutine_threadsafe(
                     self._async_send(ws, msg), self._loop
                 )
@@ -1995,13 +2008,30 @@ class GameManager:
             pass
 
     def register_ws(self, room_id: str, lobby_player_id: str, ws) -> None:
-        if room_id not in self._ws_connections:
-            self._ws_connections[room_id] = {}
-        self._ws_connections[room_id][lobby_player_id] = ws
+        with self._ws_lock:
+            if room_id not in self._ws_connections:
+                self._ws_connections[room_id] = {}
+            self._ws_connections[room_id][lobby_player_id] = ws
 
-    def unregister_ws(self, room_id: str, lobby_player_id: str) -> None:
-        conns = self._ws_connections.get(room_id, {})
-        conns.pop(lobby_player_id, None)
+    def unregister_ws(self, room_id: str, lobby_player_id: str, ws=None) -> bool:
+        """Remove this player's socket entry from the connection table.
+
+        When ``ws`` is provided, only removes the entry if the stored
+        socket is the same object — fixes the reconnect race where a new
+        connection has already replaced this slot before the old
+        connection's ``finally`` block fires.  Returns ``True`` iff an
+        entry was actually removed (i.e. this socket was still the live
+        one).  Without ``ws``, removes whatever is stored (legacy /
+        forced cleanup).
+        """
+        with self._ws_lock:
+            conns = self._ws_connections.get(room_id, {})
+            if ws is None:
+                return conns.pop(lobby_player_id, None) is not None
+            if conns.get(lobby_player_id) is ws:
+                del conns[lobby_player_id]
+                return True
+            return False
 
     def handle_player_response(self, room_id: str, lobby_player_id: str, value) -> None:
         """Route a WS response message to the right engine player's event."""
@@ -2619,8 +2649,14 @@ def create_app() -> FastAPI:
         except Exception as e:
             logger.exception("WebSocket error for %s/%s", room_id, player_id)
         finally:
-            lp.connected = False
-            manager.unregister_ws(room_id, player_id)
+            # Identity-aware unregister: only flip `connected` to False if
+            # this socket was still the live one for the slot.  If a quick
+            # reconnect has already replaced it (a new tab, browser refresh,
+            # network blip + auto-reconnect), the new socket stays in the
+            # table and `connected` stays True so subsequent server-to-client
+            # messages still reach the player.  Fixes bug #2.
+            if manager.unregister_ws(room_id, player_id, websocket):
+                lp.connected = False
 
     return app
 

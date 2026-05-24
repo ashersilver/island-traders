@@ -9,11 +9,22 @@
 
 ## Bugs (fix before new features)
 
-- [ ] **#2 — Action menu stops displaying for some players** *(multiplayer blocker)*
-      During concurrent play some players' action menus disappear. Likely a
-      TLS/thread race in ws_adapter — `set_active_player` called on wrong thread
-      or `_ensure_player` races, causing `_send_and_wait` to silently return None.
-      Reconnect/replay work may help but needs a dedicated investigation.
+- [x] **#2 — Action menu stops displaying for some players** *(multiplayer
+      blocker, fixed claude/bug-action-menu-race)* — root cause was a
+      reconnect race in `server/app.py`, not the TLS / `_send_and_wait`
+      surface the prior TODO suspected (those were already hardened).
+      When a player's browser reconnected quickly (refresh, brief network
+      blip, second tab), the new socket's `register_ws` ran on the
+      asyncio loop thread BEFORE the old socket's `finally`-block
+      `unregister_ws`. The old socket's late unregister then evicted the
+      newly-registered socket from `_ws_connections`. Subsequent
+      `_thread_safe_send` calls found no entry and silently dropped every
+      message — most visibly the `choose_action` payload. Fix:
+      identity-aware `unregister_ws(room_id, player_id, ws)` that only
+      removes the entry if it's still the same socket, plus a
+      `GameManager._ws_lock` protecting every read / write of the
+      connection table. 5 regression tests in
+      `tests/test_server/test_ws_reconnect_race.py`.
 - [x] **Trainees never return from training** *(playtest 2026-05-24, fixed
       claude/training-return-bug)* — the **self-training** shortcut in
       `engine/turn.py::_action_request_training` was calling
