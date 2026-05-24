@@ -368,6 +368,9 @@ button:active{transform:scale(.97)}
 .decision-card.good{border-color:rgba(39,174,96,.55)}
 .decision-card.warn{border-color:rgba(231,192,93,.55)}
 .decision-card.blocked{border-color:rgba(231,76,60,.55)}
+.decision-card .hint-actions{display:flex;justify-content:flex-end;margin-top:.4rem}
+.decision-card .hint-open{font-size:.7rem;padding:.2rem .55rem}
+.decision-card .hint-open[disabled]{opacity:.5;cursor:not-allowed}
 .icon-btn{background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:4px;min-width:1.45rem;height:1.35rem;padding:0;font-size:.85rem}
 
 .comp-table{width:100%;border-collapse:collapse;font-size:.79rem}
@@ -2410,6 +2413,49 @@ function renderFundingRates() {
     + '<div style="font-size:.72rem;color:var(--dim);margin-top:.35rem">Rates are bank cost of funds; loan quotes add at least 2% plus borrower risk.</div>';
 }
 
+// ==================== HINT -> ACTION WIRING (Phase 4 of UX review) ====================
+// Each hint that maps onto an action menu entry carries a `triggers_action`
+// field naming the TurnAction value to dispatch.  The hint card renders an
+// "Open" button that:
+//   1. Only activates when the player is being prompted for an action.
+//   2. Calls sendResponse(action) — equivalent to clicking that action button
+//      directly.  Per the brief, hints never auto-submit the underlying game
+//      action — sendResponse picks the action menu choice, the resulting modal
+//      is what the player confirms.
+// The set of hinted actions is also surfaced to showActionPrompt so the
+// matching action menu button gets the gold .recommended outline.
+const _HINT_OPEN_LABEL = {
+  buy_market:        'Open Market Buy',
+  purchase_capital:  'Purchase Equipment',
+  request_training:  'Request Training',
+  view_loans:        'View Loans',
+  offer_loan:        'Offer Loan',
+  manage_insurance:  'Manage Insurance',
+  produce:           'Produce',
+};
+let _currentHintActions = new Set();
+
+function _isActionPromptOpen() {
+  const area = document.getElementById('prompt-area');
+  return !!(area && !area.classList.contains('hidden'));
+}
+
+function _actOnHint(action) {
+  if (!_isActionPromptOpen()) return;
+  sendResponse(action);
+}
+
+function _renderHintOpenButton(action) {
+  if (!action) return '';
+  const label = _HINT_OPEN_LABEL[action] || 'Open';
+  const open = _isActionPromptOpen();
+  const disabled = open ? '' : 'disabled';
+  const title = open ? '' : 'title="Wait for your action prompt"';
+  return `<div class="hint-actions">
+    <button class="btn-gold btn-sm hint-open" ${disabled} ${title} onclick="_actOnHint('${esc(action)}')">${esc(label)} →</button>
+  </div>`;
+}
+
 function renderDecisionHints(player, role) {
   const el = document.getElementById('decision-hints');
   if (!el) return;
@@ -2423,7 +2469,8 @@ function renderDecisionHints(player, role) {
     hints.push({
       tone: alert.severity === 'danger' ? 'blocked' : 'warn',
       title: `${alert.resource} runway: ${fmtQty(alert.runway_seasons)} season${alert.runway_seasons === 1 ? '' : 's'}`,
-      why: `You have ${alert.on_hand}; projected population need is ${alert.seasonal_need}/season. Buy ${alert.recommended_purchase} ${alert.resource} to cover next season plus a one-season buffer.`
+      why: `You have ${alert.on_hand}; projected population need is ${alert.seasonal_need}/season. Buy ${alert.recommended_purchase} ${alert.resource} to cover next season plus a one-season buffer.`,
+      triggers_action: 'buy_market',
     });
   }
 
@@ -2435,7 +2482,10 @@ function renderDecisionHints(player, role) {
       hints.push({
         tone: (max === null || max > 0) ? 'good' : 'warn',
         title: `Underwrite ${output.output}`,
-        why: `${roleLabel} can currently support up to ${max === null ? 'unlimited' : max} active policy capacity; issue policies via insurance actions, not Produce.`
+        why: `${roleLabel} can currently support up to ${max === null ? 'unlimited' : max} active policy capacity; issue policies via insurance actions, not Produce.`,
+        // No direct action hand-off — service outputs flow through insurance UI,
+        // not Produce.  Player picks the right finance action themselves.
+        triggers_action: null,
       });
       continue;
     }
@@ -2443,7 +2493,8 @@ function renderDecisionHints(player, role) {
       hints.push({
         tone: 'good',
         title: `Produce ${output.output}`,
-        why: `${roleLabel} can currently make up to ${max === null ? 'unlimited' : max} this season.`
+        why: `${roleLabel} can currently make up to ${max === null ? 'unlimited' : max} this season.`,
+        triggers_action: 'produce',
       });
       continue;
     }
@@ -2464,19 +2515,22 @@ function renderDecisionHints(player, role) {
       hints.push({
         tone: 'blocked',
         title: `Unblock ${output.output}`,
-        why: buys.join('; ')
+        why: buys.join('; '),
+        triggers_action: 'buy_market',
       });
     } else if (Object.keys(workforceShort).length) {
       hints.push({
         tone: 'warn',
         title: `Add workers for ${output.output}`,
-        why: Object.entries(workforceShort).map(([band, qty]) => `${qty} ${band}`).join(', ')
+        why: Object.entries(workforceShort).map(([band, qty]) => `${qty} ${band}`).join(', '),
+        triggers_action: 'request_training',
       });
     } else if (output.binding === 'equipment') {
       hints.push({
         tone: 'warn',
         title: `Capital limits ${output.output}`,
-        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.'
+        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.',
+        triggers_action: 'purchase_capital',
       });
     }
   }
@@ -2485,14 +2539,21 @@ function renderDecisionHints(player, role) {
     hints.push({
       tone: 'warn',
       title: 'Check market and deals',
-      why: 'No direct production hint is available for the selected tab yet.'
+      why: 'No direct production hint is available for the selected tab yet.',
+      triggers_action: null,
     });
   }
 
-  el.innerHTML = hints.slice(0, 4).map(h => `
+  // Cap to top 4 — same ceiling as before — but feed the action recommender
+  // from that visible slice (a hint that doesn't render shouldn't recommend).
+  const visible = hints.slice(0, 4);
+  _currentHintActions = new Set(visible.map(h => h.triggers_action).filter(Boolean));
+
+  el.innerHTML = visible.map(h => `
     <div class="decision-card ${h.tone}">
       <strong>${esc(h.title)}</strong>
       <div class="why">${esc(h.why)}</div>
+      ${_renderHintOpenButton(h.triggers_action)}
     </div>
   `).join('');
 }
@@ -2837,7 +2898,9 @@ const ACTION_GROUP_ORDER = ['Production', 'Trade', 'People', 'Capital', 'Finance
 function _renderActionButton(o) {
   const classes = [];
   if (o.value === 'produce') classes.push('highlight');
-  if (o.recommended) classes.push('recommended');
+  // Server-set recommended (Codex Phase 1 default = false) OR client-set from
+  // a live Decision Hint that triggers this action (Phase 4 hint wiring).
+  if (o.recommended || _currentHintActions.has(o.value)) classes.push('recommended');
   const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
   const disabled = o.enabled === false;
   const disabledAttr = disabled ? ' disabled' : '';
@@ -2852,6 +2915,10 @@ function showActionPrompt(msg) {
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
+  // Action prompt just became active — re-render the hint sidebar so each
+  // hint's "Open" button enables and the gold .recommended ring picks up
+  // any hinted action.  Cheap; gameState is already cached.
+  if (gameState) renderGameState();
 
   // Bucket options by their server-supplied group, defaulting to 'Info' for
   // any older payload that predates the Phase 1 server contract.
@@ -3090,6 +3157,9 @@ function showPopup(title, bodyHtml, opts = {}) {
 function hideOverlay() {
   document.getElementById('overlay').classList.remove('active');
   document.getElementById('prompt-area')?.classList.add('hidden');
+  // Action prompt is no longer active — re-render hints so the "Open"
+  // buttons greys out, mirroring the action menu's disappearance.
+  if (gameState) renderGameState();
 }
 
 // ==================== EVENT LOG ====================

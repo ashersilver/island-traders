@@ -5,6 +5,70 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-hints-to-actions
+
+Branch: `claude/ux-hints-to-actions`
+Target: `pre-release`
+
+UX review Phase 4 — Decision Hints become actionable.
+
+**What:** Each rendered hint now carries a `triggers_action` field
+naming the `TurnAction` value that addresses it (e.g. an "Unblock
+Oil" hint triggers `buy_market`; an "Add workers for X" hint triggers
+`request_training`). The hint card grows a gold "Open" button:
+
+- When the action menu is currently open for this player, the button
+  calls `sendResponse(action)` — the same effect as clicking the
+  corresponding action menu button directly. **No auto-submit**: the
+  server then surfaces the action's modal (Market Buy, etc.) and the
+  player still confirms the final game action there.
+- When the action menu is not open (waiting on other players, between
+  prompts, etc.), the button is disabled with a "Wait for your action
+  prompt" tooltip.
+
+**Recommendation bridge:** The set of currently-hinted action values
+is tracked in `_currentHintActions`. When `showActionPrompt` renders
+the grouped action menu (Phase 2 work), the matching action button
+picks up the gold `.recommended` outline — same affordance Codex's
+Phase 1 payload reserved via the `recommended: true` per-option flag
+(server-side `recommended` is still default-false as of Codex's
+shipped payload; this layers a client-driven view on top of it).
+
+**Hint → action mapping:**
+
+| Hint kind | Triggers |
+|---|---|
+| Sustenance shortfall (`*_alerts`) | `buy_market` |
+| `Produce X` (output is producible) | `produce` |
+| `Unblock X` (input shortfall) | `buy_market` |
+| `Add workers for X` | `request_training` |
+| `Capital limits X` | `purchase_capital` |
+| `Underwrite X` (service output) | _(no direct action; service-side flow)_ |
+| Fallback "Check market and deals" | _(no direct action)_ |
+
+The brief's `loan_*` and `insurance_review` targets exist in Codex's
+server-side `decision_hints` field but the client's own
+`renderDecisionHints` does not emit those kinds today, so no UI
+shortcut is added for them in this branch. They can be picked up
+when the client switches over to consuming `gameState.decision_hints`
+directly (a follow-up).
+
+**Render synchronisation:** `showActionPrompt` and `hideOverlay` now
+call `renderGameState()` so hint cards re-render their `Open` buttons
+and the action menu picks up `recommended` outlines as the prompt
+opens / closes. Cheap re-render — gameState is already cached.
+
+**Scope discipline:**
+
+- No engine / server changes. Pure client.
+- In-modal preselection / filtering (Phase 5 of the plan, e.g. Market
+  Buy with the hinted resource at the top of the table) is deferred —
+  the seam is now in place for Phase 5 to plug into.
+- Client-side hint generation is unchanged in scope; only `target`
+  and `triggers_action` are added per hint.
+
+Suite **352 passing** (no test changes — pure client refactor).
+
 ### claude/ux-personnel-popup
 
 Branch: `claude/ux-personnel-popup`
