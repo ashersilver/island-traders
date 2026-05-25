@@ -251,7 +251,7 @@ STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
     "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      9,   # 4 Professors + 1 Technical Director + 4 Instructors
+    "Educator":      11,  # 2 Prof + 4 Lect + 1 TD + 4 Instructor (bootstraps Manager-course capacity)
     "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
     "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
@@ -287,10 +287,21 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
         ("WarehouseManager", 1),     # Technician (ground ops supervisor)
     ],
     "Educator":      [
-        ("Professor", 4),            # Manager — Expertise / Patents / managerial training
-        ("TechnicalDirector", 1),    # Manager — supervises technical courses
-        ("Instructor", 4),           # Technician — Courses / apprenticeship training
-        # exactly 9, no unskilled remainder
+        # Bootstrap-aware shape: training a Lecturer is itself a Manager-tier
+        # course (Lecturer is Manager-band), and the staffing rule requires
+        # an existing Lecturer to run any Manager-tier course.  Starting with
+        # zero Lecturers is a permanent chicken-and-egg deadlock — fresh games
+        # could never train a first Lecturer.  Option B (2 Prof + 4 Lect + 1 TD
+        # + 4 Instructor) keeps the academic faculty viable from turn 1 with
+        # a realistic Professor-to-Lecturer ratio (lecturers do the front-line
+        # teaching; professors supervise) while keeping the Technical pipeline
+        # at the same 1 TD + 4 Instructor + Workshop-prerequisite baseline.
+        ("Professor", 2),            # Manager — supervises 4 concurrent Manager courses
+        ("Lecturer", 4),             # Manager — runs 4 concurrent Manager courses
+        ("TechnicalDirector", 1),    # Manager — supervises 2 concurrent Technical courses
+        ("Instructor", 4),           # Technician — runs 4 concurrent Technical courses
+        # Total: 11.  Manager capacity = min(2*2, 4) = 4.  Technical capacity
+        # = min(1*2, 4, workshop_slots) (workshop is now mandatory-minimum, +3).
     ],
     "Banker":        [
         ("Banker", 1),               # Manager

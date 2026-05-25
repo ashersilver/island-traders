@@ -212,6 +212,22 @@ def test_legacy_technical_workshop_save_keys_migrate():
     ) == [{"item_id": "educator.technical_workshop", "arrives_at_tick": 7}]
 
 
+def test_technical_workshop_is_mandatory_minimum_for_educator():
+    """Bootstrap follow-up (2026-05-25): without a starting Technical
+    Workshop the Educator can't run any Technical course at game start
+    (workshop is a hard prerequisite).  Mandatory-minimum keeps the
+    Technical pipeline viable from turn 1; the player can deselect at
+    the investing phase but is warned.
+
+    Interim financing: until the proper Lease subsystem lands (see
+    requirements/codex-tasks/capital-equipment-lease-2026-05.md when
+    spec'd), players who can't afford the workshop outright can
+    finance it via the existing 1/2/3-year Bank loans at the prevailing
+    banker_quote_rate (posted funding + 2% margin + borrower risk)."""
+    from island_traders.constants_capacity import MANDATORY_MINIMUM_INVESTMENT
+    assert "educator.technical_workshop" in MANDATORY_MINIMUM_INVESTMENT["Educator"]
+
+
 def test_legacy_apprenticeship_slot_callers_updated():
     root = Path(__file__).resolve().parents[2] / "island_traders"
     source = "\n".join(

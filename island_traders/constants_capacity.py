@@ -495,7 +495,7 @@ MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Farmer":       ["farmer.tractor", "farmer.fishing_boat"],
     "Miner":        ["miner.excavator", "miner.crusher", "miner.oil_rig"],
     "Transporter":  ["transporter.cargo_ship", "transporter.passenger_liner"],
-    "Educator":     ["educator.lecture_hall", "educator.library"],
+    "Educator":     ["educator.lecture_hall", "educator.library", "educator.technical_workshop"],
     "Banker":       ["banker.vault", "banker.underwriting_desk"],
     "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line"],
     "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
