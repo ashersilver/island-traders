@@ -5,6 +5,44 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-brief-equipment-lease
+
+Branch: `claude/codex-brief-equipment-lease`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/capital-equipment-lease-2026-05.md` for the
+proper capital-equipment lease subsystem (Bug 1 / training-staffing
+follow-up).
+
+Replaces the interim "use the existing 1/2/3-year loans" approach
+documented in `codex/training-staffing-2026-05`'s release notes.
+Key spec points:
+
+- New `Lease` model + `LeaseLedger` mirroring `LoanLedger`.
+- `CapitalItem` gains an optional `lease_terms` field opting it into
+  the lease flow; only `educator.technical_workshop` opts in for v1.
+- 3-year term, annual payments **in advance**, rate locked at lease
+  inception (`posted_funding_rate + 2% margin`).
+- Missed payment triggers **repossession**: item removed from
+  `capital_inventory`, lease flips to `REPOSSESSED`.
+- Catch-up payment in a later season reinstates the lease; item
+  returns to `capital_inventory` **one season later** (Bank
+  redeploy logistics).
+- Investing-phase choice between buy outright and lease; AI default
+  buy-then-lease-then-skip; auto-pay when solvent.
+- Server `leases_detail` payload mirroring `loans_detail`; UI work
+  follows on a Claude branch after merge.
+- 11 required regression tests covering creation, in-advance payment,
+  repossession, season-delayed return, ownership transfer on
+  completion, rate math, payload shape, AI behavior.
+
+Calibration follow-up: lease changes equipment-acquisition cadence
+slightly; flag for the next calibration re-run.
+
+No code / tests touched.  Suite still **403 passing** on
+`origin/pre-release`.
+
 ### codex/training-staffing-2026-05
 
 Branch: `codex/training-staffing-2026-05`
