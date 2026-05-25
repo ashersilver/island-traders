@@ -505,6 +505,7 @@ class Game:
                     "return_year": r.return_year,
                     "return_season": r.return_season,
                     "transport_mode": r.transport_mode,
+                    "tickets_supplied_by_requester": r.tickets_supplied_by_requester,
                     "counter_message": r.counter_message,
                 }
                 for r in self.training.all_requests()
@@ -660,6 +661,7 @@ class Game:
                 return_year=rd.get("return_year", -1),
                 return_season=rd.get("return_season", -1),
                 transport_mode=rd.get("transport_mode", "transporter"),
+                tickets_supplied_by_requester=rd.get("tickets_supplied_by_requester", 0),
                 counter_message=rd.get("counter_message", ""),
             )
             game.training._requests.append(req)

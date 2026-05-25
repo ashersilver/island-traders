@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-ux-improvements-2026-05
+
+Branch: `codex/training-ux-improvements-2026-05`
+Target: `pre-release`
+
+Implements the training UX follow-up:
+
+- Added 10 `PassengerSeats` to the Educator starting inventory to
+  bootstrap early cross-island training.
+- Added `TrainingRequest.tickets_supplied_by_requester` so requesters
+  can spend some or all of their own PassengerSeats; Educators only
+  supply the remainder.
+- Updated suggested and AI fair-rate ticket fees to charge only for
+  Educator-supplied seats.
+- Updated dispatch to consume requester and Educator PassengerSeats
+  from the correct inventories without partial burns on failure.
+- Added structured `request_summary` payloads to training approval and
+  counter-offer prompts for the future dashboard modal rendering.
+- Added 9 regression tests covering starting tickets, split ticket
+  consumption, AI fee behavior, failed pledged-ticket dispatch, and
+  prompt summaries.
+
+UI follow-up: Claude will render `request_summary` in the dashboard
+approval modal.
+
 ### claude/codex-briefs-refresh-2026-05-25
 
 Branch: `claude/codex-briefs-refresh-2026-05-25`
