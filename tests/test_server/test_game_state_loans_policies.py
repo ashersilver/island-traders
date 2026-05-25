@@ -145,18 +145,24 @@ def test_game_state_replays_recent_ticker_log():
     assert state["log_count"] == 1
 
 
-def test_game_state_includes_sustenance_runway_alerts_with_recommended_purchase():
+def test_game_state_includes_sustenance_runway_alert_basket():
+    """Sustenance basket model (2026-05-25): a single 'Meals' alert per
+    island instead of per-resource Food/Fish alerts. The runway is
+    computed against the fungible basket (Food + raw, with 2:1
+    substitution) — see Player.meals_available."""
     mgr = GameManager()
     room, banker, farmer = _bootstrap_game(mgr)
-    farmer.population = 120  # above the self-fed baseline, so Food runway matters
+    farmer.population = 120  # 12 meals / season under PEOPLE_PER_MEAL=10
     state = mgr.get_game_state(room.room_id, "p2")
     alerts = state["sustenance_alerts"][str(farmer.player_id)]
-    food = next(alert for alert in alerts if alert["resource"] == "Food")
+    meals = next(alert for alert in alerts if alert["resource"] == "Meals")
 
-    assert food["on_hand"] == farmer.inventory.get(ResourceType.FOOD)
-    assert food["seasonal_need"] == farmer.population_food_fish_needs()[ResourceType.FOOD]
-    assert food["runway_seasons"] == round(food["on_hand"] / food["seasonal_need"], 2)
-    assert food["recommended_purchase"] == max(
-        0, food["seasonal_need"] * 2 - food["on_hand"]
+    assert meals["on_hand"] == farmer.meals_available()
+    assert meals["seasonal_need"] == farmer.meals_needed()
+    assert meals["runway_seasons"] == round(
+        meals["on_hand"] / meals["seasonal_need"], 2
     )
-    assert food["severity"] in {"warning", "danger"}
+    assert meals["recommended_purchase"] == max(
+        0, meals["seasonal_need"] * 2 - meals["on_hand"]
+    )
+    assert meals["severity"] in {"warning", "danger"}

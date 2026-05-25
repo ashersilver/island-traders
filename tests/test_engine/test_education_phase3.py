@@ -246,10 +246,12 @@ def test_technician_returns_with_one_settling_season():
     )) < 1e-9
 
 
-def test_campus_load_raises_education_island_food_demand():
-    """Phase 3 ↔ §21 seam: visiting trainees feed extra_residents into
-    population_food_fish_needs, raising the Education Island's marginal
-    Food demand (campus load) — not the legacy Food/Fish path."""
+def test_campus_load_raises_education_island_sustenance_demand():
+    """Phase 3 ↔ sustenance-basket seam: visiting trainees feed
+    extra_residents into Educator.meals_needed, raising the Education
+    Island's sustenance demand basket. Under the 2026-05-25 model every
+    resident demands meals (no self-fed baseline), so the campus load
+    shows up on top of the Education Island's own resident demand."""
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     training = TrainingRegistry()
@@ -264,11 +266,32 @@ def test_campus_load_raises_education_island_food_demand():
     assert training.visiting_trainees(educator.player_id) == 3
 
     tm = _turn_manager([farmer, educator], training, FakeIOAdapter())
-    tm._post_population_food_demand()
-    # Both islands sit at the self-fed baseline (population 100 ==
-    # BASE_POPULATION_SELF_FED) so the ONLY marginal Food demand posted
-    # is the Education Island's 3 visiting trainees.
-    assert tm.market.demand.get(ResourceType.FOOD, 0) == 3
+
+    # Compare Educator demand WITH vs. WITHOUT the visiting trainees.
+    educator_base_meals = educator.meals_needed()
+    educator_with_visitors = educator.meals_needed(extra_residents=3)
+    # 3 extra residents → +1 meal under PEOPLE_PER_MEAL=10 rounding
+    # (ceil(103/10) - ceil(100/10) = 11 - 10 = 1).
+    assert educator_with_visitors - educator_base_meals == 1
+
+    # The engine's per-season hook posts shortfall demand for both
+    # islands (Farmer + Educator).  We strip their starting inventory so
+    # both run at full shortfall and the Educator's extra-resident meal
+    # is visible as a delta in the market basket.
+    for p in (farmer, educator):
+        for r in (ResourceType.FOOD, ResourceType.GRAIN,
+                  ResourceType.PRODUCE, ResourceType.FISH,
+                  ResourceType.MEAT):
+            qty = p.inventory.get(r)
+            if qty > 0:
+                p.give_resources(r, qty)
+
+    tm._consume_and_post_sustenance()
+
+    # Total Food basket demand = farmer_meals + educator_meals_with_visitors.
+    farmer_meals = farmer.meals_needed()
+    expected_food_demand = farmer_meals + educator_with_visitors
+    assert tm.market.demand.get(ResourceType.FOOD, 0) == expected_food_demand
 
 
 def test_manager_returns_without_settling():

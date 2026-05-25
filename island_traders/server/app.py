@@ -1905,24 +1905,30 @@ class GameManager:
                 game.training.visiting_trainees(p.player_id)
                 if any(r.name == "Educator" for r in p.roles) else 0
             )
-            for r, qty in p.population_food_fish_needs(
-                extra_residents=campus_extra
-            ).items():
-                short = qty - p.inventory.get(r)
-                safety_target = qty * 2  # next season + one-season buffer
-                recommended_purchase = max(0, safety_target - p.inventory.get(r))
-                runway = None if qty <= 0 else round(p.inventory.get(r) / qty, 2)
-                if runway is not None and runway < 2:
+            # Sustenance basket alert (2026-05-25 model): aggregate the
+            # whole basket into a single "meals runway" figure rather
+            # than one alert per resource. Inventory is fungible across
+            # the basket (Food OR Grain+Produce+(Fish|Meat) with 2:1
+            # substitution), so a per-resource runway is misleading.
+            meals_per_season = p.meals_needed(extra_residents=campus_extra)
+            if meals_per_season > 0:
+                meals_on_hand = p.meals_available()
+                runway = round(meals_on_hand / meals_per_season, 2)
+                if runway < 2:
                     sustenance_alerts_by_player_id.setdefault(p.player_id, []).append({
-                        "resource": r.value,
-                        "on_hand": p.inventory.get(r),
-                        "seasonal_need": qty,
+                        "resource": "Meals",
+                        "on_hand": meals_on_hand,
+                        "seasonal_need": meals_per_season,
                         "runway_seasons": runway,
-                        "recommended_purchase": recommended_purchase,
+                        "recommended_purchase":
+                            max(0, meals_per_season * 2 - meals_on_hand),
                         "severity": "danger" if runway < 1 else "warning",
                     })
-                if short > 0:
-                    needs.append(f"{short} {r.value} for population")
+                if meals_on_hand < meals_per_season:
+                    needs.append(
+                        f"{meals_per_season - meals_on_hand} meal(s) of sustenance "
+                        f"(Food OR Grain+Produce+(Fish|Meat))"
+                    )
             if any(r.name == "Educator" for r in p.roles):
                 pending_tickets = sum(
                     len(req.worker_ids)

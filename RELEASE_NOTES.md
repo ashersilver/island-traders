@@ -5,6 +5,84 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/sustenance-basket-model
+
+Branch: `claude/sustenance-basket-model`
+Target: `pre-release`
+
+Replaces the legacy two-resource Food/Fish sustenance model with a
+**five-resource basket** model per the 2026-05-25 spec.
+
+**Old model** (`Player.population_food_fish_needs`):
+- `food = max(0, population − 100) + transients`
+- `fish = ceil(pop / 100) + ceil(educated / 8)`
+- `Grain` / `Produce` / `Meat` generated **zero** sustenance demand.
+- Below population 100, **zero** Food demand (the `BASE_POPULATION_SELF_FED`
+  baseline assumption).
+
+**New model**:
+- Each `PEOPLE_PER_MEAL` residents (default **10**) consume **one
+  meal** per season — no baseline, every resident counts.
+- A meal is satisfied by **1 Food** OR **(1 Grain + 1 Produce + 1
+  (Fish or Meat))**. Fish/Meat are 1:1 fungible for the protein slot.
+- **Cross-substitution at 2:1**: a surplus unit of any raw ingredient
+  (grain/produce/fish/meat) substitutes for a missing slot at 2 units
+  → 1 slot fill. Worked example from the spec: `3 Grain + 0 Produce +
+  1 Fish` → **1 meal** (1 grain native + 1 fish native + 2 grain
+  substituting for the missing produce slot at 2:1).
+- **Consumption order**: Food first, then raw with substitution. This
+  is now an actual inventory deduction per season (the old model only
+  posted demand without consuming).
+
+**API:**
+
+- `Player.meals_needed(extra_residents=0) -> int` — per-season meal
+  count (`ceil((population + extra) / PEOPLE_PER_MEAL)`).
+- `Player.consume_sustenance(meals_needed) -> (satisfied, used_dict,
+  shortfall)` — mutates inventory, returns per-resource consumption.
+- `Player.meals_available() -> int` — peek (no mutation); how many
+  meals current inventory could satisfy.
+- `Player.sustenance_shortfall_demand(extra_residents=0)` — market
+  basket signal (Food / Grain / Produce / Fish / Meat at the unmet
+  meals level).
+- Module-level `_allocate_raw_meals(meals_needed, grain, produce,
+  fish, meat)` — pure allocator with the waterfill+2:1 substitution
+  logic (extracted so it's unit-testable; consumed by `consume_sustenance`
+  and `meals_available`).
+
+**Engine integration**: `TurnManager._post_population_food_demand` →
+renamed `_consume_and_post_sustenance`. Each season-start: consume
+sustenance from inventory, then post the shortfall basket to the
+market (each of Food/Grain/Produce/Fish/Meat at `shortfall_meals`
+level — intentionally overcounts in absolute units; it's a signal,
+not an order book).
+
+**Server alerts**: per-island sustenance alerts collapse from the
+old per-resource Food/Fish format to a single basket-aware **"Meals"**
+alert with runway computed against `Player.meals_available()`. Avoids
+the per-resource runway being misleading when components are fungible.
+
+**Removed**: `BASE_POPULATION_SELF_FED` constant. **Added**:
+`PEOPLE_PER_MEAL = 10`.
+
+**Tests**: 21 new tests in `tests/test_models/test_population_needs.py`
+covering meal-count math, all `_allocate_raw_meals` edge cases (zero,
+native-only, the user's spec example, ingredient-shortage,
+fish/meat fungibility, partial satisfaction, target-cap), and end-to-end
+`consume_sustenance` (food-first, fall-through, partial, no-op).
+Two existing tests rewritten: `test_education_phase3.py` campus-load
+test (basket-aware), `test_game_state_loans_policies.py` server-alert
+test (single "Meals" entry).
+
+**Calibration impact (NOT addressed here)**: this change shifts
+balance — Grain/Produce/Meat now have non-zero demand (was zero);
+Food demand kicks in at population 1 (was 101). The `4e56ead`
+calibration is tuned against the old model. **A re-tune is likely
+needed** after this lands. Not a release blocker but worth flagging
+when scheduling the next calibration pass.
+
+Suite **386 passing** (was 365 + 21 new tests).
+
 ### codex/balance-calibration-2026-05
 
 Branch: `codex/balance-calibration-2026-05`
