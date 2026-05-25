@@ -169,6 +169,12 @@ class AuctionState:
     phase: str = "bidding"
     timer_end: float = 0.0
     _timer_task: Any = field(default=None, repr=False)
+    # Saved auction_result payload — populated when _resolve_auction
+    # broadcasts the result.  Used by the WebSocket reconnect handler to
+    # replay the result panel to a client who joins during the brief
+    # window between resolution and the room.status transition (bug fix:
+    # "auction stuck at timer 0 with no Continue button").
+    result_payload: dict | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
         bids_out = {}
@@ -728,12 +734,16 @@ class GameManager:
                     "is_human": lp.is_human,
                 }
 
-        self._thread_safe_broadcast(room_id, {
+        result_payload = {
             "type": "auction_result",
             "assignments": result_assignments,
             "ai_roles": ai_roles,
             "deductions": {pid: round(amt, 1) for pid, amt in deductions.items()},
-        })
+        }
+        # Save before broadcast so a reconnect handler can replay it for a
+        # client that misses the live broadcast.
+        auction.result_payload = result_payload
+        self._thread_safe_broadcast(room_id, result_payload)
 
         # Post-auction human island guarantee (§19.1):
         # If any human player still has no island AND any AI controls 2+
@@ -2146,6 +2156,15 @@ class GameManager:
                     self._auction_timer(room.room_id, remaining), self._loop,
                 )
                 room.auction._timer_task = fut
+            elif (remaining <= 0
+                    and room.status == "auction"
+                    and room.auction.phase != "complete"):
+                # Pause happened right at (or after) auction expiry — the
+                # cancelled timer task never got to call _resolve_auction.
+                # Resolve immediately on resume so the auction doesn't sit
+                # forever with timer_remaining=0 and no Continue button.
+                # Bug fix: "auction stuck at timer 0 after pause/resume".
+                self._resolve_auction(room.room_id)
 
         if room.investing and room.investing.timer_end > 0:
             room.investing.timer_end += pause_duration
@@ -2545,19 +2564,33 @@ def create_app() -> FastAPI:
         try:
             # Send current state
             if room.status == "auction" and room.auction:
-                remaining = max(0.0, round(room.auction.timer_end - time.time(), 1))
-                await websocket.send_text(json.dumps({
-                    "type": "auction_start",
-                    "roles": [
-                        {**ROLE_INFO[r], "name": r} for r in ALL_ROLES
-                    ],
-                    "timer_seconds": remaining,
-                    "budget": round(room.starting_capital, 1),
-                }))
-                await websocket.send_text(json.dumps({
-                    "type": "auction_update",
-                    "auction": room.auction.to_dict(),
-                }))
+                # If the auction has already resolved but the room.status
+                # hasn't flipped yet (the 2-second window before
+                # _delayed_investing_start / _delayed_guarantee_start fires)
+                # — OR a client missed the live auction_result broadcast —
+                # replay the saved result so they see the Continue button.
+                # Without this, clients that reconnect during that window
+                # got dropped back into the auction view with timer=0 and
+                # no way to advance.  Bug: "auction stuck at timer 0".
+                if (room.auction.phase == "complete"
+                        and room.auction.result_payload is not None):
+                    await websocket.send_text(json.dumps(
+                        room.auction.result_payload
+                    ))
+                else:
+                    remaining = max(0.0, round(room.auction.timer_end - time.time(), 1))
+                    await websocket.send_text(json.dumps({
+                        "type": "auction_start",
+                        "roles": [
+                            {**ROLE_INFO[r], "name": r} for r in ALL_ROLES
+                        ],
+                        "timer_seconds": remaining,
+                        "budget": round(room.starting_capital, 1),
+                    }))
+                    await websocket.send_text(json.dumps({
+                        "type": "auction_update",
+                        "auction": room.auction.to_dict(),
+                    }))
             elif room.status == "guarantee" and room.guarantee:
                 await websocket.send_text(json.dumps({
                     "type": "island_guarantee_state",
