@@ -31,29 +31,44 @@ Applies to any `CapitalItem` flagged as lease-eligible. Start with `educator.tec
 - **Training-staffing redesign + bootstrap** (`8e669ed`, this branch's predecessor). Key consequence: `educator.technical_workshop` is now in `MANDATORY_MINIMUM_INVESTMENT["Educator"]`. The lease subsystem in this brief is the right home for the "lease vs buy" choice the user wanted at investing-phase.
 - **Baseline test count: 403 passing** on `8e669ed`.
 
-## Spec
+## Spec — revised 2026-05-25 with three locked-in decisions
+
+| Decision | Answer |
+|---|---|
+| When can a lease be initiated? | **Both investing phase AND mid-game seasons.** Mid-game uses the same flow as `PURCHASE_CAPITAL` (a new sibling action — see "Action wiring" below). |
+| End-of-term buyout payment | **25% of the original `cost`**, paid as a balloon at the end of `term_years`. If the lessee doesn't pay the buyout, the Bank reclaims the item. |
+| Lease rate | **Posted 3-year funding rate + 2% margin**, locked at lease inception. Applies in both investing-phase and mid-game inceptions. Treated as a secured loan against the asset. |
 
 ### CapitalItem opt-in
 
-Add `lease_terms: dict | None = None` to `CapitalItem` (in `island_traders/models/capacity.py`). When set, the item is lease-eligible. Shape:
+Add `lease_terms: dict | None = None` to `CapitalItem` (in `island_traders/models/capacity.py`). When set, the item is lease-eligible. Shape (residual fraction lives on the item so future items can override):
 
 ```python
 lease_terms = {
-    "term_years":    3,      # default; spec keeps the door open for 1/2 if useful
-    "annual_payment": 25.0,  # Dp per year (in advance); design starting point
-    "min_credit_band": "any",  # forward-compat hook; ignore for now
+    "term_years":         3,
+    "residual_fraction":  0.25,   # buyout = cost * residual_fraction
+    "rate_margin":        0.02,   # added to posted N-year funding rate
 }
 ```
 
-For `educator.technical_workshop` (cost `60.0`, lease 3 years), suggested annual payment is `cost / term_years × (1 + 0.06)` ≈ `21.2 Dp/year` — i.e. roughly the principal amortization plus a 6% lease-margin built in. Use the existing `banker_quote_rate` style (posted funding rate + 2% margin) computed at lease inception so the rate scales with the prevailing rate environment:
+For `educator.technical_workshop` (cost `60.0`), the math at inception:
 
 ```python
-funding_rate = posted_funding_rates(year, season)[term_years]
-lease_rate   = funding_rate + 0.02   # +2% lease margin
-annual_payment = round(cost / term_years * (1 + lease_rate), 1)
+funding_rate   = posted_funding_rates(year, season)[term_years]   # posted 3-yr rate
+lease_rate     = funding_rate + lease_terms["rate_margin"]         # +2 % margin
+buyout         = round(cost * lease_terms["residual_fraction"], 1) # 60 * 0.25 = 15.0 Dp
+# Annual payment amortizes the depreciable portion (cost minus residual) over
+# the term, plus interest on the depreciable portion at the locked lease rate.
+annual_payment = round(
+    (cost - buyout) / term_years * (1 + lease_rate), 1
+)   # 60-15 = 45; 45/3 = 15; ×(1+~0.06) ≈ 15.9 Dp/year
 ```
 
-Treat the rate as **locked at lease inception** (same convention as the loan rollover work).
+So for the Workshop with a ~4 % posted 3-yr rate (current default) → `annual_payment ≈ 15.9 Dp`, `buyout = 15.0 Dp`. Three annual payments + buyout = **~62.7 Dp**, a ~4.5 % premium over outright purchase (60 Dp) — fair for a financed asset with the walk-away option.
+
+**Treat the rate as locked at inception.** A lease created in Y0/S0 keeps its inception rate through all subsequent payments, regardless of how the posted rate moves over the lease term. Matches the existing loan-rollover convention.
+
+**Mid-game and investing-phase leases use the same math.** The only difference is *when* `year, season` are sampled for the posted-rate lookup — at investing-phase that's the game-start tick (Y0/S0); mid-game it's the current tick. Identical formula, identical locking behaviour.
 
 ### New `Lease` model + `LeaseLedger`
 
@@ -61,26 +76,39 @@ Add `island_traders/models/lease.py`:
 
 ```python
 class LeaseStatus(Enum):
-    ACTIVE       = "active"        # ongoing, current on payments
-    REPOSSESSED  = "repossessed"   # missed payment; item held by Bank
-    COMPLETED    = "completed"     # all term_years payments made; ownership transfers
-    CANCELLED    = "cancelled"     # lessee surrendered before term; no further obligation
+    ACTIVE              = "active"               # ongoing, current on payments
+    AWAITING_BUYOUT     = "awaiting_buyout"      # all annual payments made; buyout due
+    REPOSSESSED         = "repossessed"          # missed annual payment; item held by Bank
+    BUYOUT_DEFAULTED    = "buyout_defaulted"     # term ended without buyout; Bank reclaims
+    COMPLETED           = "completed"            # buyout paid; ownership transferred
+    CANCELLED           = "cancelled"            # lessee surrendered early; no further obligation
 
 @dataclass
 class Lease:
-    lease_id:          int
-    item_id:           str
-    lessee_id:         int        # Player.player_id
-    lessor_id:         int        # the Banker player_id (or -1 placeholder for "the Bank")
-    started_year:      int
-    term_years:        int
-    annual_payment:    float
-    payments_made:     int        # 0..term_years; lease completes when == term_years
-    last_payment_year: int        # year of the last successful payment
-    status:            LeaseStatus
-    repossessed_year:  int  = -1  # year repo was triggered (for return-after-payment timing)
-    repossessed_season: int = -1
+    lease_id:           int
+    item_id:            str
+    lessee_id:          int        # Player.player_id
+    lessor_id:          int        # Banker.player_id (or -1 sentinel for "the Bank")
+    started_year:       int
+    started_season:     int
+    term_years:         int
+    annual_payment:     float
+    buyout_payment:     float        # computed at inception, locked
+    locked_lease_rate:  float        # posted N-yr rate + margin, at inception
+    payments_made:      int          # 0..term_years; AWAITING_BUYOUT when == term_years
+    last_payment_year:  int          # year of the last successful annual payment
+    status:             LeaseStatus
+    # Repossession is two-flavoured: an annual-payment default during the
+    # term (REPOSSESSED, item-returns-on-catchup), and a buyout default at
+    # term end (BUYOUT_DEFAULTED, item gone — no catchup path).
+    repossessed_year:   int  = -1
+    repossessed_season: int  = -1
 ```
+
+The two repossession states matter because their **recovery paths differ**:
+
+- `REPOSSESSED` (mid-term default) → lessee can pay the back-payment(s) in a later season, item returns next season (per user spec: "returns the season after the outstanding payments get settled").
+- `BUYOUT_DEFAULTED` (end-of-term walk-away) → terminal; the lease completes with the Bank owning the asset, lessee has no recourse. They had three annual payments of use.
 
 `LeaseLedger`:
 
@@ -101,21 +129,31 @@ class LeaseLedger:
 
 **Season-start hook** (extend `Game.run` or add `_process_lease_payments(year, season)`):
 
-1. **Repossession returns**: any lease in `REPOSSESSED` whose `repossessed_year/season` is at least 1 season in the past AND the lessee has paid the back-payment this season — flip to `ACTIVE`, return the item to `capital_inventory`. (One-season delay represents the Bank's redeploy logistics.)
-2. **Annual-payment processing** (only at the start of each year, i.e. season 0):
+1. **Repossession returns**: any lease in `REPOSSESSED` whose `repossessed_year/season` is at least 1 season in the past AND the lessee has paid the back-payment(s) this season — flip to `ACTIVE`, return the item to `capital_inventory`. (One-season delay represents the Bank's redeploy logistics.)
+2. **Annual-payment processing** (at the start of each year, i.e. season 0):
    - For each `ACTIVE` lease where `last_payment_year < current_year` and `payments_made < term_years`:
-     - If the lessee is AI: auto-pay if dollops sufficient; auto-default if not.
-     - If the lessee is human: prompt with `confirm("Lease payment due for X. Pay Y Dp now?")`. (Use a new `TurnAction.PAY_LEASE` if you want a discoverable action, or surface as a forced prompt before the action menu — coordinate via PR.)
-     - On payment: debit lessee `annual_payment`, credit lessor, advance `payments_made`. If `payments_made == term_years`, set status `COMPLETED` and **transfer ownership** (item remains in `capital_inventory`, lease ends).
-     - On non-payment: `repossess` — remove the item from `capital_inventory`, mark lease `REPOSSESSED`, record `repossessed_year/season`.
+     - If the lessee is AI: auto-pay if `dollops >= annual_payment`; auto-default to `REPOSSESSED` otherwise.
+     - If the lessee is human: prompt — `confirm("Lease payment due for X. Pay Y Dp now?")`. Coordinate the prompt mechanism via PR (a forced pre-action-menu prompt is fine; a `TurnAction.PAY_LEASE` is also fine — pick one and document).
+     - On payment: debit lessee `annual_payment`, credit lessor, advance `payments_made` and `last_payment_year`. **If `payments_made == term_years`, status flips to `AWAITING_BUYOUT`** — the lease isn't done, the buyout is now due.
+     - On non-payment: `repossess` — remove the item from `capital_inventory`, mark `REPOSSESSED`, record `repossessed_year/season`.
+3. **Buyout processing** (same season-0 hook, after annual-payment processing):
+   - For each `AWAITING_BUYOUT` lease (the lease's natural maturity year is `started_year + term_years`):
+     - AI lessee: auto-pay if `dollops >= buyout_payment`; otherwise lease flips to `BUYOUT_DEFAULTED` (terminal; item leaves `capital_inventory`, Bank reclaims, no catchup path).
+     - Human lessee: prompt — `confirm("Lease buyout due for X. Pay Y Dp now to take ownership, otherwise the Bank reclaims it. Pay?")`.
+     - On payment: debit lessee `buyout_payment`, credit lessor, status → `COMPLETED`, ownership transfers (item stays in `capital_inventory`, lease ends, no further obligation).
+     - On non-payment: status → `BUYOUT_DEFAULTED`, item removed from `capital_inventory`.
 
-**Investing Phase**: add a per-eligible-item choice for the human player. Default: buy outright (existing flow). New choice: lease (deduct first year's `annual_payment` instead of full `cost`, create the lease in the ledger). AI default: buy if `dollops >= cost`, else lease if `dollops >= annual_payment`, else skip.
+**Investing Phase**: add a per-eligible-item buy-vs-lease choice. Default: buy outright (existing flow). New choice: lease — deduct **year-1 annual payment** at lease inception, add item to `capital_inventory`, create the lease in the ledger with `status=ACTIVE`, `payments_made=1`, `last_payment_year=0`. AI default at investing-phase: buy if `dollops >= cost + sum(other mandatory items)`, else lease if `dollops >= annual_payment + others`, else skip the item (won't trigger for mandatory items per the existing investing logic).
+
+**Mid-game lease initiation** (new — per user spec, "should be available for the seasons too"): add a sibling action `TurnAction.LEASE_CAPITAL` analogous to the existing `PURCHASE_CAPITAL`. Same per-role-catalogue picker, but the option only appears for items whose `lease_terms` is set. On confirmation: deduct year-1 annual payment now, schedule the item via `capital_in_transit` if `delivery_seasons > 0` (workshop is `delivery_seasons=0` so it arrives immediately), create the lease with `started_year/season = current tick`. Use the **posted 3-year rate at the action's tick** for the locked lease rate.
+
+Alternatively: extend `PURCHASE_CAPITAL` with an inline confirm("Pay X Dp outright, or lease at Y Dp/year for 3 years with 15 Dp buyout?"). Codex's call which approach — coordinate via PR. The action-split approach is cleaner for the existing UI dispatch but adds a new entry to `TurnAction`.
 
 ### Server payload + UI (Claude's domain — flag this, do not code)
 
 The investing-phase server payload needs to expose `lease_terms` for each item so the client can offer the choice. The dashboard needs a Leases panel parallel to the Loans panel. Both are **out of scope for this brief** — flag in your RELEASE_NOTES that the UI work follows on a Claude branch.
 
-For this Codex brief: just ensure the server `get_game_state` payload includes a `leases_detail` field per player (analogous to `loans_detail`) so the Claude UI work has data to render. Shape:
+For this Codex brief: just ensure the server `get_game_state` payload includes a `leases_detail` field per player (analogous to `loans_detail`) so the Claude UI work has data to render. **User requested leases be listed under the Loans panel** — a single `leases_detail` array keeps that simple (Claude UI follow-up just adds a section to the existing Loans popup). Shape:
 
 ```json
 "leases_detail": [
@@ -125,13 +163,15 @@ For this Codex brief: just ensure the server `get_game_state` payload includes a
         "item_name": "Technical Workshop",
         "role": "lessee" | "lessor",
         "counterparty_id": <int>,
-        "annual_payment": 21.2,
+        "annual_payment": 15.9,
+        "buyout_payment": 15.0,
         "payments_made": 1,
         "term_years": 3,
         "seasons_to_next_payment": <int>,
-        "status": "active" | "repossessed" | "completed",
+        "status": "active" | "awaiting_buyout" | "repossessed" | "buyout_defaulted" | "completed",
         "next_payment_year": <int>,
-        "next_payment_season": "Spring"
+        "next_payment_season": "Spring",
+        "next_payment_type": "annual" | "buyout"
     }
 ]
 ```
@@ -142,9 +182,10 @@ The CLI prompt path can leave lease decisions to the existing prompt mechanisms.
 
 ### Action enum
 
-Add `TurnAction.PAY_LEASE = "pay_lease"`. Wire dispatch in `_human_turn` to a new `_action_pay_lease(player, result, year, season_index)` that lists this player's `due_leases` and prompts payment.
+Two related additions:
 
-(Alternative: skip the action; just force-prompt at season start. Codex's call — but coordinate via PR comment.)
+- **`TurnAction.LEASE_CAPITAL`** — mid-game lease initiation, sibling of `PURCHASE_CAPITAL`. Lists the player's role catalogue, filtered to items with `lease_terms`. On confirmation, creates the lease at the current tick using the math above.
+- **`TurnAction.PAY_LEASE`** *(optional discoverable action)* — lists this player's due annual / buyout payments and prompts payment. Alternative: a forced pre-action-menu prompt at the start of each season-0 turn when a payment is due. Codex's call — coordinate via PR.
 
 ## Files in scope
 
@@ -169,19 +210,24 @@ Add `TurnAction.PAY_LEASE = "pay_lease"`. Wire dispatch in `_human_turn` to a ne
 
 In `tests/test_engine/test_lease.py`:
 
-1. `test_lease_creation_at_investing_phase` — creating a lease deducts year-1 payment, adds item to `capital_inventory`, records ledger entry.
-2. `test_annual_payment_in_advance_at_year_start` — payment due at season 0 of year N for a lease started year N-1; `last_payment_year` advances on success.
-3. `test_missed_payment_triggers_repossession` — payment skipped or insufficient cash → item removed from `capital_inventory`, lease flips to REPOSSESSED.
-4. `test_repossession_return_one_season_after_catchup_payment` — pay back-payment in S1; item returns to `capital_inventory` at S2.
-5. `test_final_year_payment_completes_lease_with_ownership_transfer` — after `term_years` payments, lease → COMPLETED; item stays in `capital_inventory` outright.
-6. `test_lease_rate_uses_posted_funding_plus_2pct_margin` — `annual_payment` math matches `cost / term_years × (1 + funding_rate + 0.02)`.
-7. `test_due_leases_filters_by_year_and_season` — `due_leases(Y, S=0)` returns the right set across multiple leases at different stages.
-8. `test_ai_lessor_auto_pays_when_solvent` — AI lessee pays automatically when `dollops >= annual_payment`.
-9. `test_ai_lessor_defaults_when_insolvent` — AI lessee with `dollops < annual_payment` triggers repossession.
-10. `test_leases_detail_payload_shape` — `get_game_state(...)["players"][i]["leases_detail"]` contains the documented shape.
-11. `test_investing_phase_lease_choice_creates_lease_not_purchase` — when a player chooses lease at investing time, `capital_inventory` adds the item and ledger has the lease (no full-cost deduction).
+1. `test_lease_creation_at_investing_phase` — creating a lease deducts year-1 annual payment, adds item to `capital_inventory`, records ledger entry with `payments_made=1`, `status=ACTIVE`.
+2. `test_lease_creation_mid_game_via_lease_capital_action` — `TurnAction.LEASE_CAPITAL` (or extended `PURCHASE_CAPITAL`) creates a lease at the current tick; `started_year/season` reflect that tick; `locked_lease_rate` uses the posted 3-year rate at the action's tick.
+3. `test_annual_payment_in_advance_at_year_start` — payment due at season 0 of year N for a lease started year N-1; `last_payment_year` advances on success.
+4. `test_missed_annual_payment_triggers_repossession` — payment skipped or insufficient cash → item removed from `capital_inventory`, lease flips to REPOSSESSED with `repossessed_year/season` set.
+5. `test_repossession_return_one_season_after_catchup_payment` — pay back-payment in S1; item returns to `capital_inventory` at S2.
+6. `test_final_annual_payment_flips_to_awaiting_buyout_not_completed` — after `term_years` annual payments, lease → `AWAITING_BUYOUT` (NOT `COMPLETED`); item still in `capital_inventory` but lease is not yet done.
+7. `test_buyout_payment_completes_lease_with_ownership_transfer` — paying `buyout_payment` (= `cost * 0.25` = 15 Dp for the Workshop) flips status to `COMPLETED`; item stays in `capital_inventory` permanently.
+8. `test_buyout_default_terminally_removes_item` — failing to pay the buyout flips status to `BUYOUT_DEFAULTED`; item leaves `capital_inventory`; no catchup path exists from this state.
+9. `test_lease_rate_locked_at_inception_independent_of_later_posted_rates` — change `posted_funding_rates` between Year 0 and Year 1; verify that a lease created in Y0 uses the Y0-locked rate for its Y1 payment math (no re-quoting).
+10. `test_lease_rate_uses_posted_3yr_funding_plus_2pct_margin` — `locked_lease_rate == posted_funding_rates(year, season)[3] + 0.02`. `annual_payment == round((cost - buyout) / 3 * (1 + lease_rate), 1)`. `buyout == round(cost * 0.25, 1)`.
+11. `test_due_leases_filters_by_year_and_season` — `due_leases(Y, S=0)` returns ACTIVE leases past `last_payment_year` AND `AWAITING_BUYOUT` leases at maturity.
+12. `test_ai_lessee_auto_pays_when_solvent` — AI lessee pays both annual and buyout automatically when `dollops` cover the payment.
+13. `test_ai_lessee_defaults_when_insolvent` — AI lessee with insufficient cash triggers `REPOSSESSED` for annual, `BUYOUT_DEFAULTED` for the buyout.
+14. `test_leases_detail_payload_shape` — `get_game_state(...)["players"][i]["leases_detail"]` matches the documented shape including `buyout_payment` and `next_payment_type`.
+15. `test_investing_phase_lease_choice_creates_lease_not_purchase` — when a player chooses lease at investing time, `capital_inventory` adds the item AND the ledger has the lease (only year-1 annual payment deducted, not full `cost`).
+16. `test_legacy_loan_path_unaffected_by_lease_subsystem` — Bank loans still work exactly as before; no regression to `posted_funding_rates`, `banker_quote_rate`, or loan repayment math.
 
-Full suite must remain green. Target: `403 + 11 = 414 passing` (or more if you add extra coverage).
+Full suite must remain green. Target: `404 + ~16 = ~420 passing` (or more if you add extra coverage).
 
 ## When to stop and hand off
 

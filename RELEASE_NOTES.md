@@ -5,6 +5,72 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-briefs-refresh-2026-05-25
+
+Branch: `claude/codex-briefs-refresh-2026-05-25`
+Target: `pre-release`
+
+Docs-only refresh of three Codex briefs after the 2026-05-25 design
+conversation:
+
+**1. `requirements/codex-tasks/capital-equipment-lease-2026-05.md` —
+locked-in decisions applied.**
+
+- **Investing phase AND mid-game** lease initiation (was investing-only
+  in v1 of the brief). Mid-game uses a sibling `TurnAction.LEASE_CAPITAL`
+  action analogous to `PURCHASE_CAPITAL`; same rate-locking math.
+- **End-of-term buyout = 25 % of original cost** (option a). Lease no
+  longer auto-completes after the 3 annual payments — flips to a new
+  `AWAITING_BUYOUT` status; lessee pays `cost × 0.25` to take ownership
+  (`COMPLETED`) or walks away (`BUYOUT_DEFAULTED`, item reclaimed).
+- **Lease rate = posted 3-year funding rate + 2 % margin**, locked at
+  inception, identical for investing-phase and mid-game leases
+  (treated as a secured loan against the asset).
+- **Annual payment math updated:**
+  `(cost − buyout) / term_years × (1 + lease_rate)`. For the Workshop
+  (cost 60, buyout 15, ~4 % posted) → ~15.9 Dp/year + 15 Dp buyout =
+  ~62.7 Dp total ≈ 4.5 % premium over outright.
+- Two new lease statuses: `AWAITING_BUYOUT`, `BUYOUT_DEFAULTED`.
+- Server `leases_detail` payload gains `buyout_payment` and
+  `next_payment_type` ("annual" | "buyout").
+- Required test count grows from 11 → 16 (mid-game lease creation,
+  buyout flow, lease-rate-locking-at-inception, etc).
+- UI direction: leases list under the Loans panel (single
+  `leases_detail` array keeps it simple).
+
+**2. New brief: `requirements/codex-tasks/training-ux-improvements-2026-05.md`.**
+
+Three related improvements addressing the Bug 1 PassengerSeats failure
+mode plus the "approval prompt doesn't show what you're approving"
+in-play observation:
+
+- **Add 10 PassengerSeats to `STARTING_INVENTORY["Educator"]`** —
+  bootstraps cross-island training; eliminates Bug 1 #5 for the first
+  few requests in a fresh game.
+- **`TrainingRequest.tickets_supplied_by_requester: int = 0`** — new
+  field. Requester can pledge to supply some/all of the air tickets
+  themselves; Educator only sources the remainder. AI Educator's fair
+  rate drops accordingly so requesters get a lower fee for
+  self-supplying.
+- **Approval prompt shows full request details** — structured payload
+  field `request_summary` on the Educator's approve/counter prompt
+  AND the requester's counter-acceptance prompt, listing trainees,
+  target profession, transport breakdown, fee, etc. Server-side; UI
+  rendering is a Claude follow-up.
+- 9 required regression tests.
+
+**3. `requirements/codex-tasks/balance-calibration-2026-05.md` —
+prerequisites list expanded.**
+
+Added the new pending Codex tasks (lease + training UX) to the
+sequencing-dependencies section. Calibration now waits for **five**
+upstream landings instead of two: Economy A–D + AI Trading v1/v2 +
+sustenance basket + training-staffing (all shipped) + capital lease
++ training UX improvements (both pending). Tuning before all five
+land is wasted work.
+
+No code / tests touched. Suite still **404 passing** on `origin/pre-release`.
+
 ### claude/codex-brief-equipment-lease
 
 Branch: `claude/codex-brief-equipment-lease`
