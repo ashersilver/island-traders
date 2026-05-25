@@ -5,6 +5,57 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-brief-training-staffing
+
+Branch: `claude/codex-brief-training-staffing`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/training-staffing-2026-05.md` for the Bug 1
+follow-up Track B (staffing-based training admission redesign).
+
+Spec captured from the 2026-05-25 design conversation:
+
+- **Per-concurrent-course staffing**, locked for course duration:
+  - Manager course: 0.5 Professor + 1 Lecturer + 2 Expertise + 1 Course
+  - Technical course: 0.5 Technical Director + 1 Instructor + 1 Expertise + 1 Course
+- **New `Profession.TECHNICAL_DIRECTOR`** (Manager-band) — tier-1 role
+  for the technical/vocational faculty, parallel to Professor for
+  academia.
+- **`educator.apprenticeship_programme` capital item renamed** to
+  `educator.technical_workshop` with the same `cost`/`delivery_seasons`;
+  effect key `apprenticeship_slots` → `technical_workshop_slots`. The
+  workshop is a **prerequisite** for Technical courses (Educator with
+  zero workshops can't run them at all), with workshop slot count
+  acting as an additional upper bound on the concurrent-course
+  capacity: `technical_capacity = min(TD*2, Instructors, workshops)`.
+- **`apprenticeship_slot_capacity` helper renamed** to
+  `technical_workshop_slot_capacity`.
+- **`TrainingRegistry` adds** `manager_courses_in_flight(educator_id)`
+  and `technical_courses_in_flight(educator_id)` for the concurrent-
+  course accounting.
+- **`_training_capacity_status` rewritten** to the staffing model;
+  `_consume_training_capacity` now debits per-course Expertise as well
+  as the existing `Courses` resource (per-batch).
+- 10 required regression tests covering capacity math, the workshop
+  prerequisite, staff-locked-for-duration, expertise debiting, and the
+  legacy `apprenticeship_*` rename completion.
+- Save-file migration callout: old saves with
+  `educator.apprenticeship_programme` in `capital_inventory` need to be
+  remapped to the new key on load.
+
+Calls out calibration follow-up: this changes training admission
+cadence, so a re-tune is likely needed after the redesign lands.
+
+Auction-stuck-at-zero fix (parked locally on
+`claude/bug-auction-stuck-at-zero`, commit `2c96369`, not pushed) and
+the sustenance basket model (pending on
+`claude/sustenance-basket-model`) are flagged in the brief's
+mini-changelog so Codex has accurate base context.
+
+No code / tests touched. Suite still **369 passing** on
+`origin/pre-release`.
+
 ### claude/sustenance-basket-model
 
 Branch: `claude/sustenance-basket-model`
