@@ -25,7 +25,7 @@ from ..constants import (
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role, apprenticeship_slot_capacity
+from ..models.capacity import items_for_role, technical_workshop_slot_capacity
 # ActionCancelled is raised by IO adapters when the user explicitly cancels a
 # prompt chain; the main action loop catches it to abort the action cleanly.
 # Imported from .cli.signals (dependency-free) to avoid a circular import via
@@ -902,8 +902,7 @@ class TurnManager:
         fair_rate = 20.0 * len(req.worker_ids)
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * len(req.worker_ids)
         if req.dollops_to_educator >= fair_rate + ticket_cost:
-            # Peek training capacity (Course slot or apprenticeship slot +
-            # Instructor) before burning air tickets.
+            # Peek training capacity before burning air tickets.
             ok, gate_msg = self._training_capacity_status(educator, req)
             if not ok:
                 self.io.print(
@@ -998,58 +997,102 @@ class TurnManager:
     def _training_capacity_status(self, educator: Player, req) -> tuple[bool, str]:
         """Can this batch be admitted?  Pure check — no side effects.
 
-        Manager-tier (university) is Course-gated.  Technician-tier
-        (vocational apprenticeship) is gated by the Educator's
-        apprenticeship slot pool *and* Instructor capacity — never by
-        Courses (the two pipelines are distinct, decision (a) 2026-05-17).
+        Manager-tier and Technician-tier training are gated by per-course
+        staffing commitments. Staff are not debited, but approved or
+        dispatched requests hold capacity until they complete or reject.
         Returns (ok, reason); reason is empty when ok.
         """
         band = band_of(req.target_profession)
-        n = len(req.worker_ids)
+        n_courses = 1
+        need_courses = self.courses_needed(len(req.worker_ids))
         if band == WorkerBand.MANAGER:
-            need = self.courses_needed(n)
-            have = educator.inventory.get(ResourceType.COURSES)
-            if have < need:
+            prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
+            lect = educator.workforce.count_profession(Profession.LECTURER.value)
+            max_concurrent = self._manager_course_capacity(educator)
+            in_flight = self.training.manager_courses_in_flight(educator.player_id)
+            if max_concurrent - in_flight < n_courses:
                 return False, (
-                    f"needs {need} Course slot(s) for this class "
-                    f"(Education Island has {have})."
+                    f"Manager-course staffing full: {in_flight}/{max_concurrent} "
+                    f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
+                    f"have {prof} Professor(s), {lect} Lecturer(s))."
+                )
+            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * n_courses:
+                return False, f"needs {2 * n_courses} Expertise for this course."
+            have = educator.inventory.get(ResourceType.COURSES)
+            if have < need_courses:
+                return False, (
+                    f"needs {need_courses} Course slot(s) "
+                    f"({have} on hand)."
                 )
             return True, ""
         if band == WorkerBand.TECHNICIAN:
-            if educator.workforce.count_profession(Profession.INSTRUCTOR.value) < 1:
-                return False, (
-                    "no Instructor on the Education Island to run the apprenticeship."
-                )
-            capacity = apprenticeship_slot_capacity(
+            td = educator.workforce.count_profession(Profession.TECHNICAL_DIRECTOR.value)
+            inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
+            workshop = technical_workshop_slot_capacity(
                 CAPITAL_CATALOGUE, educator.capital_inventory
             )
-            in_use = self.training.technician_trainees_in_flight(educator.player_id)
-            if capacity - in_use < n:
+            if workshop <= 0:
                 return False, (
-                    f"apprenticeship slot pool full "
-                    f"({in_use}/{capacity} slot(s) occupied, need {n})."
+                    "no Technical Workshop on the Education Island "
+                    "(prerequisite for technical courses)."
+                )
+            max_concurrent = self._technical_course_capacity(educator)
+            in_flight = self.training.technical_courses_in_flight(educator.player_id)
+            if max_concurrent - in_flight < n_courses:
+                return False, (
+                    f"Technical-course capacity full: {in_flight}/{max_concurrent} "
+                    f"concurrent courses (need 0.5 Technical Director + 1 Instructor per course; "
+                    f"have {td} Technical Director(s), {inst} Instructor(s); "
+                    f"limited by workshops: {workshop})."
+                )
+            if educator.inventory.get(ResourceType.EXPERTISE) < n_courses:
+                return False, f"needs {n_courses} Expertise for this course."
+            have = educator.inventory.get(ResourceType.COURSES)
+            if have < need_courses:
+                return False, (
+                    f"needs {need_courses} Course slot(s) "
+                    f"({have} on hand)."
                 )
             return True, ""
         return True, ""
 
+    def _manager_course_capacity(self, educator: Player) -> int:
+        prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
+        lect = educator.workforce.count_profession(Profession.LECTURER.value)
+        return min(prof * 2, lect)
+
+    def _technical_course_capacity(self, educator: Player) -> int:
+        td = educator.workforce.count_profession(Profession.TECHNICAL_DIRECTOR.value)
+        inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
+        workshop = technical_workshop_slot_capacity(
+            CAPITAL_CATALOGUE, educator.capital_inventory
+        )
+        return min(td * 2, inst, workshop)
+
     def _consume_training_capacity(self, educator: Player, req) -> str:
         """Debit the capacity this batch uses; return a human description.
 
-        Manager-tier debits Course slots from inventory.  Technician-tier
-        consumes nothing from inventory — the apprenticeship slot is held
-        implicitly while the batch is in flight (see
-        TrainingRegistry.technician_trainees_in_flight) and frees on return.
+        Staffing capacity is held by the request's in-flight status. Course
+        and Expertise resources are spent at approval/dispatch.
         """
         band = band_of(req.target_profession)
-        n = len(req.worker_ids)
+        n_courses = 1
+        need_courses = self.courses_needed(len(req.worker_ids))
+        if need_courses > 0:
+            educator.give_resources(ResourceType.COURSES, need_courses)
         if band == WorkerBand.MANAGER:
-            need = self.courses_needed(n)
-            if need > 0:
-                educator.give_resources(ResourceType.COURSES, need)
-            return f"{need} Course slot(s) used"
+            educator.give_resources(ResourceType.EXPERTISE, 2 * n_courses)
+            return (
+                f"{need_courses} Course slot(s) + 2 Expertise "
+                "for the Manager-tier course"
+            )
         if band == WorkerBand.TECHNICIAN:
-            return f"{n} apprenticeship slot(s) used"
-        return "no formal training required"
+            educator.give_resources(ResourceType.EXPERTISE, n_courses)
+            return (
+                f"{need_courses} Course slot(s) + 1 Expertise "
+                "for the technical course"
+            )
+        return f"{need_courses} Course slot(s)"
 
     def _profession_label(self, profession: str) -> str:
         try:
@@ -1127,8 +1170,7 @@ class TurnManager:
                 f"PassengerSeats air ticket(s). Buy tickets from the market first."
             )
             return False
-        # Tickets secured; now consume the training capacity (Course slot
-        # for Manager-tier; apprenticeship slot is held implicitly).
+        # Tickets secured; now consume Course and Expertise resources.
         self._consume_training_capacity(educator, req)
         requester.spend_dollops(req.dollops_to_educator)
         educator.receive_dollops(req.dollops_to_educator)

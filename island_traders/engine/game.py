@@ -33,6 +33,40 @@ from ..constants_capacity import CAPITAL_CATALOGUE
 
 SAVE_VERSION = 5
 
+LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {
+    "educator.apprenticeship_programme": "educator.technical_workshop",
+}
+
+
+def _current_capital_item_id(item_id: str) -> str:
+    return LEGACY_CAPITAL_ITEM_IDS.get(item_id, item_id)
+
+
+def _migrate_capital_inventory(raw: dict) -> dict[str, int]:
+    migrated: dict[str, int] = {}
+    for item_id, count in raw.items():
+        current_id = _current_capital_item_id(str(item_id))
+        migrated[current_id] = migrated.get(current_id, 0) + int(count)
+    return migrated
+
+
+def _migrate_capital_ticks(raw: dict) -> dict[str, list[int]]:
+    migrated: dict[str, list[int]] = {}
+    for item_id, ticks in raw.items():
+        current_id = _current_capital_item_id(str(item_id))
+        migrated.setdefault(current_id, []).extend(int(t) for t in ticks)
+    return migrated
+
+
+def _migrate_capital_in_transit(raw: list[dict]) -> list[dict]:
+    migrated: list[dict] = []
+    for entry in raw:
+        current = dict(entry)
+        if "item_id" in current:
+            current["item_id"] = _current_capital_item_id(str(current["item_id"]))
+        migrated.append(current)
+    return migrated
+
 
 @dataclass
 class PlayerSpec:
@@ -531,12 +565,15 @@ class Game:
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
-                capital_inventory=dict(pd.get("capital_inventory", {})),
-                capital_acquired_ticks={
-                    item_id: list(ticks)
-                    for item_id, ticks in pd.get("capital_acquired_ticks", {}).items()
-                },
-                capital_in_transit=list(pd.get("capital_in_transit", [])),
+                capital_inventory=_migrate_capital_inventory(
+                    pd.get("capital_inventory", {})
+                ),
+                capital_acquired_ticks=_migrate_capital_ticks(
+                    pd.get("capital_acquired_ticks", {})
+                ),
+                capital_in_transit=_migrate_capital_in_transit(
+                    pd.get("capital_in_transit", [])
+                ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
             )
             for r_str, qty in pd.get("inventory", {}).items():

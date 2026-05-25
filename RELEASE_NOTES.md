@@ -5,6 +5,64 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-staffing-2026-05
+
+Branch: `codex/training-staffing-2026-05`
+Target: `pre-release`
+
+Implements the staffing-based training admission redesign:
+
+- Added `Profession.TECHNICAL_DIRECTOR` as a Manager-band Educator role
+  with a starting baseline of 1 Technical Director.
+- Replaced the old Manager Course-only gate and Technician slot-pool
+  gate with per-concurrent-course staffing commitments.
+- Manager courses now require 0.5 Professor + 1 Lecturer, 2 Expertise,
+  and the existing Course resource debit.
+- Technical courses now require 0.5 Technical Director + 1 Instructor,
+  1 Expertise, the existing Course resource debit, and a Technical
+  Workshop prerequisite.
+- Renamed the Educator capital item to `educator.technical_workshop`
+  with `technical_workshop_slots`, and migrated legacy save keys on load.
+- Added in-flight course accounting for Manager and Technician courses,
+  with staff slots held from Educator approval through completion.
+- Added regression coverage for capacity formulas, workshop prerequisite,
+  staff lock duration, Expertise/Course debits, capital rename, save
+  migration, and legacy helper cleanup.
+
+Follow-up: because this changes training admission cadence, calibration
+should be re-run after the branch is reviewed and merged.
+
+**Bootstrap follow-up commit (2026-05-25, Claude review pass).**
+The originally-pushed starting workforce (4 Prof + 1 TD + 4 Inst)
+left a permanent chicken-and-egg deadlock in the Manager pipeline:
+training a first Lecturer is itself a Manager-tier course, but the
+new staffing rule needs an existing Lecturer to run any Manager
+course. Two patches on top of Codex's commit address this:
+
+- **Option B starting workforce** — `STARTING_WORKERS_BY_PROFESSION["Educator"]`
+  is now `2 Professor + 4 Lecturer + 1 Technical Director + 4 Instructor`
+  (total 11). Starting Manager-course capacity = `min(2×2, 4) = 4`,
+  Technical-course capacity = `min(1×2, 4, workshop) = 2` (with the
+  workshop now in mandatory minimum, see below).
+- **Technical Workshop added to `MANDATORY_MINIMUM_INVESTMENT["Educator"]`** —
+  every Educator opens the game owning a `educator.technical_workshop`
+  (3 workshop slots) unless they explicitly deselect it during the
+  Investing Phase. Without this, the Technical pipeline was a hard
+  block at game start (workshop is a prerequisite, not just a
+  capacity multiplier).
+- **Updated `test_educator_starting_workforce_*` test** for the new
+  shape; added `test_technical_workshop_is_mandatory_minimum_for_educator`.
+
+**Interim lease-equivalent financing** (until the proper Lease
+subsystem ships separately): Educators who don't want to commit
+the workshop's full `60 Dp` from their `1500 Dp` starting capital
+can finance it via the existing 1/2/3-year Bank loans at
+`banker_quote_rate` (posted funding rate + 2% margin + borrower
+risk). This is documented in the test docstring; a real Lease
+subsystem (3-year term, annual payments in advance, repossession
+on missed payment, season-delayed return on catch-up) is queued
+as a separate Codex brief (`capital-equipment-lease-2026-05`).
+
 ### claude/codex-brief-training-staffing
 
 Branch: `claude/codex-brief-training-staffing`

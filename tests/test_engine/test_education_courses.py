@@ -73,10 +73,22 @@ def test_tutor_consolidated_into_instructor():
     assert "Tutor" not in UNIVERSITY_CAPACITY
 
 
-def test_educator_starting_workforce_is_4_professors_4_instructors():
-    assert STARTING_WORKFORCE["Educator"] == 8
+def test_educator_starting_workforce_bootstrap_shape():
+    """Option-B faculty mix (2026-05-25 bootstrap follow-up): 2 Prof + 4 Lect
+    + 1 TD + 4 Instructor.  Lecturers are required so Manager-tier training
+    is viable from turn 1 — without them, training a first Lecturer is
+    chicken-and-egg (Lecturer is itself Manager-band so it needs an
+    existing Lecturer to teach the course).  Total 11."""
+    assert STARTING_WORKFORCE["Educator"] == 11
     mix = dict(STARTING_WORKERS_BY_PROFESSION["Educator"])
-    assert mix == {"Professor": 4, "Instructor": 4}
+    assert mix == {
+        "Professor": 2,
+        "Lecturer": 4,
+        "TechnicalDirector": 1,
+        "Instructor": 4,
+    }
+    # Sanity: starting Manager-course capacity = min(Prof*2, Lect) > 0.
+    assert min(mix["Professor"] * 2, mix["Lecturer"]) == 4
 
 
 def test_educator_starts_with_expertise_and_courses():
@@ -121,6 +133,9 @@ def test_standard_training_pending_without_courses():
     educator = _mk(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.EXPERTISE, 2)
+    educator.workforce.add_workers(1, training_level=1, profession="Professor")
+    educator.workforce.add_workers(1, training_level=1, profession="Lecturer")
     # NO Courses given to the Educator.
     training = TrainingRegistry()
     req = training.propose(
@@ -154,6 +169,9 @@ def test_standard_training_consumes_one_course_for_small_class():
     workers = farmer.workforce.add_workers(4)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 4)
     educator.receive_resources(ResourceType.COURSES, 3)
+    educator.receive_resources(ResourceType.EXPERTISE, 3)
+    educator.workforce.add_workers(1, training_level=1, profession="Professor")
+    educator.workforce.add_workers(1, training_level=1, profession="Lecturer")
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,

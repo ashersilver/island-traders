@@ -26,6 +26,13 @@ def _turn_manager(players, training, io):
     )
 
 
+def _manager_training_ready(educator: Player, courses: int = 1, expertise: int = 3) -> None:
+    educator.receive_resources(ResourceType.COURSES, courses)
+    educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.workforce.add_workers(1, training_level=1, profession="Professor")
+    educator.workforce.add_workers(1, training_level=1, profession="Lecturer")
+
+
 class TrainingReviewIO(FakeIOAdapter):
     def __init__(self, confirms=None, amounts=None, texts=None):
         super().__init__()
@@ -85,7 +92,7 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 1)  # 1 class slot
+    _manager_training_ready(educator)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
@@ -120,8 +127,7 @@ def test_training_approval_does_not_consume_expertise_per_attendee():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 1)
-    educator.receive_resources(ResourceType.EXPERTISE, 3)
+    _manager_training_ready(educator, expertise=3)
     training = TrainingRegistry()
     training.propose(
         requester_id=farmer.player_id,
@@ -143,16 +149,16 @@ def test_training_approval_does_not_consume_expertise_per_attendee():
     )
 
     assert educator.inventory.get(ResourceType.COURSES) == 0
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 3
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
 
 
 def test_educator_cannot_approve_training_without_air_tickets():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
-    # Give Courses so the Course peek passes and the test still exercises
-    # the air-ticket gate (the Course peek doesn't consume on ticket failure).
-    educator.receive_resources(ResourceType.COURSES, 1)
+    # Give staffing, Courses, and Expertise so the capacity peek passes and
+    # the test still exercises the air-ticket gate.
+    _manager_training_ready(educator)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,
@@ -223,7 +229,7 @@ def test_requester_can_accept_training_counter_offer_and_dispatch():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 1)  # class slot
+    _manager_training_ready(educator)
     training = TrainingRegistry()
     req = training.propose(
         requester_id=farmer.player_id,

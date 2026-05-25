@@ -21,12 +21,15 @@ from island_traders.models.training import TrainingRegistry, TrainingStatus
 
 def _educator(num_workers: int = 4, courses: int = 5) -> Player:
     """Educator with `num_workers` unskilled workers ready to train and
-    `courses` Course slots in inventory (Phase 2: self-training consumes
-    Courses)."""
+    `courses` Course slots in inventory. Staffing and Expertise are present
+    so tests can focus on the self-training transport shortcut."""
     from island_traders.models.resource import ResourceType
     p = Player(0, "Education Island", [ROLES["Educator"]], 100.0, is_human=True)
     # Add some unskilled workforce so there's something to train
     p.workforce.add_workers(num_workers, profession="Unskilled")
+    p.workforce.add_workers(1, training_level=1, profession="Professor")
+    p.workforce.add_workers(1, training_level=1, profession="Lecturer")
+    p.receive_resources(ResourceType.EXPERTISE, 20)
     if courses:
         p.receive_resources(ResourceType.COURSES, courses)
     return p
