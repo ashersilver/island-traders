@@ -4,30 +4,59 @@
 point release of `pre-release` → `master` can ship. This is the single
 **hard blocker** for the next release.
 
-## ✅ Sequencing dependencies — both satisfied
+## ✅ Sequencing dependencies — original two satisfied; two new ones added
 
-Both prerequisites this brief originally waited on have now landed on
-`pre-release` (current tip: `4e56ead`):
+The two prerequisites this brief originally waited on have landed:
 
-- **Economy Lifecycle Phases A–D** (`requirements/economy-lifecycle-2026-05.md`)
-  — per-player cash `700 → 1500`, Banker MBA loan-gate + universal
-  capital maintenance (Banker nerf), Agriculture worker-retirement +
-  combine replacement/maintenance (Farmer nerf), universal capital
-  lifecycle. All merged.
-- **AI Trading v1 + v2** (`codex/ai-trading` `4a65a9a`,
-  `codex/ai-trading-v2` `87d5ffc`) — AI now lists offers, places bids,
+- **Economy Lifecycle Phases A–D** — per-player cash `700 → 1500`,
+  Banker MBA loan-gate + universal capital maintenance (Banker nerf),
+  Agriculture worker-retirement + combine replacement/maintenance
+  (Farmer nerf), universal capital lifecycle. All merged.
+- **AI Trading v1 + v2** — AI now lists offers, places bids,
   arbitrages spreads, prices off last-deal / best-offer, **plus**
   proactive Banker loan-offering with MBA reserve gate, AI borrowers
-  taking loans when capital-short, AI rollover-near-maturity, AI use of
-  `INVEST` mid-game for unclaimed catalogue items. Calibrating against
-  a passive-AI economy would have under-counted Banker revenue and
-  over-counted "stuck inventory" effects.
+  taking loans when capital-short, AI rollover-near-maturity, AI use
+  of `INVEST` mid-game for unclaimed catalogue items.
 
-**Net:** the baseline numbers in the next section are pre-A-D and
-pre-AI-v2. **Re-run the baseline against current `pre-release` first**,
-then tune from those new numbers. The 0%-win roles (Transporter,
-Doctor) may now win some; the 55%-Banker may now look very different
-with the MBA gate biting.
+### ⏳ Additional prerequisites added 2026-05-25
+
+Two follow-on Codex tasks landed (or briefed) after the original
+calibration prerequisites were declared satisfied. **Both must land
+before this calibration runs** so the tuning sees the final economy:
+
+- **Sustenance basket model** (`claude/sustenance-basket-model`,
+  merged `e2d044f`) — Grain / Produce / Meat now have non-zero demand
+  (was zero); Food demand starts at population 1 (was 101). Major
+  demand shift on the Farmer/sustenance side.
+- **Training-staffing redesign + workshop trainee-cap**
+  (`codex/training-staffing-2026-05`, merged through `409c810`) —
+  per-concurrent-course staffing gates, Technical Workshop as
+  mandatory minimum with a 6-trainee-per-workshop cap, new
+  Technical Director profession. Changes training admission cadence
+  and Educator opening capital allocation.
+- **Capital-equipment lease subsystem** (`codex/capital-equipment-lease-2026-05`,
+  brief at `requirements/codex-tasks/capital-equipment-lease-2026-05.md`,
+  **not yet implemented**) — investing-phase and mid-game lease option
+  for the Workshop (and future opt-in capital items) with 3-year term,
+  annual payment in advance, 25 % buyout, posted-3yr-rate + 2 % margin.
+  Changes equipment-acquisition cadence + lessor revenue stream.
+- **Training UX improvements** (`codex/training-ux-improvements-2026-05`,
+  brief at `requirements/codex-tasks/training-ux-improvements-2026-05.md`,
+  **not yet implemented**) — Educator starts with 10 PassengerSeats;
+  requester can self-supply tickets to reduce Educator fees; approval
+  prompt shows full request details. Changes cross-island training
+  cadence (closes Bug 1 PassengerSeats failure mode).
+
+**Hold this calibration until both pending Codex tasks land.** Three
+prior model shifts (Economy A-D, AI Trading, sustenance, training
+staffing) plus the two pending shifts (lease + training UX) will all
+move the equilibrium; tuning before they all settle is wasted work.
+
+**Net:** the baseline numbers in the next section are pre-A-D,
+pre-AI-v2, pre-sustenance, pre-training-staffing, pre-lease, and
+pre-training-UX. **Re-run the baseline against current `pre-release`
+first** once all prerequisites have merged, then tune from those new
+numbers.
 
 ## Why this is urgent — last measured baseline (now stale)
 
