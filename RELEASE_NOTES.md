@@ -5,6 +5,33 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-staffing-2026-05
+
+Branch: `codex/training-staffing-2026-05`
+Target: `pre-release`
+
+Implements the staffing-based training admission redesign:
+
+- Added `Profession.TECHNICAL_DIRECTOR` as a Manager-band Educator role
+  with a starting baseline of 1 Technical Director.
+- Replaced the old Manager Course-only gate and Technician slot-pool
+  gate with per-concurrent-course staffing commitments.
+- Manager courses now require 0.5 Professor + 1 Lecturer, 2 Expertise,
+  and the existing Course resource debit.
+- Technical courses now require 0.5 Technical Director + 1 Instructor,
+  1 Expertise, the existing Course resource debit, and a Technical
+  Workshop prerequisite.
+- Renamed the Educator capital item to `educator.technical_workshop`
+  with `technical_workshop_slots`, and migrated legacy save keys on load.
+- Added in-flight course accounting for Manager and Technician courses,
+  with staff slots held from Educator approval through completion.
+- Added regression coverage for capacity formulas, workshop prerequisite,
+  staff lock duration, Expertise/Course debits, capital rename, save
+  migration, and legacy helper cleanup.
+
+Follow-up: because this changes training admission cadence, calibration
+should be re-run after the branch is reviewed and merged.
+
 ### claude/codex-brief-training-staffing
 
 Branch: `claude/codex-brief-training-staffing`

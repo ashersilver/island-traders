@@ -299,21 +299,27 @@ class TrainingRegistry:
                 if not r.worker_ids:
                     r.status = TrainingStatus.REJECTED
 
-    def technician_trainees_in_flight(self, educator_id: int) -> int:
-        """Trainees occupying this Educator's apprenticeship slot pool.
-
-        A Technician-band batch occupies a slot from approval
-        (AWAITING_TRANSPORT) through return (DISPATCHED); the slot frees
-        automatically once process_returns() flips the batch to COMPLETED.
-        Manager-tier (Course-gated) batches are excluded.
-        """
+    def _courses_in_flight(self, educator_id: int, band: WorkerBand) -> int:
         return sum(
-            len(r.worker_ids)
+            1
             for r in self._requests
             if r.educator_id == educator_id
             and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
-            and band_of(r.target_profession) == WorkerBand.TECHNICIAN
+            and band_of(r.target_profession) == band
         )
+
+    def manager_courses_in_flight(self, educator_id: int) -> int:
+        """Count committed Manager-tier courses for this Educator.
+
+        Staff are reserved as soon as the Educator approves, so both
+        AWAITING_TRANSPORT and DISPATCHED batches count until completion
+        or rejection.
+        """
+        return self._courses_in_flight(educator_id, WorkerBand.MANAGER)
+
+    def technical_courses_in_flight(self, educator_id: int) -> int:
+        """Count committed Technician-tier courses for this Educator."""
+        return self._courses_in_flight(educator_id, WorkerBand.TECHNICIAN)
 
     def visiting_trainees(self, educator_id: int) -> int:
         """Headcount currently on campus at this Educator's island.

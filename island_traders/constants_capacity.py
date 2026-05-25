@@ -204,13 +204,13 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         description="+1 Patent, -0.2 LaboratoryEquipment per Expertise",
     ),
     CapitalItem(
-        item_id="educator.apprenticeship_programme",
-        name="Apprenticeship Programme",
+        item_id="educator.technical_workshop",
+        name="Technical Workshop",
         role="Educator",
         cost=60.0,
         delivery_seasons=0,
-        effects={"apprenticeship_slots": 3},
-        description="+3 Apprenticeship slots (separate from Education)",
+        effects={"technical_workshop_slots": 3},
+        description="+3 Technical Workshop slots (prerequisite for technical-tier courses)",
     ),
 
     # ----- Banker ----------------------------------------------------------

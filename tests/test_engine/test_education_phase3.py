@@ -1,10 +1,10 @@
-"""Education Phase 3 — apprenticeship pipeline, course duration, settling ramp.
+"""Education Phase 3 — technical pipeline, course duration, settling ramp.
 
 Covers the 2026-05-17 rulings now canonical in
 requirements/education-model.md:
 
-  * Manager-tier = Course-gated; Technician-tier = Educator
-    apprenticeship-slot-pool + Instructor gated (NOT Course-gated).
+  * Manager-tier and Technician-tier courses are staffing-gated, with
+    Courses and Expertise debited at approval.
   * Profession-dependent away duration (Doctor 3, other Managers 2,
     Nurse 1, Technicians 1).
   * Returning apprentices work one 75%-productivity settling season;
@@ -16,7 +16,7 @@ from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.engine.production import ProductionEngine
 from island_traders.engine.trading import TradingEngine
 from island_traders.engine.turn import TurnManager, TurnResult
-from island_traders.models.capacity import apprenticeship_slot_capacity
+from island_traders.models.capacity import technical_workshop_slot_capacity
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
@@ -29,7 +29,7 @@ from island_traders.models.training import (
 from island_traders.models.workforce import Workforce
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 
-APPRENTICESHIP_ITEM = "educator.apprenticeship_programme"
+TECHNICAL_WORKSHOP_ITEM = "educator.technical_workshop"
 
 
 def _player(pid: int, name: str, role: str) -> Player:
@@ -71,18 +71,18 @@ def test_away_seasons_by_profession():
     assert away_seasons("NotARealProfession") == 1   # safe fallback
 
 
-def test_apprenticeship_slot_capacity_helper():
-    assert apprenticeship_slot_capacity(CAPITAL_CATALOGUE, {}) == 0
-    assert apprenticeship_slot_capacity(
-        CAPITAL_CATALOGUE, {APPRENTICESHIP_ITEM: 1}
+def test_technical_workshop_slot_capacity_helper():
+    assert technical_workshop_slot_capacity(CAPITAL_CATALOGUE, {}) == 0
+    assert technical_workshop_slot_capacity(
+        CAPITAL_CATALOGUE, {TECHNICAL_WORKSHOP_ITEM: 1}
     ) == 3
-    assert apprenticeship_slot_capacity(
-        CAPITAL_CATALOGUE, {APPRENTICESHIP_ITEM: 2}
+    assert technical_workshop_slot_capacity(
+        CAPITAL_CATALOGUE, {TECHNICAL_WORKSHOP_ITEM: 2}
     ) == 6
 
 
 # --------------------------------------------------------------------------
-# Technician gate: Instructor + apprenticeship slot pool, NOT Courses
+# Technician gate: Technical Director + Instructor + Technical Workshop
 # --------------------------------------------------------------------------
 
 def test_technician_pending_without_instructor():
@@ -90,8 +90,10 @@ def test_technician_pending_without_instructor():
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
-    educator.receive_resources(ResourceType.COURSES, 5)          # irrelevant for Technicians
-    educator.capital_inventory[APPRENTICESHIP_ITEM] = 1           # slots, but no Instructor
+    educator.receive_resources(ResourceType.COURSES, 5)
+    educator.receive_resources(ResourceType.EXPERTISE, 5)
+    educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
+    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
     training = TrainingRegistry()
     req = _propose_tech(training, farmer, educator, workers)
 
@@ -104,19 +106,22 @@ def test_technician_pending_without_instructor():
 
     assert req.status == TrainingStatus.AWAITING_EDUCATOR
     assert "Instructor" in "\n".join(io.printed)
-    # Courses are untouched — Technicians are not Course-gated.
+    # Resources are untouched on a capacity-peek failure.
     assert educator.inventory.get(ResourceType.COURSES) == 5
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 5
     # Air tickets not burned on a capacity-peek failure.
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 2
 
 
-def test_technician_pending_without_slot_pool():
+def test_technician_pending_without_technical_workshop():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.COURSES, 5)
+    educator.receive_resources(ResourceType.EXPERTISE, 5)
+    educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
     educator.workforce.add_workers(1, training_level=1, profession="Instructor")
-    # Instructor present but NO apprenticeship_programme capital → 0 slots.
     training = TrainingRegistry()
     req = _propose_tech(training, farmer, educator, workers)
 
@@ -128,17 +133,19 @@ def test_technician_pending_without_slot_pool():
     )
 
     assert req.status == TrainingStatus.AWAITING_EDUCATOR
-    assert "apprenticeship slot pool full" in "\n".join(io.printed)
+    assert "no Technical Workshop" in "\n".join(io.printed)
 
 
-def test_technician_dispatches_with_instructor_and_slots_without_courses():
+def test_technician_dispatches_with_staff_workshop_courses_and_expertise():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 2)
+    educator.receive_resources(ResourceType.COURSES, 2)
+    educator.receive_resources(ResourceType.EXPERTISE, 3)
+    educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
     educator.workforce.add_workers(1, training_level=1, profession="Instructor")
-    educator.capital_inventory[APPRENTICESHIP_ITEM] = 1           # 3 slots
-    # Deliberately ZERO Courses — Technician training must not need them.
+    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
     training = TrainingRegistry()
     req = _propose_tech(training, farmer, educator, workers)
 
@@ -150,20 +157,23 @@ def test_technician_dispatches_with_instructor_and_slots_without_courses():
     )
 
     assert req.status == TrainingStatus.DISPATCHED
-    assert educator.inventory.get(ResourceType.COURSES) == 0       # none needed
+    assert educator.inventory.get(ResourceType.COURSES) == 1
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     assert farmer.workforce.training_count == 2
-    # Two trainees now occupy the slot pool (3 slots → 1 free).
-    assert training.technician_trainees_in_flight(educator.player_id) == 2
+    assert training.technical_courses_in_flight(educator.player_id) == 1
 
 
-def test_apprenticeship_slot_pool_blocks_overbooking():
+def test_technical_course_staffing_blocks_overbooking():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     first = farmer.workforce.add_workers(3)
     educator.receive_resources(ResourceType.PASSENGER_SEATS, 10)
+    educator.receive_resources(ResourceType.COURSES, 10)
+    educator.receive_resources(ResourceType.EXPERTISE, 10)
+    educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
     educator.workforce.add_workers(1, training_level=1, profession="Instructor")
-    educator.capital_inventory[APPRENTICESHIP_ITEM] = 1           # exactly 3 slots
+    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
     training = TrainingRegistry()
     r1 = _propose_tech(training, farmer, educator, first)
 
@@ -173,7 +183,7 @@ def test_apprenticeship_slot_pool_blocks_overbooking():
         educator, TurnResult(educator.player_id, season=0, year=0),
         season_name="Spring", year=0,
     )
-    assert r1.status == TrainingStatus.DISPATCHED   # 3/3 slots now occupied
+    assert r1.status == TrainingStatus.DISPATCHED
 
     # A second batch can't be admitted until the first returns.
     second = farmer.workforce.add_workers(1)
@@ -184,8 +194,8 @@ def test_apprenticeship_slot_pool_blocks_overbooking():
         season_name="Summer", year=0,
     )
     assert r2.status == TrainingStatus.AWAITING_EDUCATOR
-    assert "apprenticeship slot pool full" in "\n".join(io2.printed) or \
-           "apprenticeship slot pool full" in "\n".join(io.printed)
+    assert "Technical-course capacity full" in "\n".join(io2.printed) or \
+           "Technical-course capacity full" in "\n".join(io.printed)
 
 
 # --------------------------------------------------------------------------

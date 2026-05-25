@@ -251,7 +251,7 @@ STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
     "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      8,   # 4 Professors + 4 Instructors (Education gates every island's growth)
+    "Educator":      9,   # 4 Professors + 1 Technical Director + 4 Instructors
     "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
     "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
@@ -288,8 +288,9 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
     "Educator":      [
         ("Professor", 4),            # Manager — Expertise / Patents / managerial training
+        ("TechnicalDirector", 1),    # Manager — supervises technical courses
         ("Instructor", 4),           # Technician — Courses / apprenticeship training
-        # exactly 8, no unskilled remainder
+        # exactly 9, no unskilled remainder
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
@@ -399,7 +400,7 @@ SKILLED_PROFESSIONS: dict[str, list[str]] = {
         "LogisticsManager", "Engineer",
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
     ],
-    "Educator":     ["Professor", "Lecturer", "Instructor"],
+    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor"],
     "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
     "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
     "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
@@ -467,6 +468,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Education
     "Professor":            4,    # 1 per season × 4 seasons
     "Lecturer":             4,
+    "TechnicalDirector":    4,
     "Instructor":           6,
     # Transport (the new professions added with the workforce baseline rule)
     "LogisticsManager":     2,
