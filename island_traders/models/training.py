@@ -321,6 +321,24 @@ class TrainingRegistry:
         """Count committed Technician-tier courses for this Educator."""
         return self._courses_in_flight(educator_id, WorkerBand.TECHNICIAN)
 
+    def technical_trainees_in_flight(self, educator_id: int) -> int:
+        """Sum of trainee headcount across committed Technician-tier
+        batches for this Educator (AWAITING_TRANSPORT + DISPATCHED).
+
+        Used to gate against the Technical Workshop physical-plant
+        capacity (per-workshop trainee seats, not per-course). A 4-trainee
+        batch and a 2-trainee batch together fill 6 workshop seats — fits
+        in one Technical Workshop (cap 6), would need 2 workshops if a
+        7th trainee tried to admit concurrently.
+        """
+        return sum(
+            len(r.worker_ids)
+            for r in self._requests
+            if r.educator_id == educator_id
+            and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
+            and band_of(r.target_profession) == WorkerBand.TECHNICIAN
+        )
+
     def visiting_trainees(self, educator_id: int) -> int:
         """Headcount currently on campus at this Educator's island.
 

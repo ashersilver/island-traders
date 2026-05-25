@@ -79,7 +79,12 @@ def test_manager_capacity_min_of_2x_professor_and_lecturer():
     assert tm._manager_course_capacity(educator) == 0
 
 
-def test_technical_capacity_min_of_2x_td_inst_and_workshops():
+def test_technical_capacity_min_of_2x_td_and_instructors_staffing_only():
+    """Technical-course staffing capacity is min(TD*2, Instructors).  The
+    workshop is a SEPARATE per-trainee gate (see
+    ``test_technical_workshop_caps_trainee_headcount``) so removing
+    workshops does NOT change the staffing-only number — it just blocks
+    admission via the prerequisite check."""
     tm = _turn_manager()
     educator = _player(1, "Educator")
     _staff(educator, Profession.TECHNICAL_DIRECTOR, 2)
@@ -88,7 +93,8 @@ def test_technical_capacity_min_of_2x_td_inst_and_workshops():
     assert tm._technical_course_capacity(educator) == 3
 
     educator.capital_inventory.clear()
-    assert tm._technical_course_capacity(educator) == 0
+    # Staffing unchanged — workshop check happens separately.
+    assert tm._technical_course_capacity(educator) == 3
 
 
 def test_technical_course_requires_workshop_prerequisite():
@@ -196,7 +202,8 @@ def test_technical_workshop_capital_item_renamed():
     item = find_item(CAPITAL_CATALOGUE, "educator.technical_workshop")
     assert item is not None
     assert item.name == "Technical Workshop"
-    assert item.effects["technical_workshop_slots"] == 3
+    # Each workshop holds 6 trainees at a time (per-trainee headcount cap).
+    assert item.effects["technical_workshop_trainees"] == 6
     assert find_item(CAPITAL_CATALOGUE, "educator.apprenticeship_programme") is None
 
 
@@ -210,6 +217,61 @@ def test_legacy_technical_workshop_save_keys_migrate():
     assert _migrate_capital_in_transit(
         [{"item_id": "educator.apprenticeship_programme", "arrives_at_tick": 7}]
     ) == [{"item_id": "educator.technical_workshop", "arrives_at_tick": 7}]
+
+
+def test_technical_workshop_caps_trainee_headcount():
+    """Each Technical Workshop holds 6 trainees at a time across all
+    concurrent technical batches (per-trainee, not per-course). Two
+    workshops → 12 trainees. A batch that doesn't fit the remaining
+    workshop seats should be rejected even when staffing is fully
+    available."""
+    training = TrainingRegistry()
+    tm = _turn_manager(training)
+    educator = _player(1, "Educator")
+    # Plenty of staffing — 3 TD * 2 = 6 courses, 6 Instructors → 6 concurrent.
+    _staff(educator, Profession.TECHNICAL_DIRECTOR, 3)
+    _staff(educator, Profession.INSTRUCTOR, 6)
+    _fund_training(educator)
+    # 1 workshop = 6 trainee seats.
+    educator.capital_inventory["educator.technical_workshop"] = 1
+
+    # First batch of 4 trainees fits (6 - 0 = 6 seats free; uses 4).
+    # Bypass propose() to avoid the annual university intake cap — this
+    # test is about the workshop seat gate, not the intake cap.
+    req1 = TrainingRequest(
+        batch_id=101,
+        requester_id=0,
+        worker_ids=[10, 11, 12, 13],
+        educator_id=educator.player_id,
+        transporter_id=None,
+        dollops_to_educator=0.0,
+        dollops_to_transporter=0.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+    )
+    training._requests.append(req1)
+    training.educator_approve(req1.batch_id)   # status -> AWAITING_TRANSPORT (counts as in-flight)
+    assert training.technical_trainees_in_flight(educator.player_id) == 4
+
+    # Second batch of 3 trainees does NOT fit (6 - 4 = 2 seats free; needs 3).
+    req2 = TrainingRequest(
+        batch_id=102,
+        requester_id=0,
+        worker_ids=[20, 21, 22],
+        educator_id=educator.player_id,
+        transporter_id=None,
+        dollops_to_educator=0.0,
+        dollops_to_transporter=0.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+    )
+    ok, msg = tm._training_capacity_status(educator, req2)
+    assert ok is False
+    assert "Technical Workshop capacity full" in msg
+    assert "4/6 trainee seat(s)" in msg
+
+    # With a second workshop the same batch fits (12 - 4 = 8 free; uses 3).
+    educator.capital_inventory["educator.technical_workshop"] = 2
+    ok2, _ = tm._training_capacity_status(educator, req2)
+    assert ok2 is True
 
 
 def test_technical_workshop_is_mandatory_minimum_for_educator():
@@ -229,6 +291,9 @@ def test_technical_workshop_is_mandatory_minimum_for_educator():
 
 
 def test_legacy_apprenticeship_slot_callers_updated():
+    """All legacy slot-pool names from before the technical-workshop
+    redesign — and the earlier per-course `technical_workshop_slots`
+    naming used in Codex's first cut — must be gone from the engine."""
     root = Path(__file__).resolve().parents[2] / "island_traders"
     source = "\n".join(
         path.read_text()
@@ -238,3 +303,7 @@ def test_legacy_apprenticeship_slot_callers_updated():
 
     assert "apprenticeship_slot_capacity" not in source
     assert "apprenticeship_slots" not in source
+    # The per-course `_slots` naming was superseded by the per-trainee
+    # `_trainees` naming in the 2026-05-25 workshop-cap-6 follow-up.
+    assert "technical_workshop_slot_capacity" not in source
+    assert "technical_workshop_slots" not in source

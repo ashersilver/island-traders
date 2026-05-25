@@ -25,7 +25,7 @@ from ..constants import (
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role, technical_workshop_slot_capacity
+from ..models.capacity import items_for_role, technical_workshop_trainee_capacity
 # ActionCancelled is raised by IO adapters when the user explicitly cancels a
 # prompt chain; the main action loop catches it to abort the action cleanly.
 # Imported from .cli.signals (dependency-free) to avoid a circular import via
@@ -1028,22 +1028,33 @@ class TurnManager:
         if band == WorkerBand.TECHNICIAN:
             td = educator.workforce.count_profession(Profession.TECHNICAL_DIRECTOR.value)
             inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
-            workshop = technical_workshop_slot_capacity(
+            workshop_seats = technical_workshop_trainee_capacity(
                 CAPITAL_CATALOGUE, educator.capital_inventory
             )
-            if workshop <= 0:
+            if workshop_seats <= 0:
                 return False, (
                     "no Technical Workshop on the Education Island "
                     "(prerequisite for technical courses)."
                 )
+            # Staffing gate — per-course (Technical Director supervises 2
+            # concurrent courses; Instructor leads 1).
             max_concurrent = self._technical_course_capacity(educator)
-            in_flight = self.training.technical_courses_in_flight(educator.player_id)
-            if max_concurrent - in_flight < n_courses:
+            courses_in_flight = self.training.technical_courses_in_flight(educator.player_id)
+            if max_concurrent - courses_in_flight < n_courses:
                 return False, (
-                    f"Technical-course capacity full: {in_flight}/{max_concurrent} "
+                    f"Technical-course staffing full: {courses_in_flight}/{max_concurrent} "
                     f"concurrent courses (need 0.5 Technical Director + 1 Instructor per course; "
-                    f"have {td} Technical Director(s), {inst} Instructor(s); "
-                    f"limited by workshops: {workshop})."
+                    f"have {td} Technical Director(s), {inst} Instructor(s))."
+                )
+            # Workshop gate — per-trainee (each workshop holds 6 trainees
+            # at once; sum trainee headcount across all in-flight batches).
+            trainees_in_flight = self.training.technical_trainees_in_flight(educator.player_id)
+            batch_trainees = len(req.worker_ids)
+            if workshop_seats - trainees_in_flight < batch_trainees:
+                return False, (
+                    f"Technical Workshop capacity full: "
+                    f"{trainees_in_flight}/{workshop_seats} trainee seat(s) "
+                    f"already in training (need {batch_trainees} more for this batch)."
                 )
             if educator.inventory.get(ResourceType.EXPERTISE) < n_courses:
                 return False, f"needs {n_courses} Expertise for this course."
@@ -1062,12 +1073,11 @@ class TurnManager:
         return min(prof * 2, lect)
 
     def _technical_course_capacity(self, educator: Player) -> int:
+        """Staffing-only capacity (per concurrent course).  The workshop
+        cap is a separate per-trainee gate — see ``_training_capacity_status``."""
         td = educator.workforce.count_profession(Profession.TECHNICAL_DIRECTOR.value)
         inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
-        workshop = technical_workshop_slot_capacity(
-            CAPITAL_CATALOGUE, educator.capital_inventory
-        )
-        return min(td * 2, inst, workshop)
+        return min(td * 2, inst)
 
     def _consume_training_capacity(self, educator: Player, req) -> str:
         """Debit the capacity this batch uses; return a human description.
