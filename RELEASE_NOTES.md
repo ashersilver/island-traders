@@ -91,6 +91,33 @@ course. Two patches on top of Codex's commit address this:
 - **Updated `test_educator_starting_workforce_*` test** for the new
   shape; added `test_technical_workshop_is_mandatory_minimum_for_educator`.
 
+**Workshop trainee-cap follow-up commit (2026-05-25 part 2, Claude review
+pass).** Per spec revision: the Technical Workshop now caps **at 6
+trainees in training at a time**, per workshop — a per-trainee
+headcount rather than per-course slot count.
+
+- `effects["technical_workshop_slots"] = 3` → `effects["technical_workshop_trainees"] = 6`.
+- Helper renamed: `technical_workshop_slot_capacity` →
+  `technical_workshop_trainee_capacity`.
+- Engine gate split into TWO independent technical checks:
+  1. **Staffing gate** (per-course, unchanged): `min(TD*2, Instructors)`
+     concurrent courses.  Workshop is no longer in this min().
+  2. **Workshop trainee gate** (per-trainee, new): sum of in-flight
+     batch sizes ≤ `n_workshops × 6`. A 7-trainee batch tries to admit
+     when 4 trainees are already in flight on one workshop → blocked
+     with "Technical Workshop capacity full: 4/6 trainee seat(s)
+     already in training (need 7 more for this batch)."
+- New `TrainingRegistry.technical_trainees_in_flight(educator_id)`
+  sums trainee headcount across active Technician-tier batches.
+- `_technical_course_capacity` is now staffing-only; the workshop
+  check lives inline in `_training_capacity_status`.
+- New test `test_technical_workshop_caps_trainee_headcount` covers
+  the 6-seat fit / over-cap fail / second-workshop unblock cycle.
+- Existing tests adjusted: `test_technical_capacity_min_of_2x_td_and_instructors_staffing_only`
+  reflects the staffing-only semantics; `test_technical_workshop_trainee_capacity_helper`
+  replaces the slot-capacity helper test; legacy-cleanup test now also
+  asserts `technical_workshop_slot*` names are gone.
+
 **Interim lease-equivalent financing** (until the proper Lease
 subsystem ships separately): Educators who don't want to commit
 the workshop's full `60 Dp` from their `1500 Dp` starting capital

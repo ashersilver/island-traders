@@ -209,8 +209,11 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=60.0,
         delivery_seasons=0,
-        effects={"technical_workshop_slots": 3},
-        description="+3 Technical Workshop slots (prerequisite for technical-tier courses)",
+        # Per workshop: up to 6 technician trainees in training at a time.
+        # Tracked per-trainee (sum of in-flight Technician-tier batch sizes),
+        # NOT per-course — the workshop is a physical-plant headcount cap.
+        effects={"technical_workshop_trainees": 6},
+        description="+6 Technical Workshop trainee seats (prerequisite for technical-tier courses)",
     ),
 
     # ----- Banker ----------------------------------------------------------

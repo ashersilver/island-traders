@@ -126,20 +126,24 @@ def equipment_capacity(
     return total
 
 
-def technical_workshop_slot_capacity(
+def technical_workshop_trainee_capacity(
     catalogue: Iterable[CapitalItem], owned: dict[str, int],
 ) -> int:
-    """Sum the flat `effects['technical_workshop_slots']` from every owned item.
+    """Sum the flat ``effects['technical_workshop_trainees']`` from every
+    owned item — the maximum number of technician trainees that can be
+    in training at the same time on this island.
 
     Technical Workshops are the physical-plant prerequisite for running
-    Technician-tier training courses.
+    Technician-tier training courses. The cap is per-trainee (the
+    workshop floor space holds a fixed headcount), independent of how
+    many distinct courses those trainees are spread across.
     """
     total = 0
     for it in catalogue:
         n = owned.get(it.item_id, 0)
         if n <= 0:
             continue
-        total += int(it.effects.get("technical_workshop_slots", 0)) * n
+        total += int(it.effects.get("technical_workshop_trainees", 0)) * n
     return total
 
 

@@ -16,7 +16,7 @@ from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.engine.production import ProductionEngine
 from island_traders.engine.trading import TradingEngine
 from island_traders.engine.turn import TurnManager, TurnResult
-from island_traders.models.capacity import technical_workshop_slot_capacity
+from island_traders.models.capacity import technical_workshop_trainee_capacity
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
@@ -71,14 +71,16 @@ def test_away_seasons_by_profession():
     assert away_seasons("NotARealProfession") == 1   # safe fallback
 
 
-def test_technical_workshop_slot_capacity_helper():
-    assert technical_workshop_slot_capacity(CAPITAL_CATALOGUE, {}) == 0
-    assert technical_workshop_slot_capacity(
+def test_technical_workshop_trainee_capacity_helper():
+    """Each workshop holds 6 trainees at a time (per-trainee headcount cap,
+    independent of how many courses they're split across)."""
+    assert technical_workshop_trainee_capacity(CAPITAL_CATALOGUE, {}) == 0
+    assert technical_workshop_trainee_capacity(
         CAPITAL_CATALOGUE, {TECHNICAL_WORKSHOP_ITEM: 1}
-    ) == 3
-    assert technical_workshop_slot_capacity(
-        CAPITAL_CATALOGUE, {TECHNICAL_WORKSHOP_ITEM: 2}
     ) == 6
+    assert technical_workshop_trainee_capacity(
+        CAPITAL_CATALOGUE, {TECHNICAL_WORKSHOP_ITEM: 2}
+    ) == 12
 
 
 # --------------------------------------------------------------------------
@@ -194,8 +196,11 @@ def test_technical_course_staffing_blocks_overbooking():
         season_name="Summer", year=0,
     )
     assert r2.status == TrainingStatus.AWAITING_EDUCATOR
-    assert "Technical-course capacity full" in "\n".join(io2.printed) or \
-           "Technical-course capacity full" in "\n".join(io.printed)
+    # Staffing gate fires first (1 TD * 2, 1 Instructor → 1 concurrent course
+    # max; one already in flight).  Workshop trainee-cap is a separate gate
+    # checked after staffing.
+    log = "\n".join(io2.printed) + "\n".join(io.printed)
+    assert "Technical-course staffing full" in log
 
 
 # --------------------------------------------------------------------------
