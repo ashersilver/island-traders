@@ -125,7 +125,7 @@ class TurnManager:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         self._process_loan_repayments(year, season_index)
-        self._post_population_food_demand()
+        self._consume_and_post_sustenance()
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
@@ -338,23 +338,41 @@ class TurnManager:
                 if hasattr(self.io, "on_action_complete") and self.io.on_action_complete:
                     self.io.on_action_complete()
 
-    def _post_population_food_demand(self) -> None:
-        """Post seasonal market demand from island populations without consuming stock yet.
+    def _consume_and_post_sustenance(self) -> None:
+        """Per-season sustenance: each island consumes its population's
+        meals from inventory, then posts any shortfall to the market as
+        a basket demand.
+
+        Sustenance basket model (2026-05-25): each ``PEOPLE_PER_MEAL``
+        residents need one meal per season; meal = 1 Food OR
+        (1 Grain + 1 Produce + 1 (Fish or Meat)) with 2:1 cross-
+        substitution between raw ingredients.  See
+        ``Player.consume_sustenance`` / ``_allocate_raw_meals``.
 
         The Education Island also feeds visiting trainees on campus
-        ("campus load") — they are transient extra mouths over and above
-        its residents until they return home (Education Phase 3 ↔ §21).
+        ("campus load") — transient extra mouths above its residents
+        until they return home (Education Phase 3 ↔ §21).
         """
         for player in self.players:
             extra_residents = (
                 self.training.visiting_trainees(player.player_id)
                 if any(r.name == "Educator" for r in player.roles) else 0
             )
-            for resource, qty in player.population_food_fish_needs(
-                extra_residents=extra_residents
-            ).items():
-                if qty > 0:
-                    self.market.post_demand(resource, qty)
+            meals = player.meals_needed(extra_residents=extra_residents)
+            if meals <= 0:
+                continue
+            satisfied, _used, shortfall = player.consume_sustenance(meals)
+            # Post unmet basket demand so AI sellers see the signal on
+            # every component that could fill the gap.  Overcounting in
+            # absolute units is intentional — it's signal, price
+            # elasticity sorts out which seller fills which slot.
+            if shortfall > 0:
+                for resource in (
+                    ResourceType.FOOD, ResourceType.GRAIN,
+                    ResourceType.PRODUCE, ResourceType.FISH,
+                    ResourceType.MEAT,
+                ):
+                    self.market.post_demand(resource, shortfall)
 
     def _manufactured_resource_for_capital_item(self, item) -> ResourceType:
         role_map = {

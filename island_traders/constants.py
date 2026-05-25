@@ -7,7 +7,14 @@ CURRENCY_SYMBOL = "Dp"       # display symbol
 STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
 TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
-BASE_POPULATION_SELF_FED: int = 100
+
+# Sustenance model (basket — 2026-05-25 redesign).  Each ``PEOPLE_PER_MEAL``
+# residents consume one "meal" per season; a meal is satisfied by 1 Food OR
+# (1 Grain + 1 Produce + 1 (Fish or Meat)), with cross-substitution at 2:1
+# between raw ingredients.  Replaces the legacy ``BASE_POPULATION_SELF_FED``
+# baseline — every resident now generates demand.  See
+# ``Player.consume_sustenance`` for the allocator.
+PEOPLE_PER_MEAL: int = 10
 
 # Production is intentionally board-game chunky: one production action should
 # create enough supply for the archipelago, not one sad little crate.
