@@ -1733,25 +1733,26 @@ class TurnManager:
                 loan.status = LoanStatus.DEFAULTED
                 continue
             amount = loan.repayment_amount
+            lender_name = lender.name if lender else "external depositors"
             if borrower.dollops >= amount:
                 borrower.dollops -= amount
-                if lender.player_id != borrower.player_id:
+                if lender and lender.player_id != borrower.player_id:
                     lender.dollops += amount
                 loan.status = LoanStatus.REPAID
                 self.io.print(
-                    f"\n[LOAN] {borrower.name} repaid {amount:.1f} {sym} to {lender.name} "
+                    f"\n[LOAN] {borrower.name} repaid {amount:.1f} {sym} to {lender_name} "
                     f"(principal {loan.principal:.1f} + interest {loan.interest_amount:.1f})"
                 )
             else:
                 paid = borrower.dollops
                 borrower.dollops = 0
-                if lender.player_id != borrower.player_id:
+                if lender and lender.player_id != borrower.player_id:
                     lender.dollops += paid
                 loan.status = LoanStatus.DEFAULTED
                 shortfall = amount - paid
                 self.io.print(
                     f"\n[LOAN DEFAULT] {borrower.name} could not repay {amount:.1f} {sym} "
-                    f"to {lender.name}. Paid {paid:.1f} {sym}, shortfall {shortfall:.1f} {sym}."
+                    f"to {lender_name}. Paid {paid:.1f} {sym}, shortfall {shortfall:.1f} {sym}."
                 )
 
     def _find_banker(self) -> Player | None:

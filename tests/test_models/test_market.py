@@ -300,6 +300,21 @@ def test_new_bid_cancels_prior_player_bid_on_same_resource():
     assert live == [b]
 
 
+def test_buy_from_offers_pays_the_resting_seller():
+    m = Market()
+    seller = make_player(1, "Farmer", dollops=50.0)
+    buyer = make_player(2, "Banker", dollops=200.0)
+    seller.receive_resources(ResourceType.FOOD, 4)
+    m.post_offer(seller, ResourceType.FOOD, 10.0, 4)
+
+    cost, bought = m.buy_from_offers(buyer, ResourceType.FOOD, 3)
+
+    assert cost == 30.0
+    assert bought == 3
+    assert buyer.dollops == 170.0
+    assert seller.dollops == 80.0
+
+
 def test_new_bid_also_cancels_prior_player_offer_on_same_resource():
     """A player flipping sides on a resource has both their prior bid AND
     prior ask cancelled by a new order (asks refund resources)."""

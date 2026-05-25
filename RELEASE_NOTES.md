@@ -5,6 +5,86 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/balance-calibration-2026-05
+
+Branch: `codex/balance-calibration-2026-05`
+Target: `pre-release`
+
+Release-blocking balance pass after Economy A-D and AI Trading v1/v2.
+The first fresh baseline exposed a new post-AI-v2 failure mode:
+Transporter was winning nearly every AI-only game. Diagnosis found
+three structural issues before event-chart tuning:
+
+- External depositor loans (`lender_id = -1`) crashed simulation
+  repayment; repayment now treats those as cash paid to external
+  depositors.
+- Direct buys from posted offers debited buyers but did not credit the
+  resting seller; sellers now receive the trade cash.
+- Manufacturer AI ignored Freight surcharges and live equipment bids;
+  it now buys required Freight and prioritises visible demand.
+
+Balance levers adjusted:
+
+- Reduced Transporter and Miner raw output from post-AI-v2 levels.
+- Rebalanced Farmer seasonal output, Educator/Doctor production, key
+  commodity prices, equipment prices, Freight/PassengerSeat values,
+  and insurance premiums.
+- AI now keeps no-demand services/IP (`HealthServices`, `Vaccine`,
+  `Patents`, `PassengerSeats`) unless a bid exists, avoiding stale
+  asks that removed value from final scoring.
+- Added focused regression tests for external depositor repayment,
+  seller payment on direct offer fills, Manufacturer Freight buying,
+  and bid-aware Manufacturer line choice.
+
+Historical stale baseline (pre-Economy A-D and pre-AI-v2, 800 games
+across seeds 42/1/7/99; included only as context):
+
+| Role | Historical stale mean win% |
+|---|---:|
+| Farmer | 42.5% |
+| Miner | 0.4% |
+| Transporter | 0.0% |
+| Educator | 1.0% |
+| Banker | 54.6% |
+| Manufacturer | 1.5% |
+| Doctor | 0.0% |
+
+Fresh pre-tune baseline on this branch after the simulation-blocking
+external-depositor repayment fix, before balance tuning:
+
+| Role | Seed 42, 1000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 0.8% | 2073.6 Dp | 1.0% |
+| Miner | 0.2% | 1312.3 Dp | 0.2% |
+| Transporter | 98.9% | 8556.5 Dp | 98.5% |
+| Educator | 0.0% | 1411.9 Dp | 0.0% |
+| Banker | 0.1% | 1717.4 Dp | 0.2% |
+| Manufacturer | 0.0% | 1248.1 Dp | 0.0% |
+| Doctor | 0.0% | 1271.9 Dp | 0.0% |
+
+Final post-tune verification:
+
+| Role | Seed 42, 5000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 11.1% | 2440.7 Dp | 11.5% |
+| Miner | 15.1% | 2492.8 Dp | 14.5% |
+| Transporter | 16.6% | 2626.8 Dp | 17.5% |
+| Educator | 18.3% | 2894.5 Dp | 17.2% |
+| Banker | 13.6% | 2367.1 Dp | 14.6% |
+| Manufacturer | 14.6% | 2409.9 Dp | 13.5% |
+| Doctor | 10.6% | 2840.5 Dp | 11.1% |
+
+Verification:
+
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 1000 --years 3 --seed 42`
+  passed acceptance before the final long run.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 200 --years 3 --seeds 42,1,7,99`
+  produced 4-seed means within the target band; no role was 0% and no
+  per-seed role exceeded ~25%.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 5000 --years 3 --seed 42`
+  produced the final table above, with every role within ±5pp of 14.3%.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **369 passing**.
+
 ### claude/refresh-codex-calibration-brief
 
 Branch: `claude/refresh-codex-calibration-brief`

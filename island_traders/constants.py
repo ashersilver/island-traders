@@ -53,47 +53,47 @@ BASE_PRICES: dict[str, float] = {
     "Grain":                7.0,
     "Produce":              9.0,
     "Meat":                12.0,
-    "Ore":                 15.0,
-    "Metal":               25.0,
-    "Oil":                 20.0,
-    "Freight":             12.0,
+    "Ore":                 12.0,
+    "Metal":               20.0,
+    "Oil":                 16.0,
+    "Freight":             15.0,
     "Expertise":           18.0,
     "Courses":             25.0,   # classroom slots; gated by Expertise consumption
     "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
-    "HealthServices":      35.0,
-    "Vaccine":             40.0,
+    "HealthServices":      30.0,
+    "Vaccine":             35.0,
     "Finance":             20.0,
     # ForgeHaven product lines
-    "FarmMachinery":       32.0,   # tractors, ploughs, harvesters
-    "MiningEquipment":     42.0,   # drills, excavators, ore separators
+    "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
+    "MiningEquipment":     55.0,   # drills, excavators, ore separators
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
-    "TransportEquipment":  65.0,   # vehicles, ships, cranes (no freight surcharge)
+    "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      15.0,   # charter flight / passenger berth (per seat)
+    "PassengerSeats":      17.0,   # charter flight / passenger berth (per seat)
     # Educator IP
-    "Patents":             80.0,   # one-time productivity boost (–20% input cost on chosen output)
+    "Patents":             50.0,   # one-time productivity boost (–20% input cost on chosen output)
 }
 
 # Units produced per season before event modifiers
 # Farmer output is defined by FARMER_SEASONAL_CONVERSION instead.
 # Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
-    "Miner":         {"Ore": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Metal": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Oil": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Transporter":   {"Freight": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Educator":      {"Expertise": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Patents": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Transporter":   {"Freight": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Educator":      {"Expertise": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Patents": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Banker does NOT produce a "Finance" commodity — banking earns through
     # the spread on loans (and insurance premiums, future deal-guarantee
     # fees, brokerage, project finance).  Finance-as-tradeable-commodity
     # was a placeholder that made the Banker print money; removed so the
     # business model has to come from the actual lending engine.
     "Banker":        {},
-    "Doctor":        {"HealthServices": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Vaccine": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -119,25 +119,25 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
         "outputs": {"Grain": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
+                    "Produce": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
     },
     "Summer": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
+        "outputs": {"Grain": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Fish": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
     },
     "Autumn": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 6 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # bumper harvest; fishing winds down
     },
     "Winter": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "outputs": {"Grain": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                    "Produce": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                     "Fish": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # stores drawn down; minimal production
     },
 }
@@ -532,8 +532,8 @@ INSURANCE_DURATION_SEASONS: int = 4
 
 # Base annual premium per policy type.  Banker can charge more or less.
 INSURANCE_BASE_PREMIUM: dict[str, float] = {
-    "life":    25.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
-    "medical": 30.0,    # flat per island; halves seasonal injury rate
+    "life":    50.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
+    "medical": 60.0,    # flat per island; halves seasonal injury rate
 }
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
