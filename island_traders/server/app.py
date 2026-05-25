@@ -1094,6 +1094,7 @@ class GameManager:
                     "delivery_seasons": it.delivery_seasons,
                     "description":      it.description,
                     "effects":          it.effects,
+                    "lease_terms":      it.lease_terms,
                 })
         for role in lp.role_names:
             mandatory_set.update(MANDATORY_MINIMUM_INVESTMENT.get(role, []))
@@ -1137,9 +1138,15 @@ class GameManager:
         # Validate items belong to one of this player's roles
         valid: list[str] = []
         for iid in item_ids:
-            item = find_item(CAPITAL_CATALOGUE, iid)
+            lease_prefix = "lease:"
+            item_id = iid[len(lease_prefix):] if isinstance(iid, str) and iid.startswith(lease_prefix) else iid
+            item = find_item(CAPITAL_CATALOGUE, item_id)
             if item and item.role in lp.role_names:
-                valid.append(iid)
+                if isinstance(iid, str) and iid.startswith(lease_prefix):
+                    if item.lease_terms:
+                        valid.append(iid)
+                else:
+                    valid.append(iid)
 
         room.investing.selections[player_id] = valid
         if ready:
@@ -1172,6 +1179,7 @@ class GameManager:
         base_dollops = room.starting_capital
 
         capital_purchases: dict[str, list[str]] = {}   # player_id -> item_ids actually bought
+        capital_leases: dict[str, list[str]] = {}      # player_id -> item_ids leased
         capital_spend: dict[str, float] = {}
 
         for lp in room.players:
@@ -1182,16 +1190,29 @@ class GameManager:
             budget_remaining = base_dollops - spent_in_auction
 
             bought: list[str] = []
+            leased: list[str] = []
             spend = 0.0
             for iid in selected:
-                item = find_item(CAPITAL_CATALOGUE, iid)
+                is_lease = isinstance(iid, str) and iid.startswith("lease:")
+                item_id = iid[6:] if is_lease else iid
+                item = find_item(CAPITAL_CATALOGUE, item_id)
                 if not item or item.role not in lp.role_names:
                     continue
-                if spend + item.cost > budget_remaining + 1e-6:
+                price = item.cost
+                if is_lease:
+                    if not item.lease_terms:
+                        continue
+                    from ..models.lease import lease_quote
+                    price = lease_quote(item, 0, 0)["annual_payment"]
+                if spend + price > budget_remaining + 1e-6:
                     continue   # over budget — skip
-                bought.append(iid)
-                spend += item.cost
+                if is_lease:
+                    leased.append(item_id)
+                else:
+                    bought.append(item_id)
+                spend += price
             capital_purchases[lp.player_id] = bought
+            capital_leases[lp.player_id] = leased
             capital_spend[lp.player_id] = round(spend, 1)
 
         # Combined deduction: auction winning bid + investing capital spend.
@@ -1208,15 +1229,21 @@ class GameManager:
         self._thread_safe_broadcast(room_id, {
             "type": "investing_resolved",
             "purchases": capital_purchases,
+            "leases": capital_leases,
             "spend": capital_spend,
         })
-        self._launch_game(room_id, total_deductions, capital_purchases=capital_purchases)
+        self._launch_game(
+            room_id, total_deductions,
+            capital_purchases=capital_purchases,
+            capital_leases=capital_leases,
+        )
 
     # ---- Game launch ----
 
     def _launch_game(self, room_id: str,
                      deductions: dict[str, float] | None = None,
-                     capital_purchases: dict[str, list[str]] | None = None) -> bool:
+                     capital_purchases: dict[str, list[str]] | None = None,
+                     capital_leases: dict[str, list[str]] | None = None) -> bool:
         room = self.rooms.get(room_id)
         if not room:
             return False
@@ -1308,6 +1335,41 @@ class GameManager:
                     if not item:
                         continue
                     p.add_capital(iid, 1)
+        if capital_leases:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            from ..models.capacity import find_item
+            from ..models.lease import lease_quote
+            banker = next(
+                (p for p in game.players if any(r.name == "Banker" for r in p.roles)),
+                None,
+            )
+            lessor_id = banker.player_id if banker else -1
+            for spec_idx, lobby_pid in spec_to_lobby_pid.items():
+                leased = capital_leases.get(lobby_pid, [])
+                if not leased or spec_idx >= len(game.players):
+                    continue
+                p = game.players[spec_idx]
+                for iid in leased:
+                    item = find_item(CAPITAL_CATALOGUE, iid)
+                    if not item or not item.lease_terms:
+                        continue
+                    p.add_capital(iid, 1)
+                    quote = lease_quote(item, 0, 0)
+                    if banker and banker.player_id != p.player_id:
+                        banker.dollops += quote["annual_payment"]
+                    game.lease_ledger.create_lease(
+                        item_id=iid,
+                        lessee_id=p.player_id,
+                        lessor_id=lessor_id,
+                        year=0,
+                        season=0,
+                        term_years=quote["term_years"],
+                        annual_payment=quote["annual_payment"],
+                        buyout_payment=quote["buyout_payment"],
+                        locked_lease_rate=quote["locked_lease_rate"],
+                        payments_made=1,
+                        last_payment_year=0,
+                    )
 
         def _broadcast_state():
             state = self.get_game_state(room_id)
@@ -1648,6 +1710,52 @@ class GameManager:
             })
         return pipeline
 
+    def _leases_detail_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        from ..models.capacity import find_item
+        leases = getattr(game, "lease_ledger", None)
+        if not leases:
+            return []
+        details = []
+        for lease in leases.active_leases_for(player_id):
+            item = find_item(CAPITAL_CATALOGUE, lease.item_id)
+            role = "lessee" if lease.lessee_id == player_id else "lessor"
+            if lease.status.value == "awaiting_buyout":
+                next_year = lease.maturity_year
+                next_season = 0
+                payment_type = "buyout"
+            else:
+                next_year = max(current_year_idx, lease.last_payment_year + 1)
+                next_season = 0
+                payment_type = "annual"
+            seasons_to_next = max(
+                0,
+                (next_year - current_year_idx) * len(SEASONS)
+                + (next_season - current_season_idx),
+            )
+            details.append({
+                "lease_id": lease.lease_id,
+                "item_id": lease.item_id,
+                "item_name": item.name if item else lease.item_id,
+                "role": role,
+                "counterparty_id": lease.lessor_id if role == "lessee" else lease.lessee_id,
+                "annual_payment": round(lease.annual_payment, 1),
+                "buyout_payment": round(lease.buyout_payment, 1),
+                "payments_made": lease.payments_made,
+                "term_years": lease.term_years,
+                "seasons_to_next_payment": seasons_to_next,
+                "status": lease.status.value,
+                "next_payment_year": next_year + 1,
+                "next_payment_season": SEASONS[next_season],
+                "next_payment_type": payment_type,
+            })
+        return details
+
     def _decision_hints_for_player(self, pd: dict) -> list[dict]:
         hints: list[dict] = []
         capacity = pd.get("capacity", {})
@@ -1782,6 +1890,9 @@ class GameManager:
                     }
                     for l in game.loan_ledger.active_loans_for(p.player_id)
                 ],
+                "leases_detail": self._leases_detail_for_player(
+                    game, p.player_id, current_year_idx, current_season_idx
+                ),
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
