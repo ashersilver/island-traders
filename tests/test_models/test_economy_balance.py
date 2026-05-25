@@ -18,8 +18,8 @@ def test_oil_starting_buffers_reflect_role_demand():
 
 
 def test_miner_oil_is_reduced_and_metal_is_available():
-    assert BASE_PRODUCTION["Miner"]["Oil"] == 80
-    assert BASE_PRODUCTION["Miner"]["Metal"] == 40
+    assert BASE_PRODUCTION["Miner"]["Oil"] == 40
+    assert BASE_PRODUCTION["Miner"]["Metal"] == 20
 
 
 def test_transporter_uses_food_not_fish_for_provisions():

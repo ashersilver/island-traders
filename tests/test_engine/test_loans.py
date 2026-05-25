@@ -91,6 +91,34 @@ def test_self_bank_loan_repayment_burns_cash_instead_of_round_tripping_to_self()
     assert player.dollops == 96.8
 
 
+def test_external_depositor_loan_repayment_burns_cash_without_player_lender():
+    banker = Player(
+        player_id=0,
+        name="Banker",
+        roles=[ROLES["Banker"]],
+        dollops=100.0,
+        is_human=True,
+    )
+    loans = LoanLedger()
+    loan = loans.create_loan(
+        borrower_id=banker.player_id,
+        lender_id=-1,
+        principal=50.0,
+        interest_rate=0.05,
+        issued_year=0,
+        issued_season=0,
+        term_years=1,
+    )
+    io = LoanIO([])
+    tm = _turn_manager([banker], loans, io)
+
+    tm._process_loan_repayments(year=1, season=0)
+
+    assert loan.status == LoanStatus.REPAID
+    assert banker.dollops == 47.5
+    assert "external depositors" in "\n".join(io.printed)
+
+
 def test_banker_quote_uses_posted_term_rate_plus_minimum_spread():
     player = Player(
         player_id=0,

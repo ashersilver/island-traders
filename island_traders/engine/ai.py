@@ -10,7 +10,7 @@ from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
 from ..constants import (
-    BASE_PRICES, MANUFACTURER_PRODUCT_LINES,
+    BASE_PRICES, MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
     MBA_QUALIFIED_THRESHOLD,
@@ -23,6 +23,20 @@ AI_OFFER_MARKUP = 1.0
 AI_ARBITRAGE_MIN_MARGIN = 0.05
 AI_MIN_LOAN_PRINCIPAL = 50.0
 AI_DEBT_CEILING_MULTIPLIER = 2.0
+AI_EQUIPMENT_INPUT_RUNS = 5
+AI_EQUIPMENT_INPUTS = {
+    ResourceType.FARM_MACHINERY,
+    ResourceType.MINING_EQUIPMENT,
+    ResourceType.LABORATORY_EQUIPMENT,
+    ResourceType.MEDICAL_DEVICES,
+    ResourceType.TRANSPORT_EQUIPMENT,
+}
+AI_LIST_ONLY_WITH_BID = {
+    ResourceType.HEALTH_SERVICES,
+    ResourceType.VACCINE,
+    ResourceType.PATENTS,
+    ResourceType.PASSENGER_SEATS,
+}
 
 
 class AIStrategy:
@@ -322,22 +336,60 @@ class AIStrategy:
         """Pick the Manufacturer product line with the best expected profit margin."""
         best_line = next(iter(MANUFACTURER_PRODUCT_LINES))
         best_score = float("-inf")
+        bid_lines = [
+            line_key for line_key, line in MANUFACTURER_PRODUCT_LINES.items()
+            if market.best_bid(ResourceType(line["output"])) is not None
+        ]
+        candidates = bid_lines or list(MANUFACTURER_PRODUCT_LINES)
         for line_key, line in MANUFACTURER_PRODUCT_LINES.items():
+            if line_key not in candidates:
+                continue
             output_rt = ResourceType(line["output"])
-            revenue = market.current_price(output_rt) * line["qty"]
+            bid = market.best_bid(output_rt)
+            unit_price = bid.price_per_unit if bid is not None else market.current_price(output_rt)
+            bid_pull = min(bid.remaining, line["qty"]) if bid is not None else 0
+            revenue = unit_price * line["qty"]
             input_cost = sum(
                 market.current_price(ResourceType(r)) * qty
                 for r, qty in line["inputs"].items()
             )
+            freight = self._manufacturer_freight_surcharge(line_key, line["qty"])
+            input_cost += market.current_price(ResourceType.FREIGHT) * freight
             already_have = sum(
                 min(player.inventory.get(ResourceType(r)), qty)
                 for r, qty in line["inputs"].items()
             )
-            score = revenue - input_cost + already_have * 2
+            score = revenue - input_cost + already_have * 2 + bid_pull * unit_price
             if score > best_score:
                 best_score = score
                 best_line = line_key
         return best_line
+
+    def _manufacturer_freight_surcharge(self, product_line: str | None, qty: int) -> int:
+        if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
+            return 0
+        freight_per_unit = MANUFACTURER_PRODUCT_LINES[product_line]["freight_per_unit"]
+        if freight_per_unit <= 0 or qty <= 0:
+            return 0
+        board_scale_qty = max(1, round(qty / PRODUCER_PRODUCTIVITY_MULTIPLIER))
+        return freight_per_unit * board_scale_qty
+
+    def _inputs_for_ai_purchase(
+        self,
+        player: Player,
+        season_name: str,
+        product_line: str | None,
+    ) -> dict[ResourceType, int]:
+        inputs = dict(player.all_required_inputs(season_name, product_line))
+        if any(role.name == "Manufacturer" for role in player.roles):
+            line = MANUFACTURER_PRODUCT_LINES.get(
+                product_line or next(iter(MANUFACTURER_PRODUCT_LINES))
+            )
+            if line:
+                freight = self._manufacturer_freight_surcharge(product_line, line["qty"])
+                if freight:
+                    inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight
+        return inputs
 
     def _last_deal_price(self, trading_engine: TradingEngine, rtype: ResourceType) -> float | None:
         """Infer the latest cash/unit price from accepted one-resource deals."""
@@ -479,11 +531,15 @@ class AIStrategy:
             self._ai_invest_unclaimed_catalogue_item(player, year, season_index)
         )
 
-        inputs_needed = player.all_required_inputs(season_name, chosen_line)
+        inputs_needed = self._inputs_for_ai_purchase(player, season_name, chosen_line)
         for rtype, qty_needed in inputs_needed.items():
             if rtype == ResourceType.FINANCE:
                 continue
-            target_qty = qty_needed * self.target_production_runs
+            target_runs = (
+                AI_EQUIPMENT_INPUT_RUNS
+                if rtype in AI_EQUIPMENT_INPUTS else self.target_production_runs
+            )
+            target_qty = qty_needed * target_runs
             have = player.inventory.get(rtype)
             if have >= target_qty:
                 continue
@@ -554,6 +610,8 @@ class AIStrategy:
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
         for rtype in listable_resources:
             if rtype == ResourceType.FINANCE:
+                continue
+            if rtype in AI_LIST_ONLY_WITH_BID and market.best_bid(rtype) is None:
                 continue
             qty = max(0, player.inventory.get(rtype) - reserve_inputs.get(rtype, 0))
             if qty <= 0:

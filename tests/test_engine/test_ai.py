@@ -65,7 +65,7 @@ def test_ai_keeps_required_input_reserve_when_listing_outputs():
 
     assert miner.inventory.get(ResourceType.OIL) >= 1
     summary = market.market_summary()[ResourceType.OIL.value]
-    assert summary["ask_quantity"] == 82
+    assert summary["ask_quantity"] == 42
 
 
 def test_ai_produces_multiple_runs_when_inputs_available():
@@ -89,13 +89,13 @@ def test_ai_produces_multiple_runs_when_inputs_available():
     )
 
     assert any(
-        "160x Ore" in action and "80x Metal" in action and "160x Oil" in action
+        "80x Ore" in action and "40x Metal" in action and "80x Oil" in action
         for action in actions
     )
     summary = market.market_summary()
-    assert summary[ResourceType.ORE.value]["ask_quantity"] == 160
-    assert summary[ResourceType.METAL.value]["ask_quantity"] == 80
-    assert summary[ResourceType.OIL.value]["ask_quantity"] == 162
+    assert summary[ResourceType.ORE.value]["ask_quantity"] == 80
+    assert summary[ResourceType.METAL.value]["ask_quantity"] == 40
+    assert summary[ResourceType.OIL.value]["ask_quantity"] == 82
 
 
 def test_ai_places_bid_for_missing_required_inputs():
@@ -125,13 +125,15 @@ def test_transporter_ai_lists_passenger_seats_after_production():
     ai = AIStrategy()
     market = Market()
     transporter = make_player(1, "Transporter AI", ["Transporter"])
+    educator = make_player(2, "Educator AI", ["Educator"], dollops=500.0)
     transporter.receive_resources(ResourceType.OIL, 4)
     transporter.receive_resources(ResourceType.FOOD, 2)
+    market.post_bid(educator, ResourceType.PASSENGER_SEATS, 18.0, 2)
 
     ai.take_turn(
         transporter,
         market,
-        [transporter],
+        [transporter, educator],
         ProductionEngine(),
         TradingEngine(market, DealLedger()),
         EventResult("Normal"),
@@ -321,3 +323,60 @@ def test_ai_invests_in_unclaimed_catalogue_item():
     assert farmer.capital_inventory
     assert "farmer.storage_building" in farmer.capital_inventory
     assert any("invested" in action for action in actions)
+
+
+def test_manufacturer_ai_buys_freight_surcharge_before_producing():
+    ai = AIStrategy()
+    market = Market()
+    transporter = make_player(1, "Transporter AI", ["Transporter"], dollops=300.0)
+    manufacturer = make_player(2, "Manufacturer AI", ["Manufacturer"], dollops=500.0)
+    transporter.receive_resources(ResourceType.FREIGHT, 10)
+    manufacturer.receive_resources(ResourceType.METAL, 4)
+    manufacturer.receive_resources(ResourceType.OIL, 2)
+    market.post_offer(transporter, ResourceType.FREIGHT, 12.0, 10)
+    market.post_bid(transporter, ResourceType.LABORATORY_EQUIPMENT, 45.0, 3)
+
+    actions = ai.take_turn(
+        manufacturer,
+        market,
+        [transporter, manufacturer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        LoanLedger(),
+    )
+
+    assert any("bought" in action and "Freight" in action for action in actions)
+    assert any("produced" in action for action in actions)
+
+
+def test_manufacturer_ai_prefers_line_with_visible_bid():
+    ai = AIStrategy()
+    market = Market()
+    educator = make_player(1, "Educator AI", ["Educator"], dollops=1000.0)
+    manufacturer = make_player(2, "Manufacturer AI", ["Manufacturer"], dollops=1000.0)
+    transporter = make_player(3, "Transporter AI", ["Transporter"], dollops=300.0)
+    transporter.receive_resources(ResourceType.FREIGHT, 10)
+    manufacturer.receive_resources(ResourceType.METAL, 4)
+    manufacturer.receive_resources(ResourceType.OIL, 2)
+    market.post_offer(transporter, ResourceType.FREIGHT, 12.0, 10)
+    market.post_bid(educator, ResourceType.LABORATORY_EQUIPMENT, 40.0, 10)
+
+    actions = ai.take_turn(
+        manufacturer,
+        market,
+        [educator, manufacturer, transporter],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        LoanLedger(),
+    )
+
+    assert any("Laboratory Equipment" in action for action in actions)
+    assert educator.inventory.get(ResourceType.LABORATORY_EQUIPMENT) > 0

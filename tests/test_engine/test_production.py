@@ -89,9 +89,9 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
 
     produced = ProductionEngine().produce(miner, normal_event, season_name="Spring")
 
-    assert produced[ResourceType.ORE] == 80
-    assert produced[ResourceType.METAL] == 40
-    assert produced[ResourceType.OIL] == 80
+    assert produced[ResourceType.ORE] == 40
+    assert produced[ResourceType.METAL] == 20
+    assert produced[ResourceType.OIL] == 40
 
 
 def test_banker_production_is_a_no_op(banker, normal_event):
@@ -106,9 +106,9 @@ def test_banker_production_is_a_no_op(banker, normal_event):
 def test_bumper_harvest_increases_yield(farmer, bumper_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
-    # Spring: base Produce=30, yield_modifier=1.8, bonus=2 → int(30*1.8)+2 = 54+2 = 56
+    # Spring: base Produce=20, yield_modifier=1.8, bonus=2 → int(20*1.8)+2 = 36+2 = 38
     produced = engine.produce(farmer, bumper_event, season_name="Spring")
-    assert produced.get(ResourceType.PRODUCE, 0) == 56
+    assert produced.get(ResourceType.PRODUCE, 0) == 38
 
 
 def test_production_preview_does_not_mutate(farmer, normal_event):
@@ -192,7 +192,7 @@ def test_production_options_show_per_product_current_max(normal_event):
     by_output = {option["output"]: option for option in options}
 
     assert by_output[ResourceType.GRAIN]["max_qty"] == 20
-    assert by_output[ResourceType.FISH]["max_qty"] == 25
+    assert by_output[ResourceType.FISH]["max_qty"] == 20
 
 
 def test_produce_product_makes_chosen_product_and_quantity_only(normal_event):
@@ -311,8 +311,8 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
         if option["output"] == ResourceType.MEAT
     )
 
-    assert bare_preview["outputs"][ResourceType.PRODUCE] == 60
-    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 80
+    assert bare_preview["outputs"][ResourceType.PRODUCE] == 45
+    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 60
     assert bare_meat["max_qty"] == int(staffed_meat["max_qty"] * 0.75)
 
 
@@ -333,8 +333,8 @@ def test_enhanced_crusher_smelter_increases_metal_capacity_and_reduces_oil(norma
     options = engine.production_options(miner, normal_event, season_name="Spring")
     metal_option = next(option for option in options if option["output"] == ResourceType.METAL)
 
-    assert metal_option["preview_qty"] == 120
-    assert metal_option["capacity_limit"] >= 80
+    assert metal_option["preview_qty"] == 60
+    assert metal_option["capacity_limit"] >= 40
 
     produced = engine.produce_product(
         miner,

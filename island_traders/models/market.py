@@ -333,16 +333,23 @@ class Market:
                 f"Only {total_available} {rtype.value} offered, requested {qty}"
             )
         total_cost = 0.0
-        bought = 0
+        fills = []
+        planned = 0
         for offer in offers:
-            if bought >= qty:
+            if planned >= qty:
                 break
-            take = min(qty - bought, offer.remaining)
+            take = min(qty - planned, offer.remaining)
             cost = round(offer.price_per_unit * take, 2)
             total_cost += cost
+            fills.append((offer, take, cost))
+            planned += take
+        buyer.spend_dollops(total_cost)
+        bought = 0
+        for offer, take, cost in fills:
             offer.remaining -= take
             bought += take
-        buyer.spend_dollops(total_cost)
+            if offer._seller is not None and offer.seller_id != buyer.player_id:
+                offer._seller.receive_dollops(cost)
         buyer.receive_resources(rtype, bought)
         self.post_demand(rtype, bought)
         return total_cost, bought
