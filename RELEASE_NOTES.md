@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-briefs-2026-05-26
+
+Branch: `claude/codex-briefs-2026-05-26`
+Target: `pre-release`
+
+Docs-only — drafts two new Codex briefs from the 2026-05-26 playtest
+feedback (`0.1.0-dev.2026-05-26`):
+
+- `requirements/codex-tasks/kitchen-island-2026-05-26.md` — new
+  Kitchen capital item (1 Food = 2 Grain + 1 Produce + 1 Fish-or-Meat)
+  with a new Chef Technician profession. Cash-only purchase, capacity
+  and price deferred to Codex calibration. Lets any island convert raw
+  ingredients into Food in-house, gated by training a Chef.
+- `requirements/codex-tasks/training-flow-diagnostic-2026-05-26.md` —
+  diagnose-and-fix pass on the training pipeline end to end after a
+  third consecutive cycle of "trainees don't return / training over-
+  constrained" reports. Hypothesis list focuses on return logistics,
+  dispatch under load, ticket math under partial supply, sustenance
+  accounting for in-training workers, decline/cancel paths, and AI
+  Educator behaviour.
+
+No engine or test changes; suite remains green at 429.
+
 ### claude/restore-action-menu-2026-05-26
 
 Branch: `claude/restore-action-menu-2026-05-26`
