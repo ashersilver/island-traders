@@ -5,6 +5,24 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-profession-alignment-2026-05-26
+
+Branch: `codex/training-profession-alignment-2026-05-26`
+Target: `pre-release`
+
+Follows up the training-flow diagnostic amendment for display-title vs
+trainable-profession mismatches:
+
+- Added real Technician-band, trainable profession enums for `FactoryForeman`
+  and `MiningForeman`.
+- Kept `AssemblyWorker` and `RefinerySpecialist` as the existing engine
+  professions but changed their player-facing labels to `Assembly Tech` and
+  `Refiner`, matching the roster titles players see.
+- Left `Stevedore` and `Aide` as Worker-band population titles rather than
+  formal Education courses.
+- Added regression coverage so the playtest-reported phantom titles stay
+  aligned with the training menu.
+
 ### claude/educator-queue-brief-amend-2026-05-26
 
 Branch: `claude/educator-queue-brief-amend-2026-05-26`
