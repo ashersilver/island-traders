@@ -4,7 +4,8 @@ Two related fixes:
   1. UNIVERSITY_CAPACITY now includes training caps for the new professions
      introduced with the workforce ≥1M+2T rule (LogisticsManager, FlightCrew,
      Seaman, WarehouseManager, Lecturer, Instructor, BankingAnalyst, BankingClerk,
-     MedicalOrderly) so they can actually be trained into.
+     MedicalOrderly) plus later playtest titles (FactoryForeman, MiningForeman)
+     so they can actually be trained into.
   2. The Request Training menu prints exhausted professions with their cap
      status (so the player sees WHY an option isn't selectable, instead of it
      just vanishing from the list).
@@ -19,13 +20,14 @@ from island_traders.models.training import TrainingRegistry
 
 
 def test_new_professions_have_training_caps():
-    """The 9 new professions added with the workforce baseline must all have
+    """The new professions added with the workforce baseline/playtest passes must all have
     UNIVERSITY_CAPACITY entries so they can be trained into."""
     new_professions = [
         "LogisticsManager", "FlightCrew", "Seaman", "WarehouseManager",
         "Lecturer", "Instructor",   # Tutor consolidated into Instructor (Phase 2)
         "BankingAnalyst", "BankingClerk",
         "MedicalOrderly",
+        "FactoryForeman", "MiningForeman",
     ]
     for prof in new_professions:
         assert prof in UNIVERSITY_CAPACITY, (
