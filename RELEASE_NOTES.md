@@ -5,6 +5,43 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-followups-2026-05-25
+
+Branch: `claude/ui-followups-2026-05-25`
+Target: `pre-release`
+
+UI follow-ups for the just-merged Training UX and Capital Lease
+subsystems, plus a small "About / version" feature so playtesters can
+report defects against a specific build:
+
+- Added `APP_VERSION` constant to `island_traders/constants.py` as the
+  single source of truth for the build version and exposed it via:
+  - `version=APP_VERSION` on the FastAPI app
+  - a new `GET /version` JSON endpoint
+  - a version label in the landing-page footer (with About link)
+  - a version chip in the in-game header (also opens About)
+- Added a 📋 Menu recovery button in the game header that re-opens the
+  cached Action Menu prompt — fixes the playtest observation that a
+  Decision-Hint button could cause the Action Menu to disappear until
+  the next turn.
+- Cached the last `action.prompt` payload in `lastActionPromptMsg` so
+  the Menu recovery button has something to re-render.
+- Rendered the new structured `request_summary` payload (training
+  approval / counter-offer modals) as a styled key-value table inside
+  the option-picker and confirm dialogs.
+- Reworked the Investing-phase capital list:
+  - Added a 3-way Skip / Buy / Lease `<select>` for lease-eligible items.
+  - Server `_investing_payload` now pre-computes a `lease_quote` for
+    each lease-eligible catalogue item so the client can show the
+    annual payment, buyout, and total cost without a round-trip.
+  - Investing totals now correctly sum upfront costs (first lease
+    payment for leased items, full price for purchased items).
+- Renamed the Loans popup to "Loans & Leases" and added a dedicated
+  Leases section that lists active leases with status, annual payment,
+  next payment type, and buyout amount.
+
+No engine changes; suite remains green at 429 passing.
+
 ### codex/capital-equipment-lease-2026-05
 
 Branch: `codex/capital-equipment-lease-2026-05`

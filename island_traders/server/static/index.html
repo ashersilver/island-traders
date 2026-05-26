@@ -530,6 +530,7 @@ button:active{transform:scale(.97)}
   <div class="landing-title">
     <h1>Island Traders</h1>
     <p>Resource-trading board game · 2–7 players</p>
+    <p style="font-size:.7rem;color:var(--dim);margin-top:.2rem">Version <span id="app-version">…</span> · <a href="javascript:void(0)" onclick="showAboutDialog()" style="color:var(--accent);text-decoration:none">About</a></p>
   </div>
   <div class="landing-actions">
     <button class="btn-gold" onclick="showScreen('create')" style="border-radius:50px;font-size:1rem;padding:.85rem 2.6rem">
@@ -808,6 +809,10 @@ button:active{transform:scale(.97)}
         </button>
         <span class="wealth" id="hdr-wealth">—</span>
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
+        <button class="btn-ghost btn-sm" id="show-action-menu-btn" onclick="restoreActionMenu()"
+                title="Re-open the action menu if it was hidden mid-turn">📋 Menu</button>
+        <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
+              onclick="showAboutDialog()" title="About / version info">v<span id="app-version-game">…</span></span>
       </div>
     </div>
 
@@ -946,6 +951,11 @@ let timerInterval = null;
 let auctionTimerEnd = 0;
 // Pause state (Issue #1)
 let isPaused = false;
+// Cached most-recent action-prompt payload so we can re-render it via the
+// "📋 Menu" recovery button when the action menu disappears mid-turn (e.g.
+// after cancelling a hint-driven modal or any other intermittent UI loss).
+let lastActionPromptMsg = null;
+let appVersion = null;
 let activeTabRole = null;
 let builtTabsForRoles = null; // serialised role list used to build the current tab bar
 // Simultaneous-play state
@@ -1589,6 +1599,29 @@ const GUARANTEE_PRICING_EXPLAINER =
 
 // ==================== INVESTING PHASE ====================
 
+// Investing selection conventions:
+//   investSelected contains either "<item_id>" (buy outright) or
+//   "lease:<item_id>" (3-year lease).  Helper accessors below.
+function _investPickFor(itemId) {
+  if (investSelected.has(itemId)) return 'buy';
+  if (investSelected.has('lease:' + itemId)) return 'lease';
+  return 'skip';
+}
+
+function _investSetPick(itemId, mode) {
+  investSelected.delete(itemId);
+  investSelected.delete('lease:' + itemId);
+  if (mode === 'buy') investSelected.add(itemId);
+  else if (mode === 'lease') investSelected.add('lease:' + itemId);
+}
+
+function _itemUpfrontCost(it) {
+  const mode = _investPickFor(it.item_id);
+  if (mode === 'buy') return it.cost;
+  if (mode === 'lease' && it.lease_quote) return it.lease_quote.annual_payment;
+  return 0;
+}
+
 function renderInvesting() {
   if (!investData) return;
   document.getElementById('invest-budget-display').textContent =
@@ -1611,7 +1644,7 @@ function renderInvesting() {
     const tbl = document.createElement('table');
     tbl.className = 'purchase-table';
     tbl.innerHTML = `<thead><tr>
-        <th class="col-select">Select</th>
+        <th class="col-select">Pick</th>
         <th class="col-item">Equipment</th>
         <th class="col-cost">Price</th>
         <th class="col-delivery">Available</th>
@@ -1621,14 +1654,35 @@ function renderInvesting() {
     for (const it of items) {
       const tr = document.createElement('tr');
       tr.style = 'border-top:1px solid var(--border)';
-      const checked = investSelected.has(it.item_id) ? 'checked' : '';
       const isMandatory = mandatorySet.has(it.item_id);
       const mandTag = isMandatory ? '<span style="color:var(--gold);font-size:.7rem;margin-left:.4rem">★ default</span>' : '';
       const deliv = it.delivery_seasons > 0 ? `${it.delivery_seasons} seasons` : 'immediate';
+      const currentPick = _investPickFor(it.item_id);
+
+      // Build the picker: a 3-way <select> when the item is lease-eligible,
+      // otherwise the original checkbox (Skip / Buy).
+      let pickerHtml;
+      let costCellHtml = `${it.cost.toFixed(0)} Dp`;
+      if (it.lease_quote && it.lease_terms) {
+        const q = it.lease_quote;
+        const buyLabel = `Buy outright (${it.cost.toFixed(0)} Dp)`;
+        const leaseLabel = `Lease ${q.term_years}yr (${q.annual_payment.toFixed(1)} Dp/yr + ${q.buyout.toFixed(1)} Dp buyout)`;
+        pickerHtml = `<select class="invest-pick" data-item="${esc(it.item_id)}" title="${esc(it.name)}: pick buy, lease or skip">
+          <option value="skip"${currentPick === 'skip' ? ' selected' : ''}>Skip</option>
+          <option value="buy"${currentPick === 'buy' ? ' selected' : ''}>Buy</option>
+          <option value="lease"${currentPick === 'lease' ? ' selected' : ''}>Lease</option>
+        </select>`;
+        costCellHtml = `<div>${it.cost.toFixed(0)} Dp outright</div>
+          <div style="font-size:.72rem;color:var(--dim)">or ${q.annual_payment.toFixed(1)} Dp/yr × ${q.term_years} + ${q.buyout.toFixed(1)} Dp buyout @ ${(q.lease_rate * 100).toFixed(2)}%</div>`;
+      } else {
+        const checked = currentPick === 'buy' ? 'checked' : '';
+        pickerHtml = `<input type="checkbox" class="invest-pick-cb" data-item="${esc(it.item_id)}" ${checked} title="Buy ${esc(it.name)}">`;
+      }
+
       tr.innerHTML = `
-        <td class="col-select"><input type="checkbox" data-item="${esc(it.item_id)}" data-cost="${it.cost}" ${checked} title="Buy ${esc(it.name)}"></td>
+        <td class="col-select">${pickerHtml}</td>
         <td class="col-item"><strong>${esc(it.name)}</strong>${mandTag}</td>
-        <td class="col-cost">${it.cost.toFixed(0)} Dp</td>
+        <td class="col-cost">${costCellHtml}</td>
         <td class="col-delivery">${deliv}</td>
         <td class="col-effect">${esc(it.description || '')}</td>
       `;
@@ -1638,12 +1692,16 @@ function renderInvesting() {
     rolesDiv.appendChild(wrap);
   }
 
-  // Wire up checkbox handlers + recompute totals
-  rolesDiv.querySelectorAll('input[type=checkbox]').forEach(cb => {
+  // Wire up handlers — both the legacy checkboxes and the new 3-way selects.
+  rolesDiv.querySelectorAll('input.invest-pick-cb').forEach(cb => {
     cb.addEventListener('change', () => {
-      const id = cb.dataset.item;
-      if (cb.checked) investSelected.add(id);
-      else investSelected.delete(id);
+      _investSetPick(cb.dataset.item, cb.checked ? 'buy' : 'skip');
+      updateInvestingTotals();
+    });
+  });
+  rolesDiv.querySelectorAll('select.invest-pick').forEach(sel => {
+    sel.addEventListener('change', () => {
+      _investSetPick(sel.dataset.item, sel.value);
       updateInvestingTotals();
     });
   });
@@ -1654,7 +1712,7 @@ function updateInvestingTotals() {
   if (!investData) return;
   let spent = 0;
   for (const it of investData.catalogue) {
-    if (investSelected.has(it.item_id)) spent += it.cost;
+    spent += _itemUpfrontCost(it);
   }
   const remaining = investData.budget - spent;
   document.getElementById('invest-spent-display').textContent = `${spent.toFixed(1)} Dp`;
@@ -2120,60 +2178,121 @@ function showInsurancePopup() {
   showPopup(`Insurance — ${esc(me.name)}`, body);
 }
 
+function _renderLeasesSection(leases, names) {
+  // Sister section to "Active loans" — surfaces capital-equipment leases.
+  // Per the brief, leases live under the Loans popup so players see all
+  // outstanding financial obligations in one place.
+  if (!leases || !leases.length) {
+    return `<section class="popup-section">
+      <h4>Active leases</h4>
+      <p class="empty-state">No active leases.</p>
+    </section>`;
+  }
+  const statusTone = {
+    active:           {color: 'var(--text)',  label: 'Active'},
+    awaiting_buyout:  {color: 'var(--gold)',  label: 'Buyout due'},
+    repossessed:      {color: 'var(--red)',   label: 'Repossessed'},
+    buyout_defaulted: {color: 'var(--red)',   label: 'Defaulted'},
+    completed:        {color: 'var(--green)', label: 'Completed'},
+  };
+  const tbody = leases.map(l => {
+    const tone = statusTone[l.status] || {color: 'var(--text)', label: l.status};
+    const counterparty = names[l.counterparty_id] || `Player ${l.counterparty_id}`;
+    const dueSoon = l.seasons_to_next_payment != null && l.seasons_to_next_payment <= 1
+      && (l.status === 'active' || l.status === 'awaiting_buyout');
+    const rowStyle = dueSoon ? ' style="background:rgba(246,185,59,.10)"' : '';
+    const nextPayment = l.next_payment_type === 'buyout'
+      ? `Buyout ${l.buyout_payment != null ? l.buyout_payment.toFixed(1) + ' Dp' : ''}`
+      : l.annual_payment != null ? `${l.annual_payment.toFixed(1)} Dp/yr` : '—';
+    const nextDue = (l.next_payment_year != null && l.next_payment_season)
+      ? `Y${l.next_payment_year} ${esc(l.next_payment_season)}` : '—';
+    return `<tr${rowStyle}>
+      <td>#${l.lease_id}</td>
+      <td style="color:${l.role === 'lessee' ? 'var(--red)' : 'var(--green)'}">${l.role === 'lessee' ? 'Leasing' : 'Leasing out'}</td>
+      <td>${esc(l.item_name || l.item_id)}</td>
+      <td>${esc(counterparty)}</td>
+      <td style="text-align:right">${nextPayment}</td>
+      <td style="text-align:right">${l.payments_made ?? 0}/${l.term_years ?? '?'}</td>
+      <td>${nextDue}</td>
+      <td style="color:${tone.color};font-weight:600">${tone.label}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Active leases</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>ID</th><th>Role</th><th>Item</th><th>Counterparty</th>
+        <th style="text-align:right">Next payment</th>
+        <th style="text-align:right">Annual paid</th>
+        <th>Next due</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Use <strong>Pay Lease</strong> from the action menu to settle annual + buyout payments.</span>
+      <span>Repossessed items return one season after you settle outstanding payments.</span>
+    </div>
+  </section>`;
+}
+
 function showLoansPopup() {
   if (!gameState || myPlayerIdx == null) return;
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
   const loans = me.loans_detail || [];
-  if (!loans.length) {
-    showPopup(`Loans — ${esc(me.name)}`,
-      `<section class="popup-section">
-        <h4>Active loans</h4>
-        <p class="empty-state">No active loans.</p>
-      </section>`);
-    return;
-  }
+  const leases = me.leases_detail || [];
   const names = _playerNameLookup();
-  let totalBorrowed = 0, totalLent = 0;
-  const tbody = loans.map(loan => {
-    const isBorrower = loan.role === 'borrower';
-    if (isBorrower) totalBorrowed += loan.repayment_amount;
-    else totalLent += loan.repayment_amount;
-    const due = loan.seasons_to_maturity <= 1;
-    const counterparty = names[loan.counterparty_id] || `Player ${loan.counterparty_id}`;
-    return `<tr${due ? ' style="background:rgba(246,185,59,.10)"' : ''}>
-      <td>#${loan.loan_id}</td>
-      <td style="color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</td>
-      <td>${esc(counterparty)}</td>
-      <td style="text-align:right">${loan.principal.toFixed(1)} Dp</td>
-      <td style="text-align:right">${(loan.interest_rate * 100).toFixed(2)}%</td>
-      <td>${loan.term_years}y</td>
-      <td style="text-align:right;font-weight:600">${loan.repayment_amount.toFixed(1)} Dp</td>
-      <td>Y${loan.maturity_year} ${esc(loan.maturity_season)}</td>
-      <td style="text-align:right;${due ? 'color:var(--gold);font-weight:600' : ''}">${loan.seasons_to_maturity}</td>
-    </tr>`;
-  }).join('');
-  const body = `<section class="popup-section">
-    <h4>Active loans</h4>
-    <table class="popup-table">
-      <thead><tr>
-        <th>ID</th><th>Role</th><th>Counterparty</th>
-        <th style="text-align:right">Principal</th>
-        <th style="text-align:right">Rate</th>
-        <th>Term</th>
-        <th style="text-align:right">Repay</th>
-        <th>Matures</th>
-        <th style="text-align:right">Seasons</th>
-      </tr></thead>
-      <tbody>${tbody}</tbody>
-    </table>
-    <div class="staffing-extras">
-      <span>Borrowing repay due: <strong>${totalBorrowed.toFixed(1)} Dp</strong></span>
-      <span>Lending repay incoming: <strong>${totalLent.toFixed(1)} Dp</strong></span>
-      <span>Use <strong>Roll Over Loan</strong> from the action menu near maturity to refinance.</span>
-    </div>
-  </section>`;
-  showPopup(`Loans — ${esc(me.name)}`, body);
+
+  let loansBody;
+  if (!loans.length) {
+    loansBody = `<section class="popup-section">
+      <h4>Active loans</h4>
+      <p class="empty-state">No active loans.</p>
+    </section>`;
+  } else {
+    let totalBorrowed = 0, totalLent = 0;
+    const tbody = loans.map(loan => {
+      const isBorrower = loan.role === 'borrower';
+      if (isBorrower) totalBorrowed += loan.repayment_amount;
+      else totalLent += loan.repayment_amount;
+      const due = loan.seasons_to_maturity <= 1;
+      const counterparty = names[loan.counterparty_id] || `Player ${loan.counterparty_id}`;
+      return `<tr${due ? ' style="background:rgba(246,185,59,.10)"' : ''}>
+        <td>#${loan.loan_id}</td>
+        <td style="color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</td>
+        <td>${esc(counterparty)}</td>
+        <td style="text-align:right">${loan.principal.toFixed(1)} Dp</td>
+        <td style="text-align:right">${(loan.interest_rate * 100).toFixed(2)}%</td>
+        <td>${loan.term_years}y</td>
+        <td style="text-align:right;font-weight:600">${loan.repayment_amount.toFixed(1)} Dp</td>
+        <td>Y${loan.maturity_year} ${esc(loan.maturity_season)}</td>
+        <td style="text-align:right;${due ? 'color:var(--gold);font-weight:600' : ''}">${loan.seasons_to_maturity}</td>
+      </tr>`;
+    }).join('');
+    loansBody = `<section class="popup-section">
+      <h4>Active loans</h4>
+      <table class="popup-table">
+        <thead><tr>
+          <th>ID</th><th>Role</th><th>Counterparty</th>
+          <th style="text-align:right">Principal</th>
+          <th style="text-align:right">Rate</th>
+          <th>Term</th>
+          <th style="text-align:right">Repay</th>
+          <th>Matures</th>
+          <th style="text-align:right">Seasons</th>
+        </tr></thead>
+        <tbody>${tbody}</tbody>
+      </table>
+      <div class="staffing-extras">
+        <span>Borrowing repay due: <strong>${totalBorrowed.toFixed(1)} Dp</strong></span>
+        <span>Lending repay incoming: <strong>${totalLent.toFixed(1)} Dp</strong></span>
+        <span>Use <strong>Roll Over Loan</strong> from the action menu near maturity to refinance.</span>
+      </div>
+    </section>`;
+  }
+
+  showPopup(`Loans & Leases — ${esc(me.name)}`, loansBody + _renderLeasesSection(leases, names));
 }
 
 function marketPriceOf(resourceName) {
@@ -3120,6 +3239,10 @@ function _renderActionButton(o) {
 }
 
 function showActionPrompt(msg) {
+  // Cache the payload so the "📋 Menu" recovery button can re-render the
+  // same action menu if the prompt area goes missing mid-turn (e.g. a
+  // hint button drove a modal that the user then cancelled).
+  lastActionPromptMsg = msg;
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
@@ -3170,12 +3293,30 @@ function cancelDlg() {
   document.getElementById('overlay').classList.remove('active');
 }
 
+function _renderRequestSummary(summary) {
+  // Server-side training-UX work attaches an optional
+  // {title, fields: [[label, value], ...]} payload to approval /
+  // counter-offer prompts so reviewers can see what they're agreeing to.
+  // Older payloads without it just render the bare prompt; this helper
+  // returns "" in that case.
+  if (!summary || !summary.fields || !summary.fields.length) return '';
+  const rows = summary.fields.map(([label, value]) =>
+    `<tr><td style="padding:.2rem .6rem;color:var(--dim);text-align:right;vertical-align:top">${esc(label)}</td><td style="padding:.2rem .6rem">${esc(String(value))}</td></tr>`
+  ).join('');
+  const title = summary.title ? `<div style="font-weight:700;color:var(--heading);margin-bottom:.4rem">${esc(summary.title)}</div>` : '';
+  return `<div class="request-summary" style="background:rgba(0,0,0,.18);border:1px solid var(--border);border-radius:6px;padding:.6rem;margin-bottom:.7rem">
+    ${title}
+    <table style="width:100%;font-size:.82rem;border-collapse:collapse"><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
 function showOptionPicker(msg) {
   const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
   ).join('');
   showDlg(msg.prompt || 'Choose',
-    `<div class="opts">${opts}</div>
+    `${_renderRequestSummary(msg.request_summary)}
+     <div class="opts">${opts}</div>
      <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
@@ -3226,6 +3367,7 @@ function showTextInput(msg) {
 function showConfirm(msg) {
   // Yes / No / Cancel — Cancel sends null (distinct from explicit "No")
   showDlg(msg.prompt, `
+    ${_renderRequestSummary(msg.request_summary)}
     <div style="display:flex;gap:.5rem;margin-top:.5rem">
       <button class="btn-gold" style="flex:1" onclick="sendResponse('true')">Yes</button>
       <button class="btn-ghost" style="flex:1" onclick="sendResponse('false')">No</button>
@@ -3504,7 +3646,56 @@ async function apiFetch(url, method = 'GET', body = null) {
   return res.json();
 }
 
+// ==================== VERSION / ABOUT / RECOVERY ====================
+
+// Fetch the server's reported version once on load and stamp it into the
+// landing-page footer + the in-game header.  When the user reports a bug
+// they can quote the exact build that surfaced it.
+function _setVersionLabels(v) {
+  appVersion = v;
+  const a = document.getElementById('app-version');
+  const b = document.getElementById('app-version-game');
+  if (a) a.textContent = v;
+  if (b) b.textContent = v;
+}
+
+function fetchAppVersion() {
+  fetch(`${API}/version`)
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j && j.version) _setVersionLabels(j.version); })
+    .catch(() => { _setVersionLabels('?'); });
+}
+
+function showAboutDialog() {
+  const v = appVersion || '?';
+  const body = `
+    <div style="line-height:1.55">
+      <p><strong>Island Traders</strong></p>
+      <p>Version: <strong>${esc(v)}</strong></p>
+      <p style="font-size:.82rem;color:var(--dim)">Quote this version when reporting a defect or feature request — the server team uses it to match playtest reports to a specific build.</p>
+      <p style="font-size:.78rem;color:var(--dim)">Source: <a href="https://github.com/ashersilver/island-traders" target="_blank" style="color:var(--accent)">ashersilver/island-traders</a></p>
+    </div>`;
+  // Use the shared popup shell from the UX-review work.
+  showPopup('About', body);
+}
+
+// Re-render the most recent action prompt.  Defensive feature for the
+// intermittent "hint button cleared the menu" bug — the engine action
+// loop is already correct (while True: choose_action), but if a new
+// prompt is lost in transit or the UI state drifts, this button gives
+// the player an explicit recovery path without ending the turn.
+function restoreActionMenu() {
+  if (lastActionPromptMsg) {
+    showActionPrompt(lastActionPromptMsg);
+  } else {
+    // No cached prompt yet — request a fresh game state in case the
+    // server has a pending prompt it can replay.
+    requestState();
+  }
+}
+
 // ==================== INIT ====================
+fetchAppVersion();
 refreshPublicRooms();
 setInterval(refreshPublicRooms, 15000);
 </script>

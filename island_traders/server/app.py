@@ -29,6 +29,7 @@ from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.loan import posted_funding_rates
 from ..constants import (
+    APP_VERSION,
     SEASONS, CURRENCY_SYMBOL,
     TOTAL_STARTING_POPULATION,
 )
@@ -1082,10 +1083,20 @@ class GameManager:
 
         spent_in_auction = room.investing.deductions.get(lp.player_id, 0.0)
         budget = round(room.starting_capital - spent_in_auction, 1)
+        from ..models.lease import lease_quote
         catalogue_payload = []
         mandatory_set: set[str] = set()
         for it in CAPITAL_CATALOGUE:
             if it.role in lp.role_names:
+                # Pre-compute the lease quote at the investing-phase tick
+                # (Y0/S0) so the client can render the buy-vs-lease UI
+                # without having to know about posted_funding_rates.
+                quote = None
+                if it.lease_terms:
+                    try:
+                        quote = lease_quote(it, 0, 0)
+                    except Exception:
+                        quote = None
                 catalogue_payload.append({
                     "item_id":          it.item_id,
                     "name":             it.name,
@@ -1095,6 +1106,7 @@ class GameManager:
                     "description":      it.description,
                     "effects":          it.effects,
                     "lease_terms":      it.lease_terms,
+                    "lease_quote":      quote,
                 })
         for role in lp.role_names:
             mandatory_set.update(MANDATORY_MINIMUM_INVESTMENT.get(role, []))
@@ -2533,8 +2545,12 @@ def create_app() -> FastAPI:
             "Install with: pip install fastapi uvicorn[standard] websockets"
         )
 
-    app = FastAPI(title="Island Traders", version="0.1.0")
+    app = FastAPI(title="Island Traders", version=APP_VERSION)
     manager = GameManager()
+
+    @app.get("/version")
+    async def _get_version():
+        return {"version": APP_VERSION}
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
