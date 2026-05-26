@@ -30,8 +30,10 @@ def test_band_classifications():
     assert band_of(Profession.MINING_TECHNICIAN)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.VETERINARIAN)        == WorkerBand.TECHNICIAN
     assert band_of(Profession.ASSEMBLY_WORKER)     == WorkerBand.TECHNICIAN
+    assert band_of(Profession.FACTORY_FOREMAN)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.OIL_EXTRACTION)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.REFINERY_SPECIALIST) == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MINING_FOREMAN)      == WorkerBand.TECHNICIAN
 
     # Worker tier
     assert band_of(Profession.UNSKILLED) == WorkerBand.WORKER
@@ -159,3 +161,38 @@ def test_every_profession_has_a_label():
     from island_traders.models.profession import PROFESSION_LABEL
     for p in Profession:
         assert p in PROFESSION_LABEL, f"{p} missing from PROFESSION_LABEL"
+
+
+def test_playtest_phantom_titles_are_resolved():
+    """Titles flagged in playtest either became trainable or stayed worker-tier."""
+    from island_traders.models.profession import PROFESSION_LABEL, ROLE_PROFESSIONS
+
+    manufacturer_labels = {
+        PROFESSION_LABEL[profession]
+        for profession in ROLE_PROFESSIONS["Manufacturer"]
+    }
+    assert "Factory Foreman" in manufacturer_labels
+    assert "Assembly Tech" in manufacturer_labels
+    assert "Factory Foreman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+    assert "Assembly Tech" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+
+    miner_labels = {
+        PROFESSION_LABEL[profession]
+        for profession in ROLE_PROFESSIONS["Miner"]
+    }
+    assert "Mining Foreman" in miner_labels
+    assert "Refiner" in miner_labels
+    assert "Mining Foreman" in BAND_TITLES["Miner"][WorkerBand.TECHNICIAN]
+    assert "Refiner" in BAND_TITLES["Miner"][WorkerBand.TECHNICIAN]
+
+    worker_tier_titles = (
+        set(BAND_TITLES["Transporter"][WorkerBand.WORKER])
+        | set(BAND_TITLES["Doctor"][WorkerBand.WORKER])
+    )
+    trainable_labels = {
+        label
+        for professions in ROLE_PROFESSIONS.values()
+        for label in (PROFESSION_LABEL[profession] for profession in professions)
+    }
+    assert {"Stevedore", "Aide"} <= worker_tier_titles
+    assert not ({"Stevedore", "Aide"} & trainable_labels)

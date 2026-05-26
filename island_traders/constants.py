@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-26.2"
+APP_VERSION: str = "0.1.0-dev.2026-05-26.3"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -424,14 +424,17 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
     "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
-    "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef"],
+    "Miner":        [
+        "Miner", "MiningTechnician", "MiningForeman",
+        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
+    ],
     "Transporter":  [
         "LogisticsManager", "Engineer",
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
     ],
     "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
     "Banker":       ["Banker", "BankingAnalyst", "BankingClerk", "Chef"],
-    "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic", "Chef"],
+    "Manufacturer": ["FactoryForeman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
     "Doctor":       ["Doctor", "Nurse", "MedicalOrderly", "Chef"],
 }
 
@@ -484,10 +487,12 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Horticulturalist":      2,
     "Veterinarian":         1,
     # Manufacturing
+    "FactoryForeman":      4,
     "AssemblyWorker":      10,
     # Mining
     "Miner":                2,
     "MiningTechnician":     4,
+    "MiningForeman":        3,
     "OilExtractionWorker":  2,
     "RefinerySpecialist":   2,
     # Banking

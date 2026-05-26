@@ -31,8 +31,10 @@ class Profession(str, Enum):
     HORTICULTURALIST     = "Horticulturalist"
     VETERINARIAN         = "Veterinarian"
     ASSEMBLY_WORKER      = "AssemblyWorker"
+    FACTORY_FOREMAN      = "FactoryForeman"
     MINER                = "Miner"
     MINING_TECHNICIAN    = "MiningTechnician"
+    MINING_FOREMAN       = "MiningForeman"
     OIL_EXTRACTION       = "OilExtractionWorker"
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
@@ -75,8 +77,10 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.HORTICULTURALIST:    WorkerBand.TECHNICIAN,
     Profession.VETERINARIAN:        WorkerBand.TECHNICIAN,
     Profession.ASSEMBLY_WORKER:     WorkerBand.TECHNICIAN,
+    Profession.FACTORY_FOREMAN:      WorkerBand.TECHNICIAN,
     Profession.MINER:               WorkerBand.MANAGER,    # mining engineer / geologist
     Profession.MINING_TECHNICIAN:   WorkerBand.TECHNICIAN,
+    Profession.MINING_FOREMAN:      WorkerBand.TECHNICIAN,
     Profession.OIL_EXTRACTION:      WorkerBand.TECHNICIAN,
     Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
     Profession.BANKER:              WorkerBand.MANAGER,
@@ -187,7 +191,9 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.HORTICULTURALIST:    1,
     Profession.VETERINARIAN:        1,
     Profession.ASSEMBLY_WORKER:     1,
+    Profession.FACTORY_FOREMAN:      1,
     Profession.MINING_TECHNICIAN:   1,
+    Profession.MINING_FOREMAN:      1,
     Profession.OIL_EXTRACTION:      1,
     Profession.REFINERY_SPECIALIST: 1,
     Profession.MECHANIC:            1,
@@ -217,7 +223,16 @@ APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.75
 # Used to filter available training options for each player.
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
     "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.HORTICULTURALIST, Profession.VETERINARIAN, Profession.MECHANIC, Profession.CHEF],
-    "Miner":         [Profession.MINER, Profession.MINING_TECHNICIAN, Profession.OIL_EXTRACTION, Profession.REFINERY_SPECIALIST, Profession.ENGINEER, Profession.MECHANIC, Profession.CHEF],
+    "Miner":         [
+        Profession.MINER,
+        Profession.MINING_TECHNICIAN,
+        Profession.MINING_FOREMAN,
+        Profession.OIL_EXTRACTION,
+        Profession.REFINERY_SPECIALIST,
+        Profession.ENGINEER,
+        Profession.MECHANIC,
+        Profession.CHEF,
+    ],
     "Transporter":   [
         Profession.LOGISTICS_MANAGER, Profession.ENGINEER,
         Profession.FLIGHT_CREW, Profession.SEAMAN, Profession.WAREHOUSE_MANAGER,
@@ -231,7 +246,13 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
         Profession.CHEF,
     ],
     "Banker":        [Profession.BANKER, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF],
-    "Manufacturer":  [Profession.ASSEMBLY_WORKER, Profession.ENGINEER, Profession.MECHANIC, Profession.CHEF],
+    "Manufacturer":  [
+        Profession.FACTORY_FOREMAN,
+        Profession.ASSEMBLY_WORKER,
+        Profession.ENGINEER,
+        Profession.MECHANIC,
+        Profession.CHEF,
+    ],
     "Doctor":        [Profession.DOCTOR, Profession.NURSE, Profession.MEDICAL_ORDERLY, Profession.CHEF],
 }
 
@@ -245,11 +266,13 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.FARMING_TECHNICIAN:  "Farming Technician",
     Profession.HORTICULTURALIST:    "Horticulturalist",
     Profession.VETERINARIAN:        "Veterinarian",
-    Profession.ASSEMBLY_WORKER:     "Assembly Worker",
+    Profession.ASSEMBLY_WORKER:     "Assembly Tech",
+    Profession.FACTORY_FOREMAN:     "Factory Foreman",
     Profession.MINER:               "Miner (specialist)",
     Profession.MINING_TECHNICIAN:   "Mining Technician",
+    Profession.MINING_FOREMAN:      "Mining Foreman",
     Profession.OIL_EXTRACTION:      "Oil Extraction Worker",
-    Profession.REFINERY_SPECIALIST: "Refinery Specialist",
+    Profession.REFINERY_SPECIALIST: "Refiner",
     Profession.BANKER:              "Banker (specialist)",
     Profession.PROFESSOR:           "Professor",
     Profession.TECHNICAL_DIRECTOR:  "Technical Director",
