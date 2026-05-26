@@ -5,6 +5,67 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-flow-diagnostic-2026-05-26
+
+Branch: `codex/training-flow-diagnostic-2026-05-26`
+Target: `pre-release`
+
+Diagnose-and-fix pass for the recurring training-flow defect reported
+in the 2026-05-26 playtest cycle.
+
+Diagnostic findings:
+
+- Return logistics: the Game return hook did move dispatched workers
+  back correctly on the happy path, but it logged nothing when a due
+  batch returned zero or fewer workers than expected. It now logs
+  complete / returned / failed-return warnings with batch ids and
+  missing worker ids.
+- Dispatch under load: pending requests blocked by capacity or tickets
+  could remain stuck because AI Educators only responded at request
+  creation time. AI Educators now review pending requests every season,
+  so a request starts once Course / Expertise / PassengerSeats capacity
+  clears.
+- Ticket math under partial supply: existing split-ticket code already
+  checked requester and Educator inventories before consuming either
+  side. Regression coverage remains in place and no rollback bug was
+  found.
+- Sustenance accounting: dispatched cross-island trainees were counted
+  both as visiting campus load at Education Island and as mouths to feed
+  at their home island. Home islands now subtract dispatched trainees
+  while Education Island adds them.
+- Decline / cancel paths: rejected and counter-rejected requests did
+  release their logical reservation, but workers were not reserved while
+  a request was pending. The registry now rejects duplicate active
+  requests for the same worker, and the request UI filters already-
+  reserved workers out of the eligible list.
+- AI Educator behaviour: AI approval now replays seasonally and logs
+  pending reasons, approvals, dispatches, and rejections rather than
+  silently leaving blocked requests in the queue.
+
+Changes shipped:
+
+- Added active worker reservations to `TrainingRegistry` so the same
+  worker cannot be queued into overlapping training requests.
+- Added dispatch readiness checks before consuming training / transport
+  side effects.
+- Added seasonal AI Educator and legacy AI Transporter queue review.
+- Added `absent_residents` support to `Player.meals_needed` and wired
+  training campus load so trainees eat in one place, not two.
+- Improved training state-transition logging around dispatch and return.
+
+Tests:
+
+- Added 5 regression tests covering duplicate worker reservations, AI
+  Educator retry after capacity clears, three-trainee happy-path return,
+  failed-return logging, and campus-vs-home sustenance accounting.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **434 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.2%–17.0%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.9%–17.9%; individual 200-game seed variance matches the
+    calibration PR baseline (Manufacturer seed 7 at 8.5%, Doctor seed
+    42 at 9.5%).
+
 ### claude/codex-briefs-2026-05-26
 
 Branch: `claude/codex-briefs-2026-05-26`

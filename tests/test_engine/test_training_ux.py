@@ -5,13 +5,16 @@ from island_traders.constants import STARTING_INVENTORY
 from island_traders.engine.production import ProductionEngine
 from island_traders.engine.trading import TradingEngine
 from island_traders.engine.turn import TurnManager, TurnResult
+from island_traders.engine.events import EventResult
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
-from island_traders.models.training import TrainingRegistry, TrainingStatus
+from island_traders.models.training import (
+    TrainingCapacityError, TrainingRegistry, TrainingStatus,
+)
 
 
 def _player(pid: int, name: str, role: str, is_human: bool = True) -> Player:
@@ -159,6 +162,75 @@ def test_dispatch_fails_when_requester_promises_tickets_but_lacks_inventory():
     assert req.status == TrainingStatus.AWAITING_EDUCATOR
     assert requester.inventory.get(ResourceType.PASSENGER_SEATS) == 1
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 5
+
+
+def test_training_request_reserves_workers_until_terminal_status():
+    requester = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    worker = requester.workforce.add_workers(1)[0]
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=requester.player_id,
+        worker_ids=[worker.worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=40.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+
+    try:
+        training.propose(
+            requester_id=requester.player_id,
+            worker_ids=[worker.worker_id],
+            educator_id=educator.player_id,
+            dollops_to_educator=40.0,
+            target_profession=Profession.NURSE.value,
+            year=0,
+            season=0,
+            transport_mode="air_ticket",
+        )
+    except TrainingCapacityError as exc:
+        assert "already committed" in str(exc)
+    else:  # pragma: no cover - assertion helper
+        raise AssertionError("duplicate worker should be rejected while request is active")
+
+    training.educator_reject(req.batch_id)
+    replacement = training.propose(
+        requester_id=requester.player_id,
+        worker_ids=[worker.worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=40.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    assert replacement.batch_id == 1
+
+
+def test_ai_educator_revisits_pending_request_after_capacity_clears():
+    requester = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator", is_human=False)
+    requester.dollops = 500.0
+    educator.receive_resources(ResourceType.PASSENGER_SEATS, 1)
+    _prepare_manager_training(educator, courses=0, expertise=4)
+    training = TrainingRegistry()
+    req = _nurse_request(training, requester, educator, count=1, fee=100.0)
+    tm = _turn_manager([requester, educator], training)
+    event = EventResult("Normal", 1.0)
+
+    tm.execute_turn(educator, event, year=0, season_index=0)
+    assert req.status == TrainingStatus.AWAITING_EDUCATOR
+    assert requester.workforce.training_count == 0
+
+    educator.receive_resources(ResourceType.COURSES, 1)
+    educator.receive_resources(ResourceType.EXPERTISE, 2)
+    tm.execute_turn(educator, event, year=0, season_index=1)
+
+    assert req.status == TrainingStatus.DISPATCHED
+    assert requester.workforce.training_count == 1
 
 
 class SummaryCaptureIO(FakeIOAdapter):

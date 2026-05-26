@@ -126,6 +126,107 @@ def test_cross_island_doctor_three_season_round_trip():
     assert not worker.in_training
 
 
+def test_three_trainees_return_home_with_new_profession():
+    game = _farmer_educator_game()
+    farmer, educator = game.players
+    workers = farmer.workforce.add_workers(3)
+    worker_ids = [worker.worker_id for worker in workers]
+
+    req = game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=worker_ids,
+        educator_id=educator.player_id,
+        dollops_to_educator=60.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    game.training.educator_approve(req.batch_id)
+    game.training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
+    farmer.workforce.dispatch_for_training(worker_ids)
+
+    game._process_training_returns(year=0, season=1)
+
+    returned = [
+        worker for worker in farmer.workforce.workers
+        if worker.worker_id in worker_ids
+    ]
+    assert len(returned) == 3
+    assert all(not worker.in_training for worker in returned)
+    assert all(worker.profession == Profession.NURSE.value for worker in returned)
+    assert all(worker.training_level == 1 for worker in returned)
+
+
+def test_return_hook_logs_failed_return_when_worker_was_never_dispatched():
+    game = _farmer_educator_game()
+    farmer, educator = game.players
+    worker = _pick_unskilled_worker(farmer)
+    req = game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker.worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=20.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    game.training.educator_approve(req.batch_id)
+    game.training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
+    assert not worker.in_training
+
+    game._process_training_returns(year=0, season=1)
+
+    output = "\n".join(game.io.printed)
+    assert "Request #0 complete" in output
+    assert "Return warning for request #0" in output
+    assert "did not rejoin the roster" in output
+
+
+def test_dispatched_trainees_eat_on_campus_not_at_home():
+    from island_traders.engine.turn import TurnManager
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.engine.trading import TradingEngine
+    from island_traders.models.deal import DealLedger
+    from island_traders.models.market import Market
+    from island_traders.models.resource import ResourceType
+
+    game = _farmer_educator_game()
+    farmer, educator = game.players
+    farmer.receive_resources(ResourceType.FOOD, 20)
+    educator.receive_resources(ResourceType.FOOD, 20)
+    workers = farmer.workforce.add_workers(10)
+    worker_ids = [worker.worker_id for worker in workers]
+    req = game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=worker_ids,
+        educator_id=educator.player_id,
+        dollops_to_educator=200.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    game.training.educator_approve(req.batch_id)
+    game.training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
+    farmer.workforce.dispatch_for_training(worker_ids)
+
+    market = Market()
+    tm = TurnManager(
+        players=[farmer, educator],
+        production_engine=ProductionEngine(),
+        trading_engine=TradingEngine(market, DealLedger()),
+        market=market,
+        io_adapter=FakeIOAdapter(),
+        training=game.training,
+    )
+    tm._consume_and_post_sustenance()
+
+    assert farmer.inventory.get(ResourceType.FOOD) == 29  # 35 - ceil((70 - 10) / 10)
+    assert educator.inventory.get(ResourceType.FOOD) == 12  # 20 - ceil((70 + 10) / 10)
+
+
 # ---------------------------------------------------------------------------
 # Self-training round-trip
 # ---------------------------------------------------------------------------
