@@ -532,6 +532,12 @@ class Game:
                     "transport_mode": r.transport_mode,
                     "tickets_supplied_by_requester": r.tickets_supplied_by_requester,
                     "counter_message": r.counter_message,
+                    "priority": r.priority,
+                    "decline_reason": r.decline_reason,
+                    "decline_year": r.decline_year,
+                    "decline_season": r.decline_season,
+                    "original_dollops_to_educator": r.original_dollops_to_educator,
+                    "decision_acknowledged": r.decision_acknowledged,
                 }
                 for r in self.training.all_requests()
             ],
@@ -738,6 +744,15 @@ class Game:
                 transport_mode=rd.get("transport_mode", "transporter"),
                 tickets_supplied_by_requester=rd.get("tickets_supplied_by_requester", 0),
                 counter_message=rd.get("counter_message", ""),
+                priority=rd.get("priority", 0),
+                decline_reason=rd.get("decline_reason", ""),
+                decline_year=rd.get("decline_year", -1),
+                decline_season=rd.get("decline_season", -1),
+                original_dollops_to_educator=rd.get(
+                    "original_dollops_to_educator",
+                    rd.get("dollops_to_educator", 0),
+                ),
+                decision_acknowledged=rd.get("decision_acknowledged", False),
             )
             game.training._requests.append(req)
 
