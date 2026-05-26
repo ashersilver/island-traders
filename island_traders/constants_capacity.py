@@ -19,6 +19,18 @@ CAPACITY_PRODUCTIVITY_MULTIPLIER: int = 10
 # ---------------------------------------------------------------------------
 
 CAPITAL_CATALOGUE: list[CapitalItem] = [
+    # ----- Universal -------------------------------------------------------
+    CapitalItem(
+        item_id="common.kitchen",
+        name="Kitchen",
+        role="Any",
+        cost=80.0,
+        delivery_seasons=0,
+        effects={"kitchen_food_per_season": 6, "cash_only": True},
+        description="Chef-staffed kitchen: converts raw ingredients into up to 6 Food/season",
+        service_life_seasons=12,
+    ),
+
     # ----- Farmer ----------------------------------------------------------
     CapitalItem(
         item_id="farmer.tractor",

@@ -15,10 +15,15 @@ ROLES = ["Farmer", "Miner", "Transporter", "Educator",
          "Banker", "Manufacturer", "Doctor"]
 
 
-def test_every_role_has_3_to_5_capital_items():
+def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchen():
     for role in ROLES:
         items = items_for_role(CAPITAL_CATALOGUE, role)
-        assert 3 <= len(items) <= 6, f"{role} has {len(items)} items (expected 3–5)"
+        role_items = [item for item in items if item.role == role]
+        universal_items = [item for item in items if item.role == "Any"]
+        assert 3 <= len(role_items) <= 6, (
+            f"{role} has {len(role_items)} role items (expected 3–6)"
+        )
+        assert [item.item_id for item in universal_items] == ["common.kitchen"]
 
 
 def test_every_role_has_at_least_two_recipes():

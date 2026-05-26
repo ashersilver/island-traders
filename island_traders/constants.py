@@ -23,6 +23,16 @@ TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 # ``Player.consume_sustenance`` for the allocator.
 PEOPLE_PER_MEAL: int = 10
 
+# Kitchen capital item (cash-only, all islands). A staffed Kitchen converts
+# local raw ingredients into packaged Food once per season.
+KITCHEN_ITEM_ID: str = "common.kitchen"
+KITCHEN_FOOD_PER_SEASON: int = 6
+KITCHEN_RECIPE: dict[str, int] = {
+    "Grain": 2,
+    "Produce": 1,
+    "Protein": 1,  # Fish or Meat, chosen from local inventory.
+}
+
 # Production is intentionally board-game chunky: one production action should
 # create enough supply for the archipelago, not one sad little crate.
 PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
@@ -413,16 +423,16 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic"],
-    "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
+    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
+    "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef"],
     "Transporter":  [
         "LogisticsManager", "Engineer",
-        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
     ],
-    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor"],
-    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
-    "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
+    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
+    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk", "Chef"],
+    "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic", "Chef"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly", "Chef"],
 }
 
 # ---------------------------------------------------------------------------
@@ -494,6 +504,8 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "FlightCrew":           6,
     "Seaman":               6,
     "WarehouseManager":     6,
+    # Cross-island sustenance support
+    "Chef":                 7,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).
