@@ -41,6 +41,10 @@ class TurnAction(Enum):
     PROPOSE_DEAL       = "propose_deal"
     REQUEST_TRAINING   = "request_training"    # any player: send workers to Educator
     REVIEW_TRAINING    = "review_training"     # Educator: approve/reject requests
+    REORDER_TRAINING_QUEUE = "reorder_training_queue"  # Educator: reprioritise pending queue
+    REJECT_TRAINING_REQUEST = "reject_training_request"  # Educator: reject one pending request
+    COUNTER_TRAINING_REQUEST = "counter_training_request"  # Educator: counter one pending request
+    ACK_TRAINING_DECISION = "ack_training_decision"  # requester: dismiss counter/reject notice
     ARRANGE_TRANSPORT  = "arrange_transport"   # Transporter: accept transport jobs
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
     SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
@@ -316,6 +320,14 @@ class TurnManager:
                     self._action_request_training(player, result, season_name, year)
                 elif action == TurnAction.REVIEW_TRAINING:
                     self._action_review_training(player, result, season_name, year)
+                elif action == TurnAction.REORDER_TRAINING_QUEUE:
+                    self._action_reorder_training_queue(player, result)
+                elif action == TurnAction.REJECT_TRAINING_REQUEST:
+                    self._action_reject_training_request(player, result, year, season_index)
+                elif action == TurnAction.COUNTER_TRAINING_REQUEST:
+                    self._action_counter_training_request(player, result, year, season_index)
+                elif action == TurnAction.ACK_TRAINING_DECISION:
+                    self._action_ack_training_decision(player, result)
                 elif action == TurnAction.ARRANGE_TRANSPORT:
                     self._action_arrange_transport(player, result, season_name, year)
                 elif action == TurnAction.RECRUIT_WORKERS:
@@ -1101,7 +1113,13 @@ class TurnManager:
             else:
                 self._auto_arrange_transport(requester, req, season_name, year)
         else:
-            self.training.educator_reject(req.batch_id)
+            reason = (
+                f"AI fair-rate threshold: needed {required_offer:.0f} Dp, "
+                f"offered {req.dollops_to_educator:.0f} Dp"
+            )
+            self.training.educator_reject(
+                req.batch_id, reason, year, SEASONS.index(season_name)
+            )
             self.io.print(
                 f"  [AI] {educator.name} rejected training request #{req.batch_id}. "
                 f"Offer at least {required_offer:.0f} Dp to cover training and tickets."
@@ -1119,7 +1137,7 @@ class TurnManager:
         if not any(role.name == "Educator" for role in educator.roles):
             return
         player_map = {player.player_id: player for player in self.players}
-        pending = list(self.training.pending_for_educator(educator.player_id))
+        pending = self.training.sorted_pending_for_educator(educator.player_id)
         if not pending:
             return
         self.io.print(
@@ -1128,7 +1146,12 @@ class TurnManager:
         for req in pending:
             requester = player_map.get(req.requester_id)
             if requester is None:
-                self.training.educator_reject(req.batch_id)
+                self.training.educator_reject(
+                    req.batch_id,
+                    "Requester is no longer available.",
+                    year,
+                    SEASONS.index(season_name),
+                )
                 self.io.print(
                     f"  [Training] Request #{req.batch_id} rejected: requester is no longer available."
                 )
@@ -1626,7 +1649,7 @@ class TurnManager:
                 f"  Campus load: {on_campus} visiting trainee(s) on the Education "
                 f"Island this season → +{on_campus} Food demand until they return."
             )
-        pending = self.training.pending_for_educator(player.player_id)
+        pending = self.training.sorted_pending_for_educator(player.player_id)
         if not pending:
             self.io.print("  No training requests awaiting your approval.")
             return
@@ -1648,16 +1671,166 @@ class TurnManager:
                         "Message to requester",
                         "I can train them at this revised price.",
                     )
-                    self.training.educator_counter(req.batch_id, counter, message)
+                    self.training.educator_counter(
+                        req.batch_id,
+                        counter,
+                        message,
+                        message,
+                        year,
+                        SEASONS.index(season_name),
+                    )
                     self.io.print(
                         f"  Countered request #{req.batch_id} at {counter:.0f} Dp. "
                         f"{requester.name} will respond on their turn."
                     )
                     result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
                 else:
-                    self.training.educator_reject(req.batch_id)
+                    reason = self.io.ask_text(
+                        "Reason to requester",
+                        "Education Island cannot accept this request as offered.",
+                    )
+                    self.training.educator_reject(
+                        req.batch_id, reason, year, SEASONS.index(season_name)
+                    )
                     self.io.print("  Rejected.")
                     result.actions_taken.append(f"rejected_training:batch#{req.batch_id}")
+
+    def _training_queue_payload(self, educator: Player) -> list[dict]:
+        player_names = {p.player_id: p.name for p in self.players}
+        return [
+            {
+                "batch_id": req.batch_id,
+                "requester_name": player_names.get(
+                    req.requester_id, f"Player {req.requester_id}"
+                ),
+                "target_profession": self._profession_label(req.target_profession),
+                "priority": req.priority,
+                "dollops_offered": round(req.dollops_to_educator, 1),
+                "requested_year": req.proposed_year,
+                "requested_season": req.proposed_season,
+            }
+            for req in self.training.sorted_pending_for_educator(educator.player_id)
+        ]
+
+    def _pick_pending_training_request(self, educator: Player, prompt: str):
+        pending = self.training.sorted_pending_for_educator(educator.player_id)
+        if not pending:
+            self.io.print("  No training requests awaiting your approval.")
+            return None
+        player_names = {p.player_id: p.name for p in self.players}
+        options = [
+            {
+                "value": req.batch_id,
+                "label": (
+                    f"#{req.batch_id} {player_names.get(req.requester_id, req.requester_id)} "
+                    f"-> {self._profession_label(req.target_profession)} "
+                    f"({req.dollops_to_educator:.0f} {CURRENCY_SYMBOL})"
+                ),
+            }
+            for req in pending
+        ]
+        batch_id = self.io.choose_option(prompt, options)
+        return self.training.request_by_id(int(batch_id)) if batch_id is not None else None
+
+    def _action_reorder_training_queue(
+        self, player: Player, result: TurnResult
+    ) -> None:
+        if not any(r.name == "Educator" for r in player.roles):
+            self.io.print("  Only the Educator can reorder the training queue.")
+            return
+        queue = self._training_queue_payload(player)
+        if not queue:
+            self.io.print("  No training requests awaiting your approval.")
+            return
+        if hasattr(self.io, "choose_training_queue_order"):
+            ordered = self.io.choose_training_queue_order(queue)
+        else:
+            options = [
+                {"value": row["batch_id"], "label": f"Move #{row['batch_id']} to top"}
+                for row in queue
+            ]
+            chosen = self.io.choose_option("Move which request to the top?", options)
+            ordered = [chosen] + [
+                row["batch_id"] for row in queue if row["batch_id"] != chosen
+            ]
+        ordered_ids = [int(batch_id) for batch_id in ordered]
+        self.training.reorder_pending(player.player_id, ordered_ids)
+        self.io.print("  Training queue priority updated.")
+        result.actions_taken.append("reordered_training_queue")
+
+    def _action_reject_training_request(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        if not any(r.name == "Educator" for r in player.roles):
+            self.io.print("  Only the Educator can reject training requests.")
+            return
+        req = self._pick_pending_training_request(player, "Reject which training request?")
+        if req is None:
+            return
+        if req.educator_id != player.player_id:
+            self.io.print("  Cannot reject this request: it belongs to another Educator.")
+            return
+        reason = self.io.ask_text(
+            "Reason to requester",
+            "Education Island cannot accept this request as offered.",
+        )
+        self.training.educator_reject(req.batch_id, reason, year, season_index)
+        self.io.print(f"  Rejected training request #{req.batch_id}.")
+        result.actions_taken.append(f"rejected_training:batch#{req.batch_id}")
+
+    def _action_counter_training_request(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        if not any(r.name == "Educator" for r in player.roles):
+            self.io.print("  Only the Educator can counter training requests.")
+            return
+        req = self._pick_pending_training_request(player, "Counter which training request?")
+        if req is None:
+            return
+        if req.educator_id != player.player_id:
+            self.io.print("  Cannot counter this request: it belongs to another Educator.")
+            return
+        counter = self.io.ask_dollop_amount(
+            "Counter price to Educator in Dp",
+            1_000_000.0,
+            prefill=req.dollops_to_educator,
+        )
+        if counter <= 0:
+            self.io.print("  Cancelled — counter price must be positive.")
+            return
+        reason = self.io.ask_text(
+            "Reason to requester",
+            "I can train them at this revised price.",
+        )
+        self.training.educator_counter(
+            req.batch_id, counter, reason, reason, year, season_index
+        )
+        self.io.print(f"  Countered training request #{req.batch_id}.")
+        result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
+
+    def _action_ack_training_decision(
+        self, player: Player, result: TurnResult
+    ) -> None:
+        decisions = self.training.decisions_for_requester(player.player_id)
+        if not decisions:
+            self.io.print("  No training decisions to acknowledge.")
+            return
+        options = [
+            {
+                "value": req.batch_id,
+                "label": (
+                    f"#{req.batch_id} {self._profession_label(req.target_profession)} "
+                    f"({req.status.value})"
+                ),
+            }
+            for req in decisions
+        ]
+        batch_id = self.io.choose_option("Acknowledge which training decision?", options)
+        if batch_id is None:
+            return
+        if self.training.acknowledge_decision(player.player_id, int(batch_id)):
+            self.io.print(f"  Acknowledged training decision #{batch_id}.")
+            result.actions_taken.append(f"ack_training_decision:batch#{batch_id}")
 
     def _action_arrange_transport(
         self, player: Player, result: TurnResult, season_name: str, year: int

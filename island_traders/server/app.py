@@ -1723,6 +1723,75 @@ class GameManager:
             })
         return pipeline
 
+    def _training_queue_order_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        player_names: dict[int, str],
+    ) -> list[dict]:
+        player = next((p for p in game.players if p.player_id == player_id), None)
+        if player is None or not any(role.name == "Educator" for role in player.roles):
+            return []
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        return [
+            {
+                "batch_id": req.batch_id,
+                "requester_name": player_names.get(
+                    req.requester_id, f"Player {req.requester_id}"
+                ),
+                "target_profession": self._profession_label(req.target_profession),
+                "priority": req.priority,
+                "dollops_offered": round(req.dollops_to_educator, 1),
+                "requested_year": req.proposed_year + 1,
+                "requested_season": SEASONS[req.proposed_season]
+                    if 0 <= req.proposed_season < len(SEASONS)
+                    else str(req.proposed_season),
+            }
+            for req in training.sorted_pending_for_educator(player_id)
+        ]
+
+    def _training_decisions_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        decisions = []
+        for req in training.decisions_for_requester(player_id):
+            decline_year = req.decline_year + 1 if req.decline_year >= 0 else None
+            decline_season = (
+                SEASONS[req.decline_season]
+                if 0 <= req.decline_season < len(SEASONS)
+                else None
+            )
+            decisions.append({
+                "batch_id": req.batch_id,
+                "status": req.status.value,
+                "decline_reason": req.decline_reason,
+                "decline_year": decline_year,
+                "decline_season": decline_season,
+                "original_offer": round(
+                    req.original_dollops_to_educator
+                    if req.original_dollops_to_educator
+                    else req.dollops_to_educator,
+                    1,
+                ),
+                "suggested_offer_if_any": (
+                    round(req.dollops_to_educator, 1)
+                    if req.status.value == "countered"
+                    else None
+                ),
+                "target_profession": self._profession_label(req.target_profession),
+                "n_workers": len(req.worker_ids),
+            })
+        return decisions
+
     def _leases_detail_for_player(
         self,
         game: Game,
@@ -1929,6 +1998,17 @@ class GameManager:
                     game,
                     p.player_id,
                     player_names,
+                    current_year_idx,
+                    current_season_idx,
+                ),
+                "training_queue_order": self._training_queue_order_for_player(
+                    game,
+                    p.player_id,
+                    player_names,
+                ),
+                "training_decisions": self._training_decisions_for_player(
+                    game,
+                    p.player_id,
                     current_year_idx,
                     current_season_idx,
                 ),

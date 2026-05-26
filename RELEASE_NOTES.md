@@ -5,6 +5,36 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/educator-approval-queue-2026-05-26
+
+Branch: `codex/educator-approval-queue-2026-05-26`
+Target: `pre-release`
+
+Educator training-queue controls:
+
+- Added `TrainingRequest.priority` and sorted pending Educator queues by
+  `(priority, batch_id)` for human review and AI Educator review.
+- Added `REORDER_TRAINING_QUEUE`, `REJECT_TRAINING_REQUEST`,
+  `COUNTER_TRAINING_REQUEST`, and `ACK_TRAINING_DECISION` actions.
+- Added persistent rejection/counter metadata on training requests:
+  decline reason, decision season, original offer, and acknowledgement state.
+- Added server payloads for `training_queue_order` on Educator dashboards
+  and `training_decisions` on requester dashboards.
+- AI Educator rejections now include a fair-rate decline reason for the
+  requester notification payload.
+
+Tests:
+
+- Added 9 regression tests for priority ordering, queue reordering,
+  AI sorted processing, queue reject/counter actions, requester decision
+  payloads, acknowledgement, auth refusal, and AI decline reasons.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **452 passing** after merging the latest `pre-release`.
+- Balance check stayed unchanged:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%.
+
 ### codex/training-profession-alignment-2026-05-26
 
 Branch: `codex/training-profession-alignment-2026-05-26`

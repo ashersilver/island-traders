@@ -15,6 +15,10 @@ ACTION_LABEL_OVERRIDES: dict[str, str] = {
     "purchase_capital": "Purchase Equipment",   # was "Purchase Capital" (2026-05-15 playtest)
     "lease_capital": "Lease Equipment",
     "pay_lease": "Pay Lease",
+    "reorder_training_queue": "Reorder Training Queue",
+    "reject_training_request": "Reject Training Request",
+    "counter_training_request": "Counter Training Request",
+    "ack_training_decision": "Acknowledge Training Decision",
 }
 
 

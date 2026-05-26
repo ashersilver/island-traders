@@ -79,6 +79,12 @@ class TrainingRequest:
     transport_mode: str = "air_ticket"
     tickets_supplied_by_requester: int = 0
     counter_message: str = ""
+    priority: int = 0
+    decline_reason: str = ""
+    decline_year: int = -1
+    decline_season: int = -1
+    original_dollops_to_educator: float = 0.0
+    decision_acknowledged: bool = False
 
     def describe(self, player_names: dict[int, str]) -> str:
         sym = CURRENCY_SYMBOL
@@ -233,6 +239,7 @@ class TrainingRegistry:
             tickets_supplied_by_requester=max(
                 0, min(tickets_supplied_by_requester, len(worker_ids))
             ),
+            original_dollops_to_educator=dollops_to_educator,
         )
         self._requests.append(req)
         self._next_id += 1
@@ -243,17 +250,33 @@ class TrainingRegistry:
         req.status = TrainingStatus.AWAITING_TRANSPORT
         return req
 
-    def educator_reject(self, batch_id: int) -> TrainingRequest:
+    def educator_reject(
+        self,
+        batch_id: int,
+        reason: str = "",
+        year: int = -1,
+        season: int = -1,
+    ) -> TrainingRequest:
         req = self._get(batch_id, TrainingStatus.AWAITING_EDUCATOR)
+        self._record_decision(req, reason, year, season)
         req.status = TrainingStatus.REJECTED
         return req
 
     def educator_counter(
-        self, batch_id: int, dollops_to_educator: float, message: str = ""
+        self,
+        batch_id: int,
+        dollops_to_educator: float,
+        message: str = "",
+        reason: str = "",
+        year: int = -1,
+        season: int = -1,
     ) -> TrainingRequest:
         req = self._get(batch_id, TrainingStatus.AWAITING_EDUCATOR)
+        if req.original_dollops_to_educator == 0.0:
+            req.original_dollops_to_educator = req.dollops_to_educator
         req.dollops_to_educator = dollops_to_educator
         req.counter_message = message.strip()
+        self._record_decision(req, reason or req.counter_message, year, season)
         req.status = TrainingStatus.COUNTERED
         return req
 
@@ -411,12 +434,52 @@ class TrainingRegistry:
             and r.status == TrainingStatus.AWAITING_EDUCATOR
         ]
 
+    def sorted_pending_for_educator(self, educator_id: int) -> list[TrainingRequest]:
+        return sorted(
+            self.pending_for_educator(educator_id),
+            key=lambda r: (r.priority, r.batch_id),
+        )
+
+    def reorder_pending(self, educator_id: int, ordered_batch_ids: list[int]) -> None:
+        pending = {req.batch_id: req for req in self.pending_for_educator(educator_id)}
+        seen: set[int] = set()
+        for idx, batch_id in enumerate(ordered_batch_ids):
+            req = pending.get(batch_id)
+            if req is None:
+                continue
+            req.priority = idx
+            seen.add(batch_id)
+        next_priority = len(seen)
+        for req in self.sorted_pending_for_educator(educator_id):
+            if req.batch_id in seen:
+                continue
+            req.priority = next_priority
+            next_priority += 1
+
     def countered_for_requester(self, requester_id: int) -> list[TrainingRequest]:
         return [
             r for r in self._requests
             if r.requester_id == requester_id
             and r.status == TrainingStatus.COUNTERED
         ]
+
+    def decisions_for_requester(self, requester_id: int) -> list[TrainingRequest]:
+        return [
+            r for r in self._requests
+            if r.requester_id == requester_id
+            and r.status in (TrainingStatus.COUNTERED, TrainingStatus.REJECTED)
+            and not r.decision_acknowledged
+        ]
+
+    def acknowledge_decision(self, requester_id: int, batch_id: int) -> bool:
+        for req in self._requests:
+            if req.batch_id == batch_id and req.requester_id == requester_id:
+                req.decision_acknowledged = True
+                return True
+        return False
+
+    def request_by_id(self, batch_id: int) -> TrainingRequest | None:
+        return next((r for r in self._requests if r.batch_id == batch_id), None)
 
     def pending_transport(self) -> list[TrainingRequest]:
         return [r for r in self._requests if r.status == TrainingStatus.AWAITING_TRANSPORT]
@@ -430,6 +493,14 @@ class TrainingRegistry:
 
     def all_requests(self) -> list[TrainingRequest]:
         return list(self._requests)
+
+    def _record_decision(
+        self, req: TrainingRequest, reason: str, year: int, season: int
+    ) -> None:
+        req.decline_reason = reason.strip()
+        req.decline_year = year
+        req.decline_season = season
+        req.decision_acknowledged = False
 
     def _get(self, batch_id: int, expected_status: TrainingStatus) -> TrainingRequest:
         for r in self._requests:
