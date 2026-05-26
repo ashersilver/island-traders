@@ -254,6 +254,10 @@ class TurnManager:
         else:
             self._human_turn(player, event_result, result, season_name, year, season_index)
 
+        for message in self.production.run_kitchens(player):
+            self.io.print(f"  [Kitchen] {message}")
+            result.actions_taken.append(f"kitchen:{message}")
+
         result.dollops_delta = player.dollops - dollops_before
         return result
 
@@ -413,49 +417,66 @@ class TurnManager:
             self.io.print("  No capital equipment is available for your roles.")
             return
 
-        manufacturers = [
-            p for p in self.players
-            if any(r.name == "Manufacturer" for r in p.roles)
-        ]
-        if not manufacturers:
-            self.io.print("  No Manufacturing island is available to build capital equipment.")
-            return
-
         sym = CURRENCY_SYMBOL
-        self.io.print("\n  Capital equipment available from Manufacturing:")
+        self.io.print("\n  Capital equipment available:")
         for idx, item in enumerate(available_items, 1):
-            manufactured_resource = self._manufactured_resource_for_capital_item(item)
+            cash_only = item.effects.get("cash_only", False)
+            manufactured_resource = (
+                None if cash_only else self._manufactured_resource_for_capital_item(item)
+            )
             arrival = (
                 "arrives now"
                 if item.delivery_seasons == 0
                 else f"arrives in {item.delivery_seasons} season(s)"
             )
+            requirement = (
+                "cash-only"
+                if cash_only
+                else f"requires 1x {manufactured_resource.value}"
+            )
             self.io.print(
                 f"    {idx}. {item.name} ({item.role}) — {item.cost:.0f} {sym}; "
-                f"requires 1x {manufactured_resource.value}; {arrival}"
+                f"{requirement}; {arrival}"
             )
 
         choice = self.io.choose_quantity("Choose capital item", 1, len(available_items))
         item = available_items[choice - 1]
-        manufacturer = self.io.choose_player("Buy from which Manufacturer?", manufacturers)
-        manufactured_resource = self._manufactured_resource_for_capital_item(item)
-        if manufacturer.inventory.get(manufactured_resource) <= 0:
-            self.io.print(
-                f"  {manufacturer.name} has no {manufactured_resource.value} available "
-                f"to build {item.name}."
-            )
-            return
-        if manufacturer.player_id != player.player_id and player.dollops < item.cost:
+        cash_only = item.effects.get("cash_only", False)
+        manufacturer = None
+        manufactured_resource = None
+        if not cash_only:
+            manufacturers = [
+                p for p in self.players
+                if any(r.name == "Manufacturer" for r in p.roles)
+            ]
+            if not manufacturers:
+                self.io.print("  No Manufacturing island is available to build capital equipment.")
+                return
+            manufacturer = self.io.choose_player("Buy from which Manufacturer?", manufacturers)
+            manufactured_resource = self._manufactured_resource_for_capital_item(item)
+            if manufacturer.inventory.get(manufactured_resource) <= 0:
+                self.io.print(
+                    f"  {manufacturer.name} has no {manufactured_resource.value} available "
+                    f"to build {item.name}."
+                )
+                return
+        if player.dollops < item.cost and (cash_only or manufacturer.player_id != player.player_id):
             self.io.print(f"  You need {item.cost:.0f} {sym} to buy {item.name}.")
             return
         if not self.io.confirm(
-            f"Buy {item.name} from {manufacturer.name} for {item.cost:.0f} {sym}?"
+            (
+                f"Buy {item.name} for {item.cost:.0f} {sym}?"
+                if cash_only
+                else f"Buy {item.name} from {manufacturer.name} for {item.cost:.0f} {sym}?"
+            )
         ):
             return
 
-        manufacturer.give_resources(manufactured_resource, 1)
-        if manufacturer.player_id != player.player_id:
+        if not cash_only:
+            manufacturer.give_resources(manufactured_resource, 1)
+        if cash_only or manufacturer.player_id != player.player_id:
             player.spend_dollops(item.cost)
+        if not cash_only and manufacturer.player_id != player.player_id:
             manufacturer.receive_dollops(item.cost)
         current_tick = year * len(SEASONS) + season_index
         if item.delivery_seasons <= 0:
@@ -468,10 +489,10 @@ class TurnManager:
                 "arrives_at_tick": arrives_at,
             })
             arrival = f"arriving Year {arrives_at // len(SEASONS) + 1}, {SEASONS[arrives_at % len(SEASONS)]}"
-        self.io.print(
-            f"  Purchased {item.name}; consumed 1x {manufactured_resource.value}; {arrival}."
-        )
-        result.actions_taken.append(f"purchase_capital:{item.item_id}:{manufacturer.name}")
+        consumed = "cash-only purchase" if cash_only else f"consumed 1x {manufactured_resource.value}"
+        self.io.print(f"  Purchased {item.name}; {consumed}; {arrival}.")
+        counterparty = "cash" if cash_only else manufacturer.name
+        result.actions_taken.append(f"purchase_capital:{item.item_id}:{counterparty}")
 
     def _create_equipment_lease(
         self,

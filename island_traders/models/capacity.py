@@ -84,7 +84,8 @@ class ProductionRecipe:
 # ---------------------------------------------------------------------------
 
 def items_for_role(catalogue: Iterable[CapitalItem], role: str) -> list[CapitalItem]:
-    return [it for it in catalogue if it.role == role]
+    items = list(catalogue)
+    return [it for it in items if it.role == role] + [it for it in items if it.role == "Any"]
 
 
 def find_item(catalogue: Iterable[CapitalItem], item_id: str) -> CapitalItem | None:

@@ -8,10 +8,11 @@ from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    KITCHEN_FOOD_PER_SEASON, KITCHEN_ITEM_ID, KITCHEN_RECIPE,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, recipe_for
-from ..models.profession import WorkerBand
+from ..models.profession import Profession, WorkerBand
 
 
 class InsufficientInputsError(Exception):
@@ -55,6 +56,78 @@ class ProductionEngine:
 
     def _metal_recipe_multiplier(self, player: Player) -> float:
         return 3.0 if self._has_enhanced_metal_equipment(player) else 1.0
+
+    def run_kitchens(self, player: Player) -> list[str]:
+        """Run Chef-staffed Kitchens once for this player this season.
+
+        A Kitchen is deliberately separate from role production: any island
+        can own one, and it idles gracefully when short on Chef staffing or
+        raw ingredients.
+        """
+        kitchen_count = player.effective_capital_inventory().get(KITCHEN_ITEM_ID, 0)
+        if kitchen_count <= 0:
+            return []
+
+        chef_count = player.workforce.count_profession(Profession.CHEF.value)
+        active_kitchens = min(kitchen_count, chef_count)
+        messages: list[str] = []
+        if active_kitchens <= 0:
+            messages.append(
+                f"Kitchen idle: {kitchen_count} kitchen(s), no active Chef."
+            )
+            return messages
+        if kitchen_count > chef_count:
+            messages.append(
+                f"Kitchen idle: {kitchen_count - chef_count} kitchen(s) need Chef staffing."
+            )
+
+        for kitchen_number in range(1, active_kitchens + 1):
+            produced, missing = self._run_one_kitchen(player)
+            if produced:
+                messages.append(
+                    f"Kitchen {kitchen_number}: produced {produced} Food."
+                )
+            else:
+                messages.append(
+                    f"Kitchen {kitchen_number} idle: short on {missing}."
+                )
+        return messages
+
+    def _run_one_kitchen(self, player: Player) -> tuple[int, str]:
+        food_qty = KITCHEN_FOOD_PER_SEASON
+        grain_needed = KITCHEN_RECIPE["Grain"] * food_qty
+        produce_needed = KITCHEN_RECIPE["Produce"] * food_qty
+        protein_needed = KITCHEN_RECIPE["Protein"] * food_qty
+        shortages: list[str] = []
+        if player.inventory.get(ResourceType.GRAIN) < grain_needed:
+            shortages.append("Grain")
+        if player.inventory.get(ResourceType.PRODUCE) < produce_needed:
+            shortages.append("Produce")
+        available_protein = (
+            player.inventory.get(ResourceType.FISH)
+            + player.inventory.get(ResourceType.MEAT)
+        )
+        if available_protein < protein_needed:
+            shortages.append("Fish/Meat")
+        if shortages:
+            return 0, ", ".join(shortages)
+
+        fish = player.inventory.get(ResourceType.FISH)
+        meat = player.inventory.get(ResourceType.MEAT)
+        prefer_fish = fish >= meat
+        first = ResourceType.FISH if prefer_fish else ResourceType.MEAT
+        second = ResourceType.MEAT if prefer_fish else ResourceType.FISH
+        first_used = min(protein_needed, player.inventory.get(first))
+        second_used = protein_needed - first_used
+
+        player.give_resources(ResourceType.GRAIN, grain_needed)
+        player.give_resources(ResourceType.PRODUCE, produce_needed)
+        if first_used:
+            player.give_resources(first, first_used)
+        if second_used:
+            player.give_resources(second, second_used)
+        player.receive_resources(ResourceType.FOOD, food_qty)
+        return food_qty, ""
 
     def _adjust_recipe_for_player(
         self, recipe, player: Player

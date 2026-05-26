@@ -5,6 +5,44 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/kitchen-island-2026-05-26
+
+Branch: `codex/kitchen-island-2026-05-26`
+Target: `pre-release`
+
+Adds the cross-island Kitchen subsystem from the 2026-05-26 playtest
+brief:
+
+- Added a universal, cash-only `Kitchen` capital item (`common.kitchen`)
+  available to every island catalogue. Cost is 80 Dp, immediate
+  delivery, 12-season service life, no lease terms.
+- Added `Chef` as a Technician-band profession trainable by every
+  island through the existing technical-course pipeline. No starting
+  workforce pre-places Chefs.
+- Added a per-season Kitchen production pass: each active Kitchen needs
+  one active Chef and converts local ingredients into 6 Food using
+  `1 Food = 2 Grain + 1 Produce + 1 Fish-or-Meat`.
+- Protein selection prefers whichever of Fish or Meat is more plentiful
+  in local inventory; ties use Fish.
+- Kitchens idle gracefully when unstaffed or short on ingredients,
+  logging the reason and consuming no partial inputs.
+- Mid-game `PURCHASE_CAPITAL` can buy cash-only Kitchen equipment
+  without a Manufacturer counterparty; existing Manufacturer-built
+  equipment remains unchanged.
+
+Tests:
+
+- Added 8 Kitchen tests covering universal catalogue availability,
+  Chef training metadata, full production, no-Chef idle, missing-
+  ingredient idle, Fish/Meat tie-break, partial staffing with multiple
+  Kitchens, and cash-only purchase without a Manufacturer.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **437 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%–17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%–18.0%; individual 200-game variance remains comparable to
+    the calibration baseline.
+
 ### claude/codex-briefs-2026-05-26
 
 Branch: `claude/codex-briefs-2026-05-26`
