@@ -35,6 +35,37 @@ Tests:
   - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
     12.8%-18.0%.
 
+### codex/ai-manufacturer-product-mix-2026-05-26
+
+Branch: `codex/ai-manufacturer-product-mix-2026-05-26`
+Target: `pre-release`
+
+AI Manufacturer product-line choice:
+
+- Added a demand-scored product-line chooser for human-visible equipment
+  demand so a human Educator/Doctor can pull AI Manufacturing toward
+  `LaboratoryEquipment` instead of being stuck behind the default
+  `FarmMachinery` line.
+- Kept the legacy profit/bid chooser for all-AI simulations so calibration
+  remains stable when there is no human demand signal.
+- Added a 10% sticky guard, input-feasibility fallback, and an idle message
+  when no Manufacturer line can be produced.
+- Added light supply memory and one-unit LabEquipment release throttling on
+  human-demand Lab runs so the AI seeds the bottleneck without dumping a
+  whole game worth of lab gear at once.
+
+Tests:
+
+- Added 5 AI Manufacturer tests for LabEquipment demand selection, sticky
+  behavior, feasible fallback, no-input idle logging, and human Educator
+  LabEquipment listing.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **453 passing** after merging the latest `pre-release`.
+- Balance check stayed on the post-calibration all-AI baseline:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%.
+
 ### codex/training-profession-alignment-2026-05-26
 
 Branch: `codex/training-profession-alignment-2026-05-26`
