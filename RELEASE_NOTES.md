@@ -29,7 +29,7 @@ Tests:
   AI sorted processing, queue reject/counter actions, requester decision
   payloads, acknowledgement, auth refusal, and AI decline reasons.
 - `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
-  -> **451 passing**.
+  -> **452 passing** after merging the latest `pre-release`.
 - Balance check stayed unchanged:
   - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
   - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
