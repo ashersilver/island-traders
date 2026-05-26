@@ -28,8 +28,8 @@ from island_traders.models.profession import (
 
 def test_courses_resource_exists_with_price():
     assert ResourceType.COURSES.value == "Courses"
-    assert BASE_PRICES["Courses"] == 25.0
-    assert BASE_PRICES["Expertise"] == 18.0
+    assert BASE_PRICES["Courses"] == 23.75
+    assert BASE_PRICES["Expertise"] == 17.1
 
 
 def test_educator_has_courses_recipe_consuming_expertise():

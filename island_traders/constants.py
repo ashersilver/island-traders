@@ -56,21 +56,21 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                10.0,
-    "Fish":                 8.0,
-    "Grain":                7.0,
-    "Produce":              9.0,
-    "Meat":                12.0,
+    "Food":                13.5,
+    "Fish":                10.8,
+    "Grain":                9.45,
+    "Produce":             12.15,
+    "Meat":                16.2,
     "Ore":                 12.0,
     "Metal":               20.0,
     "Oil":                 16.0,
-    "Freight":             15.0,
-    "Expertise":           18.0,
-    "Courses":             25.0,   # classroom slots; gated by Expertise consumption
+    "Freight":             16.5,
+    "Expertise":           17.1,
+    "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
-    "HealthServices":      30.0,
-    "Vaccine":             35.0,
+    "HealthServices":      31.5,
+    "Vaccine":             36.75,
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
@@ -78,9 +78,9 @@ BASE_PRICES: dict[str, float] = {
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      17.0,   # charter flight / passenger berth (per seat)
+    "PassengerSeats":      18.7,   # charter flight / passenger berth (per seat)
     # Educator IP
-    "Patents":             50.0,   # one-time productivity boost (–20% input cost on chosen output)
+    "Patents":             47.5,   # one-time productivity boost (–20% input cost on chosen output)
 }
 
 # Units produced per season before event modifiers
@@ -126,27 +126,27 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
+        "outputs": {"Grain": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # planting underway; good fishing
     },
     "Summer": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
+        "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # peak fishing; crops growing
     },
     "Autumn": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 6 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # bumper harvest; fishing winds down
+        "outputs": {"Grain": round(9.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(7.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # bumper harvest; fishing winds down
     },
     "Winter": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Grain": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Produce": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # stores drawn down; minimal production
+        "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # stores drawn down; minimal production
     },
 }
 

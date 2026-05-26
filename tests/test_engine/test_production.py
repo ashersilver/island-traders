@@ -106,9 +106,9 @@ def test_banker_production_is_a_no_op(banker, normal_event):
 def test_bumper_harvest_increases_yield(farmer, bumper_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
-    # Spring: base Produce=20, yield_modifier=1.8, bonus=2 → int(20*1.8)+2 = 36+2 = 38
+    # Spring: base Produce=24, yield_modifier=1.8, bonus=2 → int(24*1.8)+2 = 43+2 = 45
     produced = engine.produce(farmer, bumper_event, season_name="Spring")
-    assert produced.get(ResourceType.PRODUCE, 0) == 38
+    assert produced.get(ResourceType.PRODUCE, 0) == 45
 
 
 def test_production_preview_does_not_mutate(farmer, normal_event):
@@ -191,8 +191,8 @@ def test_production_options_show_per_product_current_max(normal_event):
     options = ProductionEngine().production_options(farmer, normal_event, season_name="Spring")
     by_output = {option["output"]: option for option in options}
 
-    assert by_output[ResourceType.GRAIN]["max_qty"] == 20
-    assert by_output[ResourceType.FISH]["max_qty"] == 20
+    assert by_output[ResourceType.GRAIN]["max_qty"] == 24
+    assert by_output[ResourceType.FISH]["max_qty"] == 24
 
 
 def test_produce_product_makes_chosen_product_and_quantity_only(normal_event):
@@ -311,8 +311,8 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
         if option["output"] == ResourceType.MEAT
     )
 
-    assert bare_preview["outputs"][ResourceType.PRODUCE] == 45
-    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 60
+    assert bare_preview["outputs"][ResourceType.PRODUCE] == 54
+    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 72
     assert bare_meat["max_qty"] == int(staffed_meat["max_qty"] * 0.75)
 
 
