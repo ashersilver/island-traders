@@ -2762,6 +2762,20 @@ def create_app() -> FastAPI:
                     state = manager.get_game_state(room_id, player_id)
                     if state:
                         await websocket.send_text(json.dumps(state))
+                    # Also replay any unresolved IO prompt for this player.
+                    # The initial WS connect already does this, but mid-game
+                    # the client can lose its action prompt (Decision-Hint
+                    # button drove a modal the user cancelled, dialog state
+                    # drift, etc).  The "📋 Menu" recovery button calls
+                    # requestState() — which lands here — and expects the
+                    # server to redeliver the live engine prompt so the user
+                    # can continue trading instead of staring at a dead
+                    # season clock.
+                    engine_pid = room.lobby_to_engine_id.get(player_id)
+                    if (room.status == "running"
+                            and room.io_adapter
+                            and engine_pid is not None):
+                        room.io_adapter.replay_pending_prompt(engine_pid)
                 elif msg_type == "bid":
                     result = manager.place_bid(
                         room_id, player_id,

@@ -5,6 +5,30 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/restore-action-menu-2026-05-26
+
+Branch: `claude/restore-action-menu-2026-05-26`
+Target: `pre-release`
+
+Fixes the "trading stops with 240s left on the season clock" defect
+playtesters reported against `0.1.0-dev.2026-05-25.2`. Root cause was
+that the 📋 Menu recovery button only re-rendered the cached prompt;
+if the engine's pending prompt for this player had moved on (or the
+cached prompt never matched the engine state) the recovery did
+nothing and the season clock kept counting down with no way to act.
+
+- `WebSocket.get_state` handler now also calls
+  `replay_pending_prompt(engine_pid)` while the room is `running`,
+  so the server redelivers the live unresolved IO prompt for this
+  player on demand. Previously this was only done on the initial
+  WebSocket connect.
+- Client `restoreActionMenu()` now always calls `requestState()`
+  after re-rendering the cached prompt — the cached re-render
+  provides instant feedback, and the live server replay overwrites
+  with the real engine prompt if it disagrees.
+
+No engine changes; 429 tests passing.
+
 ### claude/ui-followups-2026-05-25
 
 Branch: `claude/ui-followups-2026-05-25`

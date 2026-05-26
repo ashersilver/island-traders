@@ -3684,14 +3684,19 @@ function showAboutDialog() {
 // loop is already correct (while True: choose_action), but if a new
 // prompt is lost in transit or the UI state drifts, this button gives
 // the player an explicit recovery path without ending the turn.
+//
+// Two-step recovery: show the cached prompt instantly for snappy
+// feedback, then ask the server for the LIVE pending prompt — the
+// server's get_state handler replays whatever message is currently
+// blocked on player input.  If the cached prompt is stale (engine has
+// already moved on to a new prompt for this player) the live replay
+// will overwrite it.  If there's no cached prompt at all we still get
+// the server replay path.
 function restoreActionMenu() {
   if (lastActionPromptMsg) {
     showActionPrompt(lastActionPromptMsg);
-  } else {
-    // No cached prompt yet — request a fresh game state in case the
-    // server has a pending prompt it can replay.
-    requestState();
   }
+  requestState();
 }
 
 // ==================== INIT ====================
