@@ -418,6 +418,77 @@ Suite **386 passing** (was 365 + 21 new tests).
 Branch: `codex/balance-calibration-2026-05`
 Target: `pre-release`
 
+2026-05-25 rerun after the sustenance basket model, training-staffing
+redesign, capital-equipment leases, and training UX improvements landed.
+This supersedes the earlier calibration numbers below for the current
+`pre-release` equilibrium.
+
+Current rerun diagnosis:
+
+- Fresh baseline against `pre-release` at `540b751` showed the Farmer
+  overcorrected downward after the new sustenance/training/lease changes.
+  Farmer averaged only 2.0% on the four-seed sweep while Educator,
+  Banker, and Manufacturer were mildly hot.
+- The main tuning change reprices the now-universal sustenance basket
+  and raises Farmer seasonal raw output. This restores value to the
+  island feeding every resident without reintroducing the old
+  Banker/Farmer runaway pattern.
+- Freight and PassengerSeats were lifted modestly, while Education
+  resources were cooled slightly, to keep Transporter above the floor
+  and Educator below the ceiling.
+- The simulation runner now explicitly seeds AI players with
+  `STARTING_DOLLOPS` instead of carrying the stale `100.0` literal.
+
+Historical stale baseline (pre-Economy A-D and pre-AI-v2, 800 games
+across seeds 42/1/7/99; included only as context):
+
+| Role | Historical stale mean win% |
+|---|---:|
+| Farmer | 42.5% |
+| Miner | 0.4% |
+| Transporter | 0.0% |
+| Educator | 1.0% |
+| Banker | 54.6% |
+| Manufacturer | 1.5% |
+| Doctor | 0.0% |
+
+Fresh pre-tune baseline on current `pre-release` at `540b751`, before
+this rerun's balance tuning:
+
+| Role | Seed 42, 1000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 2.3% | 1660.1 Dp | 2.0% |
+| Miner | 17.5% | 2511.8 Dp | 15.0% |
+| Transporter | 14.8% | 2377.3 Dp | 12.9% |
+| Educator | 20.4% | 3094.7 Dp | 21.8% |
+| Banker | 15.7% | 2369.1 Dp | 17.9% |
+| Manufacturer | 18.0% | 2378.2 Dp | 19.9% |
+| Doctor | 11.3% | 2867.8 Dp | 10.6% |
+
+Final post-tune verification on this rerun:
+
+| Role | Seed 42, 1000g win% | Seed 42, 5000g win% | Avg wealth (5000g) | 4-seed mean win% |
+|---|---:|---:|---:|---:|
+| Farmer | 14.7% | 13.1% | 2419.3 Dp | 13.4% |
+| Miner | 14.7% | 13.9% | 2438.3 Dp | 13.0% |
+| Transporter | 15.6% | 14.1% | 2476.2 Dp | 14.9% |
+| Educator | 17.0% | 18.3% | 2975.0 Dp | 17.9% |
+| Banker | 12.9% | 14.6% | 2373.0 Dp | 14.9% |
+| Manufacturer | 12.2% | 13.1% | 2375.8 Dp | 12.9% |
+| Doctor | 12.9% | 12.9% | 2905.2 Dp | 13.1% |
+
+Verification commands:
+
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 1000 --years 3 --seed 42`
+  passed acceptance after tuning.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 200 --years 3 --seeds 42,1,7,99`
+  produced four-seed means within the target band; no role was 0% and
+  no per-seed role exceeded ~25%. One 200-game seed sample had
+  Manufacturer at 8.5%, so watch Manufacturer variance in future runs,
+  but the sweep mean and long seed-42 run are both in band.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 5000 --years 3 --seed 42`
+  produced the final long-run table above.
+
 Release-blocking balance pass after Economy A-D and AI Trading v1/v2.
 The first fresh baseline exposed a new post-AI-v2 failure mode:
 Transporter was winning nearly every AI-only game. Diagnosis found

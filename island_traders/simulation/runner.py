@@ -20,7 +20,7 @@ from ..engine.game import Game, GameConfig, PlayerSpec
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..constants import SEASONS
+from ..constants import SEASONS, STARTING_DOLLOPS
 
 
 class _SilentIO:
@@ -87,13 +87,18 @@ class SimulationRunner:
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
             specs = [
-                PlayerSpec(name=rname, role_names=[rname], is_human=False)
+                PlayerSpec(
+                    name=rname,
+                    role_names=[rname],
+                    is_human=False,
+                    starting_dollops=STARTING_DOLLOPS,
+                )
                 for rname in role_names
             ]
             config = GameConfig(
                 player_specs=specs,
                 num_years=self.num_years,
-                starting_dollops=100.0,
+                starting_dollops=STARTING_DOLLOPS,
                 event_charts_path=self.event_charts_path,
             )
             # Override event resolver and turn-manager RNGs for reproducibility
