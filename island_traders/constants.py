@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-26.3"
+APP_VERSION: str = "0.1.0-dev.2026-05-26.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -385,8 +385,8 @@ DEFAULT_MAINTENANCE_FRACTION: float = 0.03
 # externally (depositors), invisible counterparties whose principal +
 # the posted funding rate must be repaid at maturity (see
 # `_fund_bank_external_portion`).
-MBA_RESERVE_RATIO_BASE: float = 0.50       # < 3 MBA Banker Managers
-MBA_RESERVE_RATIO_QUALIFIED: float = 0.20  # >= 3 MBA Banker Managers
+MBA_RESERVE_RATIO_BASE: float = 0.05       # < 3 MBA Banker Managers
+MBA_RESERVE_RATIO_QUALIFIED: float = 0.02  # >= 3 MBA Banker Managers
 # How many MBA-qualified Banker Managers it takes to drop the ratio.
 MBA_QUALIFIED_THRESHOLD: int = 3
 

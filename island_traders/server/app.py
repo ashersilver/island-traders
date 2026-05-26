@@ -27,7 +27,7 @@ from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.loan import posted_funding_rates
+from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL,
@@ -1862,8 +1862,21 @@ class GameManager:
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
         player_names = {p.player_id: p.name for p in game.players}
 
+        def banker_loan_book_status(player: Player) -> dict[str, int]:
+            if not any(role.name == "Banker" for role in player.roles):
+                return {"active": 0, "cap": 0}
+            n_bankers = player.workforce.count_profession(Profession.BANKER.value)
+            cap = max(1, 2 * n_bankers)
+            active = sum(
+                1 for loan in game.loan_ledger.loans
+                if loan.lender_id == player.player_id
+                and loan.status == LoanStatus.ACTIVE
+            )
+            return {"active": active, "cap": cap}
+
         players_data = []
         for p in game.players:
+            loan_book = banker_loan_book_status(p)
             pd = {
                 "player_id": p.player_id,
                 "lobby_player_id": engine_to_lobby.get(p.player_id),
@@ -1878,6 +1891,8 @@ class GameManager:
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
+                "banker_active_loans": loan_book["active"],
+                "banker_active_loan_cap": loan_book["cap"],
                 # Structured per-loan detail (Issue #6 — Loan rollover UI).
                 # Includes both borrower-side and lender-side active loans
                 # so the dashboard can show roles consistently.

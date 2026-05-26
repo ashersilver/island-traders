@@ -7,7 +7,7 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..models.insurance import InsurancePolicy
-from ..models.loan import LoanLedger, banker_quote_rate, posted_funding_rates
+from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
 from ..constants import (
     BASE_PRICES, MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER,
@@ -71,6 +71,19 @@ class AIStrategy:
             return MBA_RESERVE_RATIO_QUALIFIED
         return MBA_RESERVE_RATIO_BASE
 
+    def _banker_active_loan_cap(self, banker: Player) -> int:
+        n_bankers = banker.workforce.count_profession(Profession.BANKER.value)
+        return max(1, 2 * n_bankers)
+
+    def _banker_active_loan_count(
+        self, banker: Player, loan_ledger: LoanLedger
+    ) -> int:
+        return sum(
+            1 for loan in loan_ledger.loans
+            if loan.lender_id == banker.player_id
+            and loan.status == LoanStatus.ACTIVE
+        )
+
     def _one_season_input_cost(
         self,
         player: Player,
@@ -116,6 +129,13 @@ class AIStrategy:
             return None
         if principal <= 0:
             return None
+        active = self._banker_active_loan_count(banker, loan_ledger)
+        cap = self._banker_active_loan_cap(banker)
+        if active >= cap:
+            return (
+                f"[AI] {banker.name} declined new loan: active-loan cap "
+                f"reached ({active}/{cap})"
+            )
         term_years = 1
         funding_rate = posted_funding_rates(year, season_index)[term_years]
         rate = banker_quote_rate(

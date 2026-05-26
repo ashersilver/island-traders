@@ -2343,10 +2343,39 @@ class TurnManager:
         )
 
     def _banker_reserve_ratio(self, banker: Player) -> float:
-        """0.50 below the MBA threshold; 0.20 at/above (Phase D)."""
+        """5% below the MBA threshold; 2% at/above (wholesale funding)."""
         if self._mba_banker_count(banker) >= MBA_QUALIFIED_THRESHOLD:
             return MBA_RESERVE_RATIO_QUALIFIED
         return MBA_RESERVE_RATIO_BASE
+
+    def _banker_active_loan_cap(self, banker: Player) -> int:
+        """Max simultaneous active customer loans this Bank can hold."""
+        n_bankers = banker.workforce.count_profession(Profession.BANKER.value)
+        return max(1, 2 * n_bankers)
+
+    def _banker_active_loan_count(self, banker: Player) -> int:
+        """Active customer loans where this banker is lender.
+
+        Synthetic depositor funding loans use ``lender_id=-1`` and are the
+        bank's liability side, not customer lending; they do not count here.
+        """
+        return sum(
+            1 for loan in self.loan_ledger.loans
+            if loan.lender_id == banker.player_id
+            and loan.status == LoanStatus.ACTIVE
+        )
+
+    def _banker_can_issue_loan(self, banker: Player) -> tuple[bool, int, int]:
+        active = self._banker_active_loan_count(banker)
+        cap = self._banker_active_loan_cap(banker)
+        return active < cap, active, cap
+
+    def _print_banker_cap_refusal(self, active: int, cap: int) -> None:
+        self.io.print(
+            "  Cannot issue loan: Bank already at active-loan cap "
+            f"({active}/{cap}). Wait for a loan to be repaid, or train another "
+            "Banker Manager to raise the cap."
+        )
 
     def _fund_bank_external_portion(
         self,
@@ -2392,6 +2421,10 @@ class TurnManager:
         others = [p for p in self.players if p.player_id != player.player_id]
         if not others:
             self.io.print("  No other players to lend to.")
+            return
+        can_issue, active, cap = self._banker_can_issue_loan(player)
+        if not can_issue:
+            self._print_banker_cap_refusal(active, cap)
             return
         target = self.io.choose_player("Offer loan to which player?", others)
         principal = self.io.ask_dollop_amount(
@@ -2492,6 +2525,10 @@ class TurnManager:
             external_share = 0.0
         else:
             r = self._banker_reserve_ratio(banker)
+            can_issue, active, cap = self._banker_can_issue_loan(banker)
+            if not can_issue:
+                self._print_banker_cap_refusal(active, cap)
+                return
             own_share = r * principal
             external_share = max(0.0, principal - own_share)
             if banker.dollops < own_share:

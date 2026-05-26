@@ -54,6 +54,35 @@ trainable-profession mismatches:
 - Added regression coverage so the playtest-reported phantom titles stay
   aligned with the training menu.
 
+### codex/banker-wholesale-funding-2026-05-26
+
+Branch: `codex/banker-wholesale-funding-2026-05-26`
+Target: `pre-release`
+
+Banker wholesale-funding rebalance:
+
+- Lowered base Banker reserve ratio from 50% to 5%; MBA-qualified reserve
+  ratio drops from 20% to 2%.
+- Added active customer-loan caps: `max(1, 2 x Banker Manager count)` per
+  Bank. Repaid/defaulted loans free slots, and synthetic depositor funding
+  loans do not count.
+- Applied the cap to human loan offers, borrower-initiated Bank loans, and
+  AI Banker lending.
+- Added Banker loan-book cap/count fields to the server player payload for
+  dashboard follow-up.
+
+Tests:
+
+- Added/updated regression tests for the 5% / 2% reserve math, active-loan
+  cap, starter slot, freed slots after repayment/default, depositor-loan
+  exclusion, and AI cap refusal.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **447 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%; Banker mean 14.8%.
+
 ### claude/educator-queue-brief-amend-2026-05-26
 
 Branch: `claude/educator-queue-brief-amend-2026-05-26`

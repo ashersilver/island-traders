@@ -212,7 +212,7 @@ def test_ai_banker_does_not_offer_loan_when_reserve_short():
     ai = AIStrategy()
     market = Market()
     loan_ledger = LoanLedger()
-    banker = make_player(1, "Banker AI", ["Banker"], dollops=20.0)
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=1.0)
     farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
 
     ai.take_turn(
@@ -233,6 +233,35 @@ def test_ai_banker_does_not_offer_loan_when_reserve_short():
         if loan.borrower_id == farmer.player_id
     ]
     assert farmer_loans == []
+
+
+def test_ai_banker_declines_new_loans_when_at_active_cap():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=100.0)
+    banker.workforce.add_workers(1, training_level=1, profession="Banker")
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+    miner = make_player(3, "Miner AI", ["Miner"], dollops=0.0)
+    transporter = make_player(4, "Transporter AI", ["Transporter"], dollops=0.0)
+    loan_ledger.create_loan(farmer.player_id, banker.player_id, 10.0, 0.05, 0, 0)
+    loan_ledger.create_loan(miner.player_id, banker.player_id, 10.0, 0.05, 0, 0)
+
+    action = ai._ai_issue_loan(
+        banker,
+        transporter,
+        50.0,
+        loan_ledger,
+        year=0,
+        season_index=0,
+    )
+
+    transporter_loans = [
+        loan for loan in loan_ledger.active_loans_for(transporter.player_id)
+        if loan.borrower_id == transporter.player_id
+    ]
+    assert transporter_loans == []
+    assert "active-loan cap reached (2/2)" in action
 
 
 def test_ai_borrower_accepts_loan_when_capital_short():
