@@ -30,7 +30,7 @@ Tests:
   behavior, feasible fallback, no-input idle logging, and human Educator
   LabEquipment listing.
 - `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
-  -> **448 passing**.
+  -> **453 passing** after merging the latest `pre-release`.
 - Balance check stayed on the post-calibration all-AI baseline:
   - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
   - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
