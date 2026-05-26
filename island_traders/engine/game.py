@@ -348,16 +348,37 @@ class Game:
         returned_batches = self.training.process_returns(year, season)
         for batch in returned_batches:
             player = player_map.get(batch.requester_id)
-            if player:
-                returned = player.workforce.return_from_training(
-                    batch.worker_ids, batch.target_profession
+            if not player:
+                self.io.print(
+                    f"\n[Training] Request #{batch.batch_id} could not return: "
+                    f"requester island {batch.requester_id} no longer exists."
                 )
-                if returned:
-                    self.io.print(
-                        f"\n[Training] {player.name}: {len(returned)} worker(s) returned "
-                        f"as {batch.target_profession}. "
-                        f"New avg efficiency: {player.workforce.average_efficiency*100:.1f}%"
-                    )
+                continue
+            self.io.print(
+                f"\n[Training] Request #{batch.batch_id} complete: "
+                f"{len(batch.worker_ids)} trainee(s) due back to {player.name} "
+                f"as {batch.target_profession}."
+            )
+            returned = player.workforce.return_from_training(
+                batch.worker_ids, batch.target_profession
+            )
+            if returned:
+                self.io.print(
+                    f"[Training] {player.name}: {len(returned)} worker(s) returned "
+                    f"as {batch.target_profession}. "
+                    f"New avg efficiency: {player.workforce.average_efficiency*100:.1f}%"
+                )
+            if len(returned) != len(batch.worker_ids):
+                missing = sorted(
+                    set(batch.worker_ids) - {worker.worker_id for worker in returned}
+                )
+                missing_text = ", ".join(str(worker_id) for worker_id in missing)
+                self.io.print(
+                    f"[Training] Return warning for request #{batch.batch_id}: "
+                    f"{len(batch.worker_ids) - len(returned)} trainee(s) did not "
+                    f"rejoin the roster"
+                    f"{f' ({missing_text})' if missing_text else ''}."
+                )
 
     def compute_summary(self) -> GameSummary:
         prices = self.market.current_prices()

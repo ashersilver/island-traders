@@ -351,7 +351,7 @@ class Player:
                 totals[r] = totals.get(r, 0) + qty
         return totals
 
-    def meals_needed(self, extra_residents: int = 0) -> int:
+    def meals_needed(self, extra_residents: int = 0, absent_residents: int = 0) -> int:
         """Per-season meal demand for this island.
 
         Sustenance basket model (2026-05-25): each ``PEOPLE_PER_MEAL``
@@ -362,9 +362,15 @@ class Player:
         baseline is gone; every resident counts toward demand.
 
         ``extra_residents`` adds transient mouths (e.g. visiting trainees
-        on campus) without mutating resident population.
+        on campus) without mutating resident population. ``absent_residents``
+        removes residents who are physically away and fed by another island.
         """
-        residents = max(0, self.population) + max(0, extra_residents)
+        residents = (
+            max(0, self.population)
+            + max(0, extra_residents)
+            - max(0, absent_residents)
+        )
+        residents = max(0, residents)
         return ceil(residents / PEOPLE_PER_MEAL) if residents > 0 else 0
 
     def consume_sustenance(

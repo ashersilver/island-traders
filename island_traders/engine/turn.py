@@ -244,11 +244,14 @@ class TurnManager:
         season_name = SEASONS[season_index]
 
         if not player.is_human:
+            self._ai_review_training_queue(player, result, season_name, year)
+            self._ai_arrange_transport_queue(player, result, season_name, year)
+            training_actions = list(result.actions_taken)
             actions = self._ai.take_turn(
                 player, self.market, self.players, self.production, self.trading,
                 event_result, season_name, year, season_index, self.loan_ledger,
             )
-            result.actions_taken = actions
+            result.actions_taken = training_actions + actions
             for a in actions:
                 self.io.print(a)
         else:
@@ -373,7 +376,11 @@ class TurnManager:
                 self.training.visiting_trainees(player.player_id)
                 if any(r.name == "Educator" for r in player.roles) else 0
             )
-            meals = player.meals_needed(extra_residents=extra_residents)
+            absent_residents = self.training.trainees_away_from_home(player.player_id)
+            meals = player.meals_needed(
+                extra_residents=extra_residents,
+                absent_residents=absent_residents,
+            )
             if meals <= 0:
                 continue
             satisfied, _used, shortfall = player.consume_sustenance(meals)
@@ -803,10 +810,16 @@ class TurnManager:
             wid for wid in player.workforce.get_trainable_ids(player.workforce.active_count)
             if wid not in unskilled_ids
         ]
+        reserved_worker_ids = self.training.reserved_worker_ids(player.player_id)
+        unskilled_ids = [wid for wid in unskilled_ids if wid not in reserved_worker_ids]
+        other_trainable = [wid for wid in other_trainable if wid not in reserved_worker_ids]
         # Prefer unskilled (entering profession) for new professions, or existing workers to advance
         trainable_ids = unskilled_ids + other_trainable
         if not trainable_ids:
-            self.io.print("  No eligible workers to send (all expert or already at college).")
+            self.io.print(
+                "  No eligible workers to send (all expert, already at college, "
+                "or already committed to a pending training request)."
+            )
             return
 
         bundle_plan = {
@@ -1094,6 +1107,70 @@ class TurnManager:
                 f"Offer at least {required_offer:.0f} Dp to cover training and tickets."
             )
 
+    def _ai_review_training_queue(
+        self, educator: Player, result: TurnResult, season_name: str, year: int
+    ) -> None:
+        """Let AI Educators revisit pending requests every season.
+
+        Requests can be blocked by capacity or PassengerSeats when first
+        submitted. Without this seasonal pass, those requests never restart
+        after the blocking condition clears.
+        """
+        if not any(role.name == "Educator" for role in educator.roles):
+            return
+        player_map = {player.player_id: player for player in self.players}
+        pending = list(self.training.pending_for_educator(educator.player_id))
+        if not pending:
+            return
+        self.io.print(
+            f"  [AI] {educator.name} reviewing {len(pending)} pending training request(s)."
+        )
+        for req in pending:
+            requester = player_map.get(req.requester_id)
+            if requester is None:
+                self.training.educator_reject(req.batch_id)
+                self.io.print(
+                    f"  [Training] Request #{req.batch_id} rejected: requester is no longer available."
+                )
+                result.actions_taken.append(f"training_rejected_missing_requester:batch#{req.batch_id}")
+                continue
+            before = req.status
+            self._ai_educator_respond(educator, requester, req, season_name, year)
+            if req.status != before:
+                result.actions_taken.append(f"ai_training_review:batch#{req.batch_id}:{req.status.value}")
+
+    def _ai_arrange_transport_queue(
+        self, transporter: Player, result: TurnResult, season_name: str, year: int
+    ) -> None:
+        """Let AI Transporters revisit old non-ticket transport jobs."""
+        if not any(role.name == "Transporter" for role in transporter.roles):
+            return
+        pending = [
+            req for req in self.training.pending_transport()
+            if req.transport_mode not in ("air_ticket", "self_training")
+        ]
+        if not pending:
+            return
+        player_map = {player.player_id: player for player in self.players}
+        for req in pending:
+            requester = player_map.get(req.requester_id)
+            if requester is None:
+                continue
+            fair_rate = 5.0 * len(req.worker_ids)
+            if req.dollops_to_transporter < fair_rate:
+                self.io.print(
+                    f"  [AI] {transporter.name} left transport request #{req.batch_id} pending: "
+                    f"offer {req.dollops_to_transporter:.0f} Dp below {fair_rate:.0f} Dp floor."
+                )
+                continue
+            if not self._training_workers_ready(requester, req):
+                continue
+            requester.spend_dollops(req.dollops_to_transporter)
+            transporter.receive_dollops(req.dollops_to_transporter)
+            self.training.arrange_transport(req.batch_id, transporter.player_id)
+            if self._dispatch_training(requester, req, season_name, year):
+                result.actions_taken.append(f"ai_transport_arranged:batch#{req.batch_id}")
+
     def _ai_training_required_offer(self, req) -> float:
         fair_rate = 20.0 * len(req.worker_ids)
         educator_tickets = self._educator_ticket_count(req)
@@ -1114,6 +1191,8 @@ class TurnManager:
         transporter = transporters[0]
         fair_rate = 5.0 * len(req.worker_ids)
         if not transporter.is_human and req.dollops_to_transporter >= fair_rate:
+            if not self._training_workers_ready(requester, req):
+                return
             self.training.arrange_transport(req.batch_id, transporter.player_id)
             requester.spend_dollops(req.dollops_to_transporter)
             transporter.receive_dollops(req.dollops_to_transporter)
@@ -1128,15 +1207,38 @@ class TurnManager:
                 f"{transporter.name} must agree on their turn."
             )
 
-    def _dispatch_training(self, requester, req, season_name: str, year: int) -> None:
+    def _training_workers_ready(self, requester: Player, req) -> bool:
+        active_ids = {worker.worker_id for worker in requester.workforce.active_workers}
+        missing = [worker_id for worker_id in req.worker_ids if worker_id not in active_ids]
+        if missing:
+            ids = ", ".join(str(worker_id) for worker_id in missing)
+            self.io.print(
+                f"  [Training] Cannot dispatch request #{req.batch_id}: "
+                f"worker(s) not active on {requester.name}'s island: {ids}. "
+                "The request remains pending."
+            )
+            return False
+        return True
+
+    def _dispatch_training(self, requester, req, season_name: str, year: int) -> bool:
         """Workers physically depart; mark them absent for the season."""
+        if not self._training_workers_ready(requester, req):
+            return False
         season_index = SEASONS.index(season_name)
         self.training.dispatch(req.batch_id, year=year, season=season_index, num_seasons=len(SEASONS))
         departed = requester.workforce.dispatch_for_training(req.worker_ids)
+        if len(departed) != len(req.worker_ids):
+            self.io.print(
+                f"  [Training] Dispatch failed for request #{req.batch_id}: "
+                f"expected {len(req.worker_ids)} trainee(s), moved {len(departed)}. "
+                "The batch may not return correctly; check workforce state."
+            )
+            return False
         self.io.print(
             f"  {len(departed)} worker(s) from {requester.name}'s island departed for "
-            f"Education Island. They will return next season with upgraded training."
+            f"Education Island. Return scheduled: {self._format_training_return(req)}."
         )
+        return True
 
     def _educator_ticket_count(self, req) -> int:
         requester_share = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
@@ -1426,6 +1528,8 @@ class TurnManager:
         season_name: str,
         year: int,
     ) -> bool:
+        if not self._training_workers_ready(requester, req):
+            return False
         # Peek training capacity BEFORE consuming any air tickets so a
         # capacity shortfall doesn't burn the Educator's PassengerSeats.
         ok, gate_msg = self._training_capacity_status(educator, req)
@@ -1582,11 +1686,13 @@ class TurnManager:
                 if requester.dollops < dollops_offered:
                     self.io.print(f"  {requester.name} cannot afford {dollops_offered:.0f} Dp.")
                     continue
+                if not self._training_workers_ready(requester, req):
+                    continue
                 requester.spend_dollops(dollops_offered)
                 player.receive_dollops(dollops_offered)
                 self.training.arrange_transport(req.batch_id, player.player_id, dollops_offered)
-                self._dispatch_training(requester, req, season_name, year)
-                result.actions_taken.append(f"transport_arranged:batch#{req.batch_id}")
+                if self._dispatch_training(requester, req, season_name, year):
+                    result.actions_taken.append(f"transport_arranged:batch#{req.batch_id}")
             else:
                 self.io.print("  Declined.")
 

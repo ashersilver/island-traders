@@ -191,6 +191,14 @@ class TrainingRegistry:
         tickets_supplied_by_requester: int = 0,
     ) -> TrainingRequest:
         count = len(worker_ids)
+        if len(set(worker_ids)) != count:
+            raise TrainingCapacityError("Training request contains duplicate worker ids.")
+        already_committed = self.reserved_worker_ids(requester_id).intersection(worker_ids)
+        if already_committed:
+            ids = ", ".join(str(worker_id) for worker_id in sorted(already_committed))
+            raise TrainingCapacityError(
+                f"Worker(s) already committed to a training request: {ids}."
+            )
         remaining = self.capacity_remaining(year, season, target_profession)
         if remaining <= 0:
             annual_cap = UNIVERSITY_CAPACITY.get(target_profession, 0)
@@ -369,6 +377,32 @@ class TrainingRegistry:
             and r.requester_id != educator_id
             and r.status == TrainingStatus.DISPATCHED
         )
+
+    def trainees_away_from_home(self, requester_id: int) -> int:
+        """Headcount physically away from a requester's home island.
+
+        These residents are already counted as campus load at the
+        Educator, so the home island should not also feed them while
+        their request is dispatched.
+        """
+        return sum(
+            len(r.worker_ids)
+            for r in self._requests
+            if r.requester_id == requester_id
+            and r.requester_id != r.educator_id
+            and r.status == TrainingStatus.DISPATCHED
+        )
+
+    def reserved_worker_ids(self, requester_id: int) -> set[int]:
+        """Workers already committed to non-terminal training requests."""
+        reserved: set[int] = set()
+        for req in self._requests:
+            if req.requester_id != requester_id:
+                continue
+            if req.status in (TrainingStatus.COMPLETED, TrainingStatus.REJECTED):
+                continue
+            reserved.update(req.worker_ids)
+        return reserved
 
     def pending_for_educator(self, educator_id: int) -> list[TrainingRequest]:
         return [
