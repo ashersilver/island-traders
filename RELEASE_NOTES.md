@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/educator-queue-brief-amend-2026-05-26
+
+Branch: `claude/educator-queue-brief-amend-2026-05-26`
+Target: `pre-release`
+
+Docs-only amendment to `educator-approval-queue-2026-05-26.md` after
+two follow-up requests from the 2026-05-26 playtest cycle:
+
+- **Reject / Counter from the queue view itself.** New
+  `REJECT_TRAINING_REQUEST` and `COUNTER_TRAINING_REQUEST` actions
+  the Educator can fire inline against any pending row, no per-
+  request modal walk required. Stores a `decline_reason` on the
+  request when an Educator declines or counters.
+- **Visual flag + popup on the requester's dashboard.** New
+  `training_decisions` server payload (per requester) carries every
+  counter / rejection of their own requests with the decline reason
+  attached. New `ACK_TRAINING_DECISION` action lets the requester
+  dismiss a notification. UI follow-up will render a badge and an
+  "Improve bid" popup so the requester can re-submit with a
+  stronger offer.
+
+Also bumps required test count and acceptance criteria in the brief
+to reflect the new actions / payloads. No code touched here; same
+brief, expanded scope.
+
 ### claude/codex-briefs-2026-05-26-batch2
 
 Branch: `claude/codex-briefs-2026-05-26-batch2`
