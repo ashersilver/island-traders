@@ -13,6 +13,8 @@ from .signals import CANCEL_SENTINEL, ActionCancelled  # noqa: F401
 # unchanged — only the player-visible label changes.
 ACTION_LABEL_OVERRIDES: dict[str, str] = {
     "purchase_capital": "Purchase Equipment",   # was "Purchase Capital" (2026-05-15 playtest)
+    "lease_capital": "Lease Equipment",
+    "pay_lease": "Pay Lease",
 }
 
 

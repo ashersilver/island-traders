@@ -214,6 +214,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         # NOT per-course — the workshop is a physical-plant headcount cap.
         effects={"technical_workshop_trainees": 6},
         description="+6 Technical Workshop trainee seats (prerequisite for technical-tier courses)",
+        lease_terms={"term_years": 3, "residual_fraction": 0.25, "rate_margin": 0.02},
     ),
 
     # ----- Banker ----------------------------------------------------------
@@ -533,6 +534,7 @@ def _multiply_capital_capacity(
             description=description,
             service_life_seasons=item.service_life_seasons,
             maintenance_per_season=item.maintenance_per_season,
+            lease_terms=dict(item.lease_terms) if item.lease_terms else None,
         ))
     return scaled
 

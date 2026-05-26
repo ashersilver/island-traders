@@ -5,6 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/capital-equipment-lease-2026-05
+
+Branch: `codex/capital-equipment-lease-2026-05`
+Target: `pre-release`
+
+Adds the capital-equipment lease subsystem:
+
+- Added `Lease`, `LeaseStatus`, and `LeaseLedger` with active,
+  repossessed, awaiting-buyout, completed, and buyout-defaulted states.
+- Added `CapitalItem.lease_terms` and made `educator.technical_workshop`
+  lease-eligible on a 3-year term with 25% buyout and posted 3-year
+  funding rate + 2% margin.
+- Added lease inception math with locked rates, annual payments in
+  advance, and first payment at inception.
+- Added mid-game `LEASE_CAPITAL` and `PAY_LEASE` actions.
+- Wired season-start annual lease payments, repossession on missed
+  payments, one-season delayed return after catch-up, and buyout/default
+  handling.
+- Added save/load serialization for leases.
+- Extended investing payloads with `lease_terms` and accepted
+  `lease:<item_id>` selections for opening-phase lease choices.
+- Added `leases_detail` to server game-state payloads for the future
+  Loans popup section.
+- Added 16 regression tests; full suite is green at 420 passing.
+
+UI follow-up: Claude will render lease choices in investing and show
+`leases_detail` under the Loans popup.
+
 ### codex/training-ux-improvements-2026-05
 
 Branch: `codex/training-ux-improvements-2026-05`

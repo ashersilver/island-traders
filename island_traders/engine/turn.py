@@ -13,6 +13,7 @@ from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
+from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
 from ..models.profession import Profession, PROFESSION_LABEL, WorkerBand, band_of
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
@@ -25,7 +26,7 @@ from ..constants import (
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role, technical_workshop_trainee_capacity
+from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
 # ActionCancelled is raised by IO adapters when the user explicitly cancels a
 # prompt chain; the main action loop catches it to abort the action cleanly.
 # Imported from .cli.signals (dependency-free) to avoid a circular import via
@@ -46,11 +47,13 @@ class TurnAction(Enum):
     BUY_INSURANCE      = "buy_insurance"       # any player: buy policy from Banker
     MANAGE_INSURANCE   = "manage_insurance"    # any holder: review/cancel active policies (#5)
     PURCHASE_CAPITAL   = "purchase_capital"    # any player: buy named equipment from Manufacturer
+    LEASE_CAPITAL      = "lease_capital"       # any player: lease eligible equipment from the Bank
     INVEST             = "invest"              # take up an opening-catalogue item not yet owned (immediate, no transit)
     OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
     TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
     ROLLOVER_LOAN      = "rollover_loan"       # borrower: refinance an active loan (#6)
     VIEW_LOANS         = "view_loans"          # view outstanding loans
+    PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
@@ -78,6 +81,7 @@ class TurnManager:
         io_adapter,
         training: TrainingRegistry | None = None,
         loan_ledger: LoanLedger | None = None,
+        lease_ledger: LeaseLedger | None = None,
         rng=None,
     ):
         import random as _random
@@ -89,6 +93,7 @@ class TurnManager:
         self.io = io_adapter
         self.training = training or TrainingRegistry()
         self.loan_ledger = loan_ledger or LoanLedger()
+        self.lease_ledger = lease_ledger or LeaseLedger()
         self._ai = AIStrategy()
         self._damage_counters: dict[int, int] = {}
         self._rng: _random.Random = rng if rng is not None else _random.Random()
@@ -111,6 +116,8 @@ class TurnManager:
     ) -> list[TurnResult]:
         season_name = SEASONS[season_index]
         self.market.set_season(year, season_index)
+        self._process_lease_reinstatements(year, season_index)
+        self._process_lease_payments(year, season_index)
         self.io.print(f"\n{'='*50}")
         self.io.print(f"  Year {year + 1}  —  {season_name}")
         self.io.print(f"{'='*50}")
@@ -314,6 +321,8 @@ class TurnManager:
                     self._action_manage_insurance(player, result, year, season_index)
                 elif action == TurnAction.PURCHASE_CAPITAL:
                     self._action_purchase_capital(player, result, year, season_index)
+                elif action == TurnAction.LEASE_CAPITAL:
+                    self._action_lease_capital(player, result, year, season_index)
                 elif action == TurnAction.INVEST:
                     self._action_invest(player, result, year, season_index)
                 elif action == TurnAction.OFFER_LOAN:
@@ -324,6 +333,8 @@ class TurnManager:
                     self._action_rollover_loan(player, result, year, season_index)
                 elif action == TurnAction.VIEW_LOANS:
                     self._action_view_loans(player)
+                elif action == TurnAction.PAY_LEASE:
+                    self._action_pay_lease(player, result, year, season_index)
                 elif action == TurnAction.APPLY_PATENT:
                     self._action_apply_patent(player, result)
             except ActionCancelled:
@@ -461,6 +472,99 @@ class TurnManager:
             f"  Purchased {item.name}; consumed 1x {manufactured_resource.value}; {arrival}."
         )
         result.actions_taken.append(f"purchase_capital:{item.item_id}:{manufacturer.name}")
+
+    def _create_equipment_lease(
+        self,
+        lessee: Player,
+        item,
+        year: int,
+        season_index: int,
+        lessor: Player | None = None,
+        immediate_delivery: bool = True,
+    ):
+        quote = lease_quote(item, year, season_index)
+        if lessee.dollops < quote["annual_payment"]:
+            raise ValueError(
+                f"{lessee.name} needs {quote['annual_payment']:.1f} {CURRENCY_SYMBOL} "
+                f"for the first lease payment."
+            )
+        banker = lessor or self._find_banker()
+        lessor_id = banker.player_id if banker else -1
+        lessee.dollops -= quote["annual_payment"]
+        if banker and banker.player_id != lessee.player_id:
+            banker.dollops += quote["annual_payment"]
+        current_tick = year * len(SEASONS) + season_index
+        if immediate_delivery or item.delivery_seasons <= 0:
+            lessee.add_capital(item.item_id, 1, acquired_tick=current_tick)
+        else:
+            arrives_at = current_tick + item.delivery_seasons
+            lessee.capital_in_transit.append({
+                "item_id": item.item_id,
+                "arrives_at_tick": arrives_at,
+            })
+        return self.lease_ledger.create_lease(
+            item_id=item.item_id,
+            lessee_id=lessee.player_id,
+            lessor_id=lessor_id,
+            year=year,
+            season=season_index,
+            term_years=quote["term_years"],
+            annual_payment=quote["annual_payment"],
+            buyout_payment=quote["buyout_payment"],
+            locked_lease_rate=quote["locked_lease_rate"],
+            payments_made=1,
+            last_payment_year=year,
+        )
+
+    def _action_lease_capital(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Lease an eligible capital item from the Bank."""
+        sym = CURRENCY_SYMBOL
+        seen: set[str] = set()
+        available = []
+        for role in player.roles:
+            for item in items_for_role(CAPITAL_CATALOGUE, role.name):
+                if item.item_id in seen or not item.lease_terms:
+                    continue
+                seen.add(item.item_id)
+                available.append(item)
+        if not available:
+            self.io.print("  No lease-eligible equipment is available for your roles.")
+            return
+        options = []
+        for item in available:
+            quote = lease_quote(item, year, season_index)
+            options.append({
+                "value": item.item_id,
+                "label": (
+                    f"{item.name} — {quote['annual_payment']:.1f} {sym}/year "
+                    f"for {quote['term_years']} years + "
+                    f"{quote['buyout_payment']:.1f} {sym} buyout"
+                ),
+            })
+        chosen_id = self.io.choose_option("Lease which equipment?", options)
+        item = next((it for it in available if it.item_id == chosen_id), None)
+        if item is None:
+            self.io.print("  Unknown lease selection.")
+            return
+        quote = lease_quote(item, year, season_index)
+        if not self.io.confirm(
+            f"Lease {item.name} for {quote['annual_payment']:.1f} {sym}/year "
+            f"with {quote['buyout_payment']:.1f} {sym} buyout?"
+        ):
+            return
+        try:
+            lease = self._create_equipment_lease(
+                player, item, year, season_index, immediate_delivery=False
+            )
+        except ValueError as exc:
+            self.io.print(f"  {exc}")
+            return
+        self.io.print(
+            f"  Lease #{lease.lease_id} started for {item.name}; first payment made."
+        )
+        result.actions_taken.append(f"lease_capital:{item.item_id}:lease#{lease.lease_id}")
 
     def _action_invest(
         self, player: Player, result: TurnResult, year: int, season_index: int
@@ -1942,6 +2046,128 @@ class TurnManager:
     # ------------------------------------------------------------------
     # Loans
     # ------------------------------------------------------------------
+
+    def _lease_item_name(self, item_id: str) -> str:
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        return item.name if item else item_id
+
+    def _transfer_lease_payment(self, lessee: Player, lessor: Player | None, amount: float) -> None:
+        lessee.dollops -= amount
+        if lessor and lessor.player_id != lessee.player_id:
+            lessor.dollops += amount
+
+    def _remove_leased_item(self, lessee: Player, item_id: str) -> None:
+        if lessee.capital_inventory.get(item_id, 0) > 0:
+            lessee.remove_capital(item_id, 1)
+
+    def _process_lease_reinstatements(self, year: int, season: int) -> None:
+        player_map = {p.player_id: p for p in self.players}
+        for lease in self.lease_ledger.all_leases():
+            if (
+                lease.status == LeaseStatus.REPOSSESSED
+                and lease.return_year == year
+                and lease.return_season == season
+            ):
+                lessee = player_map.get(lease.lessee_id)
+                if not lessee:
+                    continue
+                lessee.add_capital(lease.item_id, 1, acquired_tick=year * len(SEASONS) + season)
+                self.lease_ledger.reinstate(lease.lease_id, year, season)
+                self.io.print(
+                    f"\n[LEASE] {self._lease_item_name(lease.item_id)} returned to {lessee.name}."
+                )
+
+    def _process_lease_payments(self, year: int, season: int) -> None:
+        if season != 0:
+            return
+        for lease in list(self.lease_ledger.due_leases(year, season)):
+            self._settle_due_lease(lease, year, season, prompt_humans=True)
+
+    def _settle_due_lease(self, lease, year: int, season: int, prompt_humans: bool = False) -> bool:
+        player_map = {p.player_id: p for p in self.players}
+        lessee = player_map.get(lease.lessee_id)
+        lessor = player_map.get(lease.lessor_id)
+        if not lessee:
+            lease.status = LeaseStatus.CANCELLED
+            return False
+        item_name = self._lease_item_name(lease.item_id)
+        if lease.status == LeaseStatus.AWAITING_BUYOUT:
+            amount = lease.buyout_payment
+            should_pay = (not lessee.is_human) and lessee.dollops >= amount
+            if lessee.is_human and prompt_humans:
+                if hasattr(self.io, "set_active_player"):
+                    self.io.set_active_player(lessee.player_id)
+                should_pay = lessee.dollops >= amount and self.io.confirm(
+                    f"Lease buyout due for {item_name}: pay {amount:.1f} {CURRENCY_SYMBOL} now?"
+                )
+            if should_pay:
+                self._transfer_lease_payment(lessee, lessor, amount)
+                self.lease_ledger.complete(lease.lease_id)
+                self.io.print(f"\n[LEASE] {lessee.name} bought out {item_name}.")
+                return True
+            self._remove_leased_item(lessee, lease.item_id)
+            self.lease_ledger.buyout_default(lease.lease_id)
+            self.io.print(f"\n[LEASE] {lessee.name} defaulted on the {item_name} buyout.")
+            return False
+
+        amount = lease.annual_payment
+        should_pay = (not lessee.is_human) and lessee.dollops >= amount
+        if lessee.is_human and prompt_humans:
+            if hasattr(self.io, "set_active_player"):
+                self.io.set_active_player(lessee.player_id)
+            should_pay = lessee.dollops >= amount and self.io.confirm(
+                f"Lease payment due for {item_name}: pay {amount:.1f} {CURRENCY_SYMBOL} now?"
+            )
+        if should_pay:
+            self._transfer_lease_payment(lessee, lessor, amount)
+            self.lease_ledger.make_payment(lease.lease_id, year, season)
+            self.io.print(f"\n[LEASE] {lessee.name} paid {amount:.1f} {CURRENCY_SYMBOL} for {item_name}.")
+            return True
+        self._remove_leased_item(lessee, lease.item_id)
+        self.lease_ledger.repossess(lease.lease_id, year, season)
+        self.io.print(f"\n[LEASE] {lessee.name} missed a payment; {item_name} was repossessed.")
+        return False
+
+    def _action_pay_lease(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        leases = [
+            l for l in self.lease_ledger.all_leases()
+            if l.lessee_id == player.player_id
+            and l.status in (LeaseStatus.REPOSSESSED, LeaseStatus.AWAITING_BUYOUT)
+        ]
+        if not leases:
+            self.io.print("  No lease payments are currently actionable.")
+            return
+        options = []
+        for lease in leases:
+            amount = lease.buyout_payment if lease.status == LeaseStatus.AWAITING_BUYOUT else lease.annual_payment
+            options.append({
+                "value": lease.lease_id,
+                "label": f"{self._lease_item_name(lease.item_id)} — {amount:.1f} {CURRENCY_SYMBOL} ({lease.status.value})",
+            })
+        lease_id = self.io.choose_option("Pay which lease?", options)
+        lease = self.lease_ledger.get(int(lease_id))
+        player_map = {p.player_id: p for p in self.players}
+        lessor = player_map.get(lease.lessor_id)
+        if lease.status == LeaseStatus.REPOSSESSED:
+            amount = lease.annual_payment
+            if player.dollops < amount:
+                self.io.print(f"  Need {amount:.1f} {CURRENCY_SYMBOL} to catch up this lease.")
+                return
+            self._transfer_lease_payment(player, lessor, amount)
+            self.lease_ledger.schedule_reinstatement(lease.lease_id, year, season_index)
+            self.io.print("  Catch-up paid. The item returns next season.")
+            result.actions_taken.append(f"pay_lease:lease#{lease.lease_id}")
+            return
+        if lease.status == LeaseStatus.AWAITING_BUYOUT:
+            if player.dollops < lease.buyout_payment:
+                self.io.print(f"  Need {lease.buyout_payment:.1f} {CURRENCY_SYMBOL} for the buyout.")
+                return
+            self._transfer_lease_payment(player, lessor, lease.buyout_payment)
+            self.lease_ledger.complete(lease.lease_id)
+            self.io.print("  Buyout paid. You now own the item outright.")
+            result.actions_taken.append(f"pay_lease_buyout:lease#{lease.lease_id}")
 
     def _process_loan_repayments(self, year: int, season: int) -> None:
         sym = CURRENCY_SYMBOL

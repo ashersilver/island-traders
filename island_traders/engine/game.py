@@ -7,6 +7,7 @@ from ..models.player import Player
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
+from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
@@ -101,6 +102,7 @@ class Game:
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
         self.loan_ledger: LoanLedger | None = None
+        self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
@@ -110,6 +112,7 @@ class Game:
         self.market = Market()
         self.ledger = DealLedger()
         self.loan_ledger = LoanLedger()
+        self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
 
         num_players = len(self.config.player_specs)
@@ -194,7 +197,7 @@ class Game:
         trading = TradingEngine(self.market, self.ledger)
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
-            self.loan_ledger,
+            self.loan_ledger, self.lease_ledger,
         )
 
     def run(self) -> GameSummary:
@@ -428,6 +431,7 @@ class Game:
             "market": self._serialise_market(),
             "training": self._serialise_training(),
             "loan_ledger": self._serialise_loans(),
+            "lease_ledger": self._serialise_leases(),
             "damage_counters": {
                 str(k): v for k, v in self.turn_manager._damage_counters.items()
             } if self.turn_manager else {},
@@ -537,6 +541,33 @@ class Game:
             ],
         }
 
+    def _serialise_leases(self) -> dict:
+        return {
+            "next_id": self.lease_ledger._next_id,
+            "leases": [
+                {
+                    "lease_id": l.lease_id,
+                    "item_id": l.item_id,
+                    "lessee_id": l.lessee_id,
+                    "lessor_id": l.lessor_id,
+                    "started_year": l.started_year,
+                    "started_season": l.started_season,
+                    "term_years": l.term_years,
+                    "annual_payment": l.annual_payment,
+                    "buyout_payment": l.buyout_payment,
+                    "locked_lease_rate": l.locked_lease_rate,
+                    "payments_made": l.payments_made,
+                    "last_payment_year": l.last_payment_year,
+                    "status": l.status.value,
+                    "repossessed_year": l.repossessed_year,
+                    "repossessed_season": l.repossessed_season,
+                    "return_year": l.return_year,
+                    "return_season": l.return_season,
+                }
+                for l in self.lease_ledger.all_leases()
+            ],
+        }
+
     @classmethod
     def load(cls, path: str, io_adapter) -> "Game":
         from ..models.market import PriceShock, PriceSnapshot
@@ -640,6 +671,29 @@ class Game:
                 reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
             )
             game.loan_ledger.loans.append(loan)
+        game.lease_ledger = LeaseLedger()
+        lease_data = data.get("lease_ledger", {})
+        game.lease_ledger._next_id = lease_data.get("next_id", 0)
+        for lease_d in lease_data.get("leases", []):
+            game.lease_ledger.leases.append(Lease(
+                lease_id=lease_d["lease_id"],
+                item_id=lease_d["item_id"],
+                lessee_id=lease_d["lessee_id"],
+                lessor_id=lease_d["lessor_id"],
+                started_year=lease_d["started_year"],
+                started_season=lease_d["started_season"],
+                term_years=lease_d["term_years"],
+                annual_payment=lease_d["annual_payment"],
+                buyout_payment=lease_d["buyout_payment"],
+                locked_lease_rate=lease_d["locked_lease_rate"],
+                payments_made=lease_d.get("payments_made", 0),
+                last_payment_year=lease_d.get("last_payment_year", -1),
+                status=LeaseStatus(lease_d.get("status", LeaseStatus.ACTIVE.value)),
+                repossessed_year=lease_d.get("repossessed_year", -1),
+                repossessed_season=lease_d.get("repossessed_season", -1),
+                return_year=lease_d.get("return_year", -1),
+                return_season=lease_d.get("return_season", -1),
+            ))
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
@@ -679,7 +733,7 @@ class Game:
         trading = TradingEngine(game.market, game.ledger)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
-            game.loan_ledger,
+            game.loan_ledger, game.lease_ledger,
         )
         game.turn_manager._damage_counters = {
             int(k): v for k, v in data.get("damage_counters", {}).items()
