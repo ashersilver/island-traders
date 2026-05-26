@@ -78,7 +78,9 @@ class IOAdapter:
                     return players[idx]
             self.print("  Invalid choice.")
 
-    def confirm(self, prompt: str) -> bool:
+    def confirm(self, prompt: str, request_summary: dict | None = None) -> bool:
+        if request_summary:
+            self.print(self._format_request_summary(request_summary))
         while True:
             raw = self.input(f"  {prompt} [y/n] > ").strip().lower()
             if raw in ("y", "yes"):
@@ -99,7 +101,9 @@ class IOAdapter:
                     return available[idx]
             self.print("  Invalid choice.")
 
-    def choose_option(self, prompt: str, options: list[dict]) -> object:
+    def choose_option(
+        self, prompt: str, options: list[dict], request_summary: dict | None = None
+    ) -> object:
         """Choose from a list of labelled options.
 
         `options` is `[{"value": <any json-serialisable>, "label": str}, ...]`.
@@ -107,6 +111,8 @@ class IOAdapter:
         presents named choices rather than a free numeric input — used for
         product selection so the player picks "Farm Machinery", not "3".
         """
+        if request_summary:
+            self.print(self._format_request_summary(request_summary))
         self.print(f"\n  {prompt}")
         for i, opt in enumerate(options, 1):
             self.print(f"    {i}. {opt['label']}")
@@ -117,6 +123,12 @@ class IOAdapter:
                 if 0 <= idx < len(options):
                     return options[idx]["value"]
             self.print("  Invalid choice.")
+
+    def _format_request_summary(self, summary: dict) -> str:
+        lines = [summary.get("title", "Training request")]
+        for label, value in summary.get("fields", []):
+            lines.append(f"  - {label:<18} {value}")
+        return "\n".join(lines)
 
     def ask_dollop_amount(self, prompt: str, max_dollops: float,
                           prefill: float = 0.0) -> float:
@@ -177,10 +189,10 @@ class FakeIOAdapter(IOAdapter):
     def choose_profession(self, prompt, available):
         return available[0] if available else None
 
-    def choose_option(self, prompt, options):
+    def choose_option(self, prompt, options, request_summary=None):
         return options[0]["value"] if options else None
 
-    def confirm(self, prompt):
+    def confirm(self, prompt, request_summary=None):
         return True
 
     def ask_dollop_amount(self, prompt, max_dollops, prefill=0.0):

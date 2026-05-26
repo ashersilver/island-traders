@@ -39,7 +39,8 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
     "Educator":      {"Expertise": 6,                                 # feeds Course production
                       "Courses": 5,                                    # classroom slots ready Y1
-                      "LaboratoryEquipment": 2},                       # 2 seasons of Lab Equipment
+                      "LaboratoryEquipment": 2,                         # 2 seasons of Lab Equipment
+                      "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
     # loan interest spread and insurance premiums — see island-ledger.md §3

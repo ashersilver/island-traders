@@ -77,6 +77,7 @@ class TrainingRequest:
     # trainee, with the return journey assumed. Older saved games may still
     # contain "transporter" / "flight" / "cargo".
     transport_mode: str = "air_ticket"
+    tickets_supplied_by_requester: int = 0
     counter_message: str = ""
 
     def describe(self, player_names: dict[int, str]) -> str:
@@ -84,7 +85,14 @@ class TrainingRequest:
         req = player_names.get(self.requester_id, f"Player{self.requester_id}")
         edu = player_names.get(self.educator_id, f"Player{self.educator_id}")
         if self.transport_mode == "air_ticket":
-            transport_str = f"{len(self.worker_ids)} air ticket(s), Educator supplied"
+            requester_tickets = min(
+                max(0, self.tickets_supplied_by_requester), len(self.worker_ids)
+            )
+            educator_tickets = len(self.worker_ids) - requester_tickets
+            transport_str = (
+                f"{len(self.worker_ids)} air ticket(s): requester supplies "
+                f"{requester_tickets}, Educator supplies {educator_tickets}"
+            )
         elif self.transport_mode == "flight":
             transport_str = f"Flight ({self.dollops_to_transporter:.0f} {sym})"
         elif self.transport_mode == "cargo":
@@ -180,6 +188,7 @@ class TrainingRegistry:
         year: int = 0,
         season: int = 0,
         transport_mode: str = "transporter",
+        tickets_supplied_by_requester: int = 0,
     ) -> TrainingRequest:
         count = len(worker_ids)
         remaining = self.capacity_remaining(year, season, target_profession)
@@ -213,6 +222,9 @@ class TrainingRegistry:
             proposed_year=year,
             proposed_season=season,
             transport_mode=transport_mode,
+            tickets_supplied_by_requester=max(
+                0, min(tickets_supplied_by_requester, len(worker_ids))
+            ),
         )
         self._requests.append(req)
         self._next_id += 1

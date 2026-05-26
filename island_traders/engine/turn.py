@@ -764,6 +764,15 @@ class TurnManager:
                 "  Sea travel would add one extra season, but the current rule uses "
                 "Educator-supplied air tickets for standard training."
             )
+            requester_ticket_pool = player.inventory.get(ResourceType.PASSENGER_SEATS)
+            tickets_supplied_by_requester = 0
+            if requester_ticket_pool > 0:
+                tickets_supplied_by_requester = self.io.choose_quantity(
+                    "How many PassengerSeats will you supply yourself "
+                    "(saves on Educator fee)?",
+                    0,
+                    min(count, requester_ticket_pool),
+                )
             ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
             course_duration = away_seasons(target_profession)
             is_manager = band_of(target_profession) == WorkerBand.MANAGER
@@ -773,29 +782,48 @@ class TurnManager:
             expertise_price = self.market.current_price(ResourceType.EXPERTISE)
             base_fee = 20.0 * count
             food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * count * course_duration
-            tickets = ticket_price * count
+            educator_ticket_count = count - tickets_supplied_by_requester
+            tickets = ticket_price * educator_ticket_count
             expertise_cost = expertise_price * courses * course_duration
             suggested_total = base_fee + food_accom + tickets + expertise_cost
             self.io.print(
                 f"  Fee components — base {base_fee:.0f}, food/accom "
                 f"{food_accom:.0f} ({count}×{course_duration}s @ "
-                f"{TRAINEE_FOOD_ACCOM_PER_SEASON:.0f} {sym}), tickets "
-                f"{tickets:.0f}, expertise {expertise_cost:.0f}."
+                f"{TRAINEE_FOOD_ACCOM_PER_SEASON:.0f} {sym}), Educator-supplied "
+                f"tickets {tickets:.0f} ({educator_ticket_count}×), "
+                f"expertise {expertise_cost:.0f}."
             )
-            dollops_educator = self.io.ask_dollop_amount(
+            fee_prompt = (
                 f"Offer total training fee to Educator ({educator.name}) in {sym}? "
-                f"(suggested total: {suggested_total:.0f} {sym})",
-                player.dollops,
+                f"(suggested total: {suggested_total:.0f} {sym})"
             )
+            try:
+                dollops_educator = self.io.ask_dollop_amount(
+                    fee_prompt,
+                    player.dollops,
+                    prefill=suggested_total,
+                )
+            except TypeError:
+                dollops_educator = self.io.ask_dollop_amount(fee_prompt, player.dollops)
             transport_mode = "air_ticket"
+        if is_self_training:
+            tickets_supplied_by_requester = 0
         dollops_transport = 0.0
 
         player_names = {p.player_id: p.name for p in self.players}
         requests = []
         worker_offset = 0
+        ticket_offset = 0
         for profession, profession_count in training_plan.items():
             batch_worker_ids = worker_ids[worker_offset:worker_offset + profession_count]
             worker_offset += profession_count
+            batch_requester_tickets = 0
+            if transport_mode == "air_ticket" and tickets_supplied_by_requester:
+                batch_requester_tickets = min(
+                    profession_count,
+                    tickets_supplied_by_requester - ticket_offset,
+                )
+                ticket_offset += batch_requester_tickets
             batch_fee = (
                 dollops_educator * profession_count / count
                 if count else 0.0
@@ -811,6 +839,7 @@ class TurnManager:
                     year=year,
                     season=season_index,
                     transport_mode=transport_mode,
+                    tickets_supplied_by_requester=batch_requester_tickets,
                 )
             except TrainingCapacityError as e:
                 self.io.print(f"  {e}")
@@ -861,7 +890,9 @@ class TurnManager:
 
         self.io.print(
             f"  Awaiting {educator.name}'s approval. "
-            f"{educator.name} must supply {count} PassengerSeats air ticket(s)."
+            f"{educator.name} must supply "
+            f"{count - tickets_supplied_by_requester} PassengerSeats air ticket(s); "
+            f"requester supplies {tickets_supplied_by_requester}."
         )
 
         # AI Educator auto-responds immediately
@@ -899,9 +930,9 @@ class TurnManager:
         self, educator, requester, req, season_name: str, year: int
     ) -> None:
         """Educator AI: accept if the Dollops offered cover a fair rate per worker."""
-        fair_rate = 20.0 * len(req.worker_ids)
-        ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * len(req.worker_ids)
-        if req.dollops_to_educator >= fair_rate + ticket_cost:
+        required_offer = self._ai_training_required_offer(req)
+        educator_tickets = self._educator_ticket_count(req)
+        if req.dollops_to_educator >= required_offer:
             # Peek training capacity before burning air tickets.
             ok, gate_msg = self._training_capacity_status(educator, req)
             if not ok:
@@ -910,10 +941,11 @@ class TurnManager:
                     f"{gate_msg} Pending."
                 )
                 return
-            if not self._ensure_training_air_tickets(educator, req):
+            if not self._ensure_training_air_tickets(educator, req, requester):
                 self.io.print(
                     f"  [AI] {educator.name} cannot approve training request #{req.batch_id}: "
-                    f"needs {len(req.worker_ids)} PassengerSeats air ticket(s)."
+                    f"needs PassengerSeats air ticket(s): requester supplies "
+                    f"{req.tickets_supplied_by_requester}, Educator supplies {educator_tickets}."
                 )
                 return
             self._consume_training_capacity(educator, req)
@@ -934,8 +966,14 @@ class TurnManager:
             self.training.educator_reject(req.batch_id)
             self.io.print(
                 f"  [AI] {educator.name} rejected training request #{req.batch_id}. "
-                f"Offer at least {fair_rate + ticket_cost:.0f} Dp to cover training and tickets."
+                f"Offer at least {required_offer:.0f} Dp to cover training and tickets."
             )
+
+    def _ai_training_required_offer(self, req) -> float:
+        fair_rate = 20.0 * len(req.worker_ids)
+        educator_tickets = self._educator_ticket_count(req)
+        ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * educator_tickets
+        return fair_rate + ticket_cost
 
     def _auto_arrange_transport(self, requester, req, season_name: str, year: int) -> None:
         """Find an AI Transporter to handle the logistics, or flag for human turn."""
@@ -975,12 +1013,29 @@ class TurnManager:
             f"Education Island. They will return next season with upgraded training."
         )
 
-    def _ensure_training_air_tickets(self, educator: Player, req) -> bool:
-        """Consume 1 PassengerSeats ticket per trainee from the Educator."""
-        needed = len(req.worker_ids)
-        if educator.inventory.get(ResourceType.PASSENGER_SEATS) < needed:
+    def _educator_ticket_count(self, req) -> int:
+        requester_share = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
+        return len(req.worker_ids) - requester_share
+
+    def _ensure_training_air_tickets(
+        self, educator: Player, req, requester: Player | None = None
+    ) -> bool:
+        """Consume PassengerSeats for a training batch.
+
+        Requester-supplied tickets are spent from the requester; the
+        Educator only covers the remaining seats.
+        """
+        requester_share = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
+        educator_share = len(req.worker_ids) - requester_share
+        if requester is not None and requester_share > 0:
+            if requester.inventory.get(ResourceType.PASSENGER_SEATS) < requester_share:
+                return False
+        if educator.inventory.get(ResourceType.PASSENGER_SEATS) < educator_share:
             return False
-        educator.give_resources(ResourceType.PASSENGER_SEATS, needed)
+        if requester is not None and requester_share > 0:
+            requester.give_resources(ResourceType.PASSENGER_SEATS, requester_share)
+        if educator_share > 0:
+            educator.give_resources(ResourceType.PASSENGER_SEATS, educator_share)
         return True
 
     @staticmethod
@@ -1145,15 +1200,97 @@ class TurnManager:
 
     def _training_request_details(self, req, player_names: dict[int, str], requester: Player | None = None) -> str:
         sym = CURRENCY_SYMBOL
+        requester_tickets = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
+        educator_tickets = len(req.worker_ids) - requester_tickets
         ticket_need = len(req.worker_ids) if req.transport_mode == "air_ticket" else 0
+        travel = (
+            f"{ticket_need} PassengerSeats total: requester supplies "
+            f"{requester_tickets}, Education Island supplies {educator_tickets}"
+            if req.transport_mode == "air_ticket"
+            else req.transport_mode
+        )
         funds = f" | requester cash: {requester.dollops:.1f} {sym}" if requester else ""
         msg = f" | message: {req.counter_message}" if req.counter_message else ""
         return (
             f"{req.describe(player_names)}\n"
             f"    Workers: {len(req.worker_ids)}  | Profession: {self._profession_label(req.target_profession)}\n"
             f"    Offered educator fee: {req.dollops_to_educator:.1f} {sym}{funds}\n"
-            f"    Travel: {ticket_need} PassengerSeats supplied by Education Island{msg}"
+            f"    Travel: {travel}{msg}"
         )
+
+    def _training_request_summary(
+        self, req, player_names: dict[int, str], requester: Player | None = None
+    ) -> dict:
+        sym = CURRENCY_SYMBOL
+        requester_name = player_names.get(req.requester_id, f"Player{req.requester_id}")
+        band = band_of(req.target_profession)
+        away = away_seasons(req.target_profession)
+        requester_tickets = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
+        educator_tickets = len(req.worker_ids) - requester_tickets
+        ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
+        suggested_floor = 20.0 * len(req.worker_ids) + ticket_price * educator_tickets
+        fields = [
+            ("Requester:", requester_name),
+            ("Trainees:", f"{len(req.worker_ids)} worker(s)"),
+            (
+                "Target profession:",
+                f"{self._profession_label(req.target_profession)} "
+                f"({band.value}, {away} season(s) away)",
+            ),
+            ("Educator fee:", f"{req.dollops_to_educator:.1f} {sym} offered"),
+            (
+                "Transport:",
+                (
+                    f"Air ticket — requester supplies {requester_tickets} of "
+                    f"{len(req.worker_ids)}, Educator supplies {educator_tickets}"
+                    if req.transport_mode == "air_ticket"
+                    else req.transport_mode
+                ),
+            ),
+            (
+                "Suggested floor:",
+                (
+                    f"20 × {len(req.worker_ids)} + "
+                    f"price(PassengerSeats) × {educator_tickets} = "
+                    f"{suggested_floor:.0f} {sym}"
+                ),
+            ),
+            ("Status:", req.status.value),
+        ]
+        if requester is not None:
+            fields.append(
+                (
+                    "Workforce impact:",
+                    f"{len(req.worker_ids)} of {requester.workforce.active_count} "
+                    f"active worker(s) depart for {away} season(s)",
+                )
+            )
+        if req.counter_message:
+            fields.append(("Message:", req.counter_message))
+        return {
+            "title": f"Training request #{req.batch_id} from {requester_name}",
+            "batch_id": req.batch_id,
+            "requester_id": req.requester_id,
+            "requester_name": requester_name,
+            "trainee_count": len(req.worker_ids),
+            "target_profession": self._profession_label(req.target_profession),
+            "target_profession_value": req.target_profession,
+            "worker_band": band.value,
+            "away_seasons": away,
+            "transport_mode": req.transport_mode,
+            "tickets_supplied_by_requester": requester_tickets,
+            "tickets_supplied_by_educator": educator_tickets,
+            "dollops_to_educator": round(req.dollops_to_educator, 1),
+            "suggested_floor": round(suggested_floor, 1),
+            "status": req.status.value,
+            "fields": fields,
+        }
+
+    def _confirm_with_request_summary(self, prompt: str, summary: dict) -> bool:
+        try:
+            return self.io.confirm(prompt, request_summary=summary)
+        except TypeError:
+            return self.io.confirm(prompt)
 
     def _approve_training_request(
         self,
@@ -1173,11 +1310,22 @@ class TurnManager:
                 f"The request stays pending."
             )
             return False
-        if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req):
-            short = len(req.worker_ids) - educator.inventory.get(ResourceType.PASSENGER_SEATS)
+        if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req, requester):
+            requester_tickets = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
+            educator_tickets = len(req.worker_ids) - requester_tickets
+            educator_short = max(
+                0,
+                educator_tickets - educator.inventory.get(ResourceType.PASSENGER_SEATS),
+            )
+            requester_short = max(
+                0,
+                requester_tickets - requester.inventory.get(ResourceType.PASSENGER_SEATS),
+            )
             self.io.print(
-                f"  Cannot approve yet — Education Island needs {short} more "
-                f"PassengerSeats air ticket(s). Buy tickets from the market first."
+                f"  Cannot approve yet — PassengerSeats shortfall; requester needs "
+                f"{requester_short} more and Education Island needs {educator_short} more "
+                f"PassengerSeats. Requester must supply {requester_tickets}; "
+                f"Education Island must supply {educator_tickets}."
             )
             return False
         # Tickets secured; now consume Course and Expertise resources.
@@ -1193,7 +1341,8 @@ class TurnManager:
         )
         if req.transport_mode == "air_ticket":
             self.io.print(
-                f"  Used {len(req.worker_ids)} PassengerSeats air ticket(s) for trainee travel."
+                f"  Used {req.tickets_supplied_by_requester} requester PassengerSeats "
+                f"and {self._educator_ticket_count(req)} Educator PassengerSeats for trainee travel."
             )
             self._dispatch_training(requester, req, season_name, year)
         elif req.transport_mode in ("flight", "cargo"):
@@ -1224,7 +1373,8 @@ class TurnManager:
                 self.io.print(f"  Counter-offer #{req.batch_id} expired — Educator is no longer available.")
                 continue
             self.io.print(f"\n  Counter-offer: {self._training_request_details(req, player_names, player)}")
-            if self.io.confirm("Accept this training counter-offer?"):
+            summary = self._training_request_summary(req, player_names, player)
+            if self._confirm_with_request_summary("Accept this training counter-offer?", summary):
                 try:
                     self._approve_training_request(educator, player, req, result, season_name, year)
                 except Exception as exc:
@@ -1256,7 +1406,8 @@ class TurnManager:
         for req in pending:
             requester = player_map[req.requester_id]
             self.io.print(f"\n  Request: {self._training_request_details(req, player_names, requester)}")
-            if self.io.confirm("Approve this training request?"):
+            summary = self._training_request_summary(req, player_names, requester)
+            if self._confirm_with_request_summary("Approve this training request?", summary):
                 self._approve_training_request(player, requester, req, result, season_name, year)
             else:
                 counter = self.io.ask_dollop_amount(

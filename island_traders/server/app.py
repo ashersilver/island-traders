@@ -1640,6 +1640,7 @@ class GameManager:
                     f"Player {req.educator_id}",
                 ),
                 "transport_mode": req.transport_mode,
+                "tickets_supplied_by_requester": req.tickets_supplied_by_requester,
                 "dollops_to_educator": round(req.dollops_to_educator, 1),
                 "return_year": return_year,
                 "return_season": return_season,

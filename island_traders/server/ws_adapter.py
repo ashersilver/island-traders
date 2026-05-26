@@ -353,11 +353,14 @@ class WebSocketIOAdapter(IOAdapter):
         except (ValueError, TypeError):
             return players[0]
 
-    def confirm(self, prompt: str) -> bool:
-        resp = self._send_and_wait({
+    def confirm(self, prompt: str, request_summary: dict | None = None) -> bool:
+        msg = {
             "type": "confirm",
             "prompt": prompt,
-        })
+        }
+        if request_summary:
+            msg["request_summary"] = request_summary
+        resp = self._send_and_wait(msg)
         self._check_cancel(resp)
         if resp is None:
             return False
@@ -381,20 +384,25 @@ class WebSocketIOAdapter(IOAdapter):
             return resp
         return available[0] if available else ""
 
-    def choose_option(self, prompt: str, options: list[dict]) -> object:
+    def choose_option(
+        self, prompt: str, options: list[dict], request_summary: dict | None = None
+    ) -> object:
         """Present named choices (buttons), return the chosen option's value.
 
         `options` is `[{"value": <json-serialisable>, "label": str}, ...]`.
         The client renders these as buttons (reusing the option picker) and
         sends back the value as a string; we match on str(value).
         """
-        resp = self._send_and_wait({
+        msg = {
             "type": "choose_option",
             "prompt": prompt,
             "options": [
                 {"value": o["value"], "label": o["label"]} for o in options
             ],
-        })
+        }
+        if request_summary:
+            msg["request_summary"] = request_summary
+        resp = self._send_and_wait(msg)
         self._check_cancel(resp)
         if resp is None:
             return options[0]["value"] if options else None

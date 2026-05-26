@@ -127,6 +127,7 @@ def test_training_pipeline_shape():
         "educator_player_id",
         "educator_name",
         "transport_mode",
+        "tickets_supplied_by_requester",
         "dollops_to_educator",
         "return_year",
         "return_season",
@@ -140,6 +141,7 @@ def test_training_pipeline_shape():
     assert batch["educator_player_id"] == educator.player_id
     assert batch["educator_name"] == educator.name
     assert batch["transport_mode"] == "transporter"
+    assert batch["tickets_supplied_by_requester"] == 0
     assert batch["dollops_to_educator"] == 25.0
     assert batch["return_year"] == 1
     assert batch["return_season"] == "Summer"
