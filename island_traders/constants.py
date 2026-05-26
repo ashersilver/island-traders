@@ -385,8 +385,8 @@ DEFAULT_MAINTENANCE_FRACTION: float = 0.03
 # externally (depositors), invisible counterparties whose principal +
 # the posted funding rate must be repaid at maturity (see
 # `_fund_bank_external_portion`).
-MBA_RESERVE_RATIO_BASE: float = 0.50       # < 3 MBA Banker Managers
-MBA_RESERVE_RATIO_QUALIFIED: float = 0.20  # >= 3 MBA Banker Managers
+MBA_RESERVE_RATIO_BASE: float = 0.05       # < 3 MBA Banker Managers
+MBA_RESERVE_RATIO_QUALIFIED: float = 0.02  # >= 3 MBA Banker Managers
 # How many MBA-qualified Banker Managers it takes to drop the ratio.
 MBA_QUALIFIED_THRESHOLD: int = 3
 

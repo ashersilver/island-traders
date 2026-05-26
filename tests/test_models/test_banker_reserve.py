@@ -11,9 +11,9 @@ from island_traders.models.workforce import Worker
 
 
 def test_reserve_constants_match_spec():
-    """50% base reserve; 20% with >=3 MBA Banker Managers."""
-    assert MBA_RESERVE_RATIO_BASE == 0.50
-    assert MBA_RESERVE_RATIO_QUALIFIED == 0.20
+    """5% base reserve; 2% with >=3 MBA Banker Managers."""
+    assert MBA_RESERVE_RATIO_BASE == 0.05
+    assert MBA_RESERVE_RATIO_QUALIFIED == 0.02
     assert MBA_QUALIFIED_THRESHOLD == 3
 
 
