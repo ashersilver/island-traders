@@ -5,6 +5,49 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-briefs-2026-05-26-batch2
+
+Branch: `claude/codex-briefs-2026-05-26-batch2`
+Target: `pre-release`
+
+Docs-only — second batch of Codex briefs from a follow-up 2026-05-26
+playtest report against `0.1.0-dev.2026-05-26`. Three new briefs and
+one amendment:
+
+- **`banker-wholesale-funding-2026-05-26.md`** — drop the Banker
+  reserve ratio from 50% → 5% (and the MBA-qualified ratio from 20%
+  → 2%) so the existing wholesale-funding architecture
+  (`_fund_bank_external_portion`) actually does the work the user
+  expects. Add a per-Banker active-loan cap (`max(1, 2 × N_Banker_
+  Managers)`) so we don't drift into infinite-leverage degeneracy
+  after the reserve drop. Synthetic depositor loans don't count
+  toward the cap.
+- **`educator-approval-queue-2026-05-26.md`** — add a `priority`
+  field on `TrainingRequest` and a `REORDER_TRAINING_QUEUE` action
+  so the Educator can drag-reorder the pending approvals list.
+  Engine sorts pending requests by `(priority, batch_id)` everywhere
+  it iterates them, including in the AI Educator's response loop.
+  Server payload exposes `training_queue_order` for the Educator
+  player's dashboard; Claude will render the drag UI in a follow-up.
+- **`ai-manufacturer-product-mix-2026-05-26.md`** — make the AI
+  Manufacturer's product-line choice demand-driven each season
+  instead of statically stuck on FarmMachinery. Fixes the symptom
+  "Education never gets to buy Laboratory Equipment because
+  Manufacturing is never able to produce it." Includes a 10% sticky
+  threshold to prevent season-by-season thrashing and an
+  input-feasibility fallback when the preferred line is short on
+  Metal / Oil.
+- **Amendment to `training-flow-diagnostic-2026-05-26.md`** —
+  added hypothesis 7: display-title vs trainable-profession mismatch
+  (`BAND_TITLES` lists "Factory Foreman" but `ROLE_PROFESSIONS`
+  doesn't register a Profession.FACTORY_FOREMAN enum, so the title
+  shows on the roster but can't be trained). Same gap likely exists
+  for Miner, Transporter, Doctor band titles. Codex picks per role
+  whether to add the missing enums or collapse the display list to
+  match the trainable set.
+
+No engine or test changes; suite remains green at 429.
+
 ### claude/codex-briefs-2026-05-26
 
 Branch: `claude/codex-briefs-2026-05-26`
