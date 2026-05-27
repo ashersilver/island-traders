@@ -45,6 +45,7 @@ class TurnAction(Enum):
     REJECT_TRAINING_REQUEST = "reject_training_request"  # Educator: reject one pending request
     COUNTER_TRAINING_REQUEST = "counter_training_request"  # Educator: counter one pending request
     ACK_TRAINING_DECISION = "ack_training_decision"  # requester: dismiss counter/reject notice
+    SUPPLY_TRAINING_EXPERTISE = "supply_training_expertise"  # requester: gift Expertise to unblock the Educator (#training-expertise-deadlock)
     ARRANGE_TRANSPORT  = "arrange_transport"   # Transporter: accept transport jobs
     RECRUIT_WORKERS    = "recruit_workers"     # draw unskilled from island population
     SELL_INSURANCE     = "sell_insurance"      # Banker: sell policy to another player
@@ -254,6 +255,7 @@ class TurnManager:
             actions = self._ai.take_turn(
                 player, self.market, self.players, self.production, self.trading,
                 event_result, season_name, year, season_index, self.loan_ledger,
+                training_registry=self.training,
             )
             result.actions_taken = training_actions + actions
             for a in actions:
@@ -328,6 +330,8 @@ class TurnManager:
                     self._action_counter_training_request(player, result, year, season_index)
                 elif action == TurnAction.ACK_TRAINING_DECISION:
                     self._action_ack_training_decision(player, result)
+                elif action == TurnAction.SUPPLY_TRAINING_EXPERTISE:
+                    self._action_supply_training_expertise(player, result)
                 elif action == TurnAction.ARRANGE_TRANSPORT:
                     self._action_arrange_transport(player, result, season_name, year)
                 elif action == TurnAction.RECRUIT_WORKERS:
@@ -1819,6 +1823,108 @@ class TurnManager:
         )
         self.io.print(f"  Countered training request #{req.batch_id}.")
         result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
+
+    def _action_supply_training_expertise(
+        self, player: Player, result: TurnResult
+    ) -> None:
+        """Requester gifts Expertise to the Educator to unblock a pending request.
+
+        Authorization: only the original requester can supply.  The
+        Expertise moves from the requester's inventory to the Educator's
+        inventory at zero Dp cost — this is a deadlock-breaker, not a
+        sale.  Does NOT count as approval; the Educator still has to
+        approve (human via modal, AI via next-season re-review).
+
+        2026-05-27 training-expertise-deadlock brief Layer 2.  Spec:
+        AyaySir IMP-03.
+        """
+        # Find requests the player filed that are blocked on Expertise.
+        # Only AWAITING_EDUCATOR requests are eligible — once dispatched
+        # the training is already underway, and rejected/completed are
+        # terminal.
+        pending = self.training.pending_for_requester(player.player_id)
+        eligible: list = []
+        for req in pending:
+            educator = next(
+                (p for p in self.players if p.player_id == req.educator_id),
+                None,
+            )
+            if not educator:
+                continue
+            # Compute Expertise shortfall from the same capacity-status
+            # logic the Educator uses to gate approvals.
+            ok, reason = self._training_capacity_status(educator, req)
+            if not ok and "Expertise" in reason:
+                eligible.append((req, educator, reason))
+        if not eligible:
+            self.io.print(
+                "  No pending training requests of yours are blocked on "
+                "Educator Expertise."
+            )
+            return
+        own_expertise = player.inventory.get(ResourceType.EXPERTISE)
+        options = []
+        for req, educator, reason in eligible:
+            options.append({
+                "value": str(req.batch_id),
+                "label": (
+                    f"#{req.batch_id} {self._profession_label(req.target_profession)} "
+                    f"→ {educator.name}: {reason}  (you hold {own_expertise} Expertise)"
+                ),
+            })
+        chosen = self.io.choose_option(
+            "Supply Expertise to which training request?", options
+        )
+        if chosen is None:
+            return
+        try:
+            batch_id = int(chosen)
+        except (TypeError, ValueError):
+            self.io.print(f"  Unknown selection: {chosen!r}.")
+            return
+        match = next(((r, e) for r, e, _ in eligible if r.batch_id == batch_id), None)
+        if match is None:
+            self.io.print(f"  Training request #{batch_id} is no longer eligible.")
+            return
+        req, educator = match
+        # Re-derive how much Expertise the Educator actually needs for this
+        # batch.  Same formula as _training_capacity_status: Manager-tier
+        # courses need 2 per course, Technician-tier need 1 per course.
+        band = band_of(req.target_profession)
+        per_course = 2 if band == WorkerBand.MANAGER else 1
+        n_courses = self.courses_needed(len(req.worker_ids))
+        needed = per_course * n_courses
+        have_at_educator = educator.inventory.get(ResourceType.EXPERTISE)
+        shortfall = max(0, needed - have_at_educator)
+        if shortfall <= 0:
+            self.io.print(
+                f"  Educator {educator.name} no longer needs Expertise for "
+                f"#{req.batch_id}; the shortfall cleared elsewhere."
+            )
+            return
+        if own_expertise < shortfall:
+            self.io.print(
+                f"  You hold {own_expertise} Expertise but the Educator "
+                f"needs {shortfall} more to approve #{req.batch_id}."
+            )
+            return
+        if not self.io.confirm(
+            f"Gift {shortfall} Expertise to {educator.name} to unblock "
+            f"training #{req.batch_id}? (no Dp will change hands)"
+        ):
+            self.io.print("  Cancelled — no Expertise transferred.")
+            return
+        player.give_resources(ResourceType.EXPERTISE, shortfall)
+        educator.receive_resources(ResourceType.EXPERTISE, shortfall)
+        self.io.print(
+            f"  Transferred {shortfall} Expertise to {educator.name} "
+            f"(now {educator.inventory.get(ResourceType.EXPERTISE)} on hand). "
+            f"Educator can now approve training #{req.batch_id} next time "
+            f"they review the queue."
+        )
+        result.actions_taken.append(
+            f"supply_training_expertise:batch#{req.batch_id}:qty={shortfall}"
+        )
 
     def _action_ack_training_decision(
         self, player: Player, result: TurnResult

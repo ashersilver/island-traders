@@ -38,6 +38,7 @@ ACTION_GROUPS: dict[TurnAction, str] = {
     TurnAction.REJECT_TRAINING_REQUEST: "People",
     TurnAction.COUNTER_TRAINING_REQUEST: "People",
     TurnAction.ACK_TRAINING_DECISION: "People",
+    TurnAction.SUPPLY_TRAINING_EXPERTISE: "People",
     TurnAction.ARRANGE_TRANSPORT: "People",
     TurnAction.RECRUIT_WORKERS: "People",
     TurnAction.PURCHASE_CAPITAL: "Capital",

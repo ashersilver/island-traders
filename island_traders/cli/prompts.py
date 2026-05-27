@@ -19,6 +19,7 @@ ACTION_LABEL_OVERRIDES: dict[str, str] = {
     "reject_training_request": "Reject Training Request",
     "counter_training_request": "Counter Training Request",
     "ack_training_decision": "Acknowledge Training Decision",
+    "supply_training_expertise": "Supply Expertise to Educator",
 }
 
 

@@ -5,6 +5,106 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/training-expertise-deadlock-2026-05-27
+
+Branch: `claude/training-expertise-deadlock-2026-05-27`
+Target: `pre-release`
+
+Implements the second Critical brief from the 0.1.0-dev.2026-05-26.5
+playtest triage — AyaySir's 9-season training deadlock + Codex
+Player's identical report.  Three layers shipped.
+
+**Layer 1 — AI Manufacturer demand chooser sees indirect demand.**
+
+Root cause: PR #46's `_has_human_equipment_demand` only detected
+*direct* equipment consumption (Miner → MiningEquipment, Doctor →
+MedicalDevices, etc.).  A human Miner with a pending training
+request indirectly drives LaboratoryEquipment demand (Educator needs
+Expertise → Educator needs LabEquipment), but PR #46 didn't see
+that chain.  The Manufacturer would dutifully build MiningEquipment
+for the visible human Miner while letting LabEquipment supply
+collapse — the Educator's Expertise pipeline starved and training
+requests stuck on `awaiting_educator` indefinitely.
+
+Fix: `_has_human_equipment_demand` now also returns True when any
+human player has pending training requests OR has workers already
+in training.  Both signal an active pipeline that needs Expertise
+upstream of LabEquipment.  Threaded `training_registry` through
+`AIStrategy.take_turn` and `_choose_product_line` so the AI can
+introspect pending state.
+
+**Layer 2 — `SUPPLY_TRAINING_EXPERTISE` requester escape hatch.**
+
+New `TurnAction.SUPPLY_TRAINING_EXPERTISE` lets a requester gift
+Expertise from their own inventory to an Expertise-starved Educator,
+unblocking a pending training request.  Authorization: only the
+original requester can supply, only for their own batches, only
+when the Educator's `_training_capacity_status` blocker mentions
+"Expertise".  Computes the exact shortfall (per-course requirement
+minus what's already at the Educator) and refuses cleanly if the
+requester is short.  Transfer is at zero Dp — this is a deadlock-
+breaker, not a sale.  Does NOT auto-approve; the Educator still has
+to approve (human via modal, AI via next-season re-review).
+
+Also added `TrainingRegistry.pending_for_requester(requester_id)`
+query (used by both Layer 1's indirect-demand check and Layer 3's
+payload).
+
+**Layer 3 — `training_pipeline` payload deadlock-visibility fields.**
+
+Extended the existing per-player `training_pipeline` entries with
+three new fields populated only for AWAITING_EDUCATOR requests:
+
+- `blocker_reason` — the human-readable reason string from
+  `_training_capacity_status` (e.g. "needs 2 Expertise for this
+  course", "Technical Workshop capacity full: 6/6 trainee seats
+  already in training").
+- `seasons_blocked` — how many seasons the request has been pending
+  since `proposed_year/season`.
+- `can_supply_expertise` — True if the blocker is Expertise AND the
+  requester has enough on hand to cover the shortfall.  Drives the
+  UI follow-up's "Supply Expertise" button visibility.
+
+**Tests:**
+
+- New `tests/test_engine/test_training_expertise_deadlock.py` with
+  7 tests covering all three layers:
+  - Indirect demand via pending training requests
+  - Indirect demand via in-training workers
+  - Direct-demand fallback when no registry is passed (backward
+    compat)
+  - SUPPLY action transfers Expertise correctly
+  - SUPPLY action no-op when no eligible batches
+  - SUPPLY action authorization (non-requester refused)
+  - `pending_for_requester` filter correctness
+- Updated `test_training_pipeline_shape` in `test_ux_payload.py` to
+  pin the new payload fields.
+
+Suite: **472 passing** (was 465 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.3`.
+
+**Calibration unchanged.**  4-seed sweep (200g × seeds 42/1/7/99)
+returns byte-identical means to the PR #46 baseline:
+
+| Role | Mean | PR #46 baseline |
+|---|---:|---:|
+| Farmer | 12.9% | 12.9% |
+| Miner | 13.1% | 13.1% |
+| Transporter | 14.9% | 14.9% |
+| Educator | 18.0% | 18.0% |
+| Banker | 14.8% | 14.8% |
+| Manufacturer | 12.8% | 12.8% |
+| Doctor | 13.6% | 13.6% |
+
+This is by design: the indirect-demand path only fires when there
+is a *human* player with pending training.  In all-AI calibration
+sims there are no human players, so the legacy profit chooser runs
+exactly as it did before.  The change is invisible to the
+calibration sweep and only activates in the actual deadlock scenario.
+
+UI follow-up: dashboard badge for `seasons_blocked >= 3` + "Supply
+Expertise" button when `can_supply_expertise` (Pass A continuation).
+
 ### claude/rollout-plan-2026-05-27
 
 Branch: direct commit on `pre-release`

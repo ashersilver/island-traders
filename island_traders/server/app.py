@@ -1684,6 +1684,17 @@ class GameManager:
         if not training:
             return pipeline
 
+        # Build a quick lookup of Educator players so we can re-run the
+        # capacity-status check from the requester's side and report
+        # *why* a pending batch is blocked (Sub-issue blocker + seasons-
+        # blocked counter for the requester's dashboard, per the
+        # training-expertise-deadlock brief Layer 3).
+        turn_manager = getattr(game, "turn_manager", None)
+        engine_players = {
+            ep.player_id: ep for ep in getattr(game, "players", [])
+        }
+        requester_player = engine_players.get(player_id)
+
         for req in training.active_for_player(player_id):
             if req.return_year >= 0 and req.return_season >= 0:
                 seasons_remaining = max(
@@ -1701,6 +1712,59 @@ class GameManager:
                 seasons_remaining = None
                 return_year = None
                 return_season = None
+
+            # Pipeline-health fields (only meaningful for AWAITING_EDUCATOR
+            # requests, which are the deadlock cases).  For other statuses
+            # these stay None / 0 / False so the existing client code is
+            # untouched.
+            blocker_reason: str | None = None
+            seasons_blocked = 0
+            can_supply_expertise = False
+            if req.status.value == "awaiting_educator":
+                if req.proposed_year >= 0 and req.proposed_season >= 0:
+                    seasons_blocked = max(
+                        0,
+                        (current_year_idx - req.proposed_year) * len(SEASONS)
+                        + (current_season_idx - req.proposed_season),
+                    )
+                educator = engine_players.get(req.educator_id)
+                if educator is not None and turn_manager is not None:
+                    try:
+                        ok, reason = turn_manager._training_capacity_status(
+                            educator, req
+                        )
+                    except Exception:
+                        ok, reason = True, ""
+                    if not ok:
+                        blocker_reason = reason
+                        if (
+                            requester_player is not None
+                            and "Expertise" in reason
+                        ):
+                            # Mirror the SUPPLY_TRAINING_EXPERTISE action's
+                            # eligibility check: only show True when the
+                            # requester actually has enough Expertise to
+                            # cover the Educator's shortfall.
+                            from ..models.profession import (  # noqa: WPS433
+                                WorkerBand, band_of,
+                            )
+
+                            band = band_of(req.target_profession)
+                            per_course = 2 if band == WorkerBand.MANAGER else 1
+                            n_courses = (
+                                turn_manager.courses_needed(len(req.worker_ids))
+                            )
+                            needed = per_course * n_courses
+                            have_at_educator = educator.inventory.get(
+                                ResourceType.EXPERTISE
+                            )
+                            shortfall = max(0, needed - have_at_educator)
+                            have_at_requester = requester_player.inventory.get(
+                                ResourceType.EXPERTISE
+                            )
+                            can_supply_expertise = (
+                                shortfall > 0 and have_at_requester >= shortfall
+                            )
 
             pipeline.append({
                 "batch_id": req.batch_id,
@@ -1720,6 +1784,11 @@ class GameManager:
                 "return_season": return_season,
                 "seasons_remaining": seasons_remaining,
                 "counter_message": req.counter_message or None,
+                # Deadlock-visibility fields (2026-05-27 training-expertise
+                # -deadlock brief Layer 3).
+                "blocker_reason": blocker_reason,
+                "seasons_blocked": seasons_blocked,
+                "can_supply_expertise": can_supply_expertise,
             })
         return pipeline
 

@@ -133,6 +133,10 @@ def test_training_pipeline_shape():
         "return_season",
         "seasons_remaining",
         "counter_message",
+        # 2026-05-27 training-expertise-deadlock brief Layer 3 fields.
+        "blocker_reason",
+        "seasons_blocked",
+        "can_supply_expertise",
     }
     assert batch["batch_id"] == req.batch_id
     assert batch["worker_count"] == 1
