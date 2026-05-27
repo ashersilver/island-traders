@@ -5,6 +5,56 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/codex-briefs-from-playtest-26.5-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — drafts the six Codex briefs identified in the
+[`triage-0.1.0-dev.2026-05-26.5.md`](./requirements/playtest-feedback/triage-0.1.0-dev.2026-05-26.5.md)
+consolidation pass. Each brief carries the playtester source
+references, the proposed engine + payload changes, the test list,
+and the explicit out-of-scope boundary.
+
+Two Critical fixes (recommended first):
+
+- `done-trading-undo-and-auto-set-fix-2026-05-27.md` — addresses the
+  cross-cutting bug behind seven separate item references across all
+  three playtest reports (Done Trading auto-set + no undo path).
+  Three-layer fix: audit Ready-flag setters, add explicit
+  `UNDO_DONE_TRADING` action, decide Decision-Hint policy in Done
+  state (Option 1: auto-undo, preferred; Option 2: hide buttons).
+- `training-expertise-deadlock-2026-05-27.md` — addresses the
+  total-system deadlock reported by AyaySir (9 seasons stuck) and
+  Codex Player. Three layers: fix the Expertise pipeline blocker,
+  add a requester-supplied-Expertise escape hatch (AyaySir IMP-03),
+  surface `training_pipeline_health` payload on the requester
+  dashboard.
+
+Four further briefs:
+
+- `loan-and-insurance-consent-bugs-2026-05-27.md` — three related
+  Banker-side defects: insurance auto-issue, loan-acceptance on
+  borrower's behalf, loan rollover + early-default state-machine
+  fix.
+- `event-frequency-cap-2026-05-27.md` — caps production-halting
+  events at `HALT_EVENTS_PER_PLAYER_PER_YEAR = 1`. Addresses the
+  "5 halts in 5 seasons" scenario from Comet 1 and AyaySir.
+- `market-bug-cluster-2026-05-27.md` — three independent market
+  defects: bid display/commit mismatch, same-price Bid+Ask not
+  crossing, stale "buy food" hint when no Asks exist.
+- `training-request-withdraw-by-requester-2026-05-27.md` — small,
+  symmetric to the educator-side Reject/Counter shipped in PR #41.
+  Adds requester-side `WITHDRAW_TRAINING_REQUEST` with state-aware
+  refund semantics.
+
+Each brief is self-contained — Codex can pick them up in any order
+the team prefers. The two Critical briefs (Done Trading, Expertise
+deadlock) are recommended first because they currently make the
+game unplayable for affected roles.
+
+No engine or test changes; suite remains green at 463.
+
 ### claude/playtest-feedback-folder-2026-05-27
 
 Branch: direct commit on `pre-release`
