@@ -5,6 +5,38 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/banker-lawyers-brief-2026-05-26
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — drafts the Lawyers Codex brief from GitHub issue #44
+("Banking requires Lawyers"), the smallest of the six 2026-05-26
+scoping issues. Scope intentionally narrow:
+
+- New `Profession.LAWYER` (Manager band, 2-season Educator pipeline,
+  university capacity 2/year), trainable from every island like Chef.
+- Lease inception gated on the lessee holding ≥1 Lawyer on roster.
+  Existing leases at merge time are grandfathered — no retroactive
+  requirement.
+- Banker starting workforce grows from 4 → 5 (adds 1 Lawyer) so the
+  Bank can lease its own equipment from turn 1. No other island gets
+  a pre-placed Lawyer — they must train one before leasing.
+- Both investing-phase lease application and mid-game LEASE_CAPITAL
+  action respect the gate. Lawyer presence is one-shot at inception;
+  losing the Lawyer later does not affect an existing lease.
+
+Out of scope (explicit): Lawyer involvement in loans, insurance,
+deal-guarantee, dispute arbitration — those come later. Banker-side
+Lawyer requirement also deferred (assume institutional counsel for
+the lessor side).
+
+UI follow-up: Lawyer chip on the workforce display + greyed-out
+Lease button with "Train a Lawyer first" tooltip on islands with
+0 Lawyers.
+
+No engine or test changes; suite remains green at 462.
+
 ### codex/educator-approval-queue-2026-05-26
 
 Branch: `codex/educator-approval-queue-2026-05-26`
