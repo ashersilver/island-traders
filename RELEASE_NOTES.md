@@ -5,6 +5,37 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/purchase-named-options-2026-05-27
+
+Branch: `claude/purchase-named-options-2026-05-27`
+Target: `pre-release`
+
+Fixes a UX defect playtesters reported against `0.1.0-dev.2026-05-26.5`:
+the **Purchase Equipment** action presented capital items as a numeric
+index picker (`choose_quantity` → bare number-input field on the
+dashboard) rather than a named-option picker (`choose_option` → radio
+list with the full description on each row). The Lease, Invest, and
+product-line pickers already used the named-option pattern; Purchase
+was the only outlier.
+
+- `_action_purchase_capital` in `island_traders/engine/turn.py` now
+  builds an `options=[{value: item_id, label: "..."}]` list and calls
+  `self.io.choose_option(...)`. Same labels as before (name, role,
+  cost, manufactured-resource requirement or cash-only flag, delivery
+  ETA) — just rendered as a radio picker instead of a text paragraph
+  followed by an index input.
+- Cancel returns to the action menu cleanly (consistent with the
+  other named-option pickers).
+- New regression test `test_purchase_capital_uses_named_option_picker_not_numeric_index`
+  pins the contract so the picker can't quietly regress to an index
+  prompt again.
+- Updated `test_purchase_capital_places_delayed_item_in_transit` and
+  `test_purchase_capital_can_buy_cash_only_kitchen_without_manufacturer`
+  to override `choose_option` (by item_id) instead of `choose_quantity`
+  (by numeric index).
+
+No engine semantics changed; 463 tests passing.
+
 ### claude/banker-lawyers-brief-2026-05-26
 
 Branch: direct commit on `pre-release`

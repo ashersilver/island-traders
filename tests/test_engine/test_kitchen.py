@@ -130,8 +130,10 @@ def test_multiple_kitchens_use_one_chef_per_active_kitchen():
 
 
 class KitchenPurchaseIO(FakeIOAdapter):
-    def choose_quantity(self, prompt, min_qty, max_qty):
-        return max_qty
+    # Purchase flow uses choose_option with named items as of 2026-05-27
+    # (was a numeric index picker).  Select the Kitchen explicitly.
+    def choose_option(self, prompt, options, request_summary=None):
+        return KITCHEN_ITEM_ID
 
     def confirm(self, prompt, **kwargs):
         return True
