@@ -5,6 +5,81 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/queue-summary-log-export-rollover-2026-05-27
+
+Branch: `claude/queue-summary-log-export-rollover-2026-05-27`
+Target: `pre-release`
+
+Three small playtest-driven improvements bundled in one branch:
+
+**1. Reorder training queue — per-row summary.**
+
+Playtester observation: when reordering the Educator's pending
+training queue, the picker showed bare "Move #10 to top" with no way
+to tell what Request #10 actually was.  The dashboard doesn't yet
+have a rich drag-reorder UI, so the engine falls back to a
+`choose_option` picker — fix the label format to carry full context:
+
+`#10 AyaySir -> 2x Mechanic (40 Dp) [pri -1]`
+
+Format includes batch ID, requester name, cohort size, target
+profession, fee offered, and priority chip when non-zero.  Also
+added `worker_count` to the `_training_queue_payload` (used by the
+forthcoming Pass A drag UI).
+
+**2. Game log export.**
+
+New "⬇ Log" button next to "📋 Menu" in the game header.  Triggers
+a fetch of `/api/rooms/{room_id}/log` which streams the full
+server-side game log as a plain-text attachment, with a small
+header carrying room name, version, status, and current
+year/season for context.  Solves the playtest-debugging ask "we
+should be able to export the game log."  Implemented as:
+
+- `WSAdapter.export_log()` returns the full `self._log` history as
+  newline-joined text.
+- New FastAPI `GET /api/rooms/{room_id}/log` endpoint returns
+  `text/plain` with a `Content-Disposition: attachment` header so
+  the browser saves rather than renders.
+- Client `downloadGameLog()` fetches the endpoint, wraps the
+  response in a Blob, and triggers a browser download via a
+  temporary `<a download>` element.
+
+**3. GitHub #6 — loan rollover named-options picker.**
+
+The `_action_rollover_loan` action was the last numeric-index
+picker in the engine after the purchase / lease / invest /
+product-line fixes.  Converted to `choose_option` so the dashboard
+renders loans as a labelled radio picker with all the context the
+borrower needs (principal, rate, remaining seasons, maturity
+date) — matches the pattern documented in `_choose_product_line_human`
+and standardised across the rest of the action surface.
+
+Note: this brief intentionally does NOT implement interactive
+rate negotiation (counter-offer flow between borrower and Banker).
+The current rollover already reprices at the live
+`banker_quote_rate` each time, which satisfies "negotiate a
+different rate of interest" in the literal sense (rate floats with
+the market).  A full propose-and-counter flow would mirror the
+training counter-offer plumbing and is parked for a future brief
+if playtest demands it.
+
+**Tests:**
+
+- `test_reorder_fallback_picker_labels_include_per_row_summary` —
+  pins the label format so future regressions can't reintroduce
+  bare "Move #N to top".
+- `test_export_log_returns_full_print_history` — pins the
+  `export_log()` contract.
+- `test_action_rollover_uses_named_option_picker_not_numeric_index`
+  — pins the rollover picker shape so it can't quietly regress.
+- Updated two existing rollover tests that were scripting
+  `quantities=[1, ...]` (numeric loan pick) to drop the
+  now-unused index.
+
+Suite: **475 passing** (was 472 + 3 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.4`.
+
 ### claude/training-expertise-deadlock-2026-05-27
 
 Branch: `claude/training-expertise-deadlock-2026-05-27`

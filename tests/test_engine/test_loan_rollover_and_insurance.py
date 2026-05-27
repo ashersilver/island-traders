@@ -148,8 +148,11 @@ def test_action_rollover_picks_loan_and_creates_new_at_quoted_rate():
         issued_year=0, issued_season=0, term_years=1,
     )
 
-    # quantities: [pick loan #1, new term = 2 years]; confirm: yes
-    io = ScriptedIO(quantities=[1, 2], confirms=[True])
+    # Loan picker now uses choose_option (named labels per #21 pattern,
+    # 2026-05-27); FakeIOAdapter.choose_option defaults to options[0]
+    # which is the only loan available here.  Only the new-term prompt
+    # consumes from `quantities`.
+    io = ScriptedIO(quantities=[2], confirms=[True])
     tm = _turn_manager([banker, borrower], ledger, io)
     result = TurnResult(player_id=borrower.player_id, season=2, year=0)
 
@@ -213,12 +216,72 @@ def test_action_rollover_cancels_on_confirm_no():
         principal=100.0, interest_rate=0.10,
         issued_year=0, issued_season=0, term_years=1,
     )
-    io = ScriptedIO(quantities=[1, 1], confirms=[False])
+    # Loan picker is now choose_option (FakeIOAdapter returns first
+    # option = the only loan); only the new-term prompt consumes from
+    # `quantities`.  Confirm=False cancels the rollover.
+    io = ScriptedIO(quantities=[1], confirms=[False])
     tm = _turn_manager([banker, borrower], ledger, io)
     result = TurnResult(player_id=borrower.player_id, season=2, year=0)
     tm._action_rollover_loan(borrower, result, year=0, season_index=2)
     assert ledger.all_loans()[0].status == LoanStatus.ACTIVE  # unchanged
     assert result.actions_taken == []
+
+
+def test_action_rollover_uses_named_option_picker_not_numeric_index():
+    """Regression for 2026-05-27 playtest ask on #6: the loan picker
+    must present loans as named choose_option entries (labels include
+    principal / rate / maturity), not a 'type a number' choose_quantity
+    against a separate text list.  Matches the lease/invest/purchase
+    pattern (Issue #21)."""
+    borrower = Player(player_id=1, name="Farmer", roles=[ROLES["Farmer"]],
+                      dollops=50.0, is_human=True)
+    banker = Player(player_id=0, name="Banker", roles=[ROLES["Banker"]],
+                    dollops=0.0, is_human=True)
+    ledger = LoanLedger()
+    ledger.create_loan(
+        borrower_id=borrower.player_id, lender_id=banker.player_id,
+        principal=100.0, interest_rate=0.10,
+        issued_year=0, issued_season=0, term_years=1,
+    )
+    ledger.create_loan(
+        borrower_id=borrower.player_id, lender_id=banker.player_id,
+        principal=200.0, interest_rate=0.08,
+        issued_year=0, issued_season=0, term_years=2,
+    )
+
+    captured: dict = {}
+
+    class CapturingIO(ScriptedIO):
+        def choose_option(self, prompt, options, request_summary=None):
+            captured["prompt"] = prompt
+            captured["options"] = options
+            # Pick the second loan by its loan_id so the test exercises
+            # the str-to-int conversion path too.
+            return options[1]["value"]
+
+        def choose_quantity(self, prompt, min_qty, max_qty):
+            captured.setdefault("quantity_prompts", []).append(prompt)
+            return super().choose_quantity(prompt, min_qty, max_qty)
+
+    io = CapturingIO(quantities=[2], confirms=[True])
+    tm = _turn_manager([banker, borrower], ledger, io)
+    result = TurnResult(player_id=borrower.player_id, season=0, year=0)
+    tm._action_rollover_loan(borrower, result, year=0, season_index=0)
+
+    # Named-option picker was used.
+    assert "options" in captured, "Rollover did not call choose_option"
+    assert captured["prompt"] == "Roll over which loan?"
+    assert all("value" in o and "label" in o for o in captured["options"])
+    # Labels carry the loan's principal + rate context.
+    assert any("100.0" in o["label"] for o in captured["options"])
+    assert any("200.0" in o["label"] for o in captured["options"])
+    # The new loan picked up the second loan's repayment_amount.
+    new_loan = ledger.all_loans()[2]
+    assert new_loan.principal == ledger.all_loans()[1].repayment_amount
+    # And choose_quantity was used ONLY for the new-term prompt, not
+    # for the loan pick.
+    quantity_prompts = captured.get("quantity_prompts", [])
+    assert not any("which loan" in p.lower() for p in quantity_prompts)
 
 
 # ===========================================================================

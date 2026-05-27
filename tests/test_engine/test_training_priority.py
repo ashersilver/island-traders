@@ -65,6 +65,47 @@ class ReorderIO(FakeIOAdapter):
         return self.order
 
 
+def test_reorder_fallback_picker_labels_include_per_row_summary():
+    """When the dashboard hasn't implemented a rich drag UI yet, the
+    engine falls back to choose_option.  The label for each row must
+    carry profession, requester, cohort size, fee — not bare
+    'Move #N to top'.  2026-05-27 playtest ask: 'Request #10' alone
+    is meaningless for the Educator.
+    """
+    reg = TrainingRegistry()
+    educator = _player(1, "Educator")
+    farmer = _player(2, "Farmer", "AyaySir")
+    _request(reg, farmer, educator, "Farmer")
+    _request(reg, farmer, educator, "Mechanic")
+
+    captured: dict = {}
+
+    class CapturingIO(FakeIOAdapter):
+        # No choose_training_queue_order method → engine takes the
+        # choose_option fallback path with labelled options.
+        def choose_option(self, prompt, options, request_summary=None):
+            captured["prompt"] = prompt
+            captured["options"] = options
+            return options[0]["value"]
+
+    manager = _manager([educator, farmer], reg, CapturingIO())
+    manager._action_reorder_training_queue(
+        educator, TurnResult(educator.player_id, season=0, year=0)
+    )
+
+    assert "options" in captured, "Reorder did not call choose_option"
+    labels = [o["label"] for o in captured["options"]]
+    # Every label must include the requester's name + profession +
+    # cohort size + fee.
+    for label in labels:
+        assert "AyaySir" in label, f"Requester missing from: {label}"
+        assert "Dp" in label, f"Fee missing from: {label}"
+        assert "x" in label, f"Cohort count missing from: {label}"
+    # Profession labels show through.
+    assert any("Farmer" in l for l in labels)
+    assert any("Mechanic" in l for l in labels)
+
+
 def test_reorder_training_queue_action_preserves_order_across_seasons():
     reg = TrainingRegistry()
     educator = _player(1, "Educator")

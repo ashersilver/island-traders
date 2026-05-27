@@ -286,6 +286,26 @@ def test_mark_player_ready_cancels_in_flight_prompt():
         f"Expected ActionCancelled-style exception, got {result_holder}"
 
 
+def test_export_log_returns_full_print_history():
+    """export_log() concatenates every IO.print() call in order.
+    Drives the dashboard's Download Log button (2026-05-27 playtest
+    ask for offline debugging)."""
+    io = WebSocketIOAdapter(
+        "g_log", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: None},
+    )
+    io.print("Spring Y1 — production begins")
+    io.print("[LOAN] Comet repaid 50 Dp")
+    io.print("[EVENT] Flood: Agriculture")
+    text = io.export_log()
+    # Lines preserved verbatim and in order.
+    assert text == (
+        "Spring Y1 — production begins\n"
+        "[LOAN] Comet repaid 50 Dp\n"
+        "[EVENT] Flood: Agriculture"
+    )
+
+
 def test_begin_season_resets_state():
     """Each season starts fresh — interrupt + ready flags cleared."""
     io = WebSocketIOAdapter(
