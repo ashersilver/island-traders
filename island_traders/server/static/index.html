@@ -811,6 +811,8 @@ button:active{transform:scale(.97)}
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
         <button class="btn-ghost btn-sm" id="show-action-menu-btn" onclick="restoreActionMenu()"
                 title="Re-open the action menu if it was hidden mid-turn">📋 Menu</button>
+        <button class="btn-ghost btn-sm" id="download-log-btn" onclick="downloadGameLog()"
+                title="Download the full server-side game log as a .txt file for debugging">⬇ Log</button>
         <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
               onclick="showAboutDialog()" title="About / version info">v<span id="app-version-game">…</span></span>
       </div>
@@ -3788,6 +3790,39 @@ function restoreActionMenu() {
     showActionPrompt(lastActionPromptMsg);
   }
   requestState();
+}
+
+// Pull the full server-side game log as plain text and trigger a
+// browser download.  The server's /api/rooms/{room_id}/log endpoint
+// returns text/plain with a Content-Disposition attachment header;
+// the fetch + blob dance is what makes Safari/Firefox actually offer
+// the file save dialog rather than rendering in a new tab.
+// 2026-05-27 playtest ask for offline debugging.
+async function downloadGameLog() {
+  if (!currentRoom || !currentRoom.room_id) {
+    alert("Join a room first — there's no game log to download yet.");
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/rooms/${currentRoom.room_id}/log`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      alert(`Could not download log: ${err.error || resp.statusText}`);
+      return;
+    }
+    const text = await resp.text();
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `island-traders-log-${currentRoom.room_id}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (exc) {
+    alert(`Log download failed: ${exc}`);
+  }
 }
 
 // ==================== INIT ====================

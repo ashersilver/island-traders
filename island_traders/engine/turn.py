@@ -1720,6 +1720,7 @@ class TurnManager:
                     req.requester_id, f"Player {req.requester_id}"
                 ),
                 "target_profession": self._profession_label(req.target_profession),
+                "worker_count": len(req.worker_ids),
                 "priority": req.priority,
                 "dollops_offered": round(req.dollops_to_educator, 1),
                 "requested_year": req.proposed_year,
@@ -1761,8 +1762,21 @@ class TurnManager:
         if hasattr(self.io, "choose_training_queue_order"):
             ordered = self.io.choose_training_queue_order(queue)
         else:
+            # Per-row summary so the Educator can actually tell what
+            # they're reordering — "Request #10" alone is meaningless
+            # without the profession / requester / cohort size / fee
+            # context.  (2026-05-27 playtest feedback.)
             options = [
-                {"value": row["batch_id"], "label": f"Move #{row['batch_id']} to top"}
+                {
+                    "value": row["batch_id"],
+                    "label": (
+                        f"#{row['batch_id']} {row['requester_name']} "
+                        f"-> {row['worker_count']}x "
+                        f"{row['target_profession']} "
+                        f"({row['dollops_offered']:.0f} {CURRENCY_SYMBOL})"
+                        + (f"  [pri {row['priority']}]" if row['priority'] != 0 else "")
+                    ),
+                }
                 for row in queue
             ]
             chosen = self.io.choose_option("Move which request to the top?", options)
@@ -2893,24 +2907,40 @@ class TurnManager:
             self.io.print("  No active loans to roll over.")
             return
 
-        # Build a picker — let the player choose which loan to refinance.
-        # We use ResourceType-style choose_resource via a labelled list, but
-        # the simplest portable form is choose_quantity over the list index.
-        self.io.print("\n  Your active loans:")
-        for idx, loan in enumerate(my_loans, start=1):
+        # Named-options picker so the dashboard renders the loan list as
+        # a labelled radio picker with all the context the borrower needs
+        # to choose — principal, rate, repayment, seasons-to-maturity,
+        # maturity date — not a bare "type a number" prompt against a
+        # paragraph of text.  Matches the lease/invest/purchase pattern
+        # (Issue #21 / 2026-05-27 playtest ask on #6).
+        options = []
+        for loan in my_loans:
             seasons_to_maturity = (
                 (loan.maturity_year - year) * 4 + (loan.maturity_season - season_index)
             )
-            self.io.print(
-                f"    {idx}. Loan #{loan.loan_id}: {loan.principal:.1f} {sym} @ "
-                f"{loan.interest_rate*100:.1f}% — repay {loan.repayment_amount:.1f} {sym} "
-                f"in {seasons_to_maturity} season(s) "
-                f"(matures Y{loan.maturity_year+1} S{loan.maturity_season+1})"
-            )
-        choice = self.io.choose_quantity(
-            "Roll over which loan? (number above)", 1, len(my_loans)
-        )
-        old = my_loans[choice - 1]
+            options.append({
+                "value": str(loan.loan_id),
+                "label": (
+                    f"Loan #{loan.loan_id}: {loan.principal:.1f} {sym} @ "
+                    f"{loan.interest_rate*100:.1f}% — repay "
+                    f"{loan.repayment_amount:.1f} {sym} "
+                    f"in {seasons_to_maturity} season(s) "
+                    f"(matures Y{loan.maturity_year+1} S{loan.maturity_season+1})"
+                ),
+            })
+        chosen = self.io.choose_option("Roll over which loan?", options)
+        if chosen is None:
+            self.io.print("  No selection — cancelled.")
+            return
+        try:
+            chosen_id = int(chosen)
+        except (TypeError, ValueError):
+            self.io.print(f"  Unknown selection: {chosen!r}.")
+            return
+        old = next((l for l in my_loans if l.loan_id == chosen_id), None)
+        if old is None:
+            self.io.print(f"  Loan #{chosen_id} is no longer eligible.")
+            return
 
         new_term_years = self.io.choose_quantity(
             "New term in years (1-3)", 1, 3

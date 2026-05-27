@@ -39,7 +39,7 @@ from .ws_adapter import WebSocketIOAdapter
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 except ImportError:
     FastAPI = WebSocket = WebSocketDisconnect = None
     StaticFiles = HTMLResponse = JSONResponse = None
@@ -2835,6 +2835,36 @@ def create_app() -> FastAPI:
         if not state:
             return JSONResponse({"error": "No game state"}, status_code=404)
         return JSONResponse(state)
+
+    @app.get("/api/rooms/{room_id}/log")
+    async def get_log(room_id: str):
+        """Download the full server-side game log as plain text.
+
+        Driven by the dashboard's "Download Log" button (2026-05-27
+        playtest ask for offline debugging).  Returns 404 if the room
+        doesn't exist or has no IO adapter (game hasn't started yet).
+        """
+        room = manager.rooms.get(room_id)
+        if room is None or room.io_adapter is None:
+            return JSONResponse({"error": "No game log available"}, status_code=404)
+        log_text = room.io_adapter.export_log()
+        header = (
+            f"# Island Traders game log\n"
+            f"# Room: {room.name} ({room.room_id})\n"
+            f"# Version: {APP_VERSION}\n"
+            f"# Status: {room.status}\n"
+            f"# Year/Season: {getattr(room.game, 'year', '?')} / "
+            f"{getattr(room.game, 'season', '?')}\n"
+            f"# ----------------------------------------\n\n"
+        )
+        return PlainTextResponse(
+            header + log_text,
+            media_type="text/plain",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="island-traders-log-{room.room_id}.txt"',
+            },
+        )
 
     @app.get("/api/roles")
     async def list_roles():

@@ -294,6 +294,17 @@ class WebSocketIOAdapter(IOAdapter):
         self._log.append(text)
         self._broadcast({"type": "print", "text": text})
 
+    def export_log(self) -> str:
+        """Return the full server-side game log as plain text.
+
+        Used by the dashboard's "Download Log" button (2026-05-27
+        playtest ask) to dump the complete log for offline debugging.
+        Each entry is a line as the engine emitted it; entries are not
+        timestamped (the engine doesn't carry timestamps yet) but ordering
+        is preserved.
+        """
+        return "\n".join(self._log)
+
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
         """Top of the per-player action loop in TurnManager.execute_turn.
 
