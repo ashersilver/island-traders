@@ -164,15 +164,41 @@ class WebSocketIOAdapter(IOAdapter):
         self._player_ready_flags.clear()
 
     def mark_player_ready(self, player_id: int) -> None:
-        """Mark a player as Ready; their next choose_action returns END_TURN."""
+        """Mark a player as parked (Done Trading).
+
+        Parking does NOT terminate the player's turn — it pauses it.  The
+        per-player turn thread stays alive in ``choose_action``'s park loop
+        and resumes the action menu if the player later clicks Undo
+        (``unmark_player_ready``).  The thread only really exits when the
+        season ends for real (``interrupt_all``).
+
+        If the player is currently inside a sub-dialog (market form,
+        training picker, etc.) when they click Done, the in-flight prompt
+        is cancelled cleanly via CANCEL_SENTINEL so control returns to the
+        action loop, which then notices the Ready flag and parks.
+        """
         self._player_ready_flags.add(player_id)
-        # Also unblock anything they're currently waiting on with a sentinel
-        # so the in-flight prompt completes quickly.
-        self.receive_response(player_id, "end_turn")
+        # Cancel any in-flight prompt so the player drops back into the
+        # action loop where the park check fires.  CANCEL_SENTINEL is the
+        # normal way the engine signals "abort this dialog" (see
+        # ActionCancelled handling in engine/turn.py); reusing it keeps
+        # the abort path uniform.
+        self.receive_response(player_id, CANCEL_SENTINEL)
 
     def unmark_player_ready(self, player_id: int) -> None:
-        """Clear a player's Ready flag (e.g. they un-click Ready)."""
+        """Clear a player's parked flag (Undo Done Trading).
+
+        Also signals the parked thread's wait event so ``choose_action``'s
+        park loop wakes up immediately and re-prompts the player with a
+        fresh action menu.
+        """
         self._player_ready_flags.discard(player_id)
+        # Wake any parked choose_action so it re-enters the prompt path.
+        # No response is stored — the park loop checks the flag, sees it
+        # clear, and falls through to a fresh prompt.
+        ev = self._player_events.get(player_id)
+        if ev is not None:
+            ev.set()
 
     def interrupt_all(self) -> None:
         """Unblock every pending player prompt with a None response.
@@ -268,38 +294,81 @@ class WebSocketIOAdapter(IOAdapter):
         self._broadcast({"type": "print", "text": text})
 
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
+        """Top of the per-player action loop in TurnManager.execute_turn.
+
+        Done Trading is a *pause*, not a *terminate*.  When the player
+        clicks Done their Ready flag is set and any in-flight prompt is
+        cancelled (mark_player_ready), which drops them back here; this
+        method then parks the thread (instead of returning END_TURN) until
+        the player clicks Undo or the season really ends.  This keeps the
+        turn thread alive so we can re-enter the prompt path on undo.
+        """
         # Set TLS active player for this thread so subsequent prompts in this
         # action chain route correctly.
         self.set_active_player(player.player_id)
-        # Honour the Ready flag — short-circuit straight to END_TURN.
-        if player.player_id in self._player_ready_flags:
-            logger.debug("Player %d (%s): Ready flag set, returning END_TURN",
-                         player.player_id, player.name)
-            return TurnAction.END_TURN
-        if self._interrupted:
-            logger.debug("Player %d (%s): season interrupted, returning END_TURN",
-                         player.player_id, player.name)
-            return TurnAction.END_TURN
-        options = [action_option_payload(a, player) for a in available]
-        resp = self._send_and_wait({
-            "type": "choose_action",
-            "player_id": player.player_id,
-            "player_name": player.name,
-            "options": options,
-        })
-        if resp is None:
-            logger.warning("Player %d (%s): choose_action got None response — "
-                           "ending turn (interrupted=%s, ready=%s)",
-                           player.player_id, player.name,
-                           self._interrupted,
-                           player.player_id in self._player_ready_flags)
-            return TurnAction.END_TURN
-        try:
-            return TurnAction(resp)
-        except ValueError:
-            logger.warning("Player %d (%s): invalid action '%s', ending turn",
-                           player.player_id, player.name, resp)
-            return TurnAction.END_TURN
+
+        while True:
+            # Season interrupt is the true end-of-season signal — fires
+            # when the season timer expires or every active human is Ready.
+            if self._interrupted:
+                logger.debug("Player %d (%s): season interrupted, returning END_TURN",
+                             player.player_id, player.name)
+                return TurnAction.END_TURN
+
+            # Park loop — hold here while the player is in Done state.
+            # While parked we broadcast `choose_action_parked` so the
+            # dashboard shows the "you're done; click Undo to resume" UI
+            # in place of the action menu.  We wake on:
+            #   - unmark_player_ready (player clicked Undo) → flag clears
+            #   - interrupt_all (season truly ending) → re-check at top
+            if player.player_id in self._player_ready_flags:
+                self._send_to(player.player_id, {
+                    "type": "choose_action_parked",
+                    "player_id": player.player_id,
+                    "player_name": player.name,
+                })
+                ev = self._player_events.get(player.player_id)
+                if ev is None:
+                    return TurnAction.END_TURN
+                # 1s poll is just a safety net — both wake paths .set()
+                # the event so normally we wake immediately.
+                ev.wait(timeout=1.0)
+                with self._player_locks[player.player_id]:
+                    ev.clear()
+                    # Drop any stale response (e.g. the CANCEL_SENTINEL
+                    # mark_player_ready injected to abort an in-flight
+                    # dialog) so it doesn't leak into the next prompt.
+                    self._player_responses[player.player_id] = None
+                # Loop back to top to re-check flags.
+                continue
+
+            # Normal prompt path — not parked, not interrupted.
+            options = [action_option_payload(a, player) for a in available]
+            resp = self._send_and_wait({
+                "type": "choose_action",
+                "player_id": player.player_id,
+                "player_name": player.name,
+                "options": options,
+            })
+            if resp is None:
+                logger.warning(
+                    "Player %d (%s): choose_action got None response — "
+                    "ending turn (interrupted=%s, ready=%s)",
+                    player.player_id, player.name,
+                    self._interrupted,
+                    player.player_id in self._player_ready_flags,
+                )
+                return TurnAction.END_TURN
+            if resp == CANCEL_SENTINEL:
+                # mark_player_ready (or a player Cancel from a stray
+                # dialog) lands here — loop to re-check the park flag.
+                continue
+            try:
+                return TurnAction(resp)
+            except ValueError:
+                logger.warning("Player %d (%s): invalid action '%s', ending turn",
+                               player.player_id, player.name, resp)
+                return TurnAction.END_TURN
 
     @staticmethod
     def _check_cancel(resp) -> None:

@@ -2514,6 +2514,11 @@ class GameManager:
             "timer_seconds": secs,        # 0 = Ready-only mode
             "active_humans": list(humans),
         })
+        # Defensive: broadcast the cleared Ready/Done sets immediately so
+        # the client's `imReady` / `seasonDoneSet` can't ride over from
+        # the previous season due to message ordering / stale state.
+        # (2026-05-27 done-trading-undo brief Sub-issue A.)
+        self._broadcast_ready_update(room)
 
         # Only install the action-phase timer if it's > 0.
         if secs > 0 and self._loop:
@@ -2834,6 +2839,12 @@ def create_app() -> FastAPI:
                 engine_pid = room.lobby_to_engine_id.get(player_id)
                 if room.io_adapter and engine_pid is not None:
                     room.io_adapter.replay_pending_prompt(engine_pid)
+                # Fresh ready_update on reconnect — otherwise the client's
+                # cached `imReady` from before disconnect persists and
+                # the "Done Trading ✓" button can appear stuck for a
+                # season the player has not actually opted out of.
+                # (2026-05-27 done-trading-undo brief Sub-issue A.)
+                manager._broadcast_ready_update(room)
 
             # If the game is paused, let the reconnecting client know so it
             # can show the paused overlay immediately.
