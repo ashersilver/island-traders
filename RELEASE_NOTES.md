@@ -5,6 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/rollout-plan-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — adds `requirements/rollout-plan-2026-05-27.md`, the
+sequenced milestone view of all open work that pairs with `TODO.md`
+(development priority tracker) and the brief queue in
+`requirements/codex-tasks/`.
+
+Captures:
+
+- Live build (`0.1.0-dev.2026-05-27.2`) + the eight merges that landed
+  this cycle.
+- Codex brief queue (7 open, prioritised from the
+  2026-05-26.5 playtest triage) with the Done Trading fix marked
+  complete and the Training Expertise deadlock marked in progress.
+- Claude UI follow-up backlog batched into three passes (Action
+  panel + hints, Market UX, Dashboard surfaces) with carry-over
+  payloads from PR #40 (Banker chip) and PR #41 (Educator queue +
+  requester decisions) flagged.
+- Scoping items needing decisions (from the 2026-05-26 GitHub
+  issues batch) and new scoping items from today (Vaccines + Flu
+  #49, Hiring Doctors/Nurses #50, Air Freight #51).
+- Closeable GitHub issues — closed #21 (named-options purchase
+  picker shipped) and #10 (Market Board modal — already marked
+  done in TODO.md, just needed the issue closed).
+- Four proposed milestones: `0.1.0-rc1` (Critical bug-fix sweep),
+  `0.1.0-rc2` (scoping-batch features), `0.2.0` (major systems
+  incl. MPS), `0.2.x / 0.3.0` (content expansion incl. Actuaries
+  / Ecologist / Medical Lab tests).
+
+No engine changes; suite remains green at 465.
+
 ### claude/done-trading-undo-and-auto-set-fix-2026-05-27
 
 Branch: `claude/done-trading-undo-and-auto-set-fix-2026-05-27`
