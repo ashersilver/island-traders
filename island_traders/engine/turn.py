@@ -437,8 +437,12 @@ class TurnManager:
             return
 
         sym = CURRENCY_SYMBOL
-        self.io.print("\n  Capital equipment available:")
-        for idx, item in enumerate(available_items, 1):
+        # Present as named choices (matches lease / invest / product-line
+        # pickers — Issue #21 pattern).  Dashboard renders these as a radio
+        # picker with the full description on each row, rather than asking
+        # the player to type an index against a separate text list.
+        options = []
+        for item in available_items:
             cash_only = item.effects.get("cash_only", False)
             manufactured_resource = (
                 None if cash_only else self._manufactured_resource_for_capital_item(item)
@@ -453,13 +457,21 @@ class TurnManager:
                 if cash_only
                 else f"requires 1x {manufactured_resource.value}"
             )
-            self.io.print(
-                f"    {idx}. {item.name} ({item.role}) — {item.cost:.0f} {sym}; "
-                f"{requirement}; {arrival}"
-            )
-
-        choice = self.io.choose_quantity("Choose capital item", 1, len(available_items))
-        item = available_items[choice - 1]
+            options.append({
+                "value": item.item_id,
+                "label": (
+                    f"{item.name} ({item.role}) — {item.cost:.0f} {sym}; "
+                    f"{requirement}; {arrival}"
+                ),
+            })
+        chosen_id = self.io.choose_option("Choose capital item", options)
+        if chosen_id is None:
+            self.io.print("  No selection — cancelled.")
+            return
+        item = next((it for it in available_items if it.item_id == chosen_id), None)
+        if item is None:
+            self.io.print("  Unknown capital selection.")
+            return
         cash_only = item.effects.get("cash_only", False)
         manufacturer = None
         manufactured_resource = None
