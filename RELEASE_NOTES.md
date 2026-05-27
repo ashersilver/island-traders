@@ -5,6 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/playtest-feedback-folder-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — stands up a structured home for playtest feedback under
+`requirements/playtest-feedback/` and consolidates the four reports
+that came in against `0.1.0-dev.2026-05-26.5`.
+
+Structure:
+
+- `requirements/playtest-feedback/README.md` documents the convention:
+  one raw report file per build (`playtest-{APP_VERSION}.md`), one
+  triage doc per report (`triage-{APP_VERSION}.md`), and a four-bucket
+  triage workflow (✅ already fixed / 🐛 new Codex brief / 🎨 Claude UI
+  follow-up / ⚖️ calibration design / ⏭ deferred).
+- `requirements/playtest-feedback/playtest-0.1.0-dev.2026-05-26.5.md`
+  is the verbatim report from Comet Player 1 (Manufacturer), AyaySir
+  (Mining), Codex Player (Banking), and Real Human (general).
+- `requirements/playtest-feedback/triage-0.1.0-dev.2026-05-26.5.md`
+  cross-references all four reports, identifies the shared
+  "Done Trading auto-set + no undo" root cause behind seven of the
+  bug reports, proposes six new Codex briefs, batches nine UI items
+  into three Claude follow-up passes, surfaces five calibration /
+  design questions, and lists three deferred items (server-takedown
+  reconnects excluded per operator note).
+
+Why a separate folder: keeps raw player observations distinct from
+the spec docs in `requirements/` and the Codex brief queue in
+`requirements/codex-tasks/`. The raw + triage docs stay paired so
+we keep a record of how each playtest item was handled.
+
+No engine or test changes; suite remains green at 463.
+
 ### claude/purchase-named-options-2026-05-27
 
 Branch: `claude/purchase-named-options-2026-05-27`
