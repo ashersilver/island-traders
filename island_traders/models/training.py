@@ -427,6 +427,20 @@ class TrainingRegistry:
             reserved.update(req.worker_ids)
         return reserved
 
+    def pending_for_requester(self, requester_id: int) -> list[TrainingRequest]:
+        """Requests this player filed that are still awaiting Educator action.
+
+        Used by the AI Manufacturer's indirect-demand check (so a pending
+        training request creates upstream LaboratoryEquipment demand) and
+        by the requester-side dashboard payload.  (2026-05-27
+        training-expertise-deadlock brief Layer 1 + Layer 3.)
+        """
+        return [
+            r for r in self._requests
+            if r.requester_id == requester_id
+            and r.status == TrainingStatus.AWAITING_EDUCATOR
+        ]
+
     def pending_for_educator(self, educator_id: int) -> list[TrainingRequest]:
         return [
             r for r in self._requests

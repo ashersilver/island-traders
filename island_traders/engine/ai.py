@@ -358,10 +358,13 @@ class AIStrategy:
         player: Player,
         market: Market,
         demand_players: list[Player] | None = None,
+        training_registry=None,
     ) -> str:
         """Pick the Manufacturer product line with the strongest unmet demand."""
         if demand_players is not None:
-            human_demand = self._has_human_equipment_demand(demand_players)
+            human_demand = self._has_human_equipment_demand(
+                demand_players, training_registry=training_registry
+            )
             if not human_demand:
                 player.ai_product_line_human_demand = False
                 return self._choose_product_line_profit(player, market)
@@ -426,7 +429,28 @@ class AIStrategy:
         player.ai_product_line_human_demand = False
         return best_line
 
-    def _has_human_equipment_demand(self, players: list[Player]) -> bool:
+    def _has_human_equipment_demand(
+        self,
+        players: list[Player],
+        training_registry=None,
+    ) -> bool:
+        """Does at least one human player demand Manufacturer-produced equipment?
+
+        Two paths trigger demand:
+
+        - **Direct**: the human's role consumes a Manufacturer output
+          (e.g. Miner needs MiningEquipment, Doctor needs MedicalDevices).
+          PR #46's original behaviour.
+
+        - **Indirect** (2026-05-27 training-expertise-deadlock brief): the
+          human has pending training requests or workers already in
+          training.  Both signal that the Educator must produce Expertise
+          to fulfil them, which in turn requires LaboratoryEquipment from
+          the Manufacturer.  Without this, a game with one human Miner
+          (Mining is direct-demand for MiningEquipment, but NOT for
+          LabEquipment) leaves the Educator's Expertise pipeline
+          unblocked → AyaySir-style 9-season deadlock.
+        """
         equipment_outputs = {
             ResourceType(line["output"]).value
             for line in MANUFACTURER_PRODUCT_LINES.values()
@@ -434,11 +458,27 @@ class AIStrategy:
         for candidate in players:
             if not candidate.is_human:
                 continue
+            # Direct path.
             for role in candidate.roles:
                 if any(
                     resource in equipment_outputs
                     for resource in PRODUCTION_INPUTS.get(role.name, {})
                 ):
+                    return True
+            # Indirect path — workers already dispatched/in-training.
+            # No registry lookup needed; the workforce roster knows.
+            if candidate.workforce.training_count > 0:
+                return True
+            # Indirect path — pending training requests this human filed
+            # but the Educator hasn't approved yet (the deadlock case).
+            if training_registry is not None:
+                try:
+                    pending = training_registry.pending_for_requester(
+                        candidate.player_id
+                    )
+                except AttributeError:
+                    pending = None
+                if pending:
                     return True
         return False
 
@@ -625,6 +665,7 @@ class AIStrategy:
         year: int = 0,
         season_index: int = 0,
         loan_ledger: LoanLedger | None = None,
+        training_registry=None,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -637,7 +678,9 @@ class AIStrategy:
         is_manufacturer = any(r.name == "Manufacturer" for r in player.roles)
         chosen_line: str | None = None
         if is_manufacturer:
-            chosen_line = self._choose_product_line(player, market, other_players)
+            chosen_line = self._choose_product_line(
+                player, market, other_players, training_registry=training_registry
+            )
 
         actions.extend(
             self._ai_rollover_due_loans(player, loan_ledger, year, season_index)
