@@ -2450,6 +2450,13 @@ function handleMessage(msg) {
     case 'choose_action':
       showActionPrompt(msg);
       break;
+    case 'choose_action_parked':
+      // Player is in Done Trading state — server is parked waiting for
+      // either Undo or season-end.  Hide the action menu and surface a
+      // clear "Resume Trading" banner.  (2026-05-27 done-trading-undo
+      // brief Sub-issue B + C.)
+      showParkedBanner(msg);
+      break;
     case 'choose_resource': case 'choose_profession': case 'choose_option':
       showOptionPicker(msg);
       break;
@@ -2748,14 +2755,44 @@ let _currentHintResources = new Set();
 // modal that opens for the chosen action.  One-shot, per-click.
 let _pendingHintTarget = null;
 
+// Set when a hint click triggers an auto-undo of Done Trading.  Consumed
+// (and cleared) by the next showActionPrompt call so the queued action
+// fires as soon as the server re-prompts us.  One-shot, per-click.
+// 2026-05-27 done-trading-undo brief Sub-issue C (Option 1: auto-undo).
+let _pendingActionAfterUndo = null;
+
 function _isActionPromptOpen() {
   const area = document.getElementById('prompt-area');
   return !!(area && !area.classList.contains('hidden'));
 }
 
 function _actOnHint(action, payload = {}) {
-  if (!_isActionPromptOpen()) return;
+  // Stash the focus target — both code paths below need it consumed by
+  // the next modal that opens.
   _pendingHintTarget = Object.assign({ action }, payload);
+
+  // Sub-issue C: hint clicked while in Done Trading state.  Option 1
+  // (preferred per AyaySir IMP-04): auto-undo Done, queue the action to
+  // fire as soon as the fresh choose_action prompt arrives.
+  if (imReady) {
+    _pendingActionAfterUndo = action;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'ready', ready: false}));
+    }
+    // Optimistic UI: reset the Done button immediately.
+    imReady = false;
+    const btn = document.getElementById('ready-btn');
+    if (btn) {
+      btn.classList.remove('is-ready');
+      document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
+    }
+    return;
+  }
+
+  // Normal path: action prompt is open, fire the chosen action straight
+  // through.  If the action prompt isn't open (some other edge case),
+  // bail rather than send a stray response.
+  if (!_isActionPromptOpen()) return;
   sendResponse(action);
 }
 
@@ -2763,8 +2800,15 @@ function _renderHintOpenButton(action, payload = {}) {
   if (!action) return '';
   const label = _HINT_OPEN_LABEL[action] || 'Open';
   const open = _isActionPromptOpen();
-  const disabled = open ? '' : 'disabled';
-  const title = open ? '' : 'title="Wait for your action prompt"';
+  // Enable the button when the action menu is visible OR when the
+  // player is in Done Trading (parked) state — in the parked case the
+  // hint click auto-undoes Done first and then fires the action.
+  // 2026-05-27 done-trading-undo brief Sub-issue C (Option 1).
+  const enabled = open || imReady;
+  const disabled = enabled ? '' : 'disabled';
+  const title = enabled
+    ? (imReady && !open ? 'title="Resumes trading then opens this action"' : '')
+    : 'title="Wait for your action prompt"';
   // JSON-encode both args so the onclick survives any quotes / unicode in
   // the payload values (resource names are ASCII today but defensive).
   const argsJson = `${JSON.stringify(action)}, ${JSON.stringify(payload)}`;
@@ -3238,7 +3282,54 @@ function _renderActionButton(o) {
   return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
 }
 
+// Show the "you're done — click Undo to resume" banner in place of the
+// action menu while the server-side park loop is waiting.  Server sends
+// this whenever choose_action's park check fires (Done Trading state).
+// 2026-05-27 done-trading-undo brief.
+function showParkedBanner(msg) {
+  const area = document.getElementById('prompt-area');
+  area.classList.remove('hidden');
+  document.getElementById('prompt-title').textContent =
+      `${msg.player_name} — Done Trading ✓`;
+  document.getElementById('prompt-btns').innerHTML =
+      `<div style="padding:.5rem 0;line-height:1.5">
+        <div style="color:var(--dim);margin-bottom:.6rem">
+          You've marked yourself done for this season.  The game is waiting
+          for the timer to expire or every other player to finish.
+        </div>
+        <button class="btn-gold" onclick="resumeTradingFromParked()">
+          ↩ Resume Trading
+        </button>
+      </div>`;
+  document.getElementById('prompt-input').innerHTML = '';
+}
+
+// Click handler for the Resume Trading button on the parked banner.
+// Sends submit_ready(false) to the server, which clears the Ready flag
+// and wakes the parked thread; the server then re-sends a fresh
+// choose_action prompt and showActionPrompt takes over again.
+function resumeTradingFromParked() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'ready', ready: false}));
+  }
+  imReady = false;
+  const btn = document.getElementById('ready-btn');
+  if (btn) {
+    btn.classList.remove('is-ready');
+    document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
+  }
+}
+
 function showActionPrompt(msg) {
+  // If we queued a hint-target while parked, replay it as soon as the
+  // fresh action prompt lands.  See _actOnHint's auto-undo path below.
+  if (_pendingActionAfterUndo) {
+    const queuedAction = _pendingActionAfterUndo;
+    _pendingActionAfterUndo = null;
+    // Defer one tick so the prompt-area is in the DOM before sendResponse.
+    setTimeout(() => sendResponse(queuedAction), 30);
+    // Still cache and render so the player sees the menu briefly.
+  }
   // Cache the payload so the "📋 Menu" recovery button can re-render the
   // same action menu if the prompt area goes missing mid-turn (e.g. a
   // hint button drove a modal that the user then cancelled).

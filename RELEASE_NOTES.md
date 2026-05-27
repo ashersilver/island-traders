@@ -5,6 +5,98 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/done-trading-undo-and-auto-set-fix-2026-05-27
+
+Branch: `claude/done-trading-undo-and-auto-set-fix-2026-05-27`
+Target: `pre-release`
+
+Implements the Critical brief from the 0.1.0-dev.2026-05-26.5 playtest
+triage — the cross-cutting bug behind seven references across all
+three player reports (Done Trading auto-set + no undo path).  Three
+sub-issues addressed in one branch.
+
+**Sub-issue A — server stops auto-setting Done.**
+
+Diagnostic: server-side state was correct (`_on_season_start` resets
+`season_ready_set` and `season_human_done`, `begin_season` clears
+`_player_ready_flags`), but two paths could leave the *client* with
+a stale `imReady = true` from before:
+
+- WebSocket reconnect handler sent `game_state` but never a fresh
+  `ready_update`, so a player who clicked Done last season would
+  see "Done Trading ✓" on reconnect even after the season had
+  rolled over.
+- `_on_season_start` never broadcast a `ready_update` for the new
+  season, so any client that missed the `season_resolved` broadcast
+  carried its `imReady = true` forward.
+
+Both fixed defensively: reconnect now sends `_broadcast_ready_update`,
+and `_on_season_start` broadcasts `ready_update` after the
+`season_start` message with the cleared sets.
+
+**Sub-issue B — Undo path actually works (the deep fix).**
+
+Root cause: `mark_player_ready` resolved the in-flight prompt with
+the string `"end_turn"`, which made `choose_action` return
+`TurnAction.END_TURN`, which exited the `while True` action loop.
+Once the loop exited, the turn thread completed and `_on_player_done`
+fired.  Calling `unmark_player_ready` later just cleared a flag that
+nothing was reading any more.
+
+Fix: convert Done from a turn-terminator into a turn-pauser.
+
+- `mark_player_ready` now resolves the in-flight prompt with
+  `CANCEL_SENTINEL` (reusing the existing dialog-cancel sentinel), so
+  whatever sub-prompt the player was in raises `ActionCancelled` and
+  drops cleanly back to the action loop.
+- `choose_action` now has a park loop: while the Ready flag is set,
+  the thread broadcasts a new `choose_action_parked` message and
+  waits on the player's event.  Wakes on either `unmark_player_ready`
+  (flag clears → falls through to re-prompt) or `interrupt_all`
+  (real season end → returns `END_TURN`).
+- `unmark_player_ready` now `.set()`s the player's event so the park
+  loop wakes immediately.
+
+The turn thread stays alive throughout the parked state, so an Undo
+truly resumes the player's action menu instead of being a no-op.
+
+**Sub-issue C — Decision Hints policy in Done state.**
+
+Chose Option 1 (AyaySir IMP-04's preference): hint click auto-undoes
+Done first, then fires the action.
+
+- `_actOnHint` checks `imReady`; if true, sends `{type:'ready',
+  ready:false}` to undo and queues the action target in
+  `_pendingActionAfterUndo`.
+- `showActionPrompt` consumes the queued action when the fresh
+  prompt arrives from the server-side re-prompt.
+- `_renderHintOpenButton` keeps hint buttons enabled in the parked
+  state (so the auto-undo path is reachable) with a tooltip
+  explaining "Resumes trading then opens this action".
+
+New parked banner UI: when the server broadcasts
+`choose_action_parked`, the action panel area shows "You've marked
+yourself done for this season" with a prominent "↩ Resume Trading"
+button that calls the same Undo path.
+
+**Tests:**
+
+- Updated `test_mark_player_ready_short_circuits_choose_action` to
+  reflect the new contract (now
+  `test_mark_player_ready_parks_choose_action_until_interrupted`):
+  parked thread waits, broadcasts `choose_action_parked`, and only
+  exits via `interrupt_all`.
+- New `test_unmark_player_ready_wakes_parked_choose_action`:
+  parked thread wakes on Undo and sends a fresh `choose_action`
+  prompt.
+- New `test_mark_player_ready_cancels_in_flight_prompt`: regression
+  for the "action panel disappears after End Turn" symptom — Done
+  mid-dialog aborts the sub-prompt cleanly via `CANCEL_SENTINEL`.
+
+Suite: **465 passing** (was 463 + 2 net new tests).
+
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.2` for playtest tracking.
+
 ### claude/codex-briefs-from-playtest-26.5-2026-05-27
 
 Branch: direct commit on `pre-release`
