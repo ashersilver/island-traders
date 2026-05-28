@@ -136,13 +136,23 @@ class TurnManager:
             if report.has_events:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
-        self._process_loan_repayments(year, season_index)
         self._consume_and_post_sustenance()
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
         else:
             results = self._run_season_sequential(year, season_index, event_results)
+
+        # Loan repayment processing moved to AFTER the action phase
+        # (2026-05-27 brief, Codex Player report: "an earlier mature
+        # loan defaulted before I could intervene").  Previously this
+        # ran at season start, so a loan maturing this season was
+        # repaid/defaulted before the borrower's action turn opened —
+        # they had no chance to rollover.  Now any rollover the
+        # borrower executes during their turn removes the loan from
+        # the due-list, and end-of-season processing only repays /
+        # defaults what's actually left over.
+        self._process_loan_repayments(year, season_index)
 
         self.market.snapshot_prices(year, season_index)
         self.market.reset_period_signals()
@@ -2092,9 +2102,30 @@ class TurnManager:
         if buyer.dollops < premium:
             self.io.print(f"  {buyer.name} cannot afford {premium:.0f} {sym}.")
             return
-        if not self.io.confirm(
-            f"Sell {policy_type} insurance to {buyer.name} for {premium:.0f} {sym}?"
-        ):
+        # Route consent to the BUYER's IO channel, not the seller's.
+        # (2026-05-27 brief — AyaySir BUG-07: "Life Insurance (50 Dp)
+        # and Medical Insurance (60 Dp) were issued automatically
+        # mid-session ... without explicit consent".  Root cause: the
+        # confirm was firing on the active player (the Banker) so the
+        # seller was accepting on the buyer's behalf.)  Stash the
+        # seller's active-player TLS, switch to buyer, ask, restore.
+        previous_active = None
+        if hasattr(self.io, "_active_pid"):
+            previous_active = self.io._active_pid()
+        if hasattr(self.io, "set_active_player"):
+            self.io.set_active_player(buyer.player_id)
+        try:
+            buyer_accepted = self.io.confirm(
+                f"{player.name} is offering you {policy_type} insurance "
+                f"for {premium:.0f} {sym}.  Accept?"
+            )
+        finally:
+            # Always restore the seller's active-player so their action
+            # loop continues normally regardless of the buyer's answer.
+            if previous_active is not None and hasattr(self.io, "set_active_player"):
+                self.io.set_active_player(previous_active)
+        if not buyer_accepted:
+            self.io.print(f"  {buyer.name} declined the {policy_type} policy.")
             return
 
         buyer.spend_dollops(premium)
@@ -2784,11 +2815,24 @@ class TurnManager:
             f"+ {external_share:.1f} {sym} sourced externally."
         )
         if target.is_human:
-            accepted = self.io.confirm(
-                f"{target.name}: accept loan of {principal:.1f} {sym} "
-                f"at {rate_pct:.1f}% for {term_years} year(s) "
-                f"(repay {repay:.1f} {sym})?"
-            )
+            # Route consent to the BORROWER's IO channel, not the
+            # Banker's.  (2026-05-27 brief — Codex Player: "the app
+            # let Banking accept a loan on behalf of the borrower".)
+            # Same pattern as the insurance fix above.
+            previous_active = None
+            if hasattr(self.io, "_active_pid"):
+                previous_active = self.io._active_pid()
+            if hasattr(self.io, "set_active_player"):
+                self.io.set_active_player(target.player_id)
+            try:
+                accepted = self.io.confirm(
+                    f"{player.name} is offering you a loan of {principal:.1f} {sym} "
+                    f"at {rate_pct:.1f}% for {term_years} year(s) "
+                    f"(repay {repay:.1f} {sym}).  Accept?"
+                )
+            finally:
+                if previous_active is not None and hasattr(self.io, "set_active_player"):
+                    self.io.set_active_player(previous_active)
         else:
             accepted = rate <= 0.15
         if accepted:
