@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-27.6"
+APP_VERSION: str = "0.1.0-dev.2026-05-27.7"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -645,7 +645,33 @@ INSURANCE_BASE_PREMIUM: dict[str, float] = {
 }
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
-LIFE_INSURANCE_DEATH_BENEFIT: float = 60.0
+# Doubled 2026-05-27 from 60 to 120 to offset the Banker calibration
+# spike from LIFE_INSURANCE_FATALITY_REDUCTION: fewer fatalities means
+# Banker pays out the death benefit less often, which pushed Banker
+# win rate +6 pp out of band.  Higher per-death payout balances total
+# expected Banker liability while making the policy more valuable to
+# the bereaved island.
+LIFE_INSURANCE_DEATH_BENEFIT: float = 120.0
 
 # Medical insurance reduces the effective injury_rate by this fraction.
 MEDICAL_INSURANCE_INJURY_REDUCTION: float = 0.5
+
+# Life insurance reduces the effective fatality_rate by this fraction
+# (mirroring the medical-injury reduction).  Before this constant
+# existed, Life insurance only paid a death benefit AFTER the worker
+# died — the player could not prevent fatalities, only get cash.  Now
+# the rate itself is halved when a policy is in force, so insured
+# islands have a real chance to retain experienced workers.
+# 2026-05-27 disaster-mitigation brief.
+LIFE_INSURANCE_FATALITY_REDUCTION: float = 0.5
+
+# Hard cap on the fraction of an island's active workforce that can be
+# lost to fatality in a single workplace-risk tick.  Even with the
+# Life-insurance fatality reduction above, an unlucky cascade of rolls
+# could still wipe most of a small starting workforce in one season —
+# this cap keeps the island from going from fully-staffed to skeleton
+# in a single tick.  At 30% of N active workers (min 1), a 5-worker
+# Miner can lose at most 1 per tick; a 10-worker workforce loses at
+# most 3.  Surviving workers may still die on later ticks.
+# 2026-05-27 disaster-mitigation brief.
+MAX_WORKFORCE_LOSS_PER_TICK_FRACTION: float = 0.30
