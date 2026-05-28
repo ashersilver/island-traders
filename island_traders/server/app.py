@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import random
 import string
 import threading
@@ -1558,7 +1559,15 @@ class GameManager:
                             # than the generic band ("Technician") so the
                             # constraint popup reads naturally.
                             label = primary_title(recipe.role, band)
-                            workforce_short[label] = round(short, 2)
+                            # Round UP to whole workers — labour math is
+                            # per-output-unit fractional (e.g. 0.04 Farmer
+                            # per Food × 3 units = 0.12) but you can't
+                            # hire 0.12 of a person.  The playtest report
+                            # 2026-05-27 (Comet) flagged "0.12 Farmer" in
+                            # Decision Hints as confusing.  Always show
+                            # at least 1 missing worker when there's any
+                            # shortfall.
+                            workforce_short[label] = math.ceil(short)
 
                 # Equipment shortfall. Prefer concrete catalogue options over
                 # telling the player "buy capital" and making them hunt.
