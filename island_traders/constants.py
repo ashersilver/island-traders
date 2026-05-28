@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-27.5"
+APP_VERSION: str = "0.1.0-dev.2026-05-27.6"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -467,6 +467,69 @@ STARTING_POPULATION: int = 20
 # workers (skilled + unskilled).  Tightens recruit availability so the
 # workforce can't outgrow the populace.
 MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
+
+# ---------------------------------------------------------------------------
+# Graceful degradation (GitHub #47 + 2026-05-27 playtest)
+# ---------------------------------------------------------------------------
+# When an island runs short of required expertise, production used to drop
+# to zero — leading to cascading failures (Manny Fracture: Mining at 0
+# active workers for 5 years → no Oil → all Manufacturer lines locked at
+# max 0).  These floors keep a starved island producing SOMETHING so the
+# market can still trade and recovery is possible.
+#
+# Floors are SAFETY NETS, not ceilings: the natural labour-productivity
+# factor still wins when higher.  Only kicks in when the natural factor
+# would otherwise be lower than the floor.
+#
+# Within a single role, floors COMPOSE MULTIPLICATIVELY across bands
+# (e.g. a Farmer missing both the Farmer specialist AND all Farming
+# Technicians produces at 0.10 × 0.50 = 0.05).
+#
+# Across roles (multi-role players), the MIN floor applies — multi-role
+# expertise gaps are tracked the same way the underlying productivity
+# factor sums them across roles.
+EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
+    # Brief-spec values.  Currently UNUSED in production — see
+    # EXPERTISE_DEGRADATION_ENABLED below.
+    "unique_specialist": 0.10,
+    "manager":           0.25,
+    "technician":        0.50,
+    "unskilled":         1.00,  # no floor change — existing behaviour
+}
+
+# Master switch for the graceful-degradation floor.  2026-05-27
+# investigation: turning on the floor (even at tiny 0.02/0.05/0.10
+# values) shocked the 4-seed calibration sweep — Miner dropped to 4.4%
+# and Banker to 2.8% in their win-rate from the documented 13.1% /
+# 14.8% baseline.  Root cause: existing balance depends on
+# cascading-collapse positive-feedback loops (one role's failure
+# cascading to consumers is what gives high-risk roles their scarcity
+# premium).  Any non-zero floor prevents this cascade and re-prices the
+# whole economy.
+#
+# Disabled until the proper calibration pass happens.  The constants
+# and ProductionEngine.expertise_degradation_floor helper are in place
+# so a future calibration work can flip this flag and tune the floors,
+# but the application code in _labour_productivity_factor checks this
+# flag before applying — default behaviour is unchanged.
+EXPERTISE_DEGRADATION_ENABLED: bool = False
+
+# Primary Manager-tier "unique specialist" per role.  Losing this triggers
+# the harshest (0.10) floor.
+UNIQUE_SPECIALIST_PROFESSION: dict[str, str] = {
+    "Farmer":       "Farmer",
+    "Miner":        "Miner",
+    "Educator":     "Professor",
+    "Banker":       "Banker",
+    "Manufacturer": "Engineer",
+    "Doctor":       "Doctor",
+    "Transporter":  "LogisticsManager",
+}
+
+# Per-role override if a specific island needs a different floor than the
+# defaults above.  Empty by default; populate during playtest calibration
+# if specific roles feel wrong.
+EXPERTISE_DEGRADATION_ROLE_OVERRIDES: dict[str, dict[str, float]] = {}
 
 # ---------------------------------------------------------------------------
 # University (Education Island) training capacity

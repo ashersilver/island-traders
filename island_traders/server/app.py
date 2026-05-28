@@ -1472,6 +1472,16 @@ class GameManager:
 
         on_hand = {r.value: p.inventory.get(r) for r in p.inventory.amounts}
 
+        # Compute the player's expertise-degradation floor once per player
+        # (doesn't depend on the recipe), then attach to every output entry
+        # below.  Currently scaffolded but the production engine doesn't
+        # apply the floor until EXPERTISE_DEGRADATION_ENABLED flips True
+        # (calibration work pending).  Payload still reports the would-be
+        # floor so the UI can pre-stage the "Operating at X% floor" chip.
+        # 2026-05-27 graceful-degradation brief.
+        from ..engine.production import ProductionEngine as _ProdEngine
+        degradation_floor = _ProdEngine.expertise_degradation_floor(p)
+
         outputs = []
         seen: set[str] = set()
         for role in p.roles:
@@ -1635,6 +1645,12 @@ class GameManager:
                     "equipment_short": equipment_short,
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
+                    # Graceful-degradation floor (2026-05-27 brief, GitHub
+                    # #47): when < 1.0, the island is missing expertise.
+                    # The dashboard surfaces this as an "Operating at X%
+                    # floor" chip so the player can see why output is
+                    # reduced (or about to be).  1.0 = no floor applies.
+                    "degradation_floor": round(degradation_floor, 3),
                 })
 
         # Render owned capital with display info (name, role, count)
