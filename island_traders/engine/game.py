@@ -208,8 +208,12 @@ class Game:
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
                 event_results = self.event_resolver.resolve_all(
-                    self.players, self.turn_manager._damage_counters
+                    self.players, self.turn_manager._damage_counters, year=year,
                 )
+                # Surface any halt-cap suppressions in the game log
+                # (2026-05-27 event-frequency-cap brief).
+                for msg in self.event_resolver.last_suppressions:
+                    self.io.print(f"[EVENT] Suppressed halt: {msg}")
                 # Optional hooks — set by the server to install/clear the
                 # per-season Ready timer in simultaneous-play mode.
                 cb = getattr(self, "before_season", None)

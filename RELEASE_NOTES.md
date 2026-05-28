@@ -5,6 +5,67 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/event-frequency-cap-2026-05-27
+
+Branch: `claude/event-frequency-cap-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 event-frequency-cap brief.  Caps
+production-halting events at `HALT_EVENTS_PER_PLAYER_PER_YEAR = 1`
+per player.  Addresses the "5 production-halting events in 5
+consecutive seasons" reports (Comet 1 #9: Factory Fire →
+Infrastructure Damage → Flood → Flood → Hospital Strike; AyaySir
+BUG-08: Pandemic + Factory Fire + Infrastructure Damage in
+consecutive seasons).
+
+The disaster-mitigation brief already re-tiered the single Flood
+event, but the other halt events (Crop Failure, Mine Collapse, Oil
+Spill, Factory Fire, Pandemic, Hospital Strike, etc.) could still
+stack arbitrarily.  This adds the general per-year cap.
+
+- New `EventResult.is_halt_event` property: `outage` OR
+  `yield_modifier <= 0.1`.  Soft damage (yield ~0.5) is not a halt
+  and stays uncapped.
+- New `EventChart.draw_avoiding_halt(rng, max_tries=3)`: re-rolls to
+  dodge a halt, falling back to Normal Operations if every roll is
+  a halt.
+- `SeasonEventResolver` now tracks a per-player, per-year halt
+  counter.  When a player has used their budget and draws another
+  halt, the resolver re-rolls avoiding halts and records a
+  suppression message.  The budget resets each game year.
+- `resolve_all` gained an optional `year` parameter.  When omitted
+  (legacy callers / unit tests) the cap is disabled — prior
+  behaviour preserved.
+- `Game.run` passes the year and prints any suppression messages to
+  the game log (`[EVENT] Suppressed halt: ...`).
+
+**Calibration improved.**  The 4-seed sweep band TIGHTENED from
+[11.8 – 18.1 %] (previous build) to [12.8 – 16.4 %]:
+
+| Role | Prev | After |
+|---|---:|---:|
+| Farmer | 11.8% | 12.8% |
+| Miner | 14.4% | 13.6% |
+| Transporter | 12.6% | 15.1% |
+| Educator | 18.1% | 15.5% |
+| Banker | 14.8% | 16.4% |
+| Manufacturer | 15.4% | 13.9% |
+| Doctor | 13.0% | 12.8% |
+
+Capping halt stacking reduces the catastrophic-failure variance
+that was spreading roles apart — Educator in particular came off
+the 18% ceiling toward the centre.  All roles comfortably in the
+[12 – 18 %] band; the distribution is the healthiest it's been.
+
+**Tests:** new `tests/test_engine/test_event_frequency_cap.py` with
+8 tests — is_halt_event classification, first-halt-allowed,
+second-halt-suppressed, all-halt-chart fallback to Normal, budget
+resets each year, soft damage doesn't consume budget, per-player
+independent budgets, and the no-year legacy-disable path.
+
+Suite: **514 passing** (was 506 + 8 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-28.2`.
+
 ### claude/market-bug-cluster-2026-05-27
 
 Branch: `claude/market-bug-cluster-2026-05-27`
