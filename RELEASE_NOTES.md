@@ -5,6 +5,88 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/loan-and-insurance-consent-bugs-2026-05-27
+
+Branch: `claude/loan-and-insurance-consent-bugs-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 loan-and-insurance-consent-bugs brief.
+Three independent Banker-side defects shipped in one branch.
+
+**Fix 1 — Insurance sale routes consent to BUYER.**
+
+AyaySir's BUG-07 report: *"Life Insurance (50 Dp) and Medical
+Insurance (60 Dp) were issued automatically mid-session ('Policy
+issued' appeared in the log without a player-initiated action),
+spending 110 Dp without explicit consent."*
+
+Root cause: `_action_sell_insurance` called `self.io.confirm(...)`
+while the IO adapter's active player was still the **Banker (seller)**.
+The seller's UI got the prompt; seller accepted on the buyer's
+behalf; policy was created with no buyer input.
+
+Fix: stash the seller's active-player TLS, call
+`set_active_player(buyer.player_id)`, await the confirm on the
+buyer's channel, restore the seller's active player.  Same pattern
+used elsewhere (`_pay_lease_for_lessee`).  If the buyer declines,
+no policy and no Dp move.
+
+**Fix 2 — Loan offer routes consent to BORROWER.**
+
+Codex Player report: *"the app let Banking accept a loan on behalf
+of the borrower."*
+
+Identical root cause and identical fix pattern in `_action_offer_loan`.
+The borrower's IO channel now gets the confirm; their answer
+decides whether the loan is created.  AI-borrower path (rate ≤ 0.15
+heuristic) is unchanged.
+
+**Fix 3 — Loan repayments run AFTER the action phase.**
+
+Codex Player report: *"an earlier mature loan defaulted before I
+could intervene."*
+
+Root cause: `_process_loan_repayments(year, season_index)` was
+called at `turn.py:139` — BEFORE the action loop opened at line
+142.  A loan maturing this season was repaid/defaulted before the
+borrower's action turn started, so they had no chance to rollover.
+The rollover-candidate query then said "no active loans" because
+the loan was already REPAID/DEFAULTED.
+
+Fix: move `_process_loan_repayments` to AFTER the action phase
+(right before market snapshot).  Borrowers now have their full
+action turn to rollover or repay; end-of-season processing only
+acts on what's still due.
+
+Verified end-to-end by `test_run_season_order_processes_repayments_last`
+— an AI borrower with a 1-year loan maturing in Y1 S0 now reaches
+its action turn with the loan still ACTIVE and rolls it over (or
+repays); before the fix the loan would have been auto-defaulted at
+season start.
+
+**Tests:** new `tests/test_engine/test_loan_insurance_consent.py`
+with 7 tests:
+- Insurance confirm routed to buyer (not seller)
+- Insurance refused when buyer declines (no Dp move)
+- Loan-offer confirm routed to borrower (not lender)
+- Loan-offer refused when borrower declines
+- AI borrower path uses heuristic, not the IO confirm (regression)
+- Loan due this season is still ACTIVE during action phase
+- End-to-end: AI borrower rolls over a maturing loan during their turn
+
+**Calibration:** byte-identical to previous build (4-seed sweep).
+Consent fixes don't activate in all-AI sims (no human buyers/
+borrowers in calibration runs); repayment-timing change is
+absorbed because the AI heuristic already handles rollover.
+
+Suite: **499 passing** (was 492 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.8`.
+
+UI follow-up (Claude separate, not in this commit): the buyer's
+confirm prompt may need a richer modal showing the policy terms
+(currently a bare yes/no) so the buyer can read what they're
+agreeing to.  Same for the loan-offer modal on the borrower side.
+
 ### claude/disaster-mitigation-and-workforce-resilience-2026-05-27
 
 Branch: `claude/disaster-mitigation-and-workforce-resilience-2026-05-27`
