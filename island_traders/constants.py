@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-28"
+APP_VERSION: str = "0.1.0-dev.2026-05-28.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -616,6 +616,17 @@ FLIGHT_COST_FRACTION: float = 0.20
 # Passengers via cargo arrive one full season later than via flight or Transporter.
 CARGO_FREE_PASSENGERS: int = 2
 CARGO_TRANSIT_SEASONS: int = 1   # extra seasons of absence when travelling by cargo
+
+# ---------------------------------------------------------------------------
+# Event frequency cap (2026-05-27 event-frequency-cap brief)
+# ---------------------------------------------------------------------------
+# Maximum production-halting events any single player can suffer per game
+# year.  A halt event is one with outage=True OR yield_modifier<=0.1 (see
+# EventResult.is_halt_event).  Soft damage (yield ~0.5) is uncapped.  When
+# a player has used their budget and draws another halt, the resolver
+# re-rolls avoiding halts.  Addresses the "5 production-halting events in
+# 5 consecutive seasons" reports (Comet 1 #9, AyaySir BUG-08).
+HALT_EVENTS_PER_PLAYER_PER_YEAR: int = 1
 
 # ---------------------------------------------------------------------------
 # Workplace risk constants
