@@ -723,6 +723,22 @@ class TurnManager:
 
         options = self.production.production_options(player, event_result, season_name)
         self.io.print(f"  Event: {event_result.event_name}")
+
+        # Graceful-degradation visibility (2026-05-27 brief, GitHub #47).
+        # Currently scaffolded but gated behind EXPERTISE_DEGRADATION_ENABLED
+        # (False) — the floor application broke calibration on first attempt
+        # and requires a proper re-tune before activation.  Helper is callable
+        # so future tuning work can flip the flag and exercise this surface.
+        from ..constants import EXPERTISE_DEGRADATION_ENABLED  # noqa: WPS433
+        if EXPERTISE_DEGRADATION_ENABLED:
+            floor = self.production.expertise_degradation_floor(player)
+            if floor < 1.0:
+                self.io.print(
+                    f"  [DEGRADED] Operating at {int(floor * 100)}% production floor "
+                    f"due to missing expertise.  Train via the Education Island "
+                    f"to restore full capacity."
+                )
+
         if not options:
             self.io.print("  Cannot produce anything right now — production is blocked by equipment, workforce, or inputs.")
             return

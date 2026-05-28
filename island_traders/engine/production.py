@@ -9,10 +9,26 @@ from ..constants import (
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     KITCHEN_FOOD_PER_SEASON, KITCHEN_ITEM_ID, KITCHEN_RECIPE,
+    EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
+    EXPERTISE_DEGRADATION_ENABLED, UNIQUE_SPECIALIST_PROFESSION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, recipe_for
-from ..models.profession import Profession, WorkerBand
+from ..models.profession import Profession, WorkerBand, band_of, PROFESSION_BAND
+
+
+def _band_of_profession_str(profession: str) -> WorkerBand | None:
+    """Look up the band for a profession by its string value.
+
+    Returns None if the string isn't a known Profession enum value (which
+    shouldn't happen in practice — SKILLED_PROFESSIONS only lists valid
+    enum string values — but defensive in case of a typo'd override).
+    """
+    try:
+        prof_enum = Profession(profession)
+    except ValueError:
+        return None
+    return PROFESSION_BAND.get(prof_enum)
 
 
 class InsufficientInputsError(Exception):
@@ -180,7 +196,14 @@ class ProductionEngine:
     def _labour_productivity_factor(
         self, player: Player, season_name: str, product_line: str | None = None
     ) -> float:
-        """Weighted skilled+unskilled productivity factor across all of a player's roles."""
+        """Weighted skilled+unskilled productivity factor across all of a player's roles.
+
+        Applies the graceful-degradation floor (GitHub #47 / 2026-05-27
+        playtest) as a safety net: when the natural factor would otherwise
+        leave the player frozen at zero production, the floor lets them
+        limp along at a band-specific fraction of normal so the market
+        can still trade and recovery is possible.
+        """
         total_skilled = 0
         total_unskilled = 0
         all_skilled_profs: set[str] = set()
@@ -189,9 +212,87 @@ class ProductionEngine:
             total_skilled += s
             total_unskilled += u
             all_skilled_profs.update(SKILLED_PROFESSIONS.get(role.name, []))
-        return player.workforce.labour_productivity_factor(
+        natural = player.workforce.labour_productivity_factor(
             total_skilled, total_unskilled, list(all_skilled_profs)
         )
+        if not EXPERTISE_DEGRADATION_ENABLED:
+            return natural
+        floor = self.expertise_degradation_floor(player)
+        return max(natural, floor)
+
+    @staticmethod
+    def expertise_degradation_floor(player: Player) -> float:
+        """Return the per-player production floor based on missing expertise.
+
+        For each of the player's roles, compose floors multiplicatively:
+
+        - If the role's unique specialist (Farmer/Miner/Doctor/Banker/
+          Professor/Engineer/LogisticsManager) is absent → 0.10.
+        - Else if no Manager-tier worker at all → 0.25 (rare; e.g. Doctor
+          with no Doctor AND no Nurse).
+        - If no Technician-tier worker at all → 0.50 (composes with above).
+        - Unskilled missing has no floor effect.
+
+        Across multiple roles, take the MIN floor — multi-role expertise
+        gaps are tracked the same restrictive way the underlying
+        productivity factor sums them across roles.  Returns 1.0 if the
+        player has no expertise gaps in any role (no floor applies).
+
+        Public so the server payload can surface it on the capacity panel
+        without re-implementing the math.
+        """
+        floors_per_role: list[float] = []
+        for role in player.roles:
+            role_name = role.name
+            overrides = EXPERTISE_DEGRADATION_ROLE_OVERRIDES.get(role_name, {})
+            role_floor = 1.0
+            skilled_profs = SKILLED_PROFESSIONS.get(role_name, [])
+
+            # Unique specialist check (most-severe single check).
+            unique = UNIQUE_SPECIALIST_PROFESSION.get(role_name)
+            unique_present = bool(
+                unique and player.workforce.count_profession(unique) > 0
+            )
+            any_manager_present = any(
+                player.workforce.count_profession(prof) > 0
+                for prof in skilled_profs
+                if _band_of_profession_str(prof) == WorkerBand.MANAGER
+            )
+            if unique and not unique_present:
+                role_floor *= overrides.get(
+                    "unique_specialist",
+                    EXPERTISE_DEGRADATION_FLOORS["unique_specialist"],
+                )
+            elif not any_manager_present and any(
+                _band_of_profession_str(p) == WorkerBand.MANAGER
+                for p in skilled_profs
+            ):
+                # No unique specialist required, but no Manager-tier at
+                # all (rare — e.g. Doctor with no Doctor *and* no Nurse
+                # would land here if the unique check were relaxed).
+                role_floor *= overrides.get(
+                    "manager",
+                    EXPERTISE_DEGRADATION_FLOORS["manager"],
+                )
+
+            # Technician-tier check (composes with the above).
+            tech_profs = [
+                p for p in skilled_profs
+                if _band_of_profession_str(p) == WorkerBand.TECHNICIAN
+            ]
+            if tech_profs and not any(
+                player.workforce.count_profession(p) > 0 for p in tech_profs
+            ):
+                role_floor *= overrides.get(
+                    "technician",
+                    EXPERTISE_DEGRADATION_FLOORS["technician"],
+                )
+
+            floors_per_role.append(role_floor)
+
+        if not floors_per_role:
+            return 1.0
+        return min(floors_per_role)
 
     def _role_inputs(
         self, role_name: str, season_name: str, product_line: str | None = None

@@ -5,6 +5,80 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/graceful-degradation-2026-05-27
+
+Branch: `claude/graceful-degradation-2026-05-27`
+Target: `pre-release`
+
+Scaffolding for the graceful-degradation brief (GitHub #47 + Manny
+Fracture playtest report).  **Application gated off pending
+calibration work** — the scaffolding is ready to flip on, but the
+floor mechanism shifts the entire economy.
+
+What landed:
+
+- `EXPERTISE_DEGRADATION_FLOORS` table in `constants.py`
+  (unique_specialist / manager / technician / unskilled).
+- `UNIQUE_SPECIALIST_PROFESSION` map (Farmer / Miner / Doctor /
+  Banker / Educator's Professor / Engineer / LogisticsManager).
+- `EXPERTISE_DEGRADATION_ROLE_OVERRIDES` empty-by-default map for
+  per-role tuning later.
+- `EXPERTISE_DEGRADATION_ENABLED: bool = False` master switch —
+  gates both the production-engine application and the
+  `[DEGRADED]` log line.
+- `ProductionEngine.expertise_degradation_floor(player)` staticmethod
+  computes per-role floors (multiplicative within a role, MIN across
+  multi-role players) and returns 1.0 if no expertise gaps.
+- `_labour_productivity_factor` checks the flag before applying
+  `max(natural, floor)`.  Default behaviour unchanged.
+- `_action_produce` `[DEGRADED]` log line, also flag-gated.
+- Server `_player_capacity` payload field `degradation_floor` per
+  output entry so the UI can pre-stage the "Operating at X% floor"
+  chip.
+- 9 unit tests for the helper covering the floor-composition matrix
+  + Doctor's unique-specialist edge case + multi-role MIN + the
+  patch-flag-on / patch-flag-off branches.
+
+What did NOT ship (and why):
+
+Initial implementation with the brief-spec 0.10/0.25/0.50 floors
+broke calibration severely in the 4-seed sweep:
+
+| Role | Baseline | After floor |
+|---|---:|---:|
+| Farmer | 12.9% | **22.5%** |
+| Miner | 13.1% | **4.4%** |
+| Transporter | 14.9% | 16.8% |
+| Educator | 18.0% | 12.4% |
+| Banker | 14.8% | **2.8%** |
+| Manufacturer | 12.8% | **23.1%** |
+| Doctor | 13.6% | 18.1% |
+
+Halving to 0.05/0.10/0.25 produced byte-identical results.  Further
+reducing to 0.02/0.05/0.10 also produced byte-identical results.
+
+**Root cause**: the existing calibration depends on cascading-collapse
+positive-feedback loops — when one role's workforce empties, its
+consumers also stop, freezing the whole market.  That freeze is what
+gives high-risk roles (Miner especially) their scarcity premium when
+they recover.  Any non-zero floor — even a 1% trickle — breaks the
+freeze chain because downstream consumers can always find SOME
+input.  The displacement of the scarcity premium is what crashes
+Miner and Banker.
+
+**Path forward (for the next pass)**: pair the floor with rebalancing
+of workplace_risk fatality rates and/or starting workforce sizes
+(probably combined with the
+`disaster-mitigation-and-workforce-resilience-2026-05-27` brief's
+Life-insurance fatality reduction + per-tick cap) so the attrition
+that causes the cascade is reduced.  Then the floor becomes a real
+safety net for edge cases rather than a regular occurrence that
+shifts the entire market.  Brief was updated with this finding.
+
+Calibration restored to the documented baseline with flag off.
+Suite: **485 passing** (was 475 + 10 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.6`.
+
 ### claude/workforce-display-round-up-2026-05-27
 
 Branch: `claude/workforce-display-round-up-2026-05-27`

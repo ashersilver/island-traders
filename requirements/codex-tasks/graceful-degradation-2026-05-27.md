@@ -117,3 +117,41 @@ This is the player-facing signal that they're degraded and what to do about it.
 - Per-resource degradation (e.g. "Farmer without Farming Technician produces Grain at 50 % but Fish at 80 %") — keep the multiplicative-floors model simple for this brief; per-resource tuning can come later.
 - Replacement-via-Unskilled mechanics (Unskilled never substitutes for Skilled in this brief).
 - AI behaviour changes (the AI continues to train as usual; this fix just affects production output).
+
+---
+
+## 2026-05-27 implementation findings (added by Claude during scaffolding)
+
+Claude scaffolded the engine helper + constants + payload field + brief
+acceptance tests, but **the floor application is gated off
+(`EXPERTISE_DEGRADATION_ENABLED = False`) pending a proper
+recalibration pass**.  Findings:
+
+- Brief-spec floors (0.10 unique / 0.25 manager / 0.50 technician)
+  caused a major calibration shock in the 4-seed sweep:
+  - Farmer 12.9% → **22.5%**, Miner 13.1% → **4.4%**, Transporter 14.9% → 16.8%, Educator 18.0% → 12.4%, **Banker 14.8% → 2.8%**, Manufacturer 12.8% → **23.1%**, Doctor 13.6% → 18.1%.
+- Halving the floors to 0.05/0.10/0.25 produced **identical** (byte-for-byte) results.  Further reducing to 0.02/0.05/0.10 also produced identical results.
+- **Root cause**: existing calibration depends on
+  cascading-collapse positive-feedback loops — when one role's
+  workforce empties, its consumers also stop, freezing the whole
+  market.  This freeze gives high-risk roles (especially Miner) their
+  scarcity premium when they recover.  Any non-zero floor — even a 1%
+  trickle — breaks the freeze chain because downstream consumers can
+  always find SOME input.  The displacement of scarcity premium is
+  what crashes Miner and Banker win rates.
+- **Implications for proper calibration**: this brief's acceptance
+  criterion "calibration sweep within band" is **not achievable** with a
+  floor mechanism alone.  Two paths:
+  1. Pair the floor with rebalancing of workplace_risk fatality rates
+     and/or starting workforce sizes so islands don't naturally drift
+     to zero workforce.
+  2. Combine with the `disaster-mitigation-and-workforce-resilience-2026-05-27`
+     brief (Life-insurance fatality reduction, per-tick cap) so the
+     attrition pressure that causes the cascade is reduced — making the
+     floor a true safety net for edge cases rather than a regular
+     occurrence that shifts the entire market.
+
+**Ready to enable**: flip `EXPERTISE_DEGRADATION_ENABLED = True` in
+`constants.py` and re-run the 4-seed sweep.  The helper, payload, log
+line, and UI follow-up scaffolding are all in place.  Calibration is
+the remaining work.
