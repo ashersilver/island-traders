@@ -5,6 +5,91 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/disaster-mitigation-and-workforce-resilience-2026-05-27
+
+Branch: `claude/disaster-mitigation-and-workforce-resilience-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 disaster-mitigation brief.  Addresses two
+playtest reports in one branch:
+
+- **Comet's Flood report** — single Flood event that zeroed all
+  workers across multiple roles with no insurance/mitigation path,
+  hit Year 5 Winter leaving no recovery time.
+- **Manny Fracture's 5-year zero-workforce cascade** — Mining had 0
+  active workers for virtually the entire 5-year game from
+  workplace-risk attrition with no recovery mechanism.
+
+Three fixes shipped:
+
+**Fix 1 — Flood event re-tiered (`config/event_charts.yaml`).**
+
+Flood was `yield_modifier: 0.0` + `outage: true` + `damage_seasons: 1`
++ `natural_disaster: true` — the originating island lost two
+halt-equivalent seasons AND every other island dropped to 50% the
+same season.  Re-tiered to `yield_modifier: 0.25` + `outage: false`,
+keeping the damage cycle and cascade.  Origin island now retains 25%
+output rather than zero; the existential "single roll = game over"
+character is gone.
+
+**Fix 2 — Life insurance reduces fatality rate
+(`LIFE_INSURANCE_FATALITY_REDUCTION = 0.5`).**
+
+Before this brief, Life insurance was payout-only — the worker still
+died, the player just got cash.  Now the per-worker fatality
+probability is multiplied by `(1 - LIFE_INSURANCE_FATALITY_REDUCTION)`
+when a policy is in force, mirroring how Medical insurance halves
+injuries (`MEDICAL_INSURANCE_INJURY_REDUCTION` was already there;
+this is the symmetric fix).  Mining at base fatality 0.08 drops to
+0.04 with a Life policy.
+
+To prevent the resulting Banker calibration spike from FEWER deaths
+costing the Banker less in payouts, doubled the per-fatality
+`LIFE_INSURANCE_DEATH_BENEFIT` from 60 Dp to 120 Dp so expected
+Banker liability stays flat while making the policy more valuable
+to the bereaved island.
+
+**Fix 3 — Per-tick workforce-loss cap
+(`MAX_WORKFORCE_LOSS_PER_TICK_FRACTION = 0.30`).**
+
+At most 30% of an island's active workers can die from any single
+workplace-event tick (minimum 1 to avoid blocking tiny workforces
+entirely).  Without this, a streak of bad rolls could wipe most of a
+5-worker starting workforce in one tick — exactly the Manny Fracture
+cascade.  Cap keeps the most-experienced workers (sorts deceased by
+age descending, drops the oldest from the survival list since
+domain-logic is "most-vulnerable die first").
+
+`WorkforceEventReport` extended with `insurance_reduced_fatalities`,
+`loss_cap_applied`, and `would_have_lost` flags so the dashboard +
+game log can attribute survivors to the insurance / cap.
+
+**Tests:** new `tests/test_engine/test_disaster_mitigation.py` with
+7 tests covering all three fixes (Flood re-tiered config, Life
+insurance halves rate over 50 ticks with deterministic seed, Life
+flag set on report, per-tick cap fires deterministically with
+forced-100% RNG, minimum-1 cap for tiny workforces, cap preserves
+youngest survivors).
+
+**Calibration check** (4-seed sweep × 200 games):
+
+| Role | Baseline | After | Δ |
+|---|---:|---:|---:|
+| Farmer | 12.9% | 11.8% | -1.1 |
+| Miner | 13.1% | 14.4% | +1.3 |
+| Transporter | 14.9% | 12.6% | -2.3 |
+| Educator | 18.0% | 18.1% | +0.1 |
+| Banker | 14.8% | 14.8% | 0.0 |
+| Manufacturer | 12.8% | 15.4% | +2.6 |
+| Doctor | 13.6% | 13.0% | -0.6 |
+
+All roles remain in the [12 – 18 %] band.  Banker offset (doubled
+death benefit) worked precisely.  Transporter and Manufacturer drift
+just over ±2 pp from baseline but both stay inside band.
+
+Suite: **492 passing** (was 485 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.7`.
+
 ### claude/graceful-degradation-2026-05-27
 
 Branch: `claude/graceful-degradation-2026-05-27`
