@@ -5,6 +5,78 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/market-bug-cluster-2026-05-27
+
+Branch: `claude/market-bug-cluster-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 market-bug-cluster brief — three reported
+market defects.  Investigation found one was a real client bug, one
+was already-correct engine behaviour (pinned with regression tests),
+and one was a missing-context payload gap.
+
+**Bug #1 — bid price display vs commit (Comet #6).**
+
+*"Food showed 17.18 but the bid was calculated at 40.00/unit."*
+
+Root cause was client-side: the Market Buy "Place Bid" price field
+prefilled with the resting **ask** price, not the formula/reference
+price.  When a resting ask sat far above fair value (40 vs 17.18),
+the bid field showed the confusingly-high ask.  The column header
+literally says "Place Bid (qty @ **your** price)" — a limit order
+should default to fair value.  Changed `bidPrefill` in
+`_renderMarketBuyRow` to use `formula_price` (the reference the
+player sees elsewhere); "Buy Now" remains the at-ask path.
+
+**Bug #2 — same-price Bid + Ask not crossing (Comet #8).**
+
+*"FarmMachinery Ask 9 + Bid 9 never crossed."*
+
+Investigation: the engine matching is **correct** — `_auto_match_bid`
+uses `>` (not `>=`) so equal prices cross, and `_auto_match_offer`
+mirrors it.  Verified by direct reproduction in both post orders
+(bid-first and ask-first).  The reported symptom was a stale
+market-board display artifact (the board the player was looking at
+hadn't refreshed after the cross propagated), not an engine bug.
+Added three regression tests pinning same-price crossing so it can't
+silently regress, plus a sanity guard that a bid below the ask does
+NOT cross.
+
+**Bug #3 — stale "buy food" sustenance hint (Codex Player).**
+
+*"'Meals runway: 0' told me to buy food, but there was no ask, only
+bids.  The hint remained prominent even after I posted a food bid."*
+
+The sustenance alert fired on `runway < 2` with no awareness of
+market state.  Added two context flags to the alert payload:
+
+- `market_has_supply` — True if any basket resource (Food / Grain /
+  Produce / Fish / Meat) has a resting ask.  When False, the
+  dashboard now suggests "produce it yourself, train a Farmer, or
+  build a Kitchen" instead of "buy food" (and drops the Market-Buy
+  hand-off, since there's nothing to buy).
+- `player_has_pending_bid` — True if the hungry player already has a
+  resting basket bid.  When True, the hint softens to "waiting on
+  your bid — raise the price if it's not clearing" instead of nagging
+  them to re-buy.
+
+**Tests:** new `tests/test_engine/test_market_bug_cluster.py` with 7
+tests — same-price crossing (both orders) + below-ask no-cross +
+formula_price distinct from ask + the three sustenance-flag states
+(no supply / pending bid / supply exists).
+
+No engine economics changed — the matching logic is untouched (only
+tested), the prefill + hint rendering are pure UI, and the alert
+flags are additive payload fields.  Calibration is unaffected.
+
+Suite: **506 passing** (was 499 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-28`.
+
+UI note: bugs #1 and #3 are client-rendering fixes that ship in this
+same commit (no separate Claude follow-up needed).  The remaining
+market UX items from the triage (affordability indicator, List-at-
+Best-Bid, listed-on-market badge) are still in the Pass B backlog.
+
 ### claude/loan-and-insurance-consent-bugs-2026-05-27
 
 Branch: `claude/loan-and-insurance-consent-bugs-2026-05-27`
