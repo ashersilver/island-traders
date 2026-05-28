@@ -2238,6 +2238,25 @@ class GameManager:
                 meals_on_hand = p.meals_available()
                 runway = round(meals_on_hand / meals_per_season, 2)
                 if runway < 2:
+                    # Context flags so the client can give actionable
+                    # advice rather than a blind "buy food" (2026-05-27
+                    # Codex Player: "'Meals runway: 0' told me to buy
+                    # food, but there was no ask, only bids.  The hint
+                    # remained prominent even after I posted a food
+                    # bid.").
+                    basket = (
+                        ResourceType.FOOD, ResourceType.GRAIN,
+                        ResourceType.PRODUCE, ResourceType.FISH,
+                        ResourceType.MEAT,
+                    )
+                    market_has_supply = any(
+                        game.market.available_offers(r) for r in basket
+                    )
+                    player_has_pending_bid = any(
+                        any(b.buyer_id == p.player_id
+                            for b in game.market.available_bids(r))
+                        for r in basket
+                    )
                     sustenance_alerts_by_player_id.setdefault(p.player_id, []).append({
                         "resource": "Meals",
                         "on_hand": meals_on_hand,
@@ -2246,6 +2265,14 @@ class GameManager:
                         "recommended_purchase":
                             max(0, meals_per_season * 2 - meals_on_hand),
                         "severity": "danger" if runway < 1 else "warning",
+                        # When False, the client should suggest produce /
+                        # train Farmer / build Kitchen rather than "buy
+                        # food" — there's nothing on the market to buy.
+                        "market_has_supply": market_has_supply,
+                        # When True, the player already has a resting bid
+                        # for a basket resource; the client can soften the
+                        # "buy food now" urgency to "waiting on your bid".
+                        "player_has_pending_bid": player_has_pending_bid,
                     })
                 if meals_on_hand < meals_per_season:
                     needs.append(

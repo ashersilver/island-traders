@@ -2829,12 +2829,42 @@ function renderDecisionHints(player, role) {
   const sustenanceAlerts = gameState.sustenance_alerts?.[String(player.player_id)] || [];
 
   for (const alert of sustenanceAlerts) {
+    // 2026-05-27 (Codex Player #6): tailor the advice to the actual
+    // market state instead of a blind "buy food".
+    //   - no supply on the market  → suggest producing / training a
+    //     Farmer / building a Kitchen, and DON'T hand off to Market Buy
+    //     (there's nothing to buy).
+    //   - player already has a resting bid → soften to "waiting on your
+    //     bid" so the hint isn't nagging them to re-bid.
+    //   - supply exists and no bid yet → the original "buy food" advice.
+    const hasSupply = alert.market_has_supply !== false;  // default true for old payloads
+    const hasBid = alert.player_has_pending_bid === true;
+    let why, triggersAction, targetResource;
+    if (!hasSupply) {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `No sustenance is for sale on the market right now — produce it yourself, `
+          + `train a Farmer, or build a Kitchen to convert raw ingredients into Food.`;
+      triggersAction = null;
+      targetResource = null;
+    } else if (hasBid) {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `You already have a standing bid — waiting for a seller to fill it. `
+          + `Raise your bid price if it's not clearing.`;
+      triggersAction = 'buy_market';
+      targetResource = alert.resource;
+    } else {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `Buy ${alert.recommended_purchase} ${alert.resource} to cover next season `
+          + `plus a one-season buffer.`;
+      triggersAction = 'buy_market';
+      targetResource = alert.resource;
+    }
     hints.push({
       tone: alert.severity === 'danger' ? 'blocked' : 'warn',
       title: `${alert.resource} runway: ${fmtQty(alert.runway_seasons)} season${alert.runway_seasons === 1 ? '' : 's'}`,
-      why: `You have ${alert.on_hand}; projected population need is ${alert.seasonal_need}/season. Buy ${alert.recommended_purchase} ${alert.resource} to cover next season plus a one-season buffer.`,
-      triggers_action: 'buy_market',
-      target_resource: alert.resource,
+      why,
+      triggers_action: triggersAction,
+      target_resource: targetResource,
     });
   }
 
@@ -3493,10 +3523,17 @@ function _renderMarketBuyRow(res, d, focusResource) {
   const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
   const bidQty = d.bid_quantity ?? 0;
   const bidPrice = d.bid_price;
-  // #22.3 — when an ask exists, pre-fill the new-bid price with the ask
-  // (the buyer starts from the price that would clear), else the formula
-  // price as a sensible default.
-  const bidPrefill = (askQty && askPrice) ? Number(askPrice).toFixed(2) : (d.formula_price || 0);
+  // Place-Bid price prefills with the FORMULA (fair reference) price,
+  // not the resting ask.  2026-05-27 playtest (Comet #6): "Food showed
+  // 17.18 but the bid was calculated at 40.00/unit" — the old behaviour
+  // prefilled the bid with the ask price, so when a resting ask sat far
+  // above fair value the bid field showed a confusingly-high number
+  // that didn't match the reference price the player saw elsewhere.
+  // "Buy Now" remains the at-ask path (data-price=askPrice on the
+  // mkt-qty-in input); "Place Bid" is a limit order so it should start
+  // from fair value and let the player raise it to clear if they choose.
+  const bidPrefill = (d.formula_price ? Number(d.formula_price).toFixed(2)
+                      : (askQty && askPrice ? Number(askPrice).toFixed(2) : 0));
   const focusClass = (focusResource && res === focusResource) ? ' class="mkt-row-focus"' : '';
   return `<tr${focusClass}>
     <td>${esc(res)}</td>
