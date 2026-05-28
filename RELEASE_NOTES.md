@@ -5,6 +5,73 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/workforce-display-round-up-2026-05-27
+
+Branch: `claude/workforce-display-round-up-2026-05-27`
+Target: `pre-release`
+
+Three changes from the 2026-05-27 Comet + Manny Fracture playtest
+feedback:
+
+**1. Quick fix: round up fractional worker shortfalls in Decision Hints.**
+
+Playtester observation (Comet): *"Decision Hints show fractional
+farmer requirements (0.12, 0.06, 0.04 Farmer) — these appear to be
+less than 1 full worker unit. It's unclear whether the game expects
+partial worker assignment or if this is a display/rounding bug."*
+
+Root cause: the labour-math in `app.py:1547-1561` computes
+`per_unit × workforce_target` where `per_unit` is per-output-unit
+(e.g. 0.04 Farmer-seasons per Food unit).  Real math, but you
+can't hire 0.12 of a person.  Fixed by replacing `round(short, 2)`
+with `math.ceil(short)` so shortfalls always show as whole
+workers.  Existing tests still pass because they used whole-number
+fixtures (1.0, 2.0).
+
+**2. New brief: `disaster-mitigation-and-workforce-resilience-2026-05-27.md`.**
+
+Addresses Comet's Flood report + Manny Fracture's 5-year zero-
+workforce cascade.  Three engine fixes proposed:
+
+- Re-tier `Flood` from `catastrophic` (yield 0.0 + outage) to
+  `heavy` (yield 0.25 + damage cycle).  Severity tiers via a new
+  YAML `severity` field so future events can opt in.
+- Life insurance reduces fatality *rate* by 50 %, not just pays a
+  death benefit.  Mirrors how Medical reduces injury rate.
+- Per-tick workforce-loss cap: at most 30 % of active workers can
+  die from any single workforce-event tick (`floor(N × 0.30)`,
+  minimum 1).
+- Explicit logging: when workers leave, log says WHY (workplace
+  fatality / retirement / disaster) + insurance status.
+
+**3. New brief: `graceful-degradation-2026-05-27.md`** (formalises
+GitHub issue #47).
+
+Addresses Manny Fracture's "all production lines locked at max 0"
+scenario.  An island missing required expertise produces at a
+band-tier-specific floor instead of zero:
+
+- Unique specialist missing (Doctor / Banker / Educator's Professor)
+  → 10 % floor.
+- Other Manager-tier missing → 25 % floor.
+- Technician-tier missing → 50 % floor.
+- Worker-tier (Unskilled) missing → no floor change.
+- Floors compose multiplicatively.
+
+Includes a `degradation_floor` field on the capacity payload and
+an explicit `[PRODUCTION] ... operating at X % floor` log line so
+the player can see they're degraded and what to train to recover.
+
+Suite: **475 passing** (display fix didn't break anything; tests
+fixture values were already whole numbers).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.5`.
+
+The two new briefs raise the open Codex queue to 8 — both are
+classified as **High** priority because the Manny Fracture cascade
+(Mining at 0 workers, no Oil, all Manufacturing lines locked) is
+exactly the kind of game-ending failure the rollout plan's
+`0.1.0-rc1` milestone needs to prevent.
+
 ### claude/queue-summary-log-export-rollover-2026-05-27
 
 Branch: `claude/queue-summary-log-export-rollover-2026-05-27`
