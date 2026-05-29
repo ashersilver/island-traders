@@ -9,37 +9,39 @@ must be protected, and how a strong governor usually wins with it.
 ## Agriculture and Fisheries Island
 
 You have bought the island that feeds the archipelago.  Your island produces
-**Grain**, **Produce**, **Fish**, and **Meat**.  Other islands need a healthy
-mix of Grain, Produce, and either Fish or Meat to keep their populations in
-good condition.  You can also package those ingredients into **Food** in an
-**Industrial Kitchen**; that convenience should attract a premium from busy
-governors who would rather buy one balanced ration than manage three lines.
+**Grain**, **Produce**, and **Fish**.  Other islands need a balanced ration of
+Grain, Produce, and Fish (or Meat as a substitute) to keep their populations in
+good condition; one unit of each is equivalent to one unit of **Food**.  You can
+trade these ingredients separately or pre-package them as Food — whichever
+commands the better price.
 
 Your immediate responsibilities are to keep your own population fed, maintain
 enough **Farm Machinery** and **Oil** to keep producing, and sell surplus
 staples without stripping your own reserves bare.  Agriculture is seasonal:
-some seasons favour Fish, while Autumn brings the strongest Grain harvest.
-Plan around the calendar rather than treating every season as identical.
+Spring and Summer bring good Fish runs, while Autumn delivers the strongest
+Grain and Produce harvest.  Plan around the calendar rather than treating
+every season as identical.
 
 Your workforce matters enormously.  Fields, boats, barns, tractors, and storage do
 not produce by themselves.  You begin with a mix of farmers, technicians, and
 general labour, but your long game is to recruit and train before labour
 becomes the thing that caps output.  **Horticulturalists** improve Produce;
-**Veterinarians** improve Meat.  Skilled agricultural workers turn capital into
-dependable abundance; untrained workers leave expensive machinery partly idle.
+**Veterinarians** improve livestock quality.  Skilled agricultural workers turn
+capital into dependable abundance; untrained workers leave expensive machinery
+partly idle.
 
 Your priorities:
 
-1. Keep a balanced reserve for your own island.
+1. Keep a balanced reserve of staples for your own island.
 2. Hold enough Farm Machinery and Oil to avoid production interruptions.
-3. Watch Grain, Produce, and protein runway across the archipelago; future shortages are
+3. Watch sustenance runway across the archipelago; future shortages are
    future customers.
 4. Train your workforce before population growth makes your current scale
    inadequate.
 5. Expand capacity only when you have the people and inputs to use it.
 
 Best strategy: become the archipelago's reliable food-security partner.  Sell
-raw staples early, add an Industrial Kitchen when convenience starts to matter,
+raw staples early, sell pre-packaged Food when convenience starts to matter,
 preserve stock for lean moments, and grow capacity ahead of demand.  Agriculture
 wins by being indispensable, not by causing a famine and discovering that
 starving customers are poor repeat buyers.
@@ -97,9 +99,10 @@ Your responsibilities are to keep fleets fuelled, fed, maintained, and
 available before demand spikes.  You consume **Oil** and **Food** to operate,
 and your fleet carries an ongoing Dollop maintenance burden even after the
 ships and planes are bought.  Container Freight will be needed by industrial
-players; PassengerSeats become vital whenever training or medical travel
-matters.  If you hoard seats or fail to list them, the whole human-capital
-system quietly jams.
+players; PassengerSeats become vital whenever training travel or medical
+staffing contracts are active — trainees heading to the Education Island and
+Doctors or Nurses travelling to host islands both require seats.  If you hoard
+seats or fail to list them, the whole human-capital system quietly jams.
 
 Your workforce is the difference between vehicles and a transport network.
 Logistics managers, flight crew, seamen, warehouse managers, and especially
@@ -112,8 +115,8 @@ Your priorities:
 1. Keep Oil and Food reserves sufficient for next season's operations.
 2. Produce and list both Container Freight and PassengerSeats.
 3. Pay attention to fleet maintenance and keep enough Mechanics available.
-4. Watch training demand and medical emergencies; they are advance signals for
-   seat demand.
+4. Watch training demand and medical staffing contracts; both are advance signals
+   for seat demand that can spike suddenly.
 5. Balance cargo capacity with passenger capacity when investing.
 
 Best strategy: become the island that everyone plans around.  Freight gives
@@ -135,9 +138,24 @@ Your responsibilities are wider than ordinary production.  Other governors
 need you to train their workforce, and your own island must maintain the
 faculty and infrastructure to keep that promise.  You require
 **LaboratoryEquipment** to produce, and your training economy must also source
-PassengerSeats when students need to travel to you.  Visiting trainees also
-live on your campus while enrolled: they add to the Food and accommodation
-burden of Education until they return home.
+PassengerSeats when students need to travel to you.
+
+**Campus load — Food is on you.**  Visiting trainees live on your campus for
+the full duration of their training.  Each one adds to your island's Food
+demand for every season they are enrolled.  Watch your **Campus Load** figure
+in the sidebar: it shows how many people you are currently housing.  If it
+outstrips your Food reserves, your population starts missing meals before the
+Farmer ever runs short.  Plan food purchases at least one season ahead of
+each new batch of arrivals, not the morning after they show up.
+
+If medical staff are also posted to your campus under a **Staffing Contract**,
+they too add to your Food bill for the duration of their stay.
+
+Training fee negotiations can go several rounds.  When you review a request
+you can **Approve**, **Counter-offer** (propose a different fee, with a note),
+or **Reject**.  The requester can accept your counter-offer, reject it, or
+send a counter-counter.  Alert cards appear in each party's sidebar when a
+decision is waiting.
 
 Your workforce is your product.  Professors create and govern knowledge;
 Instructors make Courses possible.  Education starts with an unusually strong
@@ -149,11 +167,12 @@ Your priorities:
 
 1. Maintain enough Expertise to fund Course production.
 2. Keep Courses available so training requests do not sit idle.
-3. Track campus load so visiting trainees do not outrun Food supply.
+3. **Track campus load** and stock Food ahead of arrivals — every visiting
+   trainee or contracted staff member raises your Food demand.
 4. Secure Laboratory Equipment and PassengerSeats before they become
    bottlenecks.
-5. Choose carefully between immediate training revenue and longer-term Patent
-   value.
+5. Use the counter-offer flow to price training fairly, but do not let
+   negotiations stall a student for three seasons while you haggle over 5 Dp.
 6. Protect and expand your teaching workforce; it is the archipelago's growth
    engine.
 
@@ -239,35 +258,53 @@ architect of everyone else's expansion.
 
 You have bought the island that keeps productivity from collapsing when human
 bodies refuse to behave like tidy economic abstractions.  Healthcare produces
-**HealthServices** and **Vaccine**.  It also supplies medical labour, including
-Nurses who may be needed when another island suffers a Food shortage and wants
-to restore productivity immediately rather than recover slowly.
+**HealthServices** and **Vaccine**.  It also deploys medical staff — Doctors
+and Nurses — to other islands under **Staffing Contracts**.
 
 Your responsibilities are to maintain enough **Expertise** and
 **LaboratoryEquipment** to keep producing, protect your own specialist
-workforce, and watch the wider archipelago for preventable crises.  A Nurse
-sent to another island needs a **PassengerSeat** sourced by Healthcare, paid
-for by the receiving island, and is unavailable until returning at the end of
-the following season.  Medical aid is valuable precisely because it costs you
-real capacity.
+workforce, and watch the wider archipelago for preventable crises.
 
-Your workforce is unusually specialised from the beginning: Doctors, Nurses,
-and Medical Orderlies are already trained professionals.  That gives you high
-initial competence, but also makes losses or overcommitment painful.  Your
-people are not replaceable at supermarket speed; plan their deployment with
-care.
+**Staffing Contracts** are your second revenue stream.  Any island can use the
+**Request Medical Staff** action to hire your Doctors or Nurses on a fixed-term
+contract (1–4 seasons).  You review these requests using **Review Staffing
+Requests**: approve, counter-offer (propose a different fee), or reject.
+Negotiations work the same back-and-forth as training.  Once agreed and tickets
+are arranged, your staff depart; they no longer count toward your active
+workforce while away and return automatically at the end of the contract.
+
+**What contracts cost you:**
+- Staff away = fewer active workers at home → lower production and reduced clinic
+  capacity until they return.
+- You must have **PassengerSeats** for the round trip (or negotiate for the
+  requester to supply them).
+
+**What contracts earn you:**
+- The agreed fee (paid at dispatch).
+- Goodwill: an island that has your staff will keep paying you for preventive
+  services.
+
+**Your starting workforce** is 6 professionals — 2 Doctors + 2 Nurses +
+2 Medical Orderlies — all fully trained.  Replacing a departed Doctor means
+recruiting and sending someone to university for 3 seasons.  Send staff only
+when you have enough left to cover your own production.
+
+Your workforce is unusually specialised from the beginning.  That gives you
+high initial competence, but also makes losses or overcommitment painful.
 
 Your priorities:
 
 1. Keep Expertise and Laboratory Equipment available for production.
-2. Maintain enough staff at home before sending Nurses abroad.
+2. Maintain enough staff at home before accepting staffing contracts.
 3. Watch Food-shortage alerts and injury risk elsewhere; both create medical
    demand.
 4. Stock or source PassengerSeats before urgent travel is required.
-5. Use Vaccines and HealthServices to become preventive infrastructure, not
+5. Price contracts fairly — enough to compensate for the lost capacity, not
+   so much that islands decide to tough out their medical crises alone.
+6. Use Vaccines and HealthServices to become preventive infrastructure, not
    merely emergency response.
 
 Best strategy: be the island that sells resilience.  Healthcare wins when
 other governors realise that avoiding a productivity collapse is cheaper than
-enduring one.  Your strongest deals happen before the patient is already on
-the floor.
+enduring one.  Your strongest deals — and your most profitable staffing
+contracts — happen before the patient is already on the floor.

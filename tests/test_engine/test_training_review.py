@@ -49,15 +49,26 @@ class TrainingReviewIO(FakeIOAdapter):
         self.texts = list(texts or [])
 
     def choose_option(self, prompt, options, request_summary=None):
-        """Pop from confirms: True→'approve', False→'counter', None→'skip'."""
+        """Pop from confirms:
+        - str  → returned as-is (explicit option value)
+        - True → first option value
+        - False → 'reject' if options include it, else 'counter'
+        - None → 'skip'
+
+        Handles both Educator review (approve/counter/skip) and requester
+        counter-offer review (approve/counter/reject) by checking option values.
+        """
         self.printed.append(prompt)
         if not self.confirms:
             return options[0]["value"] if options else None
         raw = self.confirms.pop(0)
+        if isinstance(raw, str):
+            return raw
         if raw is True:
-            return "approve"
+            return options[0]["value"] if options else "approve"
         if raw is False:
-            return "counter"
+            vals = [o["value"] for o in options if isinstance(o, dict)]
+            return "reject" if "reject" in vals else "counter"
         return "skip"
 
     def confirm(self, prompt, request_summary=None):
@@ -311,3 +322,39 @@ def test_requester_can_reject_training_counter_offer():
     assert farmer.dollops == 100.0
     assert educator.dollops == 100.0
     assert result.actions_taken == ["rejected_training_counter:batch#0"]
+
+
+def test_requester_can_counter_counter_offer():
+    """Requester sends a counter-counter, putting the request back to AWAITING_EDUCATOR."""
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(1)
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[w.worker_id for w in workers],
+        educator_id=educator.player_id,
+        dollops_to_educator=20.0,
+        target_profession="FarmingTechnician",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    training.educator_counter(req.batch_id, 45.0, "Premium slot.")
+
+    # "counter" passed as str → returned as-is; amounts provides the new fee; texts provides message
+    io = TrainingReviewIO(confirms=["counter"], amounts=[32.0], texts=["How about 32?"])
+    manager = _turn_manager([farmer, educator], training, io)
+    result = TurnResult(farmer.player_id, season=0, year=0)
+    manager._review_training_counteroffers(
+        farmer, result, season_name="Spring", year=0
+    )
+
+    # Request goes back to the Educator with requester's new fee
+    assert req.status == TrainingStatus.AWAITING_EDUCATOR
+    assert req.dollops_to_educator == 32.0
+    assert "[Requester]" in req.counter_message
+    # No money changes hands yet
+    assert farmer.dollops == 100.0
+    assert educator.dollops == 100.0
+    assert result.actions_taken == ["requester_counter:batch#0"]

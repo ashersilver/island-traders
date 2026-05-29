@@ -294,6 +294,18 @@ class TrainingRegistry:
         req.status = TrainingStatus.REJECTED
         return req
 
+    def requester_counter(
+        self, batch_id: int, new_fee: float, message: str = ""
+    ) -> TrainingRequest:
+        """Counter a counter-offer: requester proposes a different price, sending
+        the request back to AWAITING_EDUCATOR status for the Educator to review."""
+        req = self._get(batch_id, TrainingStatus.COUNTERED)
+        req.dollops_to_educator = new_fee
+        req.counter_message = message.strip()
+        req.decision_acknowledged = True
+        req.status = TrainingStatus.AWAITING_EDUCATOR
+        return req
+
     def arrange_transport(
         self, batch_id: int, transporter_id: int, dollop_amount: float | None = None
     ) -> TrainingRequest:

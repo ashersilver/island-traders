@@ -498,6 +498,23 @@ button:active{transform:scale(.97)}
   padding-bottom:.18rem;border-bottom:1px solid var(--border);
 }
 .training-strip-hdr button{margin-left:auto}
+/* ---- Training counter-offer / rejection alerts ---- */
+.training-decision-alert{
+  border:1px solid rgba(231,76,60,.6);border-radius:var(--radius-sm);
+  padding:.35rem .5rem;margin:.3rem 0 .15rem;font-size:.76rem;line-height:1.35;
+  background:rgba(231,76,60,.08)
+}
+.training-decision-alert.status-countered{border-color:rgba(231,192,93,.7);background:rgba(231,192,93,.07)}
+.training-decision-alert-hdr{font-weight:700;color:var(--gold);margin-bottom:.15rem}
+.training-decision-alert.status-countered .training-decision-alert-hdr{color:var(--gold)}
+.training-decision-alert.status-rejected .training-decision-alert-hdr{color:var(--red)}
+.training-decision-btns{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+.training-decision-btns button{font-size:.68rem;padding:.2rem .5rem;cursor:pointer;
+  border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.06);
+  color:var(--text)}
+.training-decision-btns .btn-accept{border-color:rgba(39,174,96,.6);color:var(--green)}
+.training-decision-btns .btn-counter{border-color:rgba(231,192,93,.6);color:var(--gold)}
+.training-decision-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
 .training-row-blocker{font-size:.66rem;color:var(--gold);margin-top:.1rem;white-space:normal;line-height:1.25}
 .training-row-supply-hint{font-size:.63rem;color:var(--dim);margin-top:.06rem;line-height:1.2}
 /* ---- Staffing contract strip ---- */
@@ -921,11 +938,13 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
+        <div id="s-training-decisions"></div>
         <div id="s-training-strip"></div>
         <div id="s-staffing-strip"></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
+        <div class="stat" id="s-campus-load-row" style="display:none"><span class="lbl">Campus Load</span><span class="val" id="s-campus-load">0</span><span class="stat-hint" id="s-campus-load-hint" style="font-size:.65rem;color:var(--warn);margin-left:.3rem"></span></div>
       </div>
       <div class="section">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -2099,6 +2118,73 @@ function _trainingStatusLabel(status) {
   return _TRAINING_STATUS_LABEL[status] || status || '—';
 }
 
+// ---- Training decision alerts (counter-offers and rejections) ----
+
+function _renderTrainingDecisions(decisions) {
+  const el = document.getElementById('s-training-decisions');
+  if (!el) return;
+  if (!decisions || !decisions.length) { el.innerHTML = ''; return; }
+  const alerts = decisions.map(d => {
+    const isCountered = d.status === 'countered';
+    const statusClass = isCountered ? 'status-countered' : 'status-rejected';
+    const hdrText = isCountered ? '⚠ Counter-offer received' : '✗ Training request rejected';
+    const detail = isCountered
+      ? `${d.n_workers}× ${esc(d.target_profession)} — Educator proposes <strong>${d.suggested_offer_if_any} Dp</strong> (you offered ${d.original_offer} Dp).`
+      : `${d.n_workers}× ${esc(d.target_profession)} was rejected.`;
+    const reason = d.decline_reason
+      ? `<div style="font-size:.67rem;color:var(--dim);margin-top:.1rem"><em>${esc(d.decline_reason)}</em></div>` : '';
+    let btns = '';
+    if (isCountered) {
+      btns = `<div class="training-decision-btns">
+        <button class="btn-accept" onclick="respondTrainingCounter(${d.batch_id},'approve')">Accept ${d.suggested_offer_if_any} Dp</button>
+        <button class="btn-counter" onclick="respondTrainingCounter(${d.batch_id},'counter')">Counter…</button>
+        <button class="btn-reject" onclick="respondTrainingCounter(${d.batch_id},'reject')">Reject</button>
+      </div>`;
+    } else {
+      btns = `<div class="training-decision-btns">
+        <button onclick="ackTrainingDecision(${d.batch_id})">Dismiss</button>
+      </div>`;
+    }
+    return `<div class="training-decision-alert ${statusClass}">
+      <div class="training-decision-alert-hdr">${hdrText}</div>
+      <div>${detail}</div>
+      ${reason}
+      ${btns}
+    </div>`;
+  }).join('');
+  el.innerHTML = alerts;
+}
+
+function respondTrainingCounter(batchId, action) {
+  if (action === 'approve') {
+    sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'approve' });
+  } else if (action === 'reject') {
+    sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'reject' });
+  } else {
+    // Prompt for counter price — show a simple overlay input
+    const price = prompt('Your counter-offer to the Educator (Dp):', '');
+    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) return;
+    const msg = prompt('Message to Educator (optional):', '') || '';
+    sendWsMessage({
+      type: 'training_counter_response',
+      batch_id: batchId,
+      action: 'counter',
+      new_fee: parseFloat(price),
+      message: msg,
+    });
+  }
+}
+
+function ackTrainingDecision(batchId) {
+  sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'ack' });
+}
+
+function sendWsMessage(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
 function _renderTrainingStrip(pipeline) {
   const el = document.getElementById('s-training-strip');
   if (!el) return;
@@ -2922,11 +3008,23 @@ function renderGameState() {
     ).join('');
   }
   document.getElementById('s-personnel').innerHTML = personnelHtml;
+  _renderTrainingDecisions(me.training_decisions);
   _renderTrainingStrip(me.training_pipeline);
   _renderStaffingStrip(me.staffing_contracts);
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
+  // Campus load — only visible for Educators
+  const campusLoadRow = document.getElementById('s-campus-load-row');
+  const campusLoad = (me.campus_load || 0) + (me.visiting_staff_count || 0);
+  if (campusLoadRow) {
+    const isEducator = (me.role || '').toLowerCase().includes('educat');
+    campusLoadRow.style.display = (isEducator || campusLoad > 0) ? '' : 'none';
+    const loadEl = document.getElementById('s-campus-load');
+    if (loadEl) loadEl.textContent = campusLoad + ' visitor' + (campusLoad !== 1 ? 's' : '');
+    const hintEl = document.getElementById('s-campus-load-hint');
+    if (hintEl) hintEl.textContent = campusLoad > 0 ? `+${campusLoad} Food/season` : '';
+  }
   document.getElementById('hdr-wealth').textContent = 'Net Wealth ' + me.wealth + ' Dp';
 
   const inv = me.inventory || {};

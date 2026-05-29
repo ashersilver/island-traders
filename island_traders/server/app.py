@@ -28,6 +28,7 @@ from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
+from ..models.training import TrainingStatus
 from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
@@ -1945,6 +1946,100 @@ class GameManager:
             })
         return decisions
 
+    async def _handle_training_counter_response(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Handle a requester's response to a training counter-offer.
+
+        Message fields:
+          batch_id : int   — the TrainingRequest batch_id
+          action   : str   — "accept" | "counter" | "reject" | "ack"
+          new_fee  : float — (counter only) the new proposed fee
+          message  : str   — (counter only) optional message to Educator
+        """
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+
+        training = getattr(room.game, "training", None)
+        if not training:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Training not initialised"}))
+            return
+
+        batch_id = msg.get("batch_id")
+        action = msg.get("action", "")
+
+        try:
+            if action == "approve":
+                req = training.requester_accept_counter(batch_id)
+                req.decision_acknowledged = True
+                ack_msg = {"type": "training_counter_ack", "result": "accepted", "batch_id": batch_id}
+
+            elif action == "counter":
+                new_fee = float(msg.get("new_fee", 0))
+                message = str(msg.get("message", ""))
+                if new_fee <= 0:
+                    await websocket.send_text(json.dumps({
+                        "type": "error", "message": "Counter fee must be positive"
+                    }))
+                    return
+                training.requester_counter(batch_id, new_fee, message)
+                ack_msg = {"type": "training_counter_ack", "result": "countered", "batch_id": batch_id}
+
+            elif action == "reject":
+                req = training.requester_reject_counter(batch_id)
+                req.decision_acknowledged = True
+                ack_msg = {"type": "training_counter_ack", "result": "rejected", "batch_id": batch_id}
+
+            elif action == "ack":
+                training.acknowledge_decision(engine_pid, batch_id)
+                ack_msg = {"type": "training_counter_ack", "result": "acked", "batch_id": batch_id}
+
+            else:
+                await websocket.send_text(json.dumps({
+                    "type": "error", "message": f"Unknown training counter action: {action!r}"
+                }))
+                return
+
+        except (ValueError, KeyError) as e:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            return
+
+        await websocket.send_text(json.dumps(ack_msg))
+
+        # Broadcast fresh state to the requester so their decision cards clear
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        # If the requester counter-countered, also notify the Educator that there
+        # is a new pending review.  We can't interrupt their turn thread, but a
+        # state broadcast will refresh their sidebar on next UI poll.
+        if action in ("approve", "counter", "reject"):
+            # Find the Educator player and send them a fresh state too.
+            req_obj = training.request_by_id(batch_id)
+            if req_obj:
+                educator_lobby_id = None
+                for lp_id, ep in (room.lobby_to_engine_id or {}).items():
+                    if ep == req_obj.educator_id:
+                        educator_lobby_id = lp_id
+                        break
+                if educator_lobby_id:
+                    self._thread_safe_send(
+                        room_id, educator_lobby_id,
+                        self.get_game_state(room_id, educator_lobby_id) or {},
+                    )
+
     def _leases_detail_for_player(
         self,
         game: Game,
@@ -2172,6 +2267,14 @@ class GameManager:
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                "campus_load": (
+                    game.training.visiting_trainees(p.player_id)
+                    if any(r.name == "Educator" for r in p.roles) else 0
+                ),
+                "visiting_staff_count": (
+                    getattr(game, "staffing", None) and
+                    getattr(game, "staffing").visiting_staff(p.player_id) or 0
+                ),
                 # Plain descriptive strings for back-compat with older UI code
                 "policies": [
                     pol.describe() for pol in p.insurance_policies if pol.active
@@ -3230,6 +3333,10 @@ def create_app() -> FastAPI:
                         "from": lp.name,
                         "text": msg.get("text", ""),
                     })
+                elif msg_type == "training_counter_response":
+                    await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
 
         except WebSocketDisconnect:
             pass

@@ -1673,6 +1673,7 @@ class TurnManager:
             return
         player_names = {p.player_id: p.name for p in self.players}
         player_map = {p.player_id: p for p in self.players}
+        sym = CURRENCY_SYMBOL
         self.io.print(f"  You have {len(counters)} training counter-offer(s).")
         for req in counters:
             educator = player_map.get(req.educator_id)
@@ -1682,12 +1683,48 @@ class TurnManager:
                 continue
             self.io.print(f"\n  Counter-offer: {self._training_request_details(req, player_names, player)}")
             summary = self._training_request_summary(req, player_names, player)
-            if self._confirm_with_request_summary("Accept this training counter-offer?", summary):
+            decision = self.io.choose_option(
+                "Your response to this counter-offer?",
+                [
+                    {"value": "approve", "label": f"Accept ({req.dollops_to_educator:.0f} {sym})"},
+                    {"value": "counter", "label": "Counter-offer (propose a different price)"},
+                    {"value": "reject",  "label": "Reject"},
+                ],
+                request_summary=summary,
+            )
+            if decision == "approve":
                 try:
                     self._approve_training_request(educator, player, req, result, season_name, year)
                 except Exception as exc:
                     self.io.print(f"  Could not accept counter-offer #{req.batch_id}: {exc}")
-            else:
+            elif decision == "counter":
+                new_fee = self.io.ask_dollop_amount(
+                    f"Your counter-offer to {educator.name} ({sym})",
+                    1_000_000.0,
+                    prefill=req.original_dollops_to_educator,
+                )
+                if new_fee <= 0:
+                    self.io.print("  Counter cancelled (fee must be positive).")
+                    continue
+                message = self.io.ask_text(
+                    "Message to Educator (optional)",
+                    f"I can offer {new_fee:.0f} {sym}.",
+                )
+                # Reset back to AWAITING_EDUCATOR with the new requester price,
+                # so the Educator sees it again as a fresh proposal.
+                req.dollops_to_educator = new_fee
+                req.counter_message = ""
+                req.status = TrainingStatus.AWAITING_EDUCATOR
+                req.decision_acknowledged = True
+                # Attach the requester's message as a note
+                if message:
+                    req.counter_message = f"[Requester] {message}"
+                self.io.print(
+                    f"  Counter-offer sent to {educator.name}: {new_fee:.0f} {sym}. "
+                    f"Awaiting their response."
+                )
+                result.actions_taken.append(f"requester_counter:batch#{req.batch_id}")
+            else:  # reject
                 self.training.requester_reject_counter(req.batch_id)
                 self.io.print(f"  Rejected training counter-offer #{req.batch_id}.")
                 result.actions_taken.append(f"rejected_training_counter:batch#{req.batch_id}")

@@ -220,9 +220,12 @@ On your turn you may take **any number of actions** in any order:
 | **Purchase Capital** | Buy named capital equipment from the Manufacturer (e.g. Farm Machinery, Mining Equipment, Lab Equipment).  Complex items have a 2-season delivery delay. |
 | **Apply Patent** | Activate a Patent from inventory on one of your outputs — permanent –20% input cost on that output (max 3 active patents per output). |
 | **Request Training** | Send workers to the Education Island to train into a profession (duration depends on the profession — see Training).  Choose one target profession, or bundle **all visible skill deficits** in one request. |
-| **Review Training** | *(Educator only)* Approve or reject incoming training requests. |
+| **Review Training** | *(Educator only)* Approve, counter-offer, or reject incoming training requests. |
 | **Arrange Transport** | *(Transporter only)* Accept or counter-offer transport jobs for workers going to college. |
 | **Recruit Workers** | Draw unskilled workers from your island's population into your workforce (1 recruit per 2 unskilled residents). |
+| **Request Medical Staff** | Hire Doctors or Nurses from the Healthcare island on a short-term contract (see Medical Staffing Contracts). |
+| **Review Staffing Requests** | *(Doctor only)* Review incoming staffing contract proposals — approve, counter-offer, or reject. |
+| **Repurpose Worker** | Re-assign an active worker to a new profession.  They lose all accumulated experience and training and restart as unskilled in the new role.  Costs **25 Dp** per worker. |
 | **Sell Insurance** | *(Banker only)* Sell a Life or Medical insurance policy to another player at a negotiated premium. |
 | **Buy Insurance** | Buy a policy from a Banker at the offered premium. |
 | **Manage Insurance** | Review your active policies.  Cancel a policy mid-term for a pro-rata refund (premium × seasons remaining ÷ total term). |
@@ -292,8 +295,10 @@ each season), capital equipment is an owned **asset**.
 - **Book value** — straight-line depreciation over **5 years** from the
   purchase cost.  A 3-year-old item has 40% of its original cost on the
   balance sheet.
-- **Leases** *(future)* — a 3-year lease arrangement is on the roadmap.  At
-  the end of the lease the item can be returned or bought out at book value.
+- **Leases** — a 3-year lease arrangement lets an island use a capital item
+  without paying the full catalogue price upfront.  Annual lease payments
+  are due each year; at the end of the term the lessee can return the item
+  or buy it out at its remaining book value.
 
 ### Patents
 
@@ -509,19 +514,32 @@ college), the travel ticket, and — Manager-tier only — the Expertise
 the Course burns.  Self-training (the Educator training its own
 workers) skips the fee and the ticket.
 
-### Step 2 — Educator Approval
+### Step 2 — Educator Review
 
-The Educator reviews the request on their turn.  It can only be approved
-when the band gate is satisfied:
+The Educator reviews the request on their turn and can **Approve**,
+**Counter-offer**, or **Reject** it.
 
+**Capacity gate** — a request can only be approved when:
 - **Manager-tier:** a **Course** is available (auto-split for >12) and
   the air ticket is in hand.
 - **Technician-tier:** a free **apprenticeship slot** and an
   **Instructor** are available.
 
-If the gate isn't met the request stays **pending** (not rejected)
-until capacity frees up — no Dollops or tickets are consumed while
-pending.  On approval the Dollops transfer to the Educator.
+If the gate isn't met the request stays **pending** until capacity frees
+up — no Dollops or tickets are consumed while pending.
+
+**Counter-offer** — if the Educator wants to charge a different fee, they
+can send a counter-offer back to the requester along with an optional
+message explaining the reason (e.g. "Two air tickets are required — 90 Dp").
+
+**Back-and-forth negotiation** — the requester can **Accept** the
+counter-offer, **Reject** it (cancelling the request), or send a
+**Counter-counter** with a new fee and message.  The request then bounces
+back to the Educator again.  This continues until one party accepts or
+rejects.  When a counter-offer or rejection is waiting, an alert card
+appears in the requester's sidebar.
+
+On approval the Dollops transfer to the Educator immediately.
 
 ### Step 3 — Transport
 
@@ -566,6 +584,67 @@ The Healthcare Island produces **Vaccines** in addition to Health Services. Each
 - **Base price:** 40 Dp per unit.
 
 > In future expansions the wellness mechanic will interact with the workplace injury and illness system to reduce downtime on labour-intensive islands.
+
+---
+
+## Medical Staffing Contracts
+
+Any island can hire **Doctors or Nurses** from the Healthcare Island on a
+short-term contract — useful when an island faces a health crisis, a
+disease outbreak event, or simply wants qualified medical staff on-site for
+a season or two.
+
+### How Contracts Work
+
+1. **Request** — Use the **Request Medical Staff** action and specify:
+   - Profession (Doctor or Nurse)
+   - Number of staff
+   - Duration (1–4 seasons)
+   - The fee you're offering (in Dollops)
+   The fee covers the whole contract; staff also need **PassengerSeats**
+   to travel (round-trip = `staff_count × 2` tickets, split between the
+   two sides as negotiated).
+
+2. **Healthcare Review** — The Doctor player reviews the proposal using
+   **Review Staffing Requests** and can:
+   - **Approve** it (fee transfers at dispatch)
+   - **Counter-offer** (different fee and/or message)
+   - **Reject** it
+
+3. **Negotiation** — Like training, the requester can accept, reject, or
+   counter-counter a counter-offer.  The request bounces until one party
+   settles or rejects.
+
+4. **Dispatch** — Once approved and PassengerSeats are available, staff
+   depart.  The full fee is paid to the Healthcare Island at this point.
+   The staff member's `on_contract` flag is set — they no longer count
+   toward the Healthcare Island's active workforce until they return.
+
+5. **Return** — Staff automatically return at the end of the agreed term.
+   The Doctor player does nothing — it happens at season start.
+
+### What Visiting Staff Bring
+
+Contracted staff are added to the host island's **population and workforce**
+for the duration.  This means:
+- They contribute to production (healthcare outputs, or general skilled
+  labour where their profession is useful).
+- The host island must **feed them** — each visiting staff member adds
+  **1 Food/season** to the island's sustenance demand (shown in the
+  host's sidebar as extra campus/staff load).
+
+### Passenger Seats
+
+The two sides split the ticket cost by negotiation.  If the requester
+supplies all seats, the Healthcare player needs none.  If the Healthcare
+player supplies all seats, the cost comes from their inventory.  The split
+is shown on the contract card and must be agreed before dispatch.
+
+### Suggested Fee
+
+The default suggested fee is **20 Dp per staff member per season**.  A
+3-season contract for 2 staff would have a suggested fee of 120 Dp.  Both
+parties are free to negotiate any amount.
 
 ---
 
@@ -767,8 +846,9 @@ The Chat Board is a **shared public record** visible to all players. It lists ev
 
 **Turn actions:** Produce · Market Buy · Market Sell · Propose Deal · Purchase
 Capital · Apply Patent · Request Training · Review Training · Arrange
-Transport · Recruit Workers · Sell / Buy / Manage Insurance · Offer / Take /
-Roll Over Loan · View Loans · Inventory · View Market · View Players · End Turn
+Transport · Recruit Workers · Request Medical Staff · Review Staffing Requests ·
+Repurpose Worker · Sell / Buy / Manage Insurance · Offer / Take / Roll Over
+Loan · View Loans · Inventory · View Market · View Players · End Turn
 
 **Setup phases (in order):** Auction → Island Guarantee → Investing → Year 1
 
