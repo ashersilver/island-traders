@@ -472,6 +472,33 @@ button:active{transform:scale(.97)}
 .constraint-shortfall.workforce{color:#ffd985}
 .constraint-shortfall.equipment{color:#aabbff}
 
+/* ---- Training pipeline sidebar strip ---- */
+.training-strip{margin:.3rem 0 .2rem;display:grid;gap:.22rem}
+.training-row{
+  display:grid;grid-template-columns:1fr auto;align-items:start;
+  padding:.28rem .38rem;border-radius:4px;font-size:.75rem;
+  border:1px solid var(--border);background:rgba(7,15,30,.4);
+}
+.training-row.status-dispatched{border-color:rgba(39,174,96,.45)}
+.training-row.status-awaiting_educator{border-color:rgba(231,192,93,.35)}
+.training-row.status-countered{border-color:rgba(231,76,60,.55)}
+.training-row.status-awaiting_transport{border-color:rgba(10,189,227,.35)}
+.training-row-left{display:flex;flex-direction:column;gap:.08rem;min-width:0}
+.training-row-prof{color:var(--heading);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.training-row-status{font-size:.69rem;color:var(--dim)}
+.training-row-status.dispatched{color:var(--green)}
+.training-row-status.countered{color:var(--red)}
+.training-row-return{font-size:.72rem;text-align:right;white-space:nowrap;padding-left:.4rem}
+.training-row-return .year-label{color:var(--gold);font-weight:700}
+.training-row-return .season-label{color:var(--dim)}
+.training-strip-hdr{
+  display:flex;align-items:center;gap:.3rem;
+  font-size:.69rem;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--accent);font-weight:700;margin-bottom:.15rem;margin-top:.35rem;
+  padding-bottom:.18rem;border-bottom:1px solid var(--border);
+}
+.training-strip-hdr button{margin-left:auto}
+
 /* ---- Visible Needs cards (fix overlapping text) ---- */
 .needs-cards{display:grid;gap:.4rem;margin-top:.2rem}
 .needs-card{border:1px solid var(--border);border-radius:var(--radius);padding:.42rem .55rem;background:rgba(7,15,30,.4);font-size:.79rem}
@@ -869,6 +896,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
+        <div id="s-training-strip"></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
@@ -2024,8 +2052,65 @@ function _formatTrainingStatus(status) {
 }
 
 function _formatReturnTiming(batch) {
-  if (!batch.return_season || batch.return_year == null) return '—';
-  return `${esc(batch.return_season)} Y${batch.return_year}`;
+  // Return date is only known once dispatched.
+  if (batch.return_season && batch.return_year != null) {
+    return `Year ${batch.return_year}, ${esc(batch.return_season)}`;
+  }
+  // Not yet dispatched — explain why return date isn't set.
+  switch (batch.status) {
+    case 'awaiting_educator':   return 'Pending educator approval';
+    case 'countered':           return 'Offer countered — awaiting your response';
+    case 'awaiting_transport':  return 'Approved — arranging transport';
+    default:                    return '—';
+  }
+}
+
+function _trainingStatusClass(status) {
+  return 'status-' + (status || 'unknown');
+}
+
+function _trainingStatusLabel(status) {
+  return _TRAINING_STATUS_LABEL[status] || status || '—';
+}
+
+function _renderTrainingStrip(pipeline) {
+  const el = document.getElementById('s-training-strip');
+  if (!el) return;
+  const active = (pipeline || []).filter(b => b.status !== 'completed' && b.status !== 'rejected');
+  if (!active.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const rows = active.map(b => {
+    const isDispatched = b.status === 'dispatched';
+    const returnText = _formatReturnTiming(b);
+    let returnHtml;
+    if (isDispatched && b.return_year != null) {
+      returnHtml = `<div class="training-row-return">
+        <span class="year-label">Yr ${b.return_year}</span>
+        <span class="season-label"> ${esc(b.return_season || '')}</span>
+      </div>`;
+    } else {
+      returnHtml = `<div class="training-row-return" style="color:var(--dim);font-size:.69rem;max-width:5rem;white-space:normal;text-align:right">${esc(returnText)}</div>`;
+    }
+    const statusClass = isDispatched ? 'dispatched' : (b.status === 'countered' ? 'countered' : '');
+    return `
+      <div class="training-row ${_trainingStatusClass(b.status)}">
+        <div class="training-row-left">
+          <div class="training-row-prof">${b.worker_count}× ${esc(b.target_profession || '—')}</div>
+          <div class="training-row-status ${statusClass}">${esc(_trainingStatusLabel(b.status))}</div>
+        </div>
+        ${returnHtml}
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="training-strip-hdr">
+      In Training
+      <button class="btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.65rem"
+              onclick="showPersonnelPopup()" title="Full training pipeline detail">↗</button>
+    </div>
+    <div class="training-strip">${rows}</div>`;
 }
 
 function _renderTrainingPipelineSection(pipeline) {
@@ -2035,17 +2120,25 @@ function _renderTrainingPipelineSection(pipeline) {
       <p class="empty-state">No workers currently in training.</p>
     </section>`;
   }
-  const rows = pipeline.map(b => `
+  const rows = pipeline.map(b => {
+    const isDispatched = b.status === 'dispatched';
+    const returnCell = isDispatched && b.return_year != null
+      ? `<strong>Year ${b.return_year}, ${esc(b.return_season || '')}</strong>`
+      : `<span style="color:var(--dim);font-size:.72rem">${esc(_formatReturnTiming(b))}</span>`;
+    const waitCell = b.seasons_remaining == null
+      ? '<span style="color:var(--dim)">—</span>'
+      : `<strong>${b.seasons_remaining}</strong>`;
+    return `
     <tr>
       <td>${b.worker_count}</td>
       <td>${esc(b.target_profession || '—')}</td>
-      <td>${esc(_formatTrainingStatus(b.status))}</td>
+      <td style="color:${b.status==='dispatched'?'var(--green)':b.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_formatTrainingStatus(b.status))}</td>
       <td>${esc(b.educator_name || '—')}</td>
-      <td>${esc(b.transport_mode || '—')}</td>
       <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
-      <td>${_formatReturnTiming(b)}</td>
-      <td>${b.seasons_remaining == null ? '—' : b.seasons_remaining}</td>
-    </tr>`).join('');
+      <td>${returnCell}</td>
+      <td>${waitCell}</td>
+    </tr>`;
+  }).join('');
   const notes = pipeline
     .filter(b => b.counter_message)
     .map(b => `<div class="batch-notes"><strong>Batch #${b.batch_id}:</strong> ${esc(b.counter_message)}</div>`)
@@ -2054,8 +2147,8 @@ function _renderTrainingPipelineSection(pipeline) {
     <h4>Training Pipeline</h4>
     <table class="popup-table">
       <thead><tr>
-        <th>Trainees</th><th>Target</th><th>Status</th><th>Educator</th>
-        <th>Transport</th><th>Fee</th><th>Return</th><th>Wait</th>
+        <th>Workers</th><th>Training for</th><th>Status</th><th>Educator</th>
+        <th>Fee</th><th>Return date</th><th>Seasons left</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -2684,6 +2777,7 @@ function renderGameState() {
     ).join('');
   }
   document.getElementById('s-personnel').innerHTML = personnelHtml;
+  _renderTrainingStrip(me.training_pipeline);
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
