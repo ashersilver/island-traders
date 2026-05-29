@@ -5,9 +5,12 @@ from island_traders.constants import (
 
 
 def test_oil_starting_buffers_reflect_role_demand():
-    """Oil-consuming islands start with at least 2 seasons of Oil."""
+    """Oil-consuming islands start with at least 2 seasons of Oil.
+
+    Miner carries a larger Oil buffer (8) per economy-lifecycle Phase A.
+    """
     assert STARTING_INVENTORY["Farmer"]["Oil"] == 2
-    assert STARTING_INVENTORY["Miner"]["Oil"] == 4
+    assert STARTING_INVENTORY["Miner"]["Oil"] == 8
     assert STARTING_INVENTORY["Transporter"]["Oil"] == 4
     assert STARTING_INVENTORY["Manufacturer"]["Oil"] == 2
     assert STARTING_INVENTORY["Miner"]["Metal"] == 2
@@ -15,13 +18,13 @@ def test_oil_starting_buffers_reflect_role_demand():
 
 
 def test_miner_oil_is_reduced_and_metal_is_available():
-    assert BASE_PRODUCTION["Miner"]["Oil"] == 80
-    assert BASE_PRODUCTION["Miner"]["Metal"] == 40
+    assert BASE_PRODUCTION["Miner"]["Oil"] == 40
+    assert BASE_PRODUCTION["Miner"]["Metal"] == 20
 
 
-def test_transporter_uses_fish_not_food_for_provisions():
-    assert STARTING_INVENTORY["Transporter"]["Fish"] == 2
-    assert "Food" not in STARTING_INVENTORY["Transporter"]
+def test_transporter_uses_food_not_fish_for_provisions():
+    assert STARTING_INVENTORY["Transporter"]["Food"] == 2
+    assert "Fish" not in STARTING_INVENTORY["Transporter"]
 
 
 def test_every_island_starts_with_at_least_two_seasons_of_inputs():

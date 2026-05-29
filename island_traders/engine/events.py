@@ -27,6 +27,14 @@ class EventResult:
             and not self.natural_disaster
         )
 
+    @property
+    def is_halt_event(self) -> bool:
+        """A production-halting event for the per-year cap (2026-05-27
+        event-frequency-cap brief).  Either a full outage or a yield so
+        low (<= 10%) that the season is functionally a write-off.  Soft
+        damage (yield ~0.5) is NOT a halt — it's annoying but playable."""
+        return self.outage or self.yield_modifier <= 0.1
+
     def describe(self) -> str:
         if self.outage:
             return f"[OUTAGE] {self.event_name} — no production this season"
@@ -50,6 +58,22 @@ class EventChart:
             if roll <= threshold:
                 return result
         return self._buckets[-1][1]
+
+    def draw_avoiding_halt(
+        self, rng: random.Random, max_tries: int = 3
+    ) -> EventResult:
+        """Draw, re-rolling up to ``max_tries`` times to avoid a halt
+        event.  Falls back to Normal Operations if every roll is a halt.
+        Used by the per-year halt cap (2026-05-27 event-frequency-cap
+        brief) when a player has already used their halt budget."""
+        result = self.draw(rng)
+        tries = 0
+        while result.is_halt_event and tries < max_tries:
+            result = self.draw(rng)
+            tries += 1
+        if result.is_halt_event:
+            return EventResult("Normal Operations")
+        return result
 
     @classmethod
     def from_entries(cls, role_name: str, entries: list[dict]) -> EventChart:
@@ -97,36 +121,85 @@ class SeasonEventResolver:
     def __init__(self, charts: dict[str, EventChart], rng: random.Random | None = None):
         self.charts = charts
         self.rng = rng or random.Random()
+        # Per-year halt-event budget tracking (2026-05-27 brief).
+        # Reset whenever resolve_all sees a new game year.
+        self._halt_counts: dict[int, int] = {}
+        self._halt_count_year: int | None = None
+        # Human-readable suppression messages from the most recent
+        # resolve_all call; the caller (Game.run) prints them via the
+        # io adapter so the cap is visible during play.
+        self.last_suppressions: list[str] = []
 
     def resolve_all(
-        self, players: list, damage_counters: dict[int, int]
+        self,
+        players: list,
+        damage_counters: dict[int, int],
+        year: int | None = None,
     ) -> dict[int, EventResult]:
+        from ..constants import HALT_EVENTS_PER_PLAYER_PER_YEAR
+
+        # Reset the per-year halt budget when the year rolls over.  When
+        # `year` is None (legacy callers / tests that don't pass it) the
+        # cap is effectively disabled — every season is treated as its
+        # own budget window, preserving prior behaviour.
+        if year is not None and year != self._halt_count_year:
+            self._halt_counts = {}
+            self._halt_count_year = year
+
+        self.last_suppressions = []
         results: dict[int, EventResult] = {}
         disaster_event: EventResult | None = None
 
         for player in players:
-            # Players with active damage draw from a restricted "damaged" result
-            if damage_counters.get(player.player_id, 0) > 0:
-                results[player.player_id] = EventResult(
+            pid = player.player_id
+            # Players with active damage draw from a restricted "damaged"
+            # result (0.5 yield — NOT a halt, so uncapped).
+            if damage_counters.get(pid, 0) > 0:
+                results[pid] = EventResult(
                     event_name="Infrastructure Damage",
                     yield_modifier=0.5,
                     damage_seasons=0,
                 )
-                damage_counters[player.player_id] -= 1
+                damage_counters[pid] -= 1
                 continue
 
             role_names = [r.name for r in player.roles]
             # Use first role's chart; multi-role players share the primary role's chart
             chart = self.charts.get(role_names[0]) if role_names else None
-            if chart:
-                result = chart.draw(self.rng)
-                results[player.player_id] = result
-                if result.natural_disaster and disaster_event is None:
-                    disaster_event = result
-            else:
-                results[player.player_id] = EventResult("Normal Operations")
+            if not chart:
+                results[pid] = EventResult("Normal Operations")
+                continue
 
-        # Apply disaster to all players not already outaged
+            result = chart.draw(self.rng)
+
+            # Per-year halt cap: if this draw is a halt and the player has
+            # already used their yearly halt budget, re-draw avoiding
+            # halts (2026-05-27 brief).  Only applies when `year` is
+            # provided.
+            if (
+                year is not None
+                and result.is_halt_event
+                and self._halt_counts.get(pid, 0) >= HALT_EVENTS_PER_PLAYER_PER_YEAR
+            ):
+                suppressed_name = result.event_name
+                result = chart.draw_avoiding_halt(self.rng)
+                self.last_suppressions.append(
+                    f"{player.name}: suppressed halt event "
+                    f"'{suppressed_name}' "
+                    f"({self._halt_counts.get(pid, 0)}/"
+                    f"{HALT_EVENTS_PER_PLAYER_PER_YEAR} halts already used "
+                    f"this year). Drew '{result.event_name}' instead."
+                )
+            elif year is not None and result.is_halt_event:
+                # Within budget — count it.
+                self._halt_counts[pid] = self._halt_counts.get(pid, 0) + 1
+
+            results[pid] = result
+            if result.natural_disaster and disaster_event is None:
+                disaster_event = result
+
+        # Apply disaster to all players not already outaged (0.5 cascade,
+        # not a halt, so it doesn't consume the budget).
         if disaster_event:
             for player in players:
                 existing = results.get(player.player_id)

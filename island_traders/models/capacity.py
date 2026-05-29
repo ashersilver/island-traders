@@ -38,6 +38,20 @@ class CapitalItem:
     delivery_seasons: int          # 0 = arrives immediately, 2 = complex item
     effects: dict = field(default_factory=dict)
     description: str = ""
+    # Phase C — capital lifecycle.
+    # Useful life in seasons; once a unit's age reaches this it is removed
+    # from the owner's capital_inventory and must be repurchased from the
+    # Manufacturer. <= 0 means "never expires".
+    service_life_seasons: int = 20
+    # Dp charged each season per owned unit while in service.  0.0 = fall
+    # back to DEFAULT_MAINTENANCE_FRACTION × cost (the engine's rule of
+    # thumb).  Set explicitly to override or to zero out (use a negative
+    # sentinel like -1.0 to mean "actually nothing" if needed — for now
+    # 0.0 triggers the default).
+    maintenance_per_season: float = 0.0
+    # Optional lease terms; when set, this capital item can be financed
+    # through the lease subsystem.
+    lease_terms: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -70,7 +84,8 @@ class ProductionRecipe:
 # ---------------------------------------------------------------------------
 
 def items_for_role(catalogue: Iterable[CapitalItem], role: str) -> list[CapitalItem]:
-    return [it for it in catalogue if it.role == role]
+    items = list(catalogue)
+    return [it for it in items if it.role == role] + [it for it in items if it.role == "Any"]
 
 
 def find_item(catalogue: Iterable[CapitalItem], item_id: str) -> CapitalItem | None:
@@ -112,6 +127,27 @@ def equipment_capacity(
             continue
         cap = it.effects.get("capacity", {}).get(output, 0)
         total += cap * n
+    return total
+
+
+def technical_workshop_trainee_capacity(
+    catalogue: Iterable[CapitalItem], owned: dict[str, int],
+) -> int:
+    """Sum the flat ``effects['technical_workshop_trainees']`` from every
+    owned item — the maximum number of technician trainees that can be
+    in training at the same time on this island.
+
+    Technical Workshops are the physical-plant prerequisite for running
+    Technician-tier training courses. The cap is per-trainee (the
+    workshop floor space holds a fixed headcount), independent of how
+    many distinct courses those trainees are spread across.
+    """
+    total = 0
+    for it in catalogue:
+        n = owned.get(it.item_id, 0)
+        if n <= 0:
+            continue
+        total += int(it.effects.get("technical_workshop_trainees", 0)) * n
     return total
 
 

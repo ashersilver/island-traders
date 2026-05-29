@@ -8,10 +8,27 @@ from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    KITCHEN_FOOD_PER_SEASON, KITCHEN_ITEM_ID, KITCHEN_RECIPE,
+    EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
+    EXPERTISE_DEGRADATION_ENABLED, UNIQUE_SPECIALIST_PROFESSION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, recipe_for
-from ..models.profession import WorkerBand
+from ..models.profession import Profession, WorkerBand, band_of, PROFESSION_BAND
+
+
+def _band_of_profession_str(profession: str) -> WorkerBand | None:
+    """Look up the band for a profession by its string value.
+
+    Returns None if the string isn't a known Profession enum value (which
+    shouldn't happen in practice — SKILLED_PROFESSIONS only lists valid
+    enum string values — but defensive in case of a typo'd override).
+    """
+    try:
+        prof_enum = Profession(profession)
+    except ValueError:
+        return None
+    return PROFESSION_BAND.get(prof_enum)
 
 
 class InsufficientInputsError(Exception):
@@ -23,11 +40,110 @@ class InsufficientInputsError(Exception):
 
 
 class ProductionEngine:
+    def _has_active_profession(self, player: Player, profession: str) -> bool:
+        return any(w.profession == profession for w in player.workforce.active_workers)
+
+    def _farmer_specialist_multiplier(
+        self, player: Player, output: ResourceType, season_name: str
+    ) -> float:
+        """Late-season Farmer penalties when specialist depth is missing.
+
+        After the first two seasons, Produce needs a Horticulturalist and Meat
+        needs a Veterinarian to avoid a 25% productivity drop.
+        """
+        if season_name not in {"Autumn", "Winter"}:
+            return 1.0
+        if (
+            output == ResourceType.PRODUCE
+            and not self._has_active_profession(player, "Horticulturalist")
+        ):
+            return 0.75
+        if (
+            output == ResourceType.MEAT
+            and not self._has_active_profession(player, "Veterinarian")
+        ):
+            return 0.75
+        return 1.0
     def _has_enhanced_metal_equipment(self, player: Player) -> bool:
-        return player.capital_inventory.get("miner.enhanced_crusher_smelter", 0) > 0
+        # Effective inventory: unmaintained units don't count this season.
+        return player.effective_capital_inventory().get(
+            "miner.enhanced_crusher_smelter", 0
+        ) > 0
 
     def _metal_recipe_multiplier(self, player: Player) -> float:
         return 3.0 if self._has_enhanced_metal_equipment(player) else 1.0
+
+    def run_kitchens(self, player: Player) -> list[str]:
+        """Run Chef-staffed Kitchens once for this player this season.
+
+        A Kitchen is deliberately separate from role production: any island
+        can own one, and it idles gracefully when short on Chef staffing or
+        raw ingredients.
+        """
+        kitchen_count = player.effective_capital_inventory().get(KITCHEN_ITEM_ID, 0)
+        if kitchen_count <= 0:
+            return []
+
+        chef_count = player.workforce.count_profession(Profession.CHEF.value)
+        active_kitchens = min(kitchen_count, chef_count)
+        messages: list[str] = []
+        if active_kitchens <= 0:
+            messages.append(
+                f"Kitchen idle: {kitchen_count} kitchen(s), no active Chef."
+            )
+            return messages
+        if kitchen_count > chef_count:
+            messages.append(
+                f"Kitchen idle: {kitchen_count - chef_count} kitchen(s) need Chef staffing."
+            )
+
+        for kitchen_number in range(1, active_kitchens + 1):
+            produced, missing = self._run_one_kitchen(player)
+            if produced:
+                messages.append(
+                    f"Kitchen {kitchen_number}: produced {produced} Food."
+                )
+            else:
+                messages.append(
+                    f"Kitchen {kitchen_number} idle: short on {missing}."
+                )
+        return messages
+
+    def _run_one_kitchen(self, player: Player) -> tuple[int, str]:
+        food_qty = KITCHEN_FOOD_PER_SEASON
+        grain_needed = KITCHEN_RECIPE["Grain"] * food_qty
+        produce_needed = KITCHEN_RECIPE["Produce"] * food_qty
+        protein_needed = KITCHEN_RECIPE["Protein"] * food_qty
+        shortages: list[str] = []
+        if player.inventory.get(ResourceType.GRAIN) < grain_needed:
+            shortages.append("Grain")
+        if player.inventory.get(ResourceType.PRODUCE) < produce_needed:
+            shortages.append("Produce")
+        available_protein = (
+            player.inventory.get(ResourceType.FISH)
+            + player.inventory.get(ResourceType.MEAT)
+        )
+        if available_protein < protein_needed:
+            shortages.append("Fish/Meat")
+        if shortages:
+            return 0, ", ".join(shortages)
+
+        fish = player.inventory.get(ResourceType.FISH)
+        meat = player.inventory.get(ResourceType.MEAT)
+        prefer_fish = fish >= meat
+        first = ResourceType.FISH if prefer_fish else ResourceType.MEAT
+        second = ResourceType.MEAT if prefer_fish else ResourceType.FISH
+        first_used = min(protein_needed, player.inventory.get(first))
+        second_used = protein_needed - first_used
+
+        player.give_resources(ResourceType.GRAIN, grain_needed)
+        player.give_resources(ResourceType.PRODUCE, produce_needed)
+        if first_used:
+            player.give_resources(first, first_used)
+        if second_used:
+            player.give_resources(second, second_used)
+        player.receive_resources(ResourceType.FOOD, food_qty)
+        return food_qty, ""
 
     def _adjust_recipe_for_player(
         self, recipe, player: Player
@@ -80,7 +196,14 @@ class ProductionEngine:
     def _labour_productivity_factor(
         self, player: Player, season_name: str, product_line: str | None = None
     ) -> float:
-        """Weighted skilled+unskilled productivity factor across all of a player's roles."""
+        """Weighted skilled+unskilled productivity factor across all of a player's roles.
+
+        Applies the graceful-degradation floor (GitHub #47 / 2026-05-27
+        playtest) as a safety net: when the natural factor would otherwise
+        leave the player frozen at zero production, the floor lets them
+        limp along at a band-specific fraction of normal so the market
+        can still trade and recovery is possible.
+        """
         total_skilled = 0
         total_unskilled = 0
         all_skilled_profs: set[str] = set()
@@ -89,9 +212,87 @@ class ProductionEngine:
             total_skilled += s
             total_unskilled += u
             all_skilled_profs.update(SKILLED_PROFESSIONS.get(role.name, []))
-        return player.workforce.labour_productivity_factor(
+        natural = player.workforce.labour_productivity_factor(
             total_skilled, total_unskilled, list(all_skilled_profs)
         )
+        if not EXPERTISE_DEGRADATION_ENABLED:
+            return natural
+        floor = self.expertise_degradation_floor(player)
+        return max(natural, floor)
+
+    @staticmethod
+    def expertise_degradation_floor(player: Player) -> float:
+        """Return the per-player production floor based on missing expertise.
+
+        For each of the player's roles, compose floors multiplicatively:
+
+        - If the role's unique specialist (Farmer/Miner/Doctor/Banker/
+          Professor/Engineer/LogisticsManager) is absent → 0.10.
+        - Else if no Manager-tier worker at all → 0.25 (rare; e.g. Doctor
+          with no Doctor AND no Nurse).
+        - If no Technician-tier worker at all → 0.50 (composes with above).
+        - Unskilled missing has no floor effect.
+
+        Across multiple roles, take the MIN floor — multi-role expertise
+        gaps are tracked the same restrictive way the underlying
+        productivity factor sums them across roles.  Returns 1.0 if the
+        player has no expertise gaps in any role (no floor applies).
+
+        Public so the server payload can surface it on the capacity panel
+        without re-implementing the math.
+        """
+        floors_per_role: list[float] = []
+        for role in player.roles:
+            role_name = role.name
+            overrides = EXPERTISE_DEGRADATION_ROLE_OVERRIDES.get(role_name, {})
+            role_floor = 1.0
+            skilled_profs = SKILLED_PROFESSIONS.get(role_name, [])
+
+            # Unique specialist check (most-severe single check).
+            unique = UNIQUE_SPECIALIST_PROFESSION.get(role_name)
+            unique_present = bool(
+                unique and player.workforce.count_profession(unique) > 0
+            )
+            any_manager_present = any(
+                player.workforce.count_profession(prof) > 0
+                for prof in skilled_profs
+                if _band_of_profession_str(prof) == WorkerBand.MANAGER
+            )
+            if unique and not unique_present:
+                role_floor *= overrides.get(
+                    "unique_specialist",
+                    EXPERTISE_DEGRADATION_FLOORS["unique_specialist"],
+                )
+            elif not any_manager_present and any(
+                _band_of_profession_str(p) == WorkerBand.MANAGER
+                for p in skilled_profs
+            ):
+                # No unique specialist required, but no Manager-tier at
+                # all (rare — e.g. Doctor with no Doctor *and* no Nurse
+                # would land here if the unique check were relaxed).
+                role_floor *= overrides.get(
+                    "manager",
+                    EXPERTISE_DEGRADATION_FLOORS["manager"],
+                )
+
+            # Technician-tier check (composes with the above).
+            tech_profs = [
+                p for p in skilled_profs
+                if _band_of_profession_str(p) == WorkerBand.TECHNICIAN
+            ]
+            if tech_profs and not any(
+                player.workforce.count_profession(p) > 0 for p in tech_profs
+            ):
+                role_floor *= overrides.get(
+                    "technician",
+                    EXPERTISE_DEGRADATION_FLOORS["technician"],
+                )
+
+            floors_per_role.append(role_floor)
+
+        if not floors_per_role:
+            return 1.0
+        return min(floors_per_role)
 
     def _role_inputs(
         self, role_name: str, season_name: str, product_line: str | None = None
@@ -209,6 +410,8 @@ class ProductionEngine:
             sy = self._seasonal_yield(role.name, season_name)
             for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     # Deduct freight surcharge for Manufacturer shipment
@@ -265,6 +468,8 @@ class ProductionEngine:
             sy = self._seasonal_yield(role.name, season_name)
             for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     outputs[r] = outputs.get(r, 0) + qty
@@ -317,10 +522,16 @@ class ProductionEngine:
             WorkerBand.WORKER: bands.get("Worker", 0),
         }
         on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
+        if role_name == "Farmer" and output == ResourceType.FOOD:
+            # Packaged Food accepts either Fish or Meat as its protein.
+            on_hand[ResourceType.FISH.value] = (
+                player.inventory.get(ResourceType.FISH)
+                + player.inventory.get(ResourceType.MEAT)
+            )
         cap = compute_capacity(
             recipe=recipe,
             catalogue=CAPITAL_CATALOGUE,
-            owned=player.capital_inventory,
+            owned=player.effective_capital_inventory(),
             workforce=wf_by_band,
             on_hand=on_hand,
         )
@@ -368,6 +579,52 @@ class ProductionEngine:
                         "capacity_limit": capacity_limit,
                         "preview": preview,
                     })
+            if role.name == "Farmer":
+                # Meat is a deliberate livestock line: 4 Grain feedstock per
+                # Meat, with Veterinarian depth protecting late-season output.
+                meat_capacity = self._capacity_limit(player, role.name, ResourceType.MEAT)
+                if meat_capacity and meat_capacity > 0:
+                    meat_max = int(
+                        meat_capacity
+                        * self._farmer_specialist_multiplier(
+                            player, ResourceType.MEAT, season_name
+                        )
+                    )
+                    if meat_max > 0:
+                        options.append({
+                            "role": role.name,
+                            "output": ResourceType.MEAT,
+                            "product_line": None,
+                            "max_qty": meat_max,
+                            "preview_qty": meat_max,
+                            "capacity_limit": meat_capacity,
+                            "preview": self.production_preview(
+                                self._role_player(player, role), event_result, season_name
+                            ),
+                        })
+                # Food is now a deliberate convenience product, not a crop.
+                # It is packaged only when the island has an Industrial Kitchen
+                # and a balanced set of ingredients on hand.
+                preview_qty = min(
+                    player.inventory.get(ResourceType.GRAIN),
+                    player.inventory.get(ResourceType.PRODUCE),
+                    player.inventory.get(ResourceType.FISH)
+                    + player.inventory.get(ResourceType.MEAT),
+                )
+                capacity_limit = self._capacity_limit(player, role.name, ResourceType.FOOD)
+                max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
+                if max_qty > 0:
+                    options.append({
+                        "role": role.name,
+                        "output": ResourceType.FOOD,
+                        "product_line": None,
+                        "max_qty": int(max_qty),
+                        "preview_qty": int(preview_qty),
+                        "capacity_limit": capacity_limit,
+                        "preview": self.production_preview(
+                            self._role_player(player, role), event_result, season_name
+                        ),
+                    })
         return [opt for opt in options if opt["max_qty"] > 0]
 
     def _inputs_for_selected_output(
@@ -382,6 +639,18 @@ class ProductionEngine:
     ) -> dict[ResourceType, int]:
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if recipe:
+            if role_name == "Farmer" and output == ResourceType.FOOD:
+                fish_used = min(qty, player.inventory.get(ResourceType.FISH))
+                meat_used = qty - fish_used
+                inputs = {
+                    ResourceType.GRAIN: qty,
+                    ResourceType.PRODUCE: qty,
+                }
+                if fish_used:
+                    inputs[ResourceType.FISH] = fish_used
+                if meat_used:
+                    inputs[ResourceType.MEAT] = meat_used
+                return inputs
             recipe = self._adjust_recipe_for_player(recipe, player)
             mult = player.patent_input_multiplier(recipe.output)
             return {

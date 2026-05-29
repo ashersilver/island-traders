@@ -42,9 +42,17 @@ Farmer:
       price_shock_multiplier: 2.0
     - name: "Flood"
       weight: 0.05
-      yield_modifier: 0.0
+      # Re-tiered 2026-05-27 from yield 0.0 + outage to yield 0.25 +
+      # no outage.  Flood is the ONLY natural_disaster event that
+      # cascades to every other island simultaneously — at the old
+      # severity (full halt + damage cycle on origin, 50% cascade
+      # elsewhere) a single late-game Flood was effectively
+      # game-ending for the originating role and dragged everyone
+      # else to half production for the same season.  See the
+      # 2026-05-27 disaster-mitigation brief Fix 1.
+      yield_modifier: 0.25
       productivity_bonus: 0
-      outage: true
+      outage: false
       damage_seasons: 1
       natural_disaster: true
       price_shock_resource: "Food"
@@ -164,7 +172,7 @@ Educator:
       outage: true
       damage_seasons: 0
       natural_disaster: false
-      price_shock_resource: "Knowledge"
+      price_shock_resource: "Expertise"
       price_shock_multiplier: 1.8
     - name: "Pandemic Closure"
       weight: 0.03
@@ -173,7 +181,7 @@ Educator:
       outage: false
       damage_seasons: 1
       natural_disaster: true
-      price_shock_resource: "Knowledge"
+      price_shock_resource: "Expertise"
       price_shock_multiplier: 1.4
 
 Banker:

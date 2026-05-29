@@ -279,7 +279,10 @@ def test_opening_investment_delayed_items_are_available_immediately():
 
     assert result["ok"] is True
     player = room.game.players[0]
-    assert player.capital_count("farmer.harvester") == 1
+    # Phase C: Farmer setup seeds 1 aged combine harvester via
+    # STARTING_AGED_CAPITAL; investing adds another → 2 total in stock,
+    # nothing in transit (delayed items arrive immediately at opening).
+    assert player.capital_count("farmer.harvester") == 2
     assert player.capital_in_transit == []
 
 
@@ -313,24 +316,29 @@ def test_player_capacity_returns_per_output_data():
         player_id=0, name="Test Farmer", roles=[ROLES["Farmer"]],
         dollops=100.0,
     )
-    # Capital: 1 Tractor (100 Food cap), 1 Fishing Boat (40 Fish cap)
+    # Capital: 1 Tractor, 1 Fishing Boat, 1 Industrial Kitchen
     p.add_capital("farmer.tractor", 1)
     p.add_capital("farmer.fishing_boat", 1)
+    p.add_capital("farmer.industrial_kitchen", 1)
     # Workforce: 1 Manager + 1 Technician + 3 Workers
     p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
     p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
-    # Inputs: enough Oil for Food and Fish
+    # Inputs: enough Oil for raw lines and balanced ingredients for packaged Food
     p.receive_resources(ResourceType.OIL, 30)
     p.receive_resources(ResourceType.FISH, 5)
+    p.receive_resources(ResourceType.GRAIN, 5)
+    p.receive_resources(ResourceType.PRODUCE, 5)
 
     mgr = GameManager()
     cap = mgr._player_capacity(p)
 
-    # Should report both Food and Fish outputs (Farmer recipes)
+    # Should report packaged Food plus raw Farmer outputs.
     output_names = {o["output"] for o in cap["outputs"]}
     assert "Food" in output_names
     assert "Fish" in output_names
+    assert "Grain" in output_names
+    assert "Produce" in output_names
 
     # Capital portfolio includes both items
     owned_ids = {it["item_id"] for it in cap["capital_owned"]}
@@ -346,7 +354,10 @@ def test_player_capacity_returns_per_output_data():
     food = next(o for o in cap["outputs"] if o["output"] == "Food")
     assert food["binding"] == "workforce"
     assert food["blockers"] == ["workforce"]
-    assert food["workforce_short"] == {"Technician": 3.0, "Worker": 7.0}
+    # Shortage labels now use profession-specific titles (2026-05-15 playtest
+    # change) rather than generic band names — for the Farmer the primary
+    # Technician title is "Farming Technician" and the Worker is "Farmhand".
+    assert food["workforce_short"] == {"Farming Technician": 1.0, "Farmhand": 2.0}
 
     fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
     assert fish["binding"] == "workforce"
@@ -366,7 +377,8 @@ def test_player_capacity_surfaces_equipment_shortfall_options():
     p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
     p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
-    p.receive_resources(ResourceType.OIL, 30)
+    p.receive_resources(ResourceType.GRAIN, 5)
+    p.receive_resources(ResourceType.PRODUCE, 5)
     p.receive_resources(ResourceType.FISH, 5)
 
     cap = GameManager()._player_capacity(p)
@@ -375,7 +387,7 @@ def test_player_capacity_surfaces_equipment_shortfall_options():
     assert food["binding"] == "equipment"
     assert food["blockers"] == ["equipment"]
     assert food["equipment_short"]["needed_capacity"] == 25.0
-    assert food["equipment_short"]["options"][0]["item_id"] == "farmer.tractor"
+    assert food["equipment_short"]["options"][0]["item_id"] == "farmer.industrial_kitchen"
     assert food["equipment_short"]["options"][0]["count"] == 1
 
 
@@ -395,7 +407,7 @@ def test_player_capacity_surfaces_capital_orders_with_arrival_timing():
     cap = GameManager()._player_capacity(p, current_tick=0)
     order = cap["capital_in_transit"][0]
 
-    assert order["name"] == "Harvester"
+    assert order["name"] == "Combine Harvester"
     assert order["role"] == "Farmer"
     assert order["arrival_year"] == 1
     assert order["arrival_season"] == "Autumn"
@@ -427,6 +439,7 @@ def test_game_state_includes_worker_band_counts_for_each_player():
     player.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
     player.workforce.add_workers(2, training_level=1, profession=Profession.MECHANIC.value)
     player.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    player.workforce.dispatch_for_training([1, 3])
     room.game = SimpleNamespace(
         players=[player],
         market=Market(),
@@ -441,8 +454,13 @@ def test_game_state_includes_worker_band_counts_for_each_player():
     assert state["funding_rates"] == {"1": 4.5, "2": 5.25, "3": 6.0}
     assert state["players"][0]["workforce_bands"] == {
         "Manager": 1,
-        "Technician": 2,
-        "Worker": 3,
+        "Technician": 1,
+        "Worker": 2,
+    }
+    assert state["players"][0]["workforce_training_bands"] == {
+        "Manager": 0,
+        "Technician": 1,
+        "Worker": 1,
     }
 
 

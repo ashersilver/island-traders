@@ -15,8 +15,10 @@ The game can be played as a **physical board game** (using printed cards, tokens
 - 7 Island Event Chart tables (one per island)
 - 1 Market Price Board
 - Season Scorecards
-- Resource tokens — **Food, Fish, Ore, Metal, Oil, Freight, Knowledge, Goods,
-  Health Services, Vaccine, Finance, Passenger Seats, Patents**
+- Resource tokens — **Food, Fish, Ore, Metal, Oil, Freight, Expertise, Goods,
+  Health Services, Vaccine, Passenger Seats, Patents**
+  *(Note: the Banker does not produce a "Finance" commodity — banking is a
+  service business, see Loans and Insurance sections.)*
 - Capital-equipment tokens — Farm Machinery, Mining Equipment, Lab Equipment,
   Medical Devices, Transport Equipment
 - Dollop coins
@@ -50,10 +52,10 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 | **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil |
 | **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment |
 | **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) |
-| **Educator** | Education & Training Island | Knowledge, **Patents** | Laboratory Equipment, Finance |
-| **Banker** | Banking Island | Finance, **Insurance**, **Loans** | Knowledge |
+| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment |
+| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* |
 | **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Knowledge, Laboratory Equipment |
+| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment |
 
 > **Multi-role play:** A single player can win multiple islands in the auction
 > (they manage each island independently). If two or more humans want to
@@ -90,7 +92,7 @@ Each player begins the game with:
 | Farmer | 6 | 1 Farmer, 1 Farming Technician, 1 Veterinarian, 3 Unskilled | 60% | ~100 |
 | Miner | 5 | 1 Miner, 1 Mining Technician, 1 Oil Extraction Worker, 2 Unskilled | 50% | ~100 |
 | Transporter | 4 | **1 Logistics Manager, 1 Flight Crew, 1 Seaman, 1 Warehouse Manager** | 65% | ~100 |
-| Educator | 4 | 1 Professor, 2 Tutors, 1 Unskilled | 55% | ~100 |
+| Educator | 8 | 4 Professors, 4 Instructors | 55% | ~100 |
 | Banker | 4 | 1 Banker, 1 Banking Analyst, 1 Banking Clerk, 1 Unskilled | 70% | ~100 |
 | Manufacturer | 5 | 1 Engineer, 1 Assembly Worker, 1 Mechanic, 2 Unskilled | 50% | ~100 |
 | Doctor | 6 | 2 Doctors, 2 Nurses, 2 Medical Orderlies | 55% | ~100 |
@@ -217,10 +219,13 @@ On your turn you may take **any number of actions** in any order:
 | **Propose Deal** | Offer a peer-to-peer trade directly to another player — any combination of resources, quantities, and a Dollop sweetener. |
 | **Purchase Capital** | Buy named capital equipment from the Manufacturer (e.g. Farm Machinery, Mining Equipment, Lab Equipment).  Complex items have a 2-season delivery delay. |
 | **Apply Patent** | Activate a Patent from inventory on one of your outputs — permanent –20% input cost on that output (max 3 active patents per output). |
-| **Request Training** | Send workers to the Education Island for one season (requires Educator and Transporter agreement).  Choose the target profession. |
-| **Review Training** | *(Educator only)* Approve or reject incoming training requests. |
+| **Request Training** | Send workers to the Education Island to train into a profession (duration depends on the profession — see Training).  Choose one target profession, or bundle **all visible skill deficits** in one request. |
+| **Review Training** | *(Educator only)* Approve, counter-offer, or reject incoming training requests. |
 | **Arrange Transport** | *(Transporter only)* Accept or counter-offer transport jobs for workers going to college. |
 | **Recruit Workers** | Draw unskilled workers from your island's population into your workforce (1 recruit per 2 unskilled residents). |
+| **Request Medical Staff** | Hire Doctors or Nurses from the Healthcare island on a short-term contract (see Medical Staffing Contracts). |
+| **Review Staffing Requests** | *(Doctor only)* Review incoming staffing contract proposals — approve, counter-offer, or reject. |
+| **Repurpose Worker** | Re-assign an active worker to a new profession.  They lose all accumulated experience and training and restart as unskilled in the new role.  Costs **25 Dp** per worker. |
 | **Sell Insurance** | *(Banker only)* Sell a Life or Medical insurance policy to another player at a negotiated premium. |
 | **Buy Insurance** | Buy a policy from a Banker at the offered premium. |
 | **Manage Insurance** | Review your active policies.  Cancel a policy mid-term for a pro-rata refund (premium × seasons remaining ÷ total term). |
@@ -267,10 +272,10 @@ Before producing, you must have your **production inputs** in inventory.  These 
 | Farmer | 1 Farm Machinery + 1 Oil |
 | Miner | 1 Oil + 1 Freight + 1 Mining Equipment |
 | Transporter | 2 Oil + 1 Fish *(crew provisions)* |
-| Educator | 1 Lab Equipment + 1 Finance |
-| Banker | 1 Knowledge |
+| Educator | 1 Lab Equipment |
+| Banker | — *(service business; revenue comes from loan interest and insurance premiums, not commodity production)* |
 | Manufacturer | Varies by product line: typically **Metal** + Oil + Freight |
-| Doctor | 1 Knowledge + 1 Lab Equipment |
+| Doctor | 1 Expertise + 1 Lab Equipment |
 
 If you do not have the required inputs, you cannot produce this season.  You
 can buy inputs from the market, negotiate with other players, or use the
@@ -290,12 +295,14 @@ each season), capital equipment is an owned **asset**.
 - **Book value** — straight-line depreciation over **5 years** from the
   purchase cost.  A 3-year-old item has 40% of its original cost on the
   balance sheet.
-- **Leases** *(future)* — a 3-year lease arrangement is on the roadmap.  At
-  the end of the lease the item can be returned or bought out at book value.
+- **Leases** — a 3-year lease arrangement lets an island use a capital item
+  without paying the full catalogue price upfront.  Annual lease payments
+  are due each year; at the end of the term the lessee can return the item
+  or buy it out at its remaining book value.
 
 ### Patents
 
-The Educator produces **Patents** alongside Knowledge.  Each Patent applied
+The Educator produces **Patents** alongside Expertise.  Each Patent applied
 via the **Apply Patent** action gives a permanent **–20% input cost** on one
 output the player produces, up to **3 active patents per output**.
 
@@ -320,7 +327,7 @@ Base prices (in Dollops per unit):
 | Metal | 25 Dp | Miner *(smelted from Ore + Oil)* |
 | Oil | 20 Dp | Miner |
 | Freight | 12 Dp | Transporter |
-| Knowledge | 18 Dp | Educator |
+| Expertise | 18 Dp | Educator |
 | Lab Equipment | 28 Dp | Manufacturer |
 | Farm Machinery | 32 Dp | Manufacturer |
 | Mining Equipment | 42 Dp | Manufacturer |
@@ -329,7 +336,6 @@ Base prices (in Dollops per unit):
 | Goods | 30 Dp | Manufacturer |
 | Health Services | 35 Dp | Doctor |
 | Vaccine | 40 Dp | Doctor |
-| Finance | 20 Dp | Banker |
 | Passenger Seats | 15 Dp | Transporter *(charter flight / ship berth)* |
 | Patents | 80 Dp | Educator *(one-time +20% input efficiency)* |
 
@@ -381,7 +387,7 @@ Seasonal requirements:
 | Manufacturer | 5 | 5 | 5 | 4 |
 | Doctor | 30 | **35** | 30 | **44** |
 
-> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 unskilled workers (44 total).
+> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
 
 ### Worker Professions
 Workers are not generic — each belongs to a **profession** that reflects their specialisation.  Every profession also has a **band** — *Manager*, *Technician*, or *Worker* — which determines training pathway and role on the island.  A worker's tier is shown as their profession name plus training level (e.g. *Doctor (Basic)*, *Flight Crew (Skilled)*).  Unskilled workers have no profession until they graduate from university or finish an apprenticeship.
@@ -402,7 +408,7 @@ Workers are not generic — each belongs to a **profession** that reflects their
 | **Warehouse Manager** | Technician | Transport | Ground-ops supervisor *(name is industry convention; classified as Technician)* |
 | Professor | Manager | Education | University teaching (max 1 graduate/season) |
 | **Lecturer** | Manager | Education | Faculty teaching staff |
-| **Tutor** | Technician | Education | Apprentice-trained teaching staff |
+| **Instructor** | Technician | Education | Apprenticeship training delivery *(formerly "Tutor")* |
 | Banker | Manager | Banking | Lending, deposits, insurance |
 | **Banking Analyst** | Technician | Banking | Risk and pricing analysis |
 | **Banking Clerk** | Technician | Banking | Operations and account servicing |
@@ -422,81 +428,149 @@ At the end of each year, each island's population grows by up to **2% per year**
 
 ## Training
 
-Training workers requires negotiation between **three parties**: the island sending workers, the **Educator**, and the **Transporter**. It is a multi-turn process:
+Training is a multi-turn process between the island sending workers and the **Educator** (and, only if you choose a Transporter-hauled mode instead of the default Educator-supplied air ticket, the **Transporter**):
+
+### Two training pipelines
+
+A worker's **band** determines how it is trained:
+
+- **Manager-tier** (university) — Doctor, Nurse, Engineer, Farmer, Miner,
+  Banker, Professor, Lecturer, Logistics Manager.  Gated by **Courses**
+  held by the Education Island (1 Course = one class of up to **12**
+  trainees; larger batches split across `⌈trainees ÷ 12⌉` Courses)
+  *and* the per-profession annual quota.
+- **Technician-tier** (vocational apprenticeship) — Farming Technician,
+  Horticulturalist, Veterinarian, Mining Technician, Oil Extraction
+  Worker, Refinery Specialist, Assembly Worker, Mechanic, Flight Crew,
+  Seaman, Warehouse Manager, Banking Analyst, Banking Clerk, Medical
+  Orderly, Instructor.  Gated by the Education Island's **Apprenticeship
+  Programme** capital (an apprenticeship-slot pool) **and** at least one
+  **Instructor** on its workforce — **not** by Courses.
+
+The pipelines are independent: a Manager request never consumes an
+apprenticeship slot, and a Technician request never consumes a Course.
 
 ### Capacity Limits
-The University has **per-profession annual quotas**.  Each profession has a fixed number of graduate places per year.  Some professions also have a stricter per-season cap.
 
-| Profession | Band | Annual cap | Seasonal cap |
-|---|---|---|---|
-| Doctor | M | 2 | — |
-| Nurse | M | 10 | — |
-| Engineer | M | 2 | — |
-| Farmer | M | 2 | — |
-| Miner | M | 2 | — |
-| Banker | M | 2 | — |
-| Professor | M | 4 | **1 per season** |
-| Farming Technician | T | 4 | — |
-| Veterinarian | T | 1 | — |
-| Assembly Worker | T | 10 | — |
-| Mining Technician | T | 4 | — |
-| Oil Extraction Worker | T | 2 | — |
-| Refinery Specialist | T | 2 | — |
-| Mechanic | T | 4 | — |
+The University has a **per-profession annual quota** (plus, for
+Professors, a per-season cap).  Once a profession's annual quota is
+full, no further requests for it can be submitted until the next year.
 
-Once a profession's annual quota is full, no further requests for that
-profession can be submitted until the following year.
+| Profession | Band | Annual cap | Seasonal cap | Seasons away |
+|---|---|---|---|---|
+| Doctor | M | 2 | — | **3** |
+| Nurse | M | 10 | — | 1 |
+| Engineer | M | 2 | — | 2 |
+| Farmer | M | 2 | — | 2 |
+| Miner | M | 2 | — | 2 |
+| Banker | M | 2 | — | 2 |
+| Professor | M | 4 | **1/season** | 2 |
+| Lecturer | M | 4 | — | 2 |
+| Logistics Manager | M | 2 | — | 2 |
+| Farming Technician | T | 4 | — | 1 |
+| Horticulturalist | T | 2 | — | 1 |
+| Veterinarian | T | 1 | — | 1 |
+| Assembly Worker | T | 10 | — | 1 |
+| Mining Technician | T | 4 | — | 1 |
+| Oil Extraction Worker | T | 2 | — | 1 |
+| Refinery Specialist | T | 2 | — | 1 |
+| Mechanic | T | 4 | — | 1 |
+| Flight Crew | T | 6 | — | 1 |
+| Seaman | T | 6 | — | 1 |
+| Warehouse Manager | T | 6 | — | 1 |
+| Banking Analyst | T | 4 | — | 1 |
+| Banking Clerk | T | 6 | — | 1 |
+| Medical Orderly | T | 8 | — | 1 |
+| Instructor | T | 6 | — | 1 |
 
-> **Note on the newly-named professions** (Logistics Manager, Flight Crew,
-> Seaman, Warehouse Manager, Lecturer, Tutor, Banking Analyst, Banking Clerk,
-> Medical Orderly): these arrive on the starting workforce of their home
-> island.  Training caps for these professions will be added in a future
-> balance pass — until then, growth happens by recruiting unskilled workers
-> and training them into the established legacy professions, or by hiring
-> from the population pool directly.
+"Seasons away" is time spent at the Education Island.  Manager durations
+differ by profession (Doctor **3**, Nurse **1**, all other Managers
+**2**).  Every Technician apprenticeship is **1 season away**, followed
+by one **settling season at home at 75% productivity** before reaching
+full output.  Travelling by cargo vessel adds **one extra season** of
+absence on top.
 
 ### Step 1 — Request Training
-On your turn, choose **Request Training**. You specify:
-- The **target profession** for your workers to graduate into (must have remaining university quota)
-- How many workers to send (they must be on your island and not already at Expert level)
-- Which Educator player will train them
-- How many Dollops you offer the Educator
-- How many Dollops you offer the Transporter for moving the workers
 
-Unskilled workers sent to university enter the target profession at Basic level. Workers who already hold that profession advance one level (Basic → Skilled → Expert).
+On your turn, choose **Request Training**.  The screen first reports
+your island's formal-profession **deficits** against its staffing plan.
+You then specify:
 
-Your workers are **not yet absent** at this point.
+- The **target profession** (must have remaining annual quota), **or**
+  select **"All visible skill deficits"** to bundle every currently
+  requestable missing profession into one request — it still resolves
+  into per-profession batches internally so quotas, approval and
+  transport stay explicit.
+- How many workers to send (on your island, not already Expert).
+- Which Educator player will train them, and the Dollops you offer.
 
-### Step 2 — Educator Approval
-The Educator reviews the request on their turn and either **approves** (accepts the Dollop payment) or **rejects** it.
+Unskilled workers enter the target profession at **Basic**; workers who
+already hold it advance one level (Basic → Skilled → Expert).  Your
+workers are **not yet absent** at this point.
 
-- If rejected, your workers stay home and you keep your Dollops.
-- If approved, the Dollops transfer to the Educator and the request moves to Step 3.
+**Suggested fee** (the prompt itemises it): an Educator base fee per
+trainee, **food & accommodation** (5 Dp per trainee per season at
+college), the travel ticket, and — Manager-tier only — the Expertise
+the Course burns.  Self-training (the Educator training its own
+workers) skips the fee and the ticket.
 
-### Step 3 — Choose Transport
+### Step 2 — Educator Review
 
-When submitting the request you choose one of three transport modes:
+The Educator reviews the request on their turn and can **Approve**,
+**Counter-offer**, or **Reject** it.
 
-| Mode | Cost | Arrival |
+**Capacity gate** — a request can only be approved when:
+- **Manager-tier:** a **Course** is available (auto-split for >12) and
+  the air ticket is in hand.
+- **Technician-tier:** a free **apprenticeship slot** and an
+  **Instructor** are available.
+
+If the gate isn't met the request stays **pending** until capacity frees
+up — no Dollops or tickets are consumed while pending.
+
+**Counter-offer** — if the Educator wants to charge a different fee, they
+can send a counter-offer back to the requester along with an optional
+message explaining the reason (e.g. "Two air tickets are required — 90 Dp").
+
+**Back-and-forth negotiation** — the requester can **Accept** the
+counter-offer, **Reject** it (cancelling the request), or send a
+**Counter-counter** with a new fee and message.  The request then bounces
+back to the Educator again.  This continues until one party accepts or
+rejects.  When a counter-offer or rejection is waiting, an alert card
+appears in the requester's sidebar.
+
+On approval the Dollops transfer to the Educator immediately.
+
+### Step 3 — Transport
+
+Travel is normally by **Educator-supplied air ticket** (one
+PassengerSeats per trainee, return included), so workers depart the
+season the Educator approves.  Alternatives:
+
+| Mode | Cost | Effect |
 |---|---|---|
-| **Charter flight** | 20% of educator fee (paid upfront) | Same season — workers depart immediately on educator approval |
-| **Cargo vessel** | Free for up to 2 passengers | Workers arrive at Education Island **one season late** — total absence is 2 seasons |
-| **Hire Transporter** | Negotiated with the Transporter player | Same season once Transporter agrees |
+| **Air ticket** *(default)* | Included in the fee | Depart on approval |
+| **Cargo vessel** | Free, up to 2 passengers | **+1 extra season** away |
+| **Hire Transporter** | Negotiated with the Transporter | Depart once the Transporter agrees |
 
-> Cargo is cheapest but means your workers are away for two seasons instead of one. Use it in seasons where you can afford the extra absence (e.g. Winter).
+### Step 4 — Departure & Return
 
-### Step 4 — Educator Approval
-The Educator reviews the request on their turn and either **approves** or **rejects** it. On approval, funds transfer immediately.
+Once agreed, workers **depart** and don't count toward your workforce
+while away.  Visiting trainees are **campus load** for the Education
+Island — they raise *its* seasonal Food demand until they go home.
 
-- For **flight** and **cargo** modes, workers depart as soon as the Educator approves (no separate Transporter step).
-- For **Transporter** mode, the request moves to the Transporter for agreement.
+They return at the **start of their return season** (the profession's
+"seasons away"; cargo adds one) with training level **+1**.  Experience
+carries over — they resume from where they left off, with a higher
+efficiency ceiling.  **Technician (apprenticeship) graduates work their
+first home season at 75% productivity** (one settling season) before
+reaching full output; Manager (university) graduates have no settling
+penalty.
 
-### Step 5 — Departure & Return
-Once all parties have agreed, your workers **depart**. They do not count toward your workforce while away.
-
-At the **start of their return season** they come home with training level increased by one. Their experience is unchanged — they develop from where they left off, but the efficiency ceiling is higher.
-
-> **Tip:** Send workers by cargo in Winter (low seasonal demand) to absorb the two-season absence at minimal production cost.
+> **Tip:** Doctors are away **3** seasons — plan the gap.  Send
+> Technicians by cargo in Winter to absorb the extra absence cheaply,
+> and remember the 75% settling season when timing returns for a busy
+> production season.
 
 ---
 
@@ -504,12 +578,73 @@ At the **start of their return season** they come home with training level incre
 
 The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents a course of vaccination for one worker or resident.
 
-- **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Knowledge + Capital).
+- **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Expertise + Capital).
 - **Effect:** A Vaccine applied to a worker improves their wellness for **4 seasons**, conferring a small efficiency bonus and reducing the likelihood of illness-related absences.
 - **Trading:** Vaccines can be sold on the market or traded peer-to-peer like any other resource.
 - **Base price:** 40 Dp per unit.
 
 > In future expansions the wellness mechanic will interact with the workplace injury and illness system to reduce downtime on labour-intensive islands.
+
+---
+
+## Medical Staffing Contracts
+
+Any island can hire **Doctors or Nurses** from the Healthcare Island on a
+short-term contract — useful when an island faces a health crisis, a
+disease outbreak event, or simply wants qualified medical staff on-site for
+a season or two.
+
+### How Contracts Work
+
+1. **Request** — Use the **Request Medical Staff** action and specify:
+   - Profession (Doctor or Nurse)
+   - Number of staff
+   - Duration (1–4 seasons)
+   - The fee you're offering (in Dollops)
+   The fee covers the whole contract; staff also need **PassengerSeats**
+   to travel (round-trip = `staff_count × 2` tickets, split between the
+   two sides as negotiated).
+
+2. **Healthcare Review** — The Doctor player reviews the proposal using
+   **Review Staffing Requests** and can:
+   - **Approve** it (fee transfers at dispatch)
+   - **Counter-offer** (different fee and/or message)
+   - **Reject** it
+
+3. **Negotiation** — Like training, the requester can accept, reject, or
+   counter-counter a counter-offer.  The request bounces until one party
+   settles or rejects.
+
+4. **Dispatch** — Once approved and PassengerSeats are available, staff
+   depart.  The full fee is paid to the Healthcare Island at this point.
+   The staff member's `on_contract` flag is set — they no longer count
+   toward the Healthcare Island's active workforce until they return.
+
+5. **Return** — Staff automatically return at the end of the agreed term.
+   The Doctor player does nothing — it happens at season start.
+
+### What Visiting Staff Bring
+
+Contracted staff are added to the host island's **population and workforce**
+for the duration.  This means:
+- They contribute to production (healthcare outputs, or general skilled
+  labour where their profession is useful).
+- The host island must **feed them** — each visiting staff member adds
+  **1 Food/season** to the island's sustenance demand (shown in the
+  host's sidebar as extra campus/staff load).
+
+### Passenger Seats
+
+The two sides split the ticket cost by negotiation.  If the requester
+supplies all seats, the Healthcare player needs none.  If the Healthcare
+player supplies all seats, the cost comes from their inventory.  The split
+is shown on the contract card and must be agreed before dispatch.
+
+### Suggested Fee
+
+The default suggested fee is **20 Dp per staff member per season**.  A
+3-season contract for 2 staff would have a suggested fee of 120 Dp.  Both
+parties are free to negotiate any amount.
 
 ---
 
@@ -692,7 +827,7 @@ The Chat Board is a **shared public record** visible to all players. It lists ev
 - *Event rolls:* Alice: Normal Harvest. Bob: Stable Markets. Carol: Normal Semester. Dave: Normal Operations.
 - *Alice's turn:* Alice has 2 Capital in inventory. She produces 4 Food + 3 Fish. She sells 3 Food to the market for 30 Dp.
 - *Bob's turn:* Bob produces 3 Capital with no inputs needed. He sells 2 Capital to the market for 50 Dp.
-- *Carol's turn:* Carol buys 1 Capital from the market (25 Dp). She produces 4 Knowledge. She proposes a deal to Alice: "3 Knowledge for 20 Dp." Alice accepts.
+- *Carol's turn:* Carol buys 1 Capital from the market (25 Dp). She produces 4 Expertise. She proposes a deal to Alice: "3 Expertise for 20 Dp." Alice accepts.
 - *Dave's turn:* Dave needs Oil to produce Freight — none on the market yet. He ends his turn.
 
 **Summer, Year 1 — Alice requests training:**
@@ -711,8 +846,9 @@ The Chat Board is a **shared public record** visible to all players. It lists ev
 
 **Turn actions:** Produce · Market Buy · Market Sell · Propose Deal · Purchase
 Capital · Apply Patent · Request Training · Review Training · Arrange
-Transport · Recruit Workers · Sell / Buy / Manage Insurance · Offer / Take /
-Roll Over Loan · View Loans · Inventory · View Market · View Players · End Turn
+Transport · Recruit Workers · Request Medical Staff · Review Staffing Requests ·
+Repurpose Worker · Sell / Buy / Manage Insurance · Offer / Take / Roll Over
+Loan · View Loans · Inventory · View Market · View Players · End Turn
 
 **Setup phases (in order):** Auction → Island Guarantee → Investing → Year 1
 
@@ -720,11 +856,13 @@ Roll Over Loan · View Loans · Inventory · View Market · View Players · End 
 
 **Production formula:** Base × Event Modifier × max(Base Capacity, Fill Rate × Avg Efficiency)
 
-**Resources (current set):**
-Food · Fish · Ore · **Metal** · Oil · Freight · Knowledge · Goods ·
+**Resources (commodities, current set):**
+Food · Fish · Ore · **Metal** · Oil · Freight · Expertise · Goods ·
 Lab Equipment · Farm Machinery · Mining Equipment · Medical Devices ·
-Transport Equipment · Health Services · Vaccine · Finance · Insurance ·
-Loans · **Passenger Seats** · **Patents**
+Transport Equipment · Health Services · Vaccine · **Passenger Seats** ·
+**Patents**
+
+**Banking services (not commodity tokens):** Loans · Insurance
 
 **Capital equipment lines** (Manufacturer): Goods (general), Farm Machinery,
 Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment.
@@ -743,7 +881,7 @@ Bullet bond — pay principal × (1+rate) at maturity, or Roll Over.
 **Insurance refund (Manage Insurance):** `premium × seasons_remaining ÷ total_term`.
 
 **Training transport:**
-- ✈️ Flight: 20% of educator fee, immediate departure
+- 🎫 Air ticket *(default)*: Educator supplies 1 PassengerSeats per trainee (return included), depart on approval
 - 🚢 Cargo vessel: free for ≤ 2 passengers, +1 season delay
 - 🚤 Transporter: negotiated fee, immediate departure
 

@@ -19,6 +19,18 @@ CAPACITY_PRODUCTIVITY_MULTIPLIER: int = 10
 # ---------------------------------------------------------------------------
 
 CAPITAL_CATALOGUE: list[CapitalItem] = [
+    # ----- Universal -------------------------------------------------------
+    CapitalItem(
+        item_id="common.kitchen",
+        name="Kitchen",
+        role="Any",
+        cost=80.0,
+        delivery_seasons=0,
+        effects={"kitchen_food_per_season": 6, "cash_only": True},
+        description="Chef-staffed kitchen: converts raw ingredients into up to 6 Food/season",
+        service_life_seasons=12,
+    ),
+
     # ----- Farmer ----------------------------------------------------------
     CapitalItem(
         item_id="farmer.tractor",
@@ -26,17 +38,19 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Farmer",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"Food": 10}},
-        description="+10 Food capacity",
+        effects={"capacity": {"Grain": 10, "Produce": 6}},
+        description="+10 Grain, +6 Produce capacity",
     ),
     CapitalItem(
         item_id="farmer.harvester",
-        name="Harvester",
+        name="Combine Harvester",
         role="Farmer",
         cost=90.0,
         delivery_seasons=2,
-        effects={"capacity": {"Food": 6}, "labour_relief": {"Technician": 1}},
-        description="+6 Food, -1 Technician need",
+        effects={"capacity": {"Grain": 6, "Produce": 4}, "labour_relief": {"Technician": 1}},
+        description="+6 Grain, +4 Produce, -1 Technician need (~2-year service life, must be replaced)",
+        # Phase C: shorter life than the default 20 — a combine wears out fast.
+        service_life_seasons=8,
     ),
     CapitalItem(
         item_id="farmer.fishing_boat",
@@ -46,6 +60,24 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Fish": 4}},
         description="+4 Fish capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.livestock_barn",
+        name="Livestock Barn",
+        role="Farmer",
+        cost=70.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Meat": 4}},
+        description="+4 Meat capacity",
+    ),
+    CapitalItem(
+        item_id="farmer.industrial_kitchen",
+        name="Industrial Kitchen",
+        role="Farmer",
+        cost=75.0,
+        delivery_seasons=0,
+        effects={"capacity": {"Food": 6}},
+        description="+6 packaged Food capacity",
     ),
     CapitalItem(
         item_id="farmer.storage_building",
@@ -153,8 +185,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Knowledge": 4}, "education_slots": 2},
-        description="+4 Knowledge, +2 Education slots",
+        effects={"capacity": {"Expertise": 4}, "education_slots": 2},
+        description="+4 Expertise, +2 Education slots",
     ),
     CapitalItem(
         item_id="educator.library",
@@ -162,8 +194,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=40.0,
         delivery_seasons=0,
-        effects={"capacity": {"Knowledge": 2, "Patents": 1}},
-        description="+2 Knowledge, +1 Patent",
+        effects={"capacity": {"Expertise": 2, "Patents": 1}},
+        description="+2 Expertise, +1 Patent",
     ),
     CapitalItem(
         item_id="educator.research_lab",
@@ -180,28 +212,35 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=80.0,
         delivery_seasons=2,
-        effects={"capacity": {"Patents": 1}, "input_relief": {"Knowledge": {"LaboratoryEquipment": 0.2}}},
-        description="+1 Patent, -0.2 LaboratoryEquipment per Knowledge",
+        effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"LaboratoryEquipment": 0.2}}},
+        description="+1 Patent, -0.2 LaboratoryEquipment per Expertise",
     ),
     CapitalItem(
-        item_id="educator.apprenticeship_programme",
-        name="Apprenticeship Programme",
+        item_id="educator.technical_workshop",
+        name="Technical Workshop",
         role="Educator",
         cost=60.0,
         delivery_seasons=0,
-        effects={"apprenticeship_slots": 3},
-        description="+3 Apprenticeship slots (separate from Education)",
+        # Per workshop: up to 6 technician trainees in training at a time.
+        # Tracked per-trainee (sum of in-flight Technician-tier batch sizes),
+        # NOT per-course — the workshop is a physical-plant headcount cap.
+        effects={"technical_workshop_trainees": 6},
+        description="+6 Technical Workshop trainee seats (prerequisite for technical-tier courses)",
+        lease_terms={"term_years": 3, "residual_fraction": 0.25, "rate_margin": 0.02},
     ),
 
     # ----- Banker ----------------------------------------------------------
+    # Capital items now express headroom for Loans and InsurancePolicies
+    # (the Banker's actual business activities) rather than a "Finance"
+    # commodity capacity, which is no longer produced.
     CapitalItem(
         item_id="banker.vault",
         name="Vault",
         role="Banker",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"Finance": 4}},
-        description="+4 Finance capacity",
+        effects={"capacity": {"Loans": 4}},
+        description="+4 Loans capacity",
     ),
     CapitalItem(
         item_id="banker.trading_floor",
@@ -209,8 +248,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Banker",
         cost=70.0,
         delivery_seasons=0,
-        effects={"capacity": {"Finance": 3, "InsurancePolicies": 1}},
-        description="+3 Finance, +1 InsurancePolicy",
+        effects={"capacity": {"Loans": 3, "InsurancePolicies": 1}},
+        description="+3 Loans, +1 InsurancePolicy",
     ),
     CapitalItem(
         item_id="banker.underwriting_desk",
@@ -328,16 +367,34 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
 PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
-        role="Farmer", output="Food",
-        inputs={"Oil": 2.0},
+        role="Farmer", output="Grain",
+        inputs={"Oil": 10 / 6},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="2 Oil per unit of Food",
+        description="Farm equipment fuel",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 1.0},
+        inputs={"Oil": 10 / 3},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="1 Oil per unit of Fish",
+        description="Fishing fleet fuel",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Produce",
+        inputs={"Oil": 5.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Field produce; Horticulturalists improve the line",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Meat",
+        inputs={"Grain": 40.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Livestock consume Grain feedstock",
+    ),
+    ProductionRecipe(
+        role="Farmer", output="Food",
+        inputs={"Grain": 1.0, "Produce": 1.0, "Fish": 1.0},
+        manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
+        description="Packaged balanced meals from Grain + Produce + Fish or Meat",
     ),
 
     # ----- Miner -----------------------------------------------------------
@@ -361,40 +418,43 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Transporter -----------------------------------------------------
     ProductionRecipe(
         role="Transporter", output="Freight",
-        inputs={"Oil": 0.5, "Fish": 0.2},
+        inputs={"Oil": 0.5, "Food": 0.2},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
     ProductionRecipe(
         role="Transporter", output="PassengerSeats",
-        inputs={"Oil": 0.4, "Fish": 0.25},
+        inputs={"Oil": 0.4, "Food": 0.25},
         manager_per_unit=0.1, technician_per_unit=0.25, worker_per_unit=1.0,
     ),
 
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
-        role="Educator", output="Knowledge",
-        inputs={"LaboratoryEquipment": 0.25, "Finance": 0.25},
+        role="Educator", output="Expertise",
+        inputs={"LaboratoryEquipment": 0.25},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
-        description="1 Professor required per unit of Knowledge",
+        description="1 Professor required per unit of Expertise",
+    ),
+    ProductionRecipe(
+        role="Educator", output="Courses",
+        inputs={"LaboratoryEquipment": 0.1, "Expertise": 1.0},
+        manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.0,
+        description="1 Instructor + 0.5 Professor per Course; consumes 1 Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Patents",
-        inputs={"LaboratoryEquipment": 0.5, "Finance": 0.5},
+        inputs={"LaboratoryEquipment": 0.5, "Expertise": 0.25},
         manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
-        description="2 Professors required per Patent (Research stock also needed)",
+        description="2 Professors per Patent; consumes a small Expertise input",
     ),
 
     # ----- Banker ----------------------------------------------------------
-    ProductionRecipe(
-        role="Banker", output="Finance",
-        inputs={"Knowledge": 0.5},
-        manager_per_unit=1.0, technician_per_unit=0.25, worker_per_unit=0.0,
-        money_per_unit=5.0,
-        description="5 Dp capital reserve per unit of Finance",
-    ),
+    # Banker no longer "produces" a Finance commodity.  Income comes from
+    # loan interest spread and insurance premiums.  The recipe below models
+    # underwriting capacity for InsurancePolicies; loans are tracked
+    # separately via the loan ledger (see models/loan.py).
     ProductionRecipe(
         role="Banker", output="InsurancePolicies",
-        inputs={"Knowledge": 0.5},
+        inputs={"Expertise": 0.5},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.0,
         money_per_unit=8.0,
         description="8 Dp hedge cost per InsurancePolicy",
@@ -433,12 +493,12 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Doctor ----------------------------------------------------------
     ProductionRecipe(
         role="Doctor", output="HealthServices",
-        inputs={"Knowledge": 0.25, "LaboratoryEquipment": 0.25},
+        inputs={"Expertise": 0.25, "LaboratoryEquipment": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Doctor", output="Vaccine",
-        inputs={"Knowledge": 0.5, "LaboratoryEquipment": 1.0},
+        inputs={"Expertise": 0.5, "LaboratoryEquipment": 1.0},
         manager_per_unit=1.0, technician_per_unit=0.0, worker_per_unit=0.0,
     ),
 ]
@@ -451,7 +511,7 @@ MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Farmer":       ["farmer.tractor", "farmer.fishing_boat"],
     "Miner":        ["miner.excavator", "miner.crusher", "miner.oil_rig"],
     "Transporter":  ["transporter.cargo_ship", "transporter.passenger_liner"],
-    "Educator":     ["educator.lecture_hall", "educator.library"],
+    "Educator":     ["educator.lecture_hall", "educator.library", "educator.technical_workshop"],
     "Banker":       ["banker.vault", "banker.underwriting_desk"],
     "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line"],
     "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
@@ -484,6 +544,9 @@ def _multiply_capital_capacity(
             delivery_seasons=item.delivery_seasons,
             effects=effects,
             description=description,
+            service_life_seasons=item.service_life_seasons,
+            maintenance_per_season=item.maintenance_per_season,
+            lease_terms=dict(item.lease_terms) if item.lease_terms else None,
         ))
     return scaled
 

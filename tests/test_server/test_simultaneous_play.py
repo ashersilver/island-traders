@@ -119,8 +119,15 @@ def test_interrupted_confirm_cancels_instead_of_accepting():
     assert io.confirm("Accept?") is False
 
 
-def test_mark_player_ready_short_circuits_choose_action():
-    """A player marked Ready returns END_TURN without sending a prompt."""
+def test_mark_player_ready_parks_choose_action_until_interrupted():
+    """Done Trading is a PAUSE, not a TERMINATE (2026-05-27 brief).
+
+    A player marked Ready stays parked in choose_action's wait loop
+    until either interrupt_all fires (real season end → END_TURN) or
+    unmark_player_ready is called (Undo → re-prompt).  This preserves
+    the turn thread so it can resume the action menu on undo.
+    """
+    import threading
     from island_traders.engine.turn import TurnAction
 
     sends: list[dict] = []
@@ -135,10 +142,82 @@ def test_mark_player_ready_short_circuits_choose_action():
         player_id = 0
         name = "P0"
 
-    res = io.choose_action(FakePlayer(), [TurnAction.END_TURN, TurnAction.PRODUCE])
-    assert res == TurnAction.END_TURN
-    # No prompt should have been sent
+    result_holder: list = []
+
+    def _run():
+        # set_active_player is called inside choose_action via TLS,
+        # so this thread is the one that needs to be parked.
+        result_holder.append(
+            io.choose_action(FakePlayer(), [TurnAction.END_TURN, TurnAction.PRODUCE])
+        )
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+    # Give the park loop a moment to broadcast and settle.
+    t.join(timeout=1.5)
+    assert t.is_alive(), "Park loop should hold the thread, not exit"
+    # The parked broadcast went out, but no full choose_action prompt.
+    assert any(s.get("type") == "choose_action_parked" for s in sends)
     assert not any(s.get("type") == "choose_action" for s in sends)
+
+    # Real season end → park exits with END_TURN.
+    io.interrupt_all()
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "Park loop should release on interrupt_all"
+    assert result_holder == [TurnAction.END_TURN]
+
+
+def test_unmark_player_ready_wakes_parked_choose_action():
+    """Undo Done Trading: parked thread wakes and re-prompts with a
+    fresh choose_action message instead of exiting with END_TURN.
+    """
+    import threading
+    from island_traders.engine.turn import TurnAction
+
+    sends: list[dict] = []
+    io = WebSocketIOAdapter(
+        "g_undo", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sends.append(m)},
+    )
+    io.begin_season()
+    io.mark_player_ready(0)
+
+    class FakePlayer:
+        player_id = 0
+        name = "P0"
+
+    result_holder: list = []
+
+    def _run():
+        result_holder.append(
+            io.choose_action(FakePlayer(), [TurnAction.END_TURN, TurnAction.PRODUCE])
+        )
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=1.5)
+    assert t.is_alive()
+
+    # Undo Done.  The park loop wakes; choose_action falls through to the
+    # normal prompt path; the player gets a fresh choose_action message.
+    io.unmark_player_ready(0)
+
+    # Wait briefly for the fresh prompt to arrive.
+    deadline = __import__("time").time() + 2.0
+    while __import__("time").time() < deadline:
+        if any(s.get("type") == "choose_action" for s in sends):
+            break
+        __import__("time").sleep(0.05)
+    assert any(s.get("type") == "choose_action" for s in sends), (
+        "After Undo, a fresh choose_action prompt must be sent"
+    )
+
+    # Provide a response so the thread can exit cleanly.
+    io.receive_response(0, "end_turn")
+    t.join(timeout=2.0)
+    assert not t.is_alive()
+    assert result_holder == [TurnAction.END_TURN]
 
 
 def test_unmark_player_ready_clears_flag():
@@ -151,6 +230,80 @@ def test_unmark_player_ready_clears_flag():
     assert 0 in io._player_ready_flags
     io.unmark_player_ready(0)
     assert 0 not in io._player_ready_flags
+
+
+def test_mark_player_ready_cancels_in_flight_prompt():
+    """Done Trading mid-dialog: in-flight sub-prompt aborts via
+    CANCEL_SENTINEL so the engine's ActionCancelled handler can drop
+    cleanly back to the action loop, where the park check then fires.
+    2026-05-27 done-trading-undo brief — root cause for 'action panel
+    disappears after End Turn' (Comet 1 #2)."""
+    import threading
+    from island_traders.cli.prompts import CANCEL_SENTINEL
+
+    sends: list[dict] = []
+    io = WebSocketIOAdapter(
+        "g_cancel", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sends.append(m)},
+    )
+    io.begin_season()
+    io.set_active_player(0)
+
+    # Simulate the player sitting inside a sub-prompt (e.g. a market form
+    # — choose_quantity is a stand-in).  This blocks on _send_and_wait
+    # until something resolves it.
+    result_holder: list = []
+
+    def _run():
+        from island_traders.engine.turn import TurnAction  # noqa: F401
+        # set_active_player is per-thread (TLS), so do it in the thread.
+        io.set_active_player(0)
+        try:
+            result_holder.append(io.choose_quantity("Qty?", 1, 10))
+        except Exception as exc:
+            result_holder.append(("EXC", type(exc).__name__))
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    # Give the prompt a moment to send.
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        if any(s.get("type") == "choose_quantity" for s in sends):
+            break
+        time.sleep(0.02)
+    assert any(s.get("type") == "choose_quantity" for s in sends)
+
+    # Player clicks Done while in the dialog.  mark_player_ready resolves
+    # the in-flight prompt with CANCEL_SENTINEL — the dialog raises
+    # ActionCancelled.
+    io.mark_player_ready(0)
+    t.join(timeout=2.0)
+    assert not t.is_alive()
+    # choose_quantity catches ActionCancelled and re-raises; the test
+    # thread sees it.  In production the engine's action handler catches
+    # ActionCancelled and returns to the action loop.
+    assert result_holder and result_holder[0][0] == "EXC", \
+        f"Expected ActionCancelled-style exception, got {result_holder}"
+
+
+def test_export_log_returns_full_print_history():
+    """export_log() concatenates every IO.print() call in order.
+    Drives the dashboard's Download Log button (2026-05-27 playtest
+    ask for offline debugging)."""
+    io = WebSocketIOAdapter(
+        "g_log", broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: None},
+    )
+    io.print("Spring Y1 — production begins")
+    io.print("[LOAN] Comet repaid 50 Dp")
+    io.print("[EVENT] Flood: Agriculture")
+    text = io.export_log()
+    # Lines preserved verbatim and in order.
+    assert text == (
+        "Spring Y1 — production begins\n"
+        "[LOAN] Comet repaid 50 Dp\n"
+        "[EVENT] Flood: Agriculture"
+    )
 
 
 def test_begin_season_resets_state():

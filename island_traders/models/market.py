@@ -134,23 +134,55 @@ class Market:
     def set_season(self, year: int, season: int) -> None:
         self._current_season_key = (year, season)
 
+    def cancel_player_orders(self, player_id: int, rtype: ResourceType) -> None:
+        """Cancel every standing bid AND ask by ``player_id`` on ``rtype``.
+
+        Resting asks refund their unsold remainder of resources to the
+        seller; supply / demand counters are decremented by the unsold
+        portion so the price formula doesn't pretend the cancelled
+        depth is still on the book.  Used by post_offer / post_bid to
+        enforce the "a new order overrides the player's prior orders"
+        rule.
+        """
+        for offer in self._offers:
+            if (offer.seller_id == player_id
+                    and offer.resource == rtype
+                    and offer.remaining > 0):
+                qty = offer.remaining
+                if offer._seller is not None:
+                    offer._seller.receive_resources(rtype, qty)
+                offer.remaining = 0
+                self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
+        for bid in self._bids:
+            if (bid.buyer_id == player_id
+                    and bid.resource == rtype
+                    and bid.remaining > 0):
+                qty = bid.remaining
+                bid.remaining = 0
+                self.demand[rtype] = max(0, self.demand.get(rtype, 0) - qty)
+
     def post_offer(self, seller: Player, rtype: ResourceType,
                    price_per_unit: float, qty: int) -> MarketOffer:
         if qty <= 0:
             raise ValueError("Offer quantity must be positive")
         if price_per_unit <= 0:
             raise ValueError("Offer price must be positive")
+        # A new ask overrides this player's prior bids AND asks on this
+        # resource — cancel them first so any refunded units from a
+        # prior ask are visible to the inventory check below.
+        self.cancel_player_orders(seller.player_id, rtype)
         if seller.inventory.get(rtype) < qty:
             raise InsufficientSupplyError(
                 f"{seller.name} has only {seller.inventory.get(rtype)} {rtype.value}"
             )
         seller.give_resources(rtype, qty)
+        price = round(price_per_unit, 2)
         offer = MarketOffer(
             offer_id=self._next_offer_id,
             seller_id=seller.player_id,
             seller_name=seller.name,
             resource=rtype,
-            price_per_unit=round(price_per_unit, 2),
+            price_per_unit=price,
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
@@ -160,6 +192,7 @@ class Market:
         self._next_offer_id += 1
         self.post_supply(rtype, qty)
         self._auto_match_offer(offer)
+        self._check_tight_spread(rtype)
         return offer
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
@@ -173,12 +206,17 @@ class Market:
             raise InsufficientFundsError(
                 f"{buyer.name} has {buyer.dollops:.2f} but bid needs {total_cost:.2f}"
             )
+        # A new bid overrides this player's prior bids AND asks on this
+        # resource (cancels both).  Resources from any cancelled ask
+        # refund to the buyer/seller.
+        self.cancel_player_orders(buyer.player_id, rtype)
+        price = round(price_per_unit, 2)
         bid = MarketBid(
             bid_id=self._next_bid_id,
             buyer_id=buyer.player_id,
             buyer_name=buyer.name,
             resource=rtype,
-            price_per_unit=round(price_per_unit, 2),
+            price_per_unit=price,
             quantity=qty,
             remaining=qty,
             season_key=self._current_season_key,
@@ -188,61 +226,133 @@ class Market:
         self._next_bid_id += 1
         self.post_demand(rtype, qty)
         self._auto_match_bid(bid)
+        self._check_tight_spread(rtype)
         return bid
 
     def _auto_match_bid(self, bid: MarketBid) -> None:
-        """Immediately fill exact-price bids when one offer can satisfy them."""
+        """Cross a new bid against resting asks while the price covers them.
+
+        Standard exchange semantics: the resting (older) order sets the
+        trade price; the new order is the price-taker.  Partial fills are
+        supported — the bid consumes asks in best-price (ascending) order
+        until either the bid is filled or the next ask is too expensive.
+        """
         buyer = bid._buyer
         if buyer is None or bid.remaining <= 0:
             return
+        # `available_offers` returns asks sorted ascending by price.
         for offer in self.available_offers(bid.resource):
+            if bid.remaining <= 0:
+                break
             if offer.seller_id == bid.buyer_id:
                 continue
-            if offer.price_per_unit != bid.price_per_unit:
-                continue
-            if bid.remaining > offer.remaining:
-                continue
+            if offer.price_per_unit > bid.price_per_unit:
+                # No further asks will cross — they're all >= this one.
+                break
             seller = offer._seller
             if seller is None:
                 continue
-            qty = bid.remaining
-            cost = round(bid.price_per_unit * qty, 2)
-            if buyer.dollops < cost:
+            qty = min(bid.remaining, offer.remaining)
+            if qty <= 0:
                 continue
+            trade_price = offer.price_per_unit   # resting ask sets price
+            cost = round(trade_price * qty, 2)
+            if buyer.dollops < cost:
+                # Even the cheapest crossing ask is unaffordable — stop.
+                break
             buyer.spend_dollops(cost)
             buyer.receive_resources(bid.resource, qty)
             seller.receive_dollops(cost)
             offer.remaining -= qty
-            bid.remaining = 0
-            return
+            bid.remaining -= qty
 
     def _auto_match_offer(self, offer: MarketOffer) -> None:
-        """Immediately fill exact-price bids that fit inside this offer."""
+        """Cross a new ask against resting bids while the price covers them.
+
+        Resting bid sets the trade price; new ask is the price-taker.
+        Partial fills supported — the ask consumes bids in best-price
+        (descending) order until the ask is filled or the next bid is
+        too low.
+        """
         seller = offer._seller
         if seller is None or offer.remaining <= 0:
             return
+        # `available_bids` returns bids sorted descending by price.
         for bid in self.available_bids(offer.resource):
+            if offer.remaining <= 0:
+                break
             if bid.buyer_id == offer.seller_id:
                 continue
-            if bid.price_per_unit != offer.price_per_unit:
-                continue
-            if bid.remaining > offer.remaining:
-                continue
+            if bid.price_per_unit < offer.price_per_unit:
+                # No further bids will cross — they're all <= this one.
+                break
             buyer = bid._buyer
             if buyer is None:
                 continue
-            qty = bid.remaining
-            cost = round(offer.price_per_unit * qty, 2)
+            qty = min(bid.remaining, offer.remaining)
+            if qty <= 0:
+                continue
+            trade_price = bid.price_per_unit   # resting bid sets price
+            cost = round(trade_price * qty, 2)
             if buyer.dollops < cost:
+                # This buyer can no longer pay their bid — drop it and
+                # continue to the next-best resting bid.
                 bid.remaining = 0
                 continue
             buyer.spend_dollops(cost)
             buyer.receive_resources(offer.resource, qty)
             seller.receive_dollops(cost)
             offer.remaining -= qty
-            bid.remaining = 0
-            if offer.remaining == 0:
-                return
+            bid.remaining -= qty
+
+    # Threshold for automatic execution of near-crossing orders (2026-05-28).
+    # A spread of 2.5% or less is close enough to be auto-accepted, executing
+    # at the resting (earlier-placed) order's price.
+    TIGHT_SPREAD_THRESHOLD: float = 0.025
+
+    def _check_tight_spread(self, rtype: ResourceType) -> None:
+        """Auto-execute if the best bid and ask are within TIGHT_SPREAD_THRESHOLD.
+
+        When the spread is within 2.5%, instead of waiting for one side to
+        move, we cross the orders at the price of whichever was placed first
+        (lower sequential ID = placed earlier):
+          - Ask existed first (ask.offer_id < bid.bid_id) → cross at ask price
+          - Bid existed first (bid.bid_id < ask.offer_id) → cross at bid price
+
+        Only executes one crossing per call; loops until the spread widens.
+        """
+        while True:
+            ask = self.best_offer(rtype)
+            bid = self.best_bid(rtype)
+            if not ask or not bid:
+                break
+            if ask.seller_id == bid.buyer_id:
+                break
+            spread = (ask.price_per_unit - bid.price_per_unit) / ask.price_per_unit
+            if spread < 0 or spread > self.TIGHT_SPREAD_THRESHOLD:
+                break
+            # Determine trade price from the older (resting) order.
+            if ask.offer_id < bid.bid_id:
+                # Ask was posted first → buyer gets the ask price.
+                trade_price = ask.price_per_unit
+            else:
+                # Bid was posted first → seller gets the bid price.
+                trade_price = bid.price_per_unit
+            buyer = bid._buyer
+            seller = ask._seller
+            if buyer is None or seller is None:
+                break
+            qty = min(bid.remaining, ask.remaining)
+            if qty <= 0:
+                break
+            cost = round(trade_price * qty, 2)
+            if buyer.dollops < cost:
+                break
+            buyer.spend_dollops(cost)
+            buyer.receive_resources(rtype, qty)
+            seller.receive_dollops(cost)
+            ask.remaining -= qty
+            bid.remaining -= qty
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
         return sorted(
@@ -274,16 +384,23 @@ class Market:
                 f"Only {total_available} {rtype.value} offered, requested {qty}"
             )
         total_cost = 0.0
-        bought = 0
+        fills = []
+        planned = 0
         for offer in offers:
-            if bought >= qty:
+            if planned >= qty:
                 break
-            take = min(qty - bought, offer.remaining)
+            take = min(qty - planned, offer.remaining)
             cost = round(offer.price_per_unit * take, 2)
             total_cost += cost
+            fills.append((offer, take, cost))
+            planned += take
+        buyer.spend_dollops(total_cost)
+        bought = 0
+        for offer, take, cost in fills:
             offer.remaining -= take
             bought += take
-        buyer.spend_dollops(total_cost)
+            if offer._seller is not None and offer.seller_id != buyer.player_id:
+                offer._seller.receive_dollops(cost)
         buyer.receive_resources(rtype, bought)
         self.post_demand(rtype, bought)
         return total_cost, bought

@@ -4,6 +4,7 @@ from __future__ import annotations
 from island_traders.models.profession import (
     Profession, WorkerBand, PROFESSION_BAND, BAND_TITLES,
     band_of, primary_title, EDUCATION_SEASONS, APPRENTICESHIP_SEASONS,
+    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
 )
 from island_traders.models.workforce import Workforce
 
@@ -29,8 +30,10 @@ def test_band_classifications():
     assert band_of(Profession.MINING_TECHNICIAN)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.VETERINARIAN)        == WorkerBand.TECHNICIAN
     assert band_of(Profession.ASSEMBLY_WORKER)     == WorkerBand.TECHNICIAN
+    assert band_of(Profession.FACTORY_FOREMAN)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.OIL_EXTRACTION)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.REFINERY_SPECIALIST) == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MINING_FOREMAN)      == WorkerBand.TECHNICIAN
 
     # Worker tier
     assert band_of(Profession.UNSKILLED) == WorkerBand.WORKER
@@ -60,10 +63,16 @@ def test_primary_title_examples():
 
 
 def test_education_and_apprenticeship_durations():
-    assert EDUCATION_SEASONS[Profession.DOCTOR] == 2
-    assert EDUCATION_SEASONS[Profession.NURSE] == 1   # Nurse is faster per requirements
+    # Phase 3 (ruled 2026-05-17): Doctor 3 seasons, Nurse 1, others 2.
+    assert EDUCATION_SEASONS[Profession.DOCTOR] == 3
+    assert EDUCATION_SEASONS[Profession.NURSE] == 1
+    assert EDUCATION_SEASONS[Profession.ENGINEER] == 2
+    # Every Technician apprenticeship is exactly 1 season away at Education,
+    # followed by one 75%-productivity settling season on the home island.
     for p, seasons in APPRENTICESHIP_SEASONS.items():
-        assert seasons >= 1
+        assert seasons == 1
+    assert APPRENTICESHIP_SETTLING_SEASONS == 1
+    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.75
 
 
 def test_workforce_band_helpers():
@@ -101,7 +110,7 @@ def test_new_transporter_professions_have_correct_bands():
 
 def test_new_technician_professions_for_educator_banker_doctor():
     assert band_of(Profession.LECTURER)        == WorkerBand.MANAGER
-    assert band_of(Profession.TUTOR)           == WorkerBand.TECHNICIAN
+    assert band_of(Profession.INSTRUCTOR)      == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_ANALYST) == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_CLERK)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.MEDICAL_ORDERLY) == WorkerBand.TECHNICIAN
@@ -152,3 +161,38 @@ def test_every_profession_has_a_label():
     from island_traders.models.profession import PROFESSION_LABEL
     for p in Profession:
         assert p in PROFESSION_LABEL, f"{p} missing from PROFESSION_LABEL"
+
+
+def test_playtest_phantom_titles_are_resolved():
+    """Titles flagged in playtest either became trainable or stayed worker-tier."""
+    from island_traders.models.profession import PROFESSION_LABEL, ROLE_PROFESSIONS
+
+    manufacturer_labels = {
+        PROFESSION_LABEL[profession]
+        for profession in ROLE_PROFESSIONS["Manufacturer"]
+    }
+    assert "Factory Foreman" in manufacturer_labels
+    assert "Assembly Tech" in manufacturer_labels
+    assert "Factory Foreman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+    assert "Assembly Tech" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+
+    miner_labels = {
+        PROFESSION_LABEL[profession]
+        for profession in ROLE_PROFESSIONS["Miner"]
+    }
+    assert "Mining Foreman" in miner_labels
+    assert "Refiner" in miner_labels
+    assert "Mining Foreman" in BAND_TITLES["Miner"][WorkerBand.TECHNICIAN]
+    assert "Refiner" in BAND_TITLES["Miner"][WorkerBand.TECHNICIAN]
+
+    worker_tier_titles = (
+        set(BAND_TITLES["Transporter"][WorkerBand.WORKER])
+        | set(BAND_TITLES["Doctor"][WorkerBand.WORKER])
+    )
+    trainable_labels = {
+        label
+        for professions in ROLE_PROFESSIONS.values()
+        for label in (PROFESSION_LABEL[profession] for profession in professions)
+    }
+    assert {"Stevedore", "Aide"} <= worker_tier_titles
+    assert not ({"Stevedore", "Aide"} & trainable_labels)

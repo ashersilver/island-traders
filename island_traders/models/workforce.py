@@ -1,6 +1,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from .profession import Profession, WorkerBand, band_of
+from .profession import (
+    Profession, WorkerBand, band_of,
+    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
+)
 
 
 # Efficiency caps per training level (0=Unskilled, 1=Basic, 2=Skilled, 3=Expert)
@@ -16,6 +19,21 @@ class Worker:
     training_level: int = 0      # 0=Unskilled, 1=Basic professional, 2=Skilled, 3=Expert
     in_training: bool = False
     profession: str = Profession.UNSKILLED.value   # stored as string for simple serialisation
+    # Seasons of reduced-productivity "settling" remaining after a returning
+    # apprentice (Technician band) reaches their home island.  0 = at full
+    # productivity.  University (Manager) graduates never settle.
+    settling_seasons: int = 0
+    # Seasons this worker has existed (advanced every season, including
+    # while away at training).  Drives retirement — see
+    # WORKING_LIFE_SEASONS / Workforce.advance_age_and_retire.
+    age_seasons: int = 0
+    # MBA credential (Phase D).  Meaningful only for Manager-band workers
+    # whose profession is `Banker`: ≥3 MBA-qualified Banker Managers drop
+    # the bank's reserve ratio from 0.50 to 0.20 (≈2x → ≈5x leverage).
+    has_mba: bool = False
+    # Set True while the worker is on a staffing contract at another island.
+    # Excludes them from the home island's active workforce during the contract.
+    on_contract: bool = False
 
     @property
     def plateau(self) -> float:
@@ -24,7 +42,10 @@ class Worker:
     @property
     def efficiency(self) -> float:
         raw = EFFICIENCY_BASE + self.experience_seasons * EFFICIENCY_GAIN_PER_SEASON
-        return min(raw, self.plateau)
+        eff = min(raw, self.plateau)
+        if self.settling_seasons > 0:
+            eff *= APPRENTICESHIP_SETTLING_EFFICIENCY
+        return eff
 
     @property
     def tier_name(self) -> str:
@@ -34,10 +55,13 @@ class Worker:
             return "Unskilled"
         levels = ["", "Basic", "Skilled", "Expert"]
         level_str = levels[min(self.training_level, 3)]
-        return f"{self.profession} ({level_str})"
+        suffix = " — settling" if self.settling_seasons > 0 else ""
+        return f"{self.profession} ({level_str}){suffix}"
 
     def gain_experience(self) -> None:
         self.experience_seasons += 1
+        if self.settling_seasons > 0:
+            self.settling_seasons -= 1
 
     def train(self, target_profession: str | None = None) -> None:
         """Advance this worker's training.
@@ -58,6 +82,10 @@ class Worker:
     def return_from_training(self, target_profession: str | None = None) -> None:
         self.in_training = False
         self.train(target_profession)
+        # Apprenticeship (Technician band) graduates work a reduced-output
+        # settling season on the home island; university graduates do not.
+        if band_of(self.profession) == WorkerBand.TECHNICIAN:
+            self.settling_seasons = APPRENTICESHIP_SETTLING_SEASONS
 
 
 @dataclass
@@ -70,6 +98,7 @@ class Workforce:
         count: int,
         training_level: int = 0,
         profession: str = Profession.UNSKILLED.value,
+        age_seasons: int = 0,
     ) -> list[Worker]:
         new: list[Worker] = []
         for _ in range(count):
@@ -77,11 +106,33 @@ class Workforce:
                 self._next_id,
                 training_level=training_level,
                 profession=profession,
+                age_seasons=age_seasons,
             )
             self._next_id += 1
             self.workers.append(w)
             new.append(w)
         return new
+
+    def advance_age_and_retire(
+        self, working_life_by_band: dict[str, int], default_life: int
+    ) -> list[Worker]:
+        """Age every worker one season; remove + return those who retire.
+
+        Runs once per season (including for workers away at training).
+        A worker retires when ``age_seasons >= working life`` for their
+        band; retired workers are removed from the roster entirely (the
+        seat must be re-recruited + retrained — the lifecycle pressure).
+        """
+        retired: list[Worker] = []
+        for w in self.workers:
+            w.age_seasons += 1
+            life = working_life_by_band.get(band_of(w.profession).value, default_life)
+            if w.age_seasons >= life:
+                retired.append(w)
+        if retired:
+            retired_ids = {w.worker_id for w in retired}
+            self.workers = [w for w in self.workers if w.worker_id not in retired_ids]
+        return retired
 
     @property
     def count(self) -> int:
@@ -89,7 +140,7 @@ class Workforce:
 
     @property
     def active_workers(self) -> list[Worker]:
-        return [w for w in self.workers if not w.in_training]
+        return [w for w in self.workers if not w.in_training and not w.on_contract]
 
     @property
     def active_count(self) -> int:
@@ -127,6 +178,65 @@ class Workforce:
         for w in self.active_workers:
             out[band_of(w.profession).value] += 1
         return out
+
+    def training_band_summary(self) -> dict[str, int]:
+        """Away-at-training counts keyed by home band name."""
+        out = {b.value: 0 for b in WorkerBand}
+        for w in self.workers:
+            if w.in_training:
+                out[band_of(w.profession).value] += 1
+        return out
+
+    def profession_summary(self) -> dict[str, dict[str, int]]:
+        """Per-profession counts: {"Factory Foreman": {"active": 2, "training": 1}, ...}.
+
+        Uses the raw profession value as the key (e.g. "factory_foreman") and
+        also includes a "label" entry for display.  Unskilled workers are
+        omitted unless present.
+        """
+        from ..models.profession import PROFESSION_LABEL, Profession
+        active: dict[str, int] = {}
+        training: dict[str, int] = {}
+        for w in self.workers:
+            key = w.profession
+            if w.in_training:
+                training[key] = training.get(key, 0) + 1
+            else:
+                active[key] = active.get(key, 0) + 1
+        all_profs = set(active) | set(training)
+        result = {}
+        for key in all_profs:
+            try:
+                label = PROFESSION_LABEL.get(Profession(key), key)
+            except ValueError:
+                label = key
+            result[key] = {
+                "label": label,
+                "active": active.get(key, 0),
+                "training": training.get(key, 0),
+            }
+        return result
+
+    def repurpose_worker(self, worker_id: int, new_profession: str) -> bool:
+        """Reassign a worker to a new profession, resetting all experience.
+
+        The worker loses training_level, experience_seasons, and settling
+        bonus.  They join the new profession at the unskilled level (level 0)
+        with profession already set — effectively a direct placement rather
+        than a formal training path.
+
+        Returns True if the worker was found and reassigned; False otherwise.
+        """
+        worker = next(
+            (w for w in self.active_workers if w.worker_id == worker_id), None
+        )
+        if worker is None:
+            return False
+        worker.profession = new_profession
+        worker.training_level = 0
+        worker.experience_seasons = 0
+        worker.settling_seasons = 0
+        return True
 
     def has_mechanic(self) -> bool:
         """True if at least one active Mechanic is on staff."""

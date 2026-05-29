@@ -1,12 +1,37 @@
+# Single source of truth for the application version.  Surfaced to the
+# client via the /version HTTP endpoint and the initial game-state payload
+# so playtesters can quote a version when reporting bugs.  Bump on each
+# pre-release merge that's worth marking; mirror in pyproject.toml when
+# tagging a release.
+APP_VERSION: str = "0.1.0-dev.2026-05-28.5"
+
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
 CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
 
-STARTING_DOLLOPS: float = 700.0   # CLI / test default (7 roles × 100 = 700 total)
-TOTAL_STARTING_DOLLOPS: float = 700.0  # server overrides this via GameRoom.starting_capital
+STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
+TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
 TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
+
+# Sustenance model (basket — 2026-05-25 redesign).  Each ``PEOPLE_PER_MEAL``
+# residents consume one "meal" per season; a meal is satisfied by 1 Food OR
+# (1 Grain + 1 Produce + 1 (Fish or Meat)), with cross-substitution at 2:1
+# between raw ingredients.  Replaces the legacy ``BASE_POPULATION_SELF_FED``
+# baseline — every resident now generates demand.  See
+# ``Player.consume_sustenance`` for the allocator.
+PEOPLE_PER_MEAL: int = 10
+
+# Kitchen capital item (cash-only, all islands). A staffed Kitchen converts
+# local raw ingredients into packaged Food once per season.
+KITCHEN_ITEM_ID: str = "common.kitchen"
+KITCHEN_FOOD_PER_SEASON: int = 6
+KITCHEN_RECIPE: dict[str, int] = {
+    "Grain": 2,
+    "Produce": 1,
+    "Protein": 1,  # Fish or Meat, chosen from local inventory.
+}
 
 # Production is intentionally board-game chunky: one production action should
 # create enough supply for the archipelago, not one sad little crate.
@@ -19,67 +44,81 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Farmer: Spring outputs to sell + 2 seasons of inputs
-    "Farmer":        {"Food": 2, "Fish": 3,                          # to sell (Spring outputs)
+    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
                       "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
     # Miner: partial output to sell + 2 seasons of inputs
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 4,                # to sell + Oil 2 to produce (self-consumed)
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
                       "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
-    # Transporter: cargo + seats to sell + 2 seasons of Oil & Fish
+    # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 4, "Fish": 2},                           # 2 seasons: Oil 2/s, Fish 1/s
-    # Educator: Knowledge to sell + 2 seasons of inputs
-    "Educator":      {"Knowledge": 2,                                 # to sell
-                      "LaboratoryEquipment": 2, "Finance": 2},        # 2 seasons of each input
-    # Banker: Finance to sell + 2 seasons of inputs
-    "Banker":        {"Finance": 2,                                   # to sell
-                      "Knowledge": 2},                                 # 2 seasons: 1 per season
+                      "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
+    # Educator: Expertise + Courses on hand so other islands can train in
+    # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
+    "Educator":      {"Expertise": 6,                                 # feeds Course production
+                      "Courses": 5,                                    # classroom slots ready Y1
+                      "LaboratoryEquipment": 2,                         # 2 seasons of Lab Equipment
+                      "PassengerSeats": 10},                            # bootstraps cross-island training
+    # Banker: no production output to stock; just the working knowledge they
+    # need to write loans / underwrite insurance.  Banker income comes from
+    # loan interest spread and insurance premiums — see island-ledger.md §3
+    # for the full institutional-cash-pool model (future implementation).
+    "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
     # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
     "Manufacturer":  {"FarmMachinery": 2,                             # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Knowledge": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
+                      "Expertise": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
 }
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                10.0,
-    "Fish":                 8.0,
-    "Ore":                 15.0,
-    "Metal":               25.0,
-    "Oil":                 20.0,
-    "Freight":             12.0,
-    "Knowledge":           18.0,
+    "Food":                13.5,
+    "Fish":                10.8,
+    "Grain":                9.45,
+    "Produce":             12.15,
+    "Meat":                16.2,
+    "Ore":                 12.0,
+    "Metal":               20.0,
+    "Oil":                 16.0,
+    "Freight":             16.5,
+    "Expertise":           17.1,
+    "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "LaboratoryEquipment": 28.0,
     "Goods":               30.0,
-    "HealthServices":      35.0,
-    "Vaccine":             40.0,
+    "HealthServices":      31.5,
+    "Vaccine":             36.75,
     "Finance":             20.0,
     # ForgeHaven product lines
-    "FarmMachinery":       32.0,   # tractors, ploughs, harvesters
-    "MiningEquipment":     42.0,   # drills, excavators, ore separators
+    "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
+    "MiningEquipment":     55.0,   # drills, excavators, ore separators
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
-    "TransportEquipment":  65.0,   # vehicles, ships, cranes (no freight surcharge)
+    "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      15.0,   # charter flight / passenger berth (per seat)
+    "PassengerSeats":      18.7,   # charter flight / passenger berth (per seat)
     # Educator IP
-    "Patents":             80.0,   # one-time productivity boost (–20% input cost on chosen output)
+    "Patents":             47.5,   # one-time productivity boost (–20% input cost on chosen output)
 }
 
 # Units produced per season before event modifiers
 # Farmer output is defined by FARMER_SEASONAL_CONVERSION instead.
 # Manufacturer output is defined by MANUFACTURER_PRODUCT_LINES instead.
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
-    "Miner":         {"Ore": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Metal": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Oil": 8 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Transporter":   {"Freight": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "PassengerSeats": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Educator":      {"Knowledge": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Patents": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Banker":        {"Finance": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Doctor":        {"HealthServices": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Vaccine": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Transporter":   {"Freight": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Educator":      {"Expertise": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Patents": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Banker does NOT produce a "Finance" commodity — banking earns through
+    # the spread on loans (and insurance premiums, future deal-guarantee
+    # fees, brokerage, project finance).  Finance-as-tradeable-commodity
+    # was a placeholder that made the Banker print money; removed so the
+    # business model has to come from the actual lending engine.
+    "Banker":        {},
+    "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -87,11 +126,15 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
-    "Transporter":   {"Oil": 2, "Fish": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"LaboratoryEquipment": 1, "Finance": 1}, # labs + operating budget
-    "Banker":        {"Knowledge": 1},                         # expertise + infrastructure
+    "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
+    "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
+    # Banker has no per-season production input — they make money from loan
+    # interest spread (and future deal-guarantee fees, brokerage, project
+    # finance, insurance underwriting).  Expertise is still useful but is
+    # not a hard requirement gating "production".
+    "Banker":        {},
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
-    "Doctor":        {"Knowledge": 1, "LaboratoryEquipment": 1},
+    "Doctor":        {"Expertise": 1, "LaboratoryEquipment": 1},
 }
 
 # Per-season input→output table for the Farmer island.
@@ -100,23 +143,27 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # planting underway; good fishing
+        "outputs": {"Grain": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # planting underway; good fishing
     },
     "Summer": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 6 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # peak fishing; crops growing
+        "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # peak fishing; crops growing
     },
     "Autumn": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 12 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # bumper harvest; fishing winds down
+        "outputs": {"Grain": round(9.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(7.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # bumper harvest; fishing winds down
     },
     "Winter": {
         "inputs":  {"FarmMachinery": 1, "Oil": 1},
-        "outputs": {"Food": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                    "Fish": 1 * PRODUCER_PRODUCTIVITY_MULTIPLIER},   # stores drawn down; minimal production
+        "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Produce": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
+                    "Fish": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # stores drawn down; minimal production
     },
 }
 
@@ -222,7 +269,7 @@ STARTING_WORKFORCE: dict[str, int] = {
     "Farmer":        6,
     "Miner":         5,
     "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      4,   # 1 Professor + 2 Technicians (Tutor x2) + 1 Unskilled
+    "Educator":      11,  # 2 Prof + 4 Lect + 1 TD + 4 Instructor (bootstraps Manager-course capacity)
     "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
     "Manufacturer":  5,
     "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
@@ -249,7 +296,7 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # but is currently encoded simply as 2 Doctors + 4 Nurses; revisit when Apprenticeship
 # pipeline is implemented.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 1), ("FarmingTechnician", 1), ("Veterinarian", 1)],
+    "Farmer":        [("Farmer", 1), ("Horticulturalist", 1), ("Veterinarian", 1)],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
     "Transporter":   [
         ("LogisticsManager", 1),     # Manager
@@ -258,9 +305,21 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
         ("WarehouseManager", 1),     # Technician (ground ops supervisor)
     ],
     "Educator":      [
-        ("Professor", 1),            # Manager
-        ("Tutor", 2),                # Technicians
-        # +1 Unskilled remainder (Admin)
+        # Bootstrap-aware shape: training a Lecturer is itself a Manager-tier
+        # course (Lecturer is Manager-band), and the staffing rule requires
+        # an existing Lecturer to run any Manager-tier course.  Starting with
+        # zero Lecturers is a permanent chicken-and-egg deadlock — fresh games
+        # could never train a first Lecturer.  Option B (2 Prof + 4 Lect + 1 TD
+        # + 4 Instructor) keeps the academic faculty viable from turn 1 with
+        # a realistic Professor-to-Lecturer ratio (lecturers do the front-line
+        # teaching; professors supervise) while keeping the Technical pipeline
+        # at the same 1 TD + 4 Instructor + Workshop-prerequisite baseline.
+        ("Professor", 2),            # Manager — supervises 4 concurrent Manager courses
+        ("Lecturer", 4),             # Manager — runs 4 concurrent Manager courses
+        ("TechnicalDirector", 1),    # Manager — supervises 2 concurrent Technical courses
+        ("Instructor", 4),           # Technician — runs 4 concurrent Technical courses
+        # Total: 11.  Manager capacity = min(2*2, 4) = 4.  Technical capacity
+        # = min(1*2, 4, workshop_slots) (workshop is now mandatory-minimum, +3).
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
@@ -273,6 +332,75 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
         ("Doctor", 2),               # Manager
         ("Nurse", 2),                # Manager (was 4)
         ("MedicalOrderly", 2),       # Technician (new — meets ≥2T invariant)
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Worker lifecycle (economy-lifecycle Phase B)
+# ---------------------------------------------------------------------------
+
+# Working life in seasons per worker band; a worker retires (is removed
+# from the roster — the seat must be re-recruited + retrained) once their
+# age reaches this.  First-cut tunable (accepted 2026-05-19).
+WORKING_LIFE_SEASONS: dict[str, int] = {
+    "Manager":    40,   # ~10 years
+    "Technician": 32,   # ~8 years
+    "Worker":     24,   # ~6 years (Unskilled)
+}
+DEFAULT_WORKING_LIFE_SEASONS: int = 32
+
+# Bootstrap seeding: starting workers of (role → profession) begin this
+# many seasons *from retirement* (seed age = working_life(band) − value).
+# Phase B activates Agriculture only; other islands default to age 0.
+# This is also the model's near-retirement balance lever.
+STARTING_WORKER_AGES: dict[str, dict[str, int]] = {
+    "Farmer": {
+        "Farmer":          4,   # Manager ~1 year from retirement
+        "Horticulturalist": 8,  # Technician ~2 years from retirement
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Capital lifecycle (economy-lifecycle Phase C)
+# ---------------------------------------------------------------------------
+
+# Default service life for any CapitalItem that doesn't override it.
+# 20 seasons ≈ 5 years.  Tunable (accepted first-cut).
+DEFAULT_SERVICE_LIFE_SEASONS: int = 20
+
+# Per-season maintenance rule of thumb when a CapitalItem's
+# `maintenance_per_season` is 0.0 (no override): charge this fraction of
+# the item's purchase cost per owned unit per season.  Tunable.
+DEFAULT_MAINTENANCE_FRACTION: float = 0.03
+
+
+# ---------------------------------------------------------------------------
+# Banker capital-reserve / MBA leverage (economy-lifecycle Phase D)
+# ---------------------------------------------------------------------------
+
+# Reserve ratio applied to every loan the Banker issues — the share of
+# the loan's principal that must come from the bank's OWN capital
+# (locked until the loan resolves).  The remainder is sourced
+# externally (depositors), invisible counterparties whose principal +
+# the posted funding rate must be repaid at maturity (see
+# `_fund_bank_external_portion`).
+MBA_RESERVE_RATIO_BASE: float = 0.05       # < 3 MBA Banker Managers
+MBA_RESERVE_RATIO_QUALIFIED: float = 0.02  # >= 3 MBA Banker Managers
+# How many MBA-qualified Banker Managers it takes to drop the ratio.
+MBA_QUALIFIED_THRESHOLD: int = 3
+
+# Starting *aged* capital: role → list of (item_id, count, age_in_seasons).
+# Seeds the island with a pre-existing unit already part-aged so it must
+# be replaced from the Manufacturer within its remaining life.  Phase C
+# activates Agriculture only (the combine harvester); other islands
+# default to no aged seed.  Generalises as a bootstrap balance lever.
+STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
+    "Farmer": [
+        # Combine harvester (`farmer.harvester`, 8-season life) 4 seasons
+        # old at start → expires end of Year 1 (aligns with the seeded
+        # Farmer's retirement to create a real double squeeze).
+        ("farmer.harvester", 1, 4),
     ],
 }
 
@@ -295,16 +423,19 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "FarmingTechnician", "Veterinarian", "Mechanic"],
-    "Miner":        ["Miner", "MiningTechnician", "OilExtractionWorker", "RefinerySpecialist", "Mechanic"],
+    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
+    "Miner":        [
+        "Miner", "MiningTechnician", "MiningForeman",
+        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
+    ],
     "Transporter":  [
         "LogisticsManager", "Engineer",
-        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
     ],
-    "Educator":     ["Professor", "Lecturer", "Tutor"],
-    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk"],
-    "Manufacturer": ["AssemblyWorker", "Engineer", "Mechanic"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly"],
+    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
+    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk", "Chef"],
+    "Manufacturer": ["FactoryForeman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly", "Chef"],
 }
 
 # ---------------------------------------------------------------------------
@@ -329,10 +460,76 @@ STARTING_PRODUCTION_CAPACITY: dict[str, float] = {
 
 # Total island population at game start (includes employed workers + unskilled population).
 # Board-game scale: 20 residents per island keeps recruitment tokens manageable.
-STARTING_POPULATION: int = 20
+STARTING_POPULATION: int = 30
 
 # How many unskilled people can be drawn into the workforce per 2 unskilled residents.
-UNSKILLED_RECRUITMENT_RATIO: float = 0.5   # 1 recruitable worker per 2 unskilled residents
+# An island can employ up to this fraction of its current population as
+# workers (skilled + unskilled).  Tightens recruit availability so the
+# workforce can't outgrow the populace.
+MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.80
+
+# ---------------------------------------------------------------------------
+# Graceful degradation (GitHub #47 + 2026-05-27 playtest)
+# ---------------------------------------------------------------------------
+# When an island runs short of required expertise, production used to drop
+# to zero — leading to cascading failures (Manny Fracture: Mining at 0
+# active workers for 5 years → no Oil → all Manufacturer lines locked at
+# max 0).  These floors keep a starved island producing SOMETHING so the
+# market can still trade and recovery is possible.
+#
+# Floors are SAFETY NETS, not ceilings: the natural labour-productivity
+# factor still wins when higher.  Only kicks in when the natural factor
+# would otherwise be lower than the floor.
+#
+# Within a single role, floors COMPOSE MULTIPLICATIVELY across bands
+# (e.g. a Farmer missing both the Farmer specialist AND all Farming
+# Technicians produces at 0.10 × 0.50 = 0.05).
+#
+# Across roles (multi-role players), the MIN floor applies — multi-role
+# expertise gaps are tracked the same way the underlying productivity
+# factor sums them across roles.
+EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
+    # Brief-spec values.  Currently UNUSED in production — see
+    # EXPERTISE_DEGRADATION_ENABLED below.
+    "unique_specialist": 0.10,
+    "manager":           0.25,
+    "technician":        0.50,
+    "unskilled":         1.00,  # no floor change — existing behaviour
+}
+
+# Master switch for the graceful-degradation floor.  2026-05-27
+# investigation: turning on the floor (even at tiny 0.02/0.05/0.10
+# values) shocked the 4-seed calibration sweep — Miner dropped to 4.4%
+# and Banker to 2.8% in their win-rate from the documented 13.1% /
+# 14.8% baseline.  Root cause: existing balance depends on
+# cascading-collapse positive-feedback loops (one role's failure
+# cascading to consumers is what gives high-risk roles their scarcity
+# premium).  Any non-zero floor prevents this cascade and re-prices the
+# whole economy.
+#
+# Disabled until the proper calibration pass happens.  The constants
+# and ProductionEngine.expertise_degradation_floor helper are in place
+# so a future calibration work can flip this flag and tune the floors,
+# but the application code in _labour_productivity_factor checks this
+# flag before applying — default behaviour is unchanged.
+EXPERTISE_DEGRADATION_ENABLED: bool = False
+
+# Primary Manager-tier "unique specialist" per role.  Losing this triggers
+# the harshest (0.10) floor.
+UNIQUE_SPECIALIST_PROFESSION: dict[str, str] = {
+    "Farmer":       "Farmer",
+    "Miner":        "Miner",
+    "Educator":     "Professor",
+    "Banker":       "Banker",
+    "Manufacturer": "Engineer",
+    "Doctor":       "Doctor",
+    "Transporter":  "LogisticsManager",
+}
+
+# Per-role override if a specific island needs a different floor than the
+# defaults above.  Empty by default; populate during playtest calibration
+# if specific roles feel wrong.
+EXPERTISE_DEGRADATION_ROLE_OVERRIDES: dict[str, dict[str, float]] = {}
 
 # ---------------------------------------------------------------------------
 # University (Education Island) training capacity
@@ -350,12 +547,15 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Agriculture
     "Farmer":               2,
     "FarmingTechnician":    4,
+    "Horticulturalist":      2,
     "Veterinarian":         1,
     # Manufacturing
+    "FactoryForeman":      4,
     "AssemblyWorker":      10,
     # Mining
     "Miner":                2,
     "MiningTechnician":     4,
+    "MiningForeman":        3,
     "OilExtractionWorker":  2,
     "RefinerySpecialist":   2,
     # Banking
@@ -365,12 +565,15 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Education
     "Professor":            4,    # 1 per season × 4 seasons
     "Lecturer":             4,
-    "Tutor":                6,
+    "TechnicalDirector":    4,
+    "Instructor":           6,
     # Transport (the new professions added with the workforce baseline rule)
     "LogisticsManager":     2,
     "FlightCrew":           6,
     "Seaman":               6,
     "WarehouseManager":     6,
+    # Cross-island sustenance support
+    "Chef":                 7,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).
@@ -382,8 +585,17 @@ UNIVERSITY_SEASONAL_CAP: dict[str, int] = {
 # Training constants (legacy — superseded by UNIVERSITY_CAPACITY per profession)
 # ---------------------------------------------------------------------------
 
-# Units of Knowledge resource consumed to train one worker.
-TRAINING_KNOWLEDGE_COST: int = 1
+# Units of Expertise resource consumed to train one worker.
+TRAINING_EXPERTISE_COST: int = 1
+
+# A Course is a classroom slot, not a per-student token.  Up to this many
+# trainees can share one Course; larger batches consume ceil(n / cap)
+# Courses on Educator approval (Education Model Phase 2).
+MAX_CLASS_SIZE_PER_COURSE: int = 12
+
+# Per-trainee food & accommodation cost while at the Education Island,
+# charged per season at college (Education Model Phase 3 fee component).
+TRAINEE_FOOD_ACCOM_PER_SEASON: float = 5.0
 
 # ---------------------------------------------------------------------------
 # Population / birth rate constants
@@ -404,6 +616,45 @@ FLIGHT_COST_FRACTION: float = 0.20
 # Passengers via cargo arrive one full season later than via flight or Transporter.
 CARGO_FREE_PASSENGERS: int = 2
 CARGO_TRANSIT_SEASONS: int = 1   # extra seasons of absence when travelling by cargo
+
+# ---------------------------------------------------------------------------
+# Event frequency cap (2026-05-27 event-frequency-cap brief)
+# ---------------------------------------------------------------------------
+# Maximum production-halting events any single player can suffer per game
+# year.  A halt event is one with outage=True OR yield_modifier<=0.1 (see
+# EventResult.is_halt_event).  Soft damage (yield ~0.5) is uncapped.  When
+# a player has used their budget and draws another halt, the resolver
+# re-rolls avoiding halts.  Addresses the "5 production-halting events in
+# 5 consecutive seasons" reports (Comet 1 #9, AyaySir BUG-08).
+HALT_EVENTS_PER_PLAYER_PER_YEAR: int = 1
+
+# ---------------------------------------------------------------------------
+# Worker repurposing (2026-05-28)
+# ---------------------------------------------------------------------------
+# Cost in Dollops to reassign one worker to a new profession.  The worker
+# loses all training_level and experience but immediately joins the new
+# role at unskilled level.  Reflects retraining overhead / disruption cost.
+REPURPOSE_WORKER_COST: float = 25.0
+
+# ---------------------------------------------------------------------------
+# Medical staffing contracts (2026-05-28)
+# ---------------------------------------------------------------------------
+# Any island can hire Doctors or Nurses from the Healthcare island on a
+# short-term contract.  Staff must travel via PassengerSeats (round-trip:
+# staff_count × 2 seats total).
+#
+# STAFFING_BASE_FEE_PER_STAFF_PER_SEASON — suggested default fee (Dollops)
+# per staff member per season when the player hasn't set their own price.
+#
+# STAFFING_FOOD_PER_STAFF_PER_SEASON — extra Food/meals the host island
+# must provide for each visiting staff member each season (in addition to
+# their standard workforce sustenance).
+#
+# STAFFING_MAX_DURATION_SEASONS — upper bound on any single contract
+# (prevents staff from being away indefinitely).
+STAFFING_BASE_FEE_PER_STAFF_PER_SEASON: float = 20.0
+STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 1.0
+STAFFING_MAX_DURATION_SEASONS: int = 4
 
 # ---------------------------------------------------------------------------
 # Workplace risk constants
@@ -428,12 +679,38 @@ INSURANCE_DURATION_SEASONS: int = 4
 
 # Base annual premium per policy type.  Banker can charge more or less.
 INSURANCE_BASE_PREMIUM: dict[str, float] = {
-    "life":    25.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
-    "medical": 30.0,    # flat per island; halves seasonal injury rate
+    "life":    50.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
+    "medical": 60.0,    # flat per island; halves seasonal injury rate
 }
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
-LIFE_INSURANCE_DEATH_BENEFIT: float = 60.0
+# Doubled 2026-05-27 from 60 to 120 to offset the Banker calibration
+# spike from LIFE_INSURANCE_FATALITY_REDUCTION: fewer fatalities means
+# Banker pays out the death benefit less often, which pushed Banker
+# win rate +6 pp out of band.  Higher per-death payout balances total
+# expected Banker liability while making the policy more valuable to
+# the bereaved island.
+LIFE_INSURANCE_DEATH_BENEFIT: float = 120.0
 
 # Medical insurance reduces the effective injury_rate by this fraction.
 MEDICAL_INSURANCE_INJURY_REDUCTION: float = 0.5
+
+# Life insurance reduces the effective fatality_rate by this fraction
+# (mirroring the medical-injury reduction).  Before this constant
+# existed, Life insurance only paid a death benefit AFTER the worker
+# died — the player could not prevent fatalities, only get cash.  Now
+# the rate itself is halved when a policy is in force, so insured
+# islands have a real chance to retain experienced workers.
+# 2026-05-27 disaster-mitigation brief.
+LIFE_INSURANCE_FATALITY_REDUCTION: float = 0.5
+
+# Hard cap on the fraction of an island's active workforce that can be
+# lost to fatality in a single workplace-risk tick.  Even with the
+# Life-insurance fatality reduction above, an unlucky cascade of rolls
+# could still wipe most of a small starting workforce in one season —
+# this cap keeps the island from going from fully-staffed to skeleton
+# in a single tick.  At 30% of N active workers (min 1), a 5-worker
+# Miner can lose at most 1 per tick; a 10-worker workforce loses at
+# most 3.  Surviving workers may still die on later ticks.
+# 2026-05-27 disaster-mitigation brief.
+MAX_WORKFORCE_LOSS_PER_TICK_FRACTION: float = 0.30

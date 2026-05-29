@@ -15,16 +15,29 @@ ROLES = ["Farmer", "Miner", "Transporter", "Educator",
          "Banker", "Manufacturer", "Doctor"]
 
 
-def test_every_role_has_3_to_5_capital_items():
+def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchen():
     for role in ROLES:
         items = items_for_role(CAPITAL_CATALOGUE, role)
-        assert 3 <= len(items) <= 6, f"{role} has {len(items)} items (expected 3–5)"
+        role_items = [item for item in items if item.role == role]
+        universal_items = [item for item in items if item.role == "Any"]
+        assert 3 <= len(role_items) <= 6, (
+            f"{role} has {len(role_items)} role items (expected 3–6)"
+        )
+        assert [item.item_id for item in universal_items] == ["common.kitchen"]
 
 
 def test_every_role_has_at_least_two_recipes():
-    for role in ROLES:
+    # Banker is exempt: their business is loans + insurance, not commodity
+    # production.  They have a single InsurancePolicies recipe representing
+    # underwriting capacity; loans live in the loan ledger.
+    commodity_producing_roles = [r for r in ROLES if r != "Banker"]
+    for role in commodity_producing_roles:
         recipes = recipes_for_role(PRODUCTION_RECIPES, role)
         assert len(recipes) >= 2, f"{role} has only {len(recipes)} recipes; need ≥ 2 outputs"
+    # Banker should still appear in the recipe list at least once (for
+    # underwriting capacity), even though they don't sell a commodity.
+    banker_recipes = recipes_for_role(PRODUCTION_RECIPES, "Banker")
+    assert len(banker_recipes) >= 1, "Banker should have at least the InsurancePolicies recipe"
 
 
 def test_capital_item_ids_unique():
@@ -46,13 +59,14 @@ def test_mandatory_minimums_reference_real_items():
 
 
 def test_equipment_capacity_sums_owned_items():
-    # Owning 1 Tractor + 1 Fishing Boat → 100 Food, 40 Fish capacity
+    # Owning 1 Tractor + 1 Fishing Boat → 100 Grain, 60 Produce, 40 Fish capacity
     owned = {"farmer.tractor": 1, "farmer.fishing_boat": 1}
-    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "Food") == 100
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "Grain") == 100
+    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "Produce") == 60
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "Fish") == 40
 
-    # 2 Tractors → 200 Food
-    assert equipment_capacity(CAPITAL_CATALOGUE, {"farmer.tractor": 2}, "Food") == 200
+    # 2 Tractors → 200 Grain
+    assert equipment_capacity(CAPITAL_CATALOGUE, {"farmer.tractor": 2}, "Grain") == 200
 
 
 def test_workforce_capacity_uses_binding_band():
@@ -66,8 +80,8 @@ def test_workforce_capacity_uses_binding_band():
 
 def test_input_capacity_uses_binding_resource():
     food_recipe = recipe_for(PRODUCTION_RECIPES, "Farmer", "Food")
-    # 6 Oil supports 30 Food (6/0.2); Fish is no longer a farm input.
-    on_hand = {"Oil": 6, "Fish": 1}
+    # Packaged Food needs one of each ingredient; Produce is the bottleneck.
+    on_hand = {"Grain": 6, "Produce": 3, "Fish": 5}
     assert input_capacity(food_recipe, on_hand) == 30
 
 
@@ -76,13 +90,13 @@ def test_compute_capacity_returns_min_of_three():
     result = compute_capacity(
         recipe=food_recipe,
         catalogue=CAPITAL_CATALOGUE,
-        owned={"farmer.tractor": 1},                 # 100 equipment cap
+        owned={"farmer.industrial_kitchen": 2},      # 120 Food equipment cap
         workforce={WorkerBand.MANAGER: 20,
                    WorkerBand.TECHNICIAN: 20,
                    WorkerBand.WORKER: 20},           # generous
-        on_hand={"Oil": 30, "Fish": 30},             # generous
+        on_hand={"Grain": 30, "Produce": 30, "Fish": 30},  # generous
     )
-    assert result.max_producible == 100
+    assert result.max_producible == 120
     assert result.binding_constraint == "equipment"
 
 
@@ -91,14 +105,14 @@ def test_compute_capacity_identifies_input_binding():
     result = compute_capacity(
         recipe=food_recipe,
         catalogue=CAPITAL_CATALOGUE,
-        owned={"farmer.tractor": 10},                # 1000 equipment cap
+        owned={"farmer.industrial_kitchen": 10},     # 600 equipment cap
         workforce={WorkerBand.MANAGER: 50,
                    WorkerBand.TECHNICIAN: 50,
                    WorkerBand.WORKER: 50},
-        on_hand={"Oil": 6, "Fish": 30},              # Oil binding (30 Food max)
+        on_hand={"Grain": 6, "Produce": 30, "Fish": 30},  # Grain binding (60 Food max)
     )
     assert result.binding_constraint == "inputs"
-    assert result.max_producible == 30
+    assert result.max_producible == 60
 
 
 def test_manufacturer_opening_equipment_provides_capacity():
@@ -116,11 +130,11 @@ def test_manufacturer_opening_equipment_provides_capacity():
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "TransportEquipment") > 0
 
 
-def test_transporter_uses_fish_as_provisions():
+def test_transporter_uses_food_as_provisions():
     freight_recipe = recipe_for(PRODUCTION_RECIPES, "Transporter", "Freight")
     seats_recipe = recipe_for(PRODUCTION_RECIPES, "Transporter", "PassengerSeats")
 
-    assert "Fish" in freight_recipe.inputs
-    assert "Food" not in freight_recipe.inputs
-    assert "Fish" in seats_recipe.inputs
-    assert "Food" not in seats_recipe.inputs
+    assert "Food" in freight_recipe.inputs
+    assert "Fish" not in freight_recipe.inputs
+    assert "Food" in seats_recipe.inputs
+    assert "Fish" not in seats_recipe.inputs

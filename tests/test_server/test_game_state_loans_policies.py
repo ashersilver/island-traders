@@ -11,6 +11,7 @@ pytest.importorskip("fastapi")
 
 from island_traders.server.app import GameManager, GameRoom, LobbyPlayer
 from island_traders.models.insurance import InsurancePolicy
+from island_traders.models.resource import ResourceType
 
 
 def _bootstrap_game(mgr, *, with_policy=False, with_loan=False):
@@ -117,3 +118,51 @@ def test_game_state_loans_and_policies_empty_lists_when_none():
     for p in state["players"]:
         assert p["loans_detail"] == []
         assert p["policies_detail"] == []
+
+
+def test_banker_insurance_capacity_is_marked_as_service_output():
+    mgr = GameManager()
+    room, banker, farmer = _bootstrap_game(mgr)
+    state = mgr.get_game_state(room.room_id, "host")
+    banker_data = next(p for p in state["players"] if p["lobby_player_id"] == "host")
+    policies = next(
+        out for out in banker_data["capacity"]["outputs"]
+        if out["output"] == "InsurancePolicies"
+    )
+    assert policies["is_service_output"] is True
+
+
+def test_game_state_replays_recent_ticker_log():
+    mgr = GameManager()
+    room, banker, farmer = _bootstrap_game(mgr)
+
+    class LoggedIO:
+        _log = ["[AI] Transporter listed 20x PassengerSeats at 15.0 Dp/unit"]
+
+    room.io_adapter = LoggedIO()
+    state = mgr.get_game_state(room.room_id, "host")
+    assert state["recent_log"] == LoggedIO._log
+    assert state["log_count"] == 1
+
+
+def test_game_state_includes_sustenance_runway_alert_basket():
+    """Sustenance basket model (2026-05-25): a single 'Meals' alert per
+    island instead of per-resource Food/Fish alerts. The runway is
+    computed against the fungible basket (Food + raw, with 2:1
+    substitution) — see Player.meals_available."""
+    mgr = GameManager()
+    room, banker, farmer = _bootstrap_game(mgr)
+    farmer.population = 120  # 12 meals / season under PEOPLE_PER_MEAL=10
+    state = mgr.get_game_state(room.room_id, "p2")
+    alerts = state["sustenance_alerts"][str(farmer.player_id)]
+    meals = next(alert for alert in alerts if alert["resource"] == "Meals")
+
+    assert meals["on_hand"] == farmer.meals_available()
+    assert meals["seasonal_need"] == farmer.meals_needed()
+    assert meals["runway_seasons"] == round(
+        meals["on_hand"] / meals["seasonal_need"], 2
+    )
+    assert meals["recommended_purchase"] == max(
+        0, meals["seasonal_need"] * 2 - meals["on_hand"]
+    )
+    assert meals["severity"] in {"warning", "danger"}

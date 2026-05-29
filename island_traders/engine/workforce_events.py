@@ -1,9 +1,12 @@
 from __future__ import annotations
+import math
 import random
 from dataclasses import dataclass, field
 from ..models.player import Player
 from ..constants import (
     WORKPLACE_RISK, LIFE_INSURANCE_DEATH_BENEFIT,
+    LIFE_INSURANCE_FATALITY_REDUCTION,
+    MAX_WORKFORCE_LOSS_PER_TICK_FRACTION,
     MEDICAL_INSURANCE_INJURY_REDUCTION, SKILLED_PROFESSIONS,
 )
 
@@ -16,6 +19,13 @@ class WorkforceEventReport:
     fatality_worker_ids: list[int] = field(default_factory=list)
     death_benefit_paid: float = 0.0
     insurance_reduced_injuries: bool = False
+    # 2026-05-27 disaster-mitigation brief.
+    insurance_reduced_fatalities: bool = False
+    # Set when the per-tick workforce-loss cap fired: would have lost
+    # `would_have_lost` workers but the cap reduced it to
+    # len(fatality_worker_ids).
+    loss_cap_applied: bool = False
+    would_have_lost: int = 0
 
     @property
     def has_events(self) -> bool:
@@ -25,10 +35,17 @@ class WorkforceEventReport:
         parts = []
         if self.fatality_worker_ids:
             n = len(self.fatality_worker_ids)
-            parts.append(
-                f"{n} worker fatality/fatalities"
-                + (f" — death benefit {self.death_benefit_paid:.0f} Dp paid" if self.death_benefit_paid else "")
-            )
+            note = ""
+            if self.death_benefit_paid:
+                note += f" — death benefit {self.death_benefit_paid:.0f} Dp paid"
+            if self.insurance_reduced_fatalities:
+                note += " (rate halved by life insurance)"
+            if self.loss_cap_applied:
+                note += (
+                    f" (loss-cap capped at {n}; "
+                    f"would have lost {self.would_have_lost})"
+                )
+            parts.append(f"{n} worker fatality/fatalities{note}")
         if self.injured_worker_ids:
             n = len(self.injured_worker_ids)
             reduced = " (reduced by medical insurance)" if self.insurance_reduced_injuries else ""
@@ -110,18 +127,57 @@ def apply_workplace_risks(
         # --- Fatalities ---
         # Re-check active workers (some may now be dispatched as injured)
         still_active = list(player.workforce.active_workers)
+        active_count_at_start = len(still_active)
         base_fatal = role_risks["fatality_rate"]
 
         # Collect candidates with their individual probabilities
+        # 2026-05-27 disaster-mitigation brief: Life insurance halves
+        # each worker's fatality probability (mirroring how Medical
+        # halves injury probability — see lines just above).  Before
+        # this brief, Life insurance only paid a death benefit AFTER
+        # the worker died; the policy was payout-only.  Now it actually
+        # prevents some deaths.
         fatality_candidates = []
         for worker in still_active:
             is_unskilled = worker.profession not in skilled_prof_names
             multiplier = _worker_risk_multiplier(worker, is_unskilled)
             prob = base_fatal * multiplier
+            if has_life:
+                prob *= (1.0 - LIFE_INSURANCE_FATALITY_REDUCTION)
             fatality_candidates.append((worker, prob))
 
         # Roll each worker independently; collect those who die
         deceased = [w for w, p in fatality_candidates if rng.random() < p]
+        if deceased and has_life:
+            report.insurance_reduced_fatalities = True
+
+        # 2026-05-27 disaster-mitigation brief: per-tick workforce-loss
+        # cap.  Without this, a streak of bad rolls (especially on
+        # high-risk Mining + Manufacturer) can wipe most of a 5-worker
+        # starting workforce in one tick — exactly the Manny Fracture
+        # cascade.  Cap at MAX_WORKFORCE_LOSS_PER_TICK_FRACTION of the
+        # ACTIVE workforce (min 1).  When the cap fires, keep the
+        # most-experienced workers (drop the youngest from the
+        # deceased list) — domain logic: most-vulnerable die first, so
+        # we keep the ones who would have survived.
+        if deceased:
+            cap = max(
+                1,
+                math.floor(
+                    active_count_at_start * MAX_WORKFORCE_LOSS_PER_TICK_FRACTION
+                ),
+            )
+            if len(deceased) > cap:
+                report.loss_cap_applied = True
+                report.would_have_lost = len(deceased)
+                # Keep oldest (most experienced) workers; drop the rest
+                # from this tick's deceased list.  They survive and may
+                # still die on later ticks.
+                deceased.sort(
+                    key=lambda w: getattr(w, "age_seasons", 0),
+                    reverse=True,
+                )
+                deceased = deceased[:cap]
 
         if deceased:
             # Remove deceased from workforce

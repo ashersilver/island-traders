@@ -15,3 +15,8 @@ printables/
 *.xlsx
 *.xlsm
 *.xls
+
+# Editor swap files
+*.swp
+*.swo
+*~

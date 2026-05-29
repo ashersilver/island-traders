@@ -320,6 +320,25 @@ button:active{transform:scale(.97)}
 .stat .val.gold{color:var(--gold)}
 .stat .val.green{color:var(--green)}
 .stat .val.red{color:var(--red)}
+.personnel-stat{align-items:flex-start}
+.personnel-breakdown{
+  display:grid;
+  gap:.12rem;
+  min-width:8.5rem;
+  padding-left:.75rem;
+  text-align:left;
+}
+.personnel-line{
+  display:flex;
+  justify-content:space-between;
+  gap:.75rem;
+  font-weight:600;
+}
+.personnel-line .training-count{
+  color:var(--dim);
+  font-weight:500;
+  white-space:nowrap;
+}
 .stat.net-wealth{
   margin:.1rem 0 .45rem;
   padding:.45rem .55rem;
@@ -349,6 +368,9 @@ button:active{transform:scale(.97)}
 .decision-card.good{border-color:rgba(39,174,96,.55)}
 .decision-card.warn{border-color:rgba(231,192,93,.55)}
 .decision-card.blocked{border-color:rgba(231,76,60,.55)}
+.decision-card .hint-actions{display:flex;justify-content:flex-end;margin-top:.4rem}
+.decision-card .hint-open{font-size:.7rem;padding:.2rem .55rem}
+.decision-card .hint-open[disabled]{opacity:.5;cursor:not-allowed}
 .icon-btn{background:transparent;border:1px solid var(--border);color:var(--accent);border-radius:4px;min-width:1.45rem;height:1.35rem;padding:0;font-size:.85rem}
 
 .comp-table{width:100%;border-collapse:collapse;font-size:.79rem}
@@ -356,12 +378,27 @@ button:active{transform:scale(.97)}
 .comp-table td{padding:.25rem .35rem;border-bottom:1px solid #0a1220}
 .comp-table tr.me{background:rgba(10,189,227,.07)}
 
+/* Market prices popup grid (#22.1) — clean, aligned, gridlined */
+.market-grid{width:100%;border-collapse:collapse;font-size:.84rem;margin-bottom:1rem}
+.market-grid th{color:var(--dim);font-weight:600;padding:.4rem .6rem;border:1px solid var(--border);background:rgba(255,255,255,.03);text-align:right}
+.market-grid th:first-child,.market-grid td:first-child{text-align:left}
+.market-grid td{padding:.35rem .6rem;border:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.market-grid tbody tr:nth-child(even){background:rgba(255,255,255,.02)}
+.market-grid .bid{color:var(--green);font-weight:600}
+.market-grid .ask{color:var(--gold);font-weight:600}
+
 .prompt-area{background:var(--panel);border:1px solid var(--accent);border-radius:var(--radius);padding:.9rem}
 .prompt-area h3{color:var(--heading);margin-bottom:.5rem;font-size:.9rem}
 .action-btns{display:flex;flex-wrap:wrap;gap:.35rem}
 .action-btns button{font-size:.8rem;padding:.35rem .8rem;background:var(--panel2);color:var(--text);border:1px solid var(--border)}
 .action-btns button.highlight{background:var(--gold);color:#000;border:none}
-.action-btns button:hover{border-color:var(--accent)}
+.action-btns button.recommended{border-color:var(--gold);box-shadow:0 0 0 1px rgba(246,185,59,.45)}
+.action-btns button:hover:not([disabled]){border-color:var(--accent)}
+.action-btns button[disabled]{opacity:.45;cursor:not-allowed}
+/* Grouped action layout (Phase 2 of the UX review) */
+.action-groups{display:flex;flex-direction:column;gap:.45rem}
+.action-group{border:1px solid var(--border);border-radius:6px;padding:.45rem .55rem;background:rgba(0,0,0,.15)}
+.action-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:.3rem;font-weight:700}
 
 /* island map */
 .island-map-container{width:100%;margin-bottom:.5rem}
@@ -383,10 +420,33 @@ button:active{transform:scale(.97)}
 .dialog .opts button{text-align:left;background:var(--bg);border:1px solid var(--border);color:var(--text)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
+.popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+/* Personnel popup + general popup section styling (Phase 3) */
+.popup-section{margin-bottom:1rem}
+.popup-section:last-child{margin-bottom:0}
+.popup-section h4{margin:0 0 .45rem;font-size:.78rem;color:var(--heading);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.popup-table{width:100%;border-collapse:collapse;font-size:.78rem}
+.popup-table th{text-align:left;padding:.3rem .5rem;background:var(--panel2);color:var(--dim);font-weight:600;border-bottom:1px solid var(--border)}
+.popup-table td{padding:.3rem .5rem;border-bottom:1px solid var(--border)}
+.popup-table tr:last-child td{border-bottom:none}
+.popup-table .total-row td{font-weight:700;background:rgba(0,0,0,.15)}
+.empty-state{color:var(--dim);font-style:italic;margin:.4rem 0}
+.batch-notes{margin-top:.5rem;padding:.4rem .6rem;background:rgba(246,185,59,.08);border-left:3px solid var(--gold);font-size:.76rem;border-radius:0 4px 4px 0}
+.batch-notes+.batch-notes{margin-top:.3rem}
+.staffing-extras{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.5rem;font-size:.76rem;color:var(--dim)}
+.personnel-breakdown{cursor:pointer}
+.personnel-breakdown:hover{filter:brightness(1.25)}
 .market-buy-wrap{overflow:auto;border:1px solid var(--border);border-radius:6px}
 .market-buy-table{min-width:940px;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:.8rem}
 .market-buy-table th,.market-buy-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:.42rem .5rem;vertical-align:middle}
 .market-buy-table th:last-child,.market-buy-table td:last-child{border-right:none}
+/* Phase 5 — Market Buy row tiering / focus highlight */
+.market-buy-table tr.mkt-row-focus td{background:rgba(246,185,59,.14);box-shadow:inset 3px 0 0 var(--gold)}
+.mkt-dormant{margin-top:.8rem}
+.mkt-dormant>summary{cursor:pointer;font-size:.78rem;color:var(--dim);padding:.35rem .5rem;background:rgba(0,0,0,.18);border:1px solid var(--border);border-radius:4px;list-style:none}
+.mkt-dormant>summary::before{content:"▸ ";display:inline-block;transition:transform .15s ease}
+.mkt-dormant[open]>summary::before{transform:rotate(90deg)}
+.mkt-dormant>summary:hover{color:var(--text);border-color:var(--accent)}
 .market-buy-table tbody tr:last-child td{border-bottom:none}
 .market-buy-table th{background:rgba(10,189,227,.08);color:var(--heading);font-weight:700}
 .market-buy-table input{height:2rem;margin:0!important}
@@ -411,6 +471,103 @@ button:active{transform:scale(.97)}
 .constraint-shortfall.inputs{color:#ffabab}
 .constraint-shortfall.workforce{color:#ffd985}
 .constraint-shortfall.equipment{color:#aabbff}
+
+/* ---- Training pipeline sidebar strip ---- */
+.training-strip{margin:.3rem 0 .2rem;display:grid;gap:.22rem}
+.training-row{
+  display:grid;grid-template-columns:1fr auto;align-items:start;
+  padding:.28rem .38rem;border-radius:4px;font-size:.75rem;
+  border:1px solid var(--border);background:rgba(7,15,30,.4);
+}
+.training-row.status-dispatched{border-color:rgba(39,174,96,.45)}
+.training-row.status-awaiting_educator{border-color:rgba(231,192,93,.35)}
+.training-row.status-countered{border-color:rgba(231,76,60,.55)}
+.training-row.status-awaiting_transport{border-color:rgba(10,189,227,.35)}
+.training-row-left{display:flex;flex-direction:column;gap:.08rem;min-width:0}
+.training-row-prof{color:var(--heading);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.training-row-status{font-size:.69rem;color:var(--dim)}
+.training-row-status.dispatched{color:var(--green)}
+.training-row-status.countered{color:var(--red)}
+.training-row-return{font-size:.72rem;text-align:right;white-space:nowrap;padding-left:.4rem}
+.training-row-return .year-label{color:var(--gold);font-weight:700}
+.training-row-return .season-label{color:var(--dim)}
+.training-strip-hdr{
+  display:flex;align-items:center;gap:.3rem;
+  font-size:.69rem;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--accent);font-weight:700;margin-bottom:.15rem;margin-top:.35rem;
+  padding-bottom:.18rem;border-bottom:1px solid var(--border);
+}
+.training-strip-hdr button{margin-left:auto}
+/* ---- Training counter-offer / rejection alerts ---- */
+.training-decision-alert{
+  border:1px solid rgba(231,76,60,.6);border-radius:var(--radius-sm);
+  padding:.35rem .5rem;margin:.3rem 0 .15rem;font-size:.76rem;line-height:1.35;
+  background:rgba(231,76,60,.08)
+}
+.training-decision-alert.status-countered{border-color:rgba(231,192,93,.7);background:rgba(231,192,93,.07)}
+.training-decision-alert-hdr{font-weight:700;color:var(--gold);margin-bottom:.15rem}
+.training-decision-alert.status-countered .training-decision-alert-hdr{color:var(--gold)}
+.training-decision-alert.status-rejected .training-decision-alert-hdr{color:var(--red)}
+.training-decision-btns{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+.training-decision-btns button{font-size:.68rem;padding:.2rem .5rem;cursor:pointer;
+  border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.06);
+  color:var(--text)}
+.training-decision-btns .btn-accept{border-color:rgba(39,174,96,.6);color:var(--green)}
+.training-decision-btns .btn-counter{border-color:rgba(231,192,93,.6);color:var(--gold)}
+.training-decision-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
+.training-row-blocker{font-size:.66rem;color:var(--gold);margin-top:.1rem;white-space:normal;line-height:1.25}
+.training-row-supply-hint{font-size:.63rem;color:var(--dim);margin-top:.06rem;line-height:1.2}
+/* ---- Staffing contract strip ---- */
+.staffing-strip{display:grid;gap:.22rem;margin:.15rem 0 .1rem}
+.staffing-row{display:grid;grid-template-columns:1fr auto;align-items:start;gap:.3rem;
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:.3rem .45rem;
+  font-size:.75rem;line-height:1.3}
+.staffing-row.status-dispatched{border-color:rgba(39,174,96,.45)}
+.staffing-row.status-countered{border-color:rgba(231,76,60,.55)}
+.staffing-row.status-proposed{border-color:rgba(231,192,93,.35)}
+.staffing-row-prof{font-weight:600;font-size:.78rem}
+.staffing-row-status{font-size:.66rem;color:var(--dim)}
+.staffing-row-status.dispatched{color:var(--green)}
+.staffing-row-status.countered{color:var(--red)}
+.staffing-row-status.provider{color:var(--accent)}
+.staffing-row-return{font-size:.72rem;text-align:right;white-space:nowrap;padding-left:.4rem}
+.staffing-row-return .year-label{color:var(--gold);font-weight:700}
+.staffing-row-return .season-label{color:var(--dim)}
+.staffing-strip-hdr{
+  display:flex;align-items:center;gap:.3rem;
+  font-size:.69rem;text-transform:uppercase;letter-spacing:.06em;
+  color:#2471a3;font-weight:700;margin-bottom:.15rem;margin-top:.35rem;
+  padding-bottom:.18rem;border-bottom:1px solid var(--border);
+}
+.staffing-strip-hdr button{margin-left:auto}
+
+/* ---- Visible Needs cards (fix overlapping text) ---- */
+.needs-cards{display:grid;gap:.4rem;margin-top:.2rem}
+.needs-card{border:1px solid var(--border);border-radius:var(--radius);padding:.42rem .55rem;background:rgba(7,15,30,.4);font-size:.79rem}
+.needs-card-header{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.2rem}
+.needs-card-player{color:var(--heading);font-weight:700}
+.needs-card-role{color:var(--dim);font-size:.72rem}
+.needs-card-items{display:flex;flex-wrap:wrap;gap:.25rem}
+.needs-tag{background:rgba(231,76,60,.18);border:1px solid rgba(231,76,60,.45);color:#ffabab;border-radius:3px;padding:.08rem .3rem;font-size:.72rem;white-space:nowrap}
+
+/* ---- Sustenance warning blink ---- */
+@keyframes sus-blink{0%,100%{opacity:1}50%{opacity:.25}}
+.sus-warn{
+  display:inline-block;margin-left:.35rem;
+  font-size:.9rem;line-height:1;vertical-align:middle;
+  animation:sus-blink 1s ease-in-out infinite;
+  cursor:default;
+}
+.sus-warn.danger{color:var(--red)}
+.sus-warn.warning{color:var(--gold)}
+
+/* ---- Dependency flowchart popup ---- */
+.depflow-wrap{overflow:auto;max-height:60vh}
+.depflow-svg{min-width:520px;width:100%}
+.depflow-node rect{rx:6;ry:6}
+.depflow-lbl{font-family:inherit;font-size:12px;fill:var(--heading,#e8eaf6);font-weight:600}
+.depflow-res{font-family:inherit;font-size:10px;fill:var(--gold,#e7c05d)}
+.depflow-arrow{fill:none;stroke-width:1.5;marker-end:url(#arrowhead)}
 </style>
 </head>
 <body>
@@ -470,6 +627,7 @@ button:active{transform:scale(.97)}
   <div class="landing-title">
     <h1>Island Traders</h1>
     <p>Resource-trading board game · 2–7 players</p>
+    <p style="font-size:.7rem;color:var(--dim);margin-top:.2rem">Version <span id="app-version">…</span> · <a href="javascript:void(0)" onclick="showAboutDialog()" style="color:var(--accent);text-decoration:none">About</a></p>
   </div>
   <div class="landing-actions">
     <button class="btn-gold" onclick="showScreen('create')" style="border-radius:50px;font-size:1rem;padding:.85rem 2.6rem">
@@ -748,6 +906,12 @@ button:active{transform:scale(.97)}
         </button>
         <span class="wealth" id="hdr-wealth">—</span>
         <button class="btn-ghost btn-sm" onclick="requestState()">↻</button>
+        <button class="btn-ghost btn-sm" id="show-action-menu-btn" onclick="restoreActionMenu()"
+                title="Re-open the action menu if it was hidden mid-turn">📋 Menu</button>
+        <button class="btn-ghost btn-sm" id="download-log-btn" onclick="downloadGameLog()"
+                title="Download the full server-side game log as a .txt file for debugging">⬇ Log</button>
+        <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
+              onclick="showAboutDialog()" title="About / version info">v<span id="app-version-game">…</span></span>
       </div>
     </div>
 
@@ -772,13 +936,22 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Working Capital</span><span class="val gold" id="s-dollops">—</span></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
-        <div class="stat"><span class="lbl">Workers</span><span class="val" id="s-workers">—</span></div>
+        <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
+        <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
+        <div id="s-training-decisions"></div>
+        <div id="s-training-strip"></div>
+        <div id="s-staffing-strip"></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
+        <div class="stat" id="s-campus-load-row" style="display:none"><span class="lbl">Campus Load</span><span class="val" id="s-campus-load">0</span><span class="stat-hint" id="s-campus-load-hint" style="font-size:.65rem;color:var(--warn);margin-left:.3rem"></span></div>
       </div>
       <div class="section">
-        <h3>Inventory</h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Inventory
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showInventoryPopup()" title="Show full inventory with market values">⊕</button>
+        </h3>
         <div id="s-inventory">—</div>
       </div>
       <div class="section">
@@ -791,11 +964,19 @@ button:active{transform:scale(.97)}
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
       <div class="section">
-        <h3>Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span></h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showInsurancePopup()" title="Show all policies in a detail view">⊕</button>
+        </h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
       </div>
       <div class="section">
-        <h3>Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span></h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showLoansPopup()" title="Show all loans in a detail view">⊕</button>
+        </h3>
         <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
       </div>
     </div>
@@ -823,6 +1004,14 @@ button:active{transform:scale(.97)}
     </div>
 
     <div class="g-info">
+      <div class="section">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Conditions
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showDependencyMap()" title="Show island dependency flowchart">🗺</button>
+        </h3>
+        <div id="conditions-panel" style="font-size:.82rem;line-height:1.4">—</div>
+      </div>
       <div class="section">
         <h3>Funding Rates</h3>
         <div id="funding-rates-panel" style="font-size:.82rem">—</div>
@@ -863,6 +1052,7 @@ let myPlayerIdx = null;
 let currentRoomId = null;
 let currentRoom = null;
 let gameState = null;
+let seenServerLogCount = 0;
 let auctionData = null;
 let auctionBudget = 100;
 let auctionSpent = 0;
@@ -872,6 +1062,11 @@ let timerInterval = null;
 let auctionTimerEnd = 0;
 // Pause state (Issue #1)
 let isPaused = false;
+// Cached most-recent action-prompt payload so we can re-render it via the
+// "📋 Menu" recovery button when the action menu disappears mid-turn (e.g.
+// after cancelling a hint-driven modal or any other intermittent UI loss).
+let lastActionPromptMsg = null;
+let appVersion = null;
 let activeTabRole = null;
 let builtTabsForRoles = null; // serialised role list used to build the current tab bar
 // Simultaneous-play state
@@ -932,6 +1127,51 @@ const ROLE_ART = {
 };
 // Investing Phase state
 let investData = null;          // { budget, roles, catalogue:[], mandatory:[], selections:[] }
+
+const ISLAND_BRIEFINGS = {
+  Farmer: {
+    title: 'Agriculture and Fisheries Island',
+    summary: 'Feed the archipelago with Grain, Produce, Fish, Meat, and premium packaged Food. Protect machinery, fuel, and the specialists who make each line sing.',
+    priorities: ['Balance Grain / Produce / protein', 'Secure Farm Machinery and Oil', 'Add Horticulturalist and Veterinarian depth'],
+    full: `You produce Grain, Produce, Fish, and Meat, then may package balanced Food in an Industrial Kitchen for governors who prefer convenience over kitchen arithmetic. Other islands need a healthy mix of Produce, Grain, and either Fish or Meat; packaged Food saves them time and should command a premium.<br><br>Your strongest strategy is to become the archipelago’s reliable food-security partner: keep raw staples flowing, build the kitchen when the market will pay for convenience, and train Horticulturalists and Veterinarians before those lines become the bottleneck.`
+  },
+  Miner: {
+    title: 'Mining and Exploration Island',
+    summary: 'Supply the bones and blood of industry: Ore, Metal, and Oil. Guard your own Oil, keep Container Freight moving, and decide when to sell raw versus refine.',
+    priorities: ['Protect Oil supply', 'Secure Container Freight', 'Invest in skilled extraction'],
+    full: `You produce Ore, Metal, and Oil. Ore brings early cash, Metal is the higher-value industrial feedstock, and Oil powers half the board including your own operations.<br><br>Your strongest strategy is to become more than a quarry: keep production resilient, build refining depth, and make every industrial island negotiate with you for motion or materials.`
+  },
+  Transporter: {
+    title: 'Transportation and Logistics Island',
+    summary: 'Make the archipelago function as one economy. Produce both Container Freight and PassengerSeats; cargo moves goods, seats move the people who unlock growth and recovery.',
+    priorities: ['Keep Oil and Food on hand', 'List Freight and PassengerSeats', 'Train transport specialists'],
+    full: `You produce Container Freight and PassengerSeats. Freight enables trade; PassengerSeats enable training, nurse travel, and other high-value movement of people.<br><br>Your strongest strategy is to anticipate demand before it becomes a crisis: balance cargo and passenger capacity, keep routes staffed, and make yourself the island everyone has to plan around.`
+  },
+  Educator: {
+    title: 'Education, Research and Training Island',
+    summary: 'Turn population into capability. Maintain Expertise, produce Courses, and keep faculty depth high so the archipelago can train rather than stagnate.',
+    priorities: ['Maintain Expertise', 'Keep Courses available', 'Protect Professors and Instructors'],
+    full: `You produce Expertise, Courses, and Patents. One Course serves a class of up to twelve trainees and consumes one Expertise per season to run.<br><br>Your strongest strategy is to sell progress itself: keep the training pipeline open, secure Laboratory Equipment and PassengerSeats, and become the trusted route by which every other island scales.`
+  },
+  Banker: {
+    title: 'Banking and Insurance Island',
+    summary: 'Price time and risk. Your business is loans and insurance, not commodity production; your edge is seeing other islands’ bottlenecks before they do.',
+    priorities: ['Deploy capital wisely', 'Underwrite risk early', 'Maintain Expertise'],
+    full: `You earn through loans and insurance. Productive borrowers turn your capital into future interest; risky industries and vulnerable islands need protection before disaster arrives.<br><br>Your strongest strategy is to be the best-informed player at the table: finance growth that can repay, insure danger before it becomes obvious, and never let somebody else’s bad plan become your bad balance sheet.`
+  },
+  Manufacturer: {
+    title: 'ForgeHaven Manufacturing Island',
+    summary: 'Sell growth itself. Choose the product line the archipelago will need next, and secure Metal, Oil, Container Freight, and the workforce to deliver it.',
+    priorities: ['Read future demand', 'Secure industrial inputs', 'Train for chosen lines'],
+    full: `You produce Farm Machinery, Mining Equipment, Laboratory Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
+  },
+  Doctor: {
+    title: 'Healthcare and Health Research Island',
+    summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
+    full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
+  },
+};
 let investSelected = new Set(); // currently checked item_ids
 let investTimerEnd = 0;
 let investTimerInterval = null;
@@ -1286,8 +1526,37 @@ function showAuctionResult(msg) {
     </div>`;
   }
   html += '</div>';
+  const myRoles = Object.entries(assignments)
+    .filter(([, info]) => info.player_id === myPlayerId)
+    .map(([role]) => role);
+  if (myRoles.length) {
+    html += '<div style="margin-top:1rem"><h3 style="color:var(--gold);margin-bottom:.55rem">Your island briefing</h3>';
+    html += myRoles.map(role => renderAuctionBriefingCard(role)).join('');
+    html += '</div>';
+  }
   document.getElementById('auction-result-content').innerHTML = html;
 
+}
+
+function renderAuctionBriefingCard(role) {
+  const b = ISLAND_BRIEFINGS[role];
+  if (!b) return '';
+  const color = ROLE_COLORS[role] || '#aaa';
+  return `<div style="margin-bottom:.6rem;padding:.8rem;border:1px solid ${color}66;border-radius:8px;background:${color}10">
+    <div style="font-weight:800;color:${color}">${esc(b.title)}</div>
+    <div style="font-size:.84rem;line-height:1.4;margin-top:.35rem">${esc(b.summary)}</div>
+    <div style="font-size:.76rem;color:var(--dim);margin-top:.35rem">Priorities: ${b.priorities.map(esc).join(' · ')}</div>
+    <button class="btn-ghost btn-sm" style="margin-top:.55rem" onclick="showIslandBriefing('${esc(role)}')">Read full briefing</button>
+  </div>`;
+}
+
+function showIslandBriefing(role) {
+  const b = ISLAND_BRIEFINGS[role];
+  if (!b) return;
+  const body = `<p style="line-height:1.5">${b.full}</p>
+    <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
+    <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
+  showDlg(b.title, body);
 }
 
 function continueToGame() {
@@ -1441,6 +1710,29 @@ const GUARANTEE_PRICING_EXPLAINER =
 
 // ==================== INVESTING PHASE ====================
 
+// Investing selection conventions:
+//   investSelected contains either "<item_id>" (buy outright) or
+//   "lease:<item_id>" (3-year lease).  Helper accessors below.
+function _investPickFor(itemId) {
+  if (investSelected.has(itemId)) return 'buy';
+  if (investSelected.has('lease:' + itemId)) return 'lease';
+  return 'skip';
+}
+
+function _investSetPick(itemId, mode) {
+  investSelected.delete(itemId);
+  investSelected.delete('lease:' + itemId);
+  if (mode === 'buy') investSelected.add(itemId);
+  else if (mode === 'lease') investSelected.add('lease:' + itemId);
+}
+
+function _itemUpfrontCost(it) {
+  const mode = _investPickFor(it.item_id);
+  if (mode === 'buy') return it.cost;
+  if (mode === 'lease' && it.lease_quote) return it.lease_quote.annual_payment;
+  return 0;
+}
+
 function renderInvesting() {
   if (!investData) return;
   document.getElementById('invest-budget-display').textContent =
@@ -1463,7 +1755,7 @@ function renderInvesting() {
     const tbl = document.createElement('table');
     tbl.className = 'purchase-table';
     tbl.innerHTML = `<thead><tr>
-        <th class="col-select">Select</th>
+        <th class="col-select">Pick</th>
         <th class="col-item">Equipment</th>
         <th class="col-cost">Price</th>
         <th class="col-delivery">Available</th>
@@ -1473,14 +1765,35 @@ function renderInvesting() {
     for (const it of items) {
       const tr = document.createElement('tr');
       tr.style = 'border-top:1px solid var(--border)';
-      const checked = investSelected.has(it.item_id) ? 'checked' : '';
       const isMandatory = mandatorySet.has(it.item_id);
       const mandTag = isMandatory ? '<span style="color:var(--gold);font-size:.7rem;margin-left:.4rem">★ default</span>' : '';
       const deliv = it.delivery_seasons > 0 ? `${it.delivery_seasons} seasons` : 'immediate';
+      const currentPick = _investPickFor(it.item_id);
+
+      // Build the picker: a 3-way <select> when the item is lease-eligible,
+      // otherwise the original checkbox (Skip / Buy).
+      let pickerHtml;
+      let costCellHtml = `${it.cost.toFixed(0)} Dp`;
+      if (it.lease_quote && it.lease_terms) {
+        const q = it.lease_quote;
+        const buyLabel = `Buy outright (${it.cost.toFixed(0)} Dp)`;
+        const leaseLabel = `Lease ${q.term_years}yr (${q.annual_payment.toFixed(1)} Dp/yr + ${q.buyout.toFixed(1)} Dp buyout)`;
+        pickerHtml = `<select class="invest-pick" data-item="${esc(it.item_id)}" title="${esc(it.name)}: pick buy, lease or skip">
+          <option value="skip"${currentPick === 'skip' ? ' selected' : ''}>Skip</option>
+          <option value="buy"${currentPick === 'buy' ? ' selected' : ''}>Buy</option>
+          <option value="lease"${currentPick === 'lease' ? ' selected' : ''}>Lease</option>
+        </select>`;
+        costCellHtml = `<div>${it.cost.toFixed(0)} Dp outright</div>
+          <div style="font-size:.72rem;color:var(--dim)">or ${q.annual_payment.toFixed(1)} Dp/yr × ${q.term_years} + ${q.buyout.toFixed(1)} Dp buyout @ ${(q.lease_rate * 100).toFixed(2)}%</div>`;
+      } else {
+        const checked = currentPick === 'buy' ? 'checked' : '';
+        pickerHtml = `<input type="checkbox" class="invest-pick-cb" data-item="${esc(it.item_id)}" ${checked} title="Buy ${esc(it.name)}">`;
+      }
+
       tr.innerHTML = `
-        <td class="col-select"><input type="checkbox" data-item="${esc(it.item_id)}" data-cost="${it.cost}" ${checked} title="Buy ${esc(it.name)}"></td>
+        <td class="col-select">${pickerHtml}</td>
         <td class="col-item"><strong>${esc(it.name)}</strong>${mandTag}</td>
-        <td class="col-cost">${it.cost.toFixed(0)} Dp</td>
+        <td class="col-cost">${costCellHtml}</td>
         <td class="col-delivery">${deliv}</td>
         <td class="col-effect">${esc(it.description || '')}</td>
       `;
@@ -1490,12 +1803,16 @@ function renderInvesting() {
     rolesDiv.appendChild(wrap);
   }
 
-  // Wire up checkbox handlers + recompute totals
-  rolesDiv.querySelectorAll('input[type=checkbox]').forEach(cb => {
+  // Wire up handlers — both the legacy checkboxes and the new 3-way selects.
+  rolesDiv.querySelectorAll('input.invest-pick-cb').forEach(cb => {
     cb.addEventListener('change', () => {
-      const id = cb.dataset.item;
-      if (cb.checked) investSelected.add(id);
-      else investSelected.delete(id);
+      _investSetPick(cb.dataset.item, cb.checked ? 'buy' : 'skip');
+      updateInvestingTotals();
+    });
+  });
+  rolesDiv.querySelectorAll('select.invest-pick').forEach(sel => {
+    sel.addEventListener('change', () => {
+      _investSetPick(sel.dataset.item, sel.value);
       updateInvestingTotals();
     });
   });
@@ -1506,7 +1823,7 @@ function updateInvestingTotals() {
   if (!investData) return;
   let spent = 0;
   for (const it of investData.catalogue) {
-    if (investSelected.has(it.item_id)) spent += it.cost;
+    spent += _itemUpfrontCost(it);
   }
   const remaining = investData.budget - spent;
   document.getElementById('invest-spent-display').textContent = `${spent.toFixed(1)} Dp`;
@@ -1619,13 +1936,14 @@ function renderCapacityPanel(capacity) {
   outEl.innerHTML = outputs.map(o => {
     const max = (o.max_producible === null || o.max_producible === undefined)
                   ? '∞' : o.max_producible;
+    const prefix = o.is_service_output ? 'underwrite up to ' : 'max ';
     const colour = o.binding === 'inputs'    ? '#ff8a8a'
                  : o.binding === 'workforce' ? '#ffcc66'
                  : o.binding === 'equipment' ? '#88aaff'
                  : 'var(--dim)';
     return `<div class="mkt-row" title="Binding constraint: ${o.binding}">
               <span class="res">${esc(o.output)}</span>
-              <span class="price" style="color:${colour}">max ${max}</span>
+              <span class="price" style="color:${colour}">${prefix}${max}</span>
             </div>`;
   }).join('');
 }
@@ -1755,11 +2073,610 @@ function showConstraintPopup() {
     }).join('');
   }
 
-  document.getElementById('dlg-title').textContent = `Production Constraints — ${roleLabel}`;
-  document.getElementById('dlg-body').innerHTML = body
-    + '<div style="margin-top:1rem;text-align:right">'
-    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
-  document.getElementById('overlay').classList.add('active');
+  showPopup(`Production Constraints — ${roleLabel}`, body);
+}
+
+// ==================== PERSONNEL POPUP (Phase 3 of UX review) ====================
+// Surfaces the training_pipeline + workforce_bands data the server payload
+// already provides (see codex/ux-server-payload).  Triggered from the sidebar
+// Personnel summary; opens inside the standard popup shell from Phase 6.
+
+// Display-friendly label for TrainingStatus enum values
+// (matches island_traders/models/training.py::TrainingStatus).
+const _TRAINING_STATUS_LABEL = {
+  awaiting_educator:  'Awaiting educator',
+  countered:          'Countered',
+  awaiting_transport: 'Awaiting transport',
+  dispatched:         'Dispatched',
+  completed:          'Completed',  // pipeline filters this out, but be defensive
+  rejected:           'Rejected',
+};
+
+function _formatTrainingStatus(status) {
+  return _TRAINING_STATUS_LABEL[status] || status || '—';
+}
+
+function _formatReturnTiming(batch) {
+  // Return date is only known once dispatched.
+  if (batch.return_season && batch.return_year != null) {
+    return `Year ${batch.return_year}, ${esc(batch.return_season)}`;
+  }
+  // Not yet dispatched — explain why return date isn't set.
+  switch (batch.status) {
+    case 'awaiting_educator':   return 'Pending educator approval';
+    case 'countered':           return 'Offer countered — awaiting your response';
+    case 'awaiting_transport':  return 'Approved — arranging transport';
+    default:                    return '—';
+  }
+}
+
+function _trainingStatusClass(status) {
+  return 'status-' + (status || 'unknown');
+}
+
+function _trainingStatusLabel(status) {
+  return _TRAINING_STATUS_LABEL[status] || status || '—';
+}
+
+// ---- Training decision alerts (counter-offers and rejections) ----
+
+function _renderTrainingDecisions(decisions) {
+  const el = document.getElementById('s-training-decisions');
+  if (!el) return;
+  if (!decisions || !decisions.length) { el.innerHTML = ''; return; }
+  const alerts = decisions.map(d => {
+    const isCountered = d.status === 'countered';
+    const statusClass = isCountered ? 'status-countered' : 'status-rejected';
+    const hdrText = isCountered ? '⚠ Counter-offer received' : '✗ Training request rejected';
+    const detail = isCountered
+      ? `${d.n_workers}× ${esc(d.target_profession)} — Educator proposes <strong>${d.suggested_offer_if_any} Dp</strong> (you offered ${d.original_offer} Dp).`
+      : `${d.n_workers}× ${esc(d.target_profession)} was rejected.`;
+    const reason = d.decline_reason
+      ? `<div style="font-size:.67rem;color:var(--dim);margin-top:.1rem"><em>${esc(d.decline_reason)}</em></div>` : '';
+    let btns = '';
+    if (isCountered) {
+      btns = `<div class="training-decision-btns">
+        <button class="btn-accept" onclick="respondTrainingCounter(${d.batch_id},'approve')">Accept ${d.suggested_offer_if_any} Dp</button>
+        <button class="btn-counter" onclick="respondTrainingCounter(${d.batch_id},'counter')">Counter…</button>
+        <button class="btn-reject" onclick="respondTrainingCounter(${d.batch_id},'reject')">Reject</button>
+      </div>`;
+    } else {
+      btns = `<div class="training-decision-btns">
+        <button onclick="ackTrainingDecision(${d.batch_id})">Dismiss</button>
+      </div>`;
+    }
+    return `<div class="training-decision-alert ${statusClass}">
+      <div class="training-decision-alert-hdr">${hdrText}</div>
+      <div>${detail}</div>
+      ${reason}
+      ${btns}
+    </div>`;
+  }).join('');
+  el.innerHTML = alerts;
+}
+
+function respondTrainingCounter(batchId, action) {
+  if (action === 'approve') {
+    sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'approve' });
+  } else if (action === 'reject') {
+    sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'reject' });
+  } else {
+    // Prompt for counter price — show a simple overlay input
+    const price = prompt('Your counter-offer to the Educator (Dp):', '');
+    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) return;
+    const msg = prompt('Message to Educator (optional):', '') || '';
+    sendWsMessage({
+      type: 'training_counter_response',
+      batch_id: batchId,
+      action: 'counter',
+      new_fee: parseFloat(price),
+      message: msg,
+    });
+  }
+}
+
+function ackTrainingDecision(batchId) {
+  sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'ack' });
+}
+
+function sendWsMessage(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+function _renderTrainingStrip(pipeline) {
+  const el = document.getElementById('s-training-strip');
+  if (!el) return;
+  const active = (pipeline || []).filter(b => b.status !== 'completed' && b.status !== 'rejected');
+  if (!active.length) {
+    el.innerHTML = '';
+    return;
+  }
+  const rows = active.map(b => {
+    const isDispatched = b.status === 'dispatched';
+    const returnText = _formatReturnTiming(b);
+    let returnHtml;
+    if (isDispatched && b.return_year != null) {
+      returnHtml = `<div class="training-row-return">
+        <span class="year-label">Yr ${b.return_year}</span>
+        <span class="season-label"> ${esc(b.return_season || '')}</span>
+      </div>`;
+    } else {
+      returnHtml = `<div class="training-row-return" style="color:var(--dim);font-size:.69rem;max-width:5rem;white-space:normal;text-align:right">${esc(returnText)}</div>`;
+    }
+    const statusClass = isDispatched ? 'dispatched' : (b.status === 'countered' ? 'countered' : '');
+    const blockerHtml = b.blocker_reason
+      ? `<div class="training-row-blocker" title="${esc(b.blocker_reason)}">⚠ ${esc(b.blocker_reason.length > 38 ? b.blocker_reason.slice(0, 36) + '…' : b.blocker_reason)}</div>`
+      : '';
+    const supplyHint = b.can_supply_expertise
+      ? `<div class="training-row-supply-hint">→ Use <em>Supply Expertise</em> action to unblock</div>`
+      : '';
+    return `
+      <div class="training-row ${_trainingStatusClass(b.status)}">
+        <div class="training-row-left">
+          <div class="training-row-prof">${b.worker_count}× ${esc(b.target_profession || '—')}</div>
+          <div class="training-row-status ${statusClass}">${esc(_trainingStatusLabel(b.status))}</div>
+          ${blockerHtml}${supplyHint}
+        </div>
+        ${returnHtml}
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="training-strip-hdr">
+      In Training
+      <button class="btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.65rem"
+              onclick="showPersonnelPopup()" title="Full training pipeline detail">↗</button>
+    </div>
+    <div class="training-strip">${rows}</div>`;
+}
+
+function _renderTrainingPipelineSection(pipeline) {
+  if (!pipeline || !pipeline.length) {
+    return `<section class="popup-section">
+      <h4>Training Pipeline</h4>
+      <p class="empty-state">No workers currently in training.</p>
+    </section>`;
+  }
+  const rows = pipeline.map(b => {
+    const isDispatched = b.status === 'dispatched';
+    const returnCell = isDispatched && b.return_year != null
+      ? `<strong>Year ${b.return_year}, ${esc(b.return_season || '')}</strong>`
+      : `<span style="color:var(--dim);font-size:.72rem">${esc(_formatReturnTiming(b))}</span>`;
+    const waitCell = b.seasons_remaining == null
+      ? '<span style="color:var(--dim)">—</span>'
+      : `<strong>${b.seasons_remaining}</strong>`;
+    let blockerCell = '<span style="color:var(--dim)">—</span>';
+    if (b.blocker_reason) {
+      blockerCell = `<span style="color:var(--gold)" title="${esc(b.blocker_reason)}">⚠ ${esc(b.blocker_reason)}</span>`;
+      if (b.can_supply_expertise) {
+        blockerCell += `<br><span style="color:var(--dim);font-size:.72rem">Use <em>Supply Expertise</em> action to unblock</span>`;
+      }
+    } else if (b.seasons_blocked > 0) {
+      blockerCell = `<span style="color:var(--dim);font-size:.72rem">${b.seasons_blocked} season${b.seasons_blocked !== 1 ? 's' : ''} waiting</span>`;
+    }
+    return `
+    <tr>
+      <td>${b.worker_count}</td>
+      <td>${esc(b.target_profession || '—')}</td>
+      <td style="color:${b.status==='dispatched'?'var(--green)':b.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_formatTrainingStatus(b.status))}</td>
+      <td>${esc(b.educator_name || '—')}</td>
+      <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
+      <td>${returnCell}</td>
+      <td>${waitCell}</td>
+      <td>${blockerCell}</td>
+    </tr>`;
+  }).join('');
+  const notes = pipeline
+    .filter(b => b.counter_message)
+    .map(b => `<div class="batch-notes"><strong>Batch #${b.batch_id}:</strong> ${esc(b.counter_message)}</div>`)
+    .join('');
+  return `<section class="popup-section">
+    <h4>Training Pipeline</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Workers</th><th>Training for</th><th>Status</th><th>Educator</th>
+        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${notes}
+  </section>`;
+}
+
+// ---- Medical staffing strip helpers ----
+
+function _staffingStatusLabel(status) {
+  const map = {
+    proposed: 'Awaiting approval',
+    countered: 'Counter-offer received',
+    awaiting_transport: 'Ready — arranging transport',
+    dispatched: 'On contract',
+    completed: 'Completed',
+    rejected: 'Rejected',
+  };
+  return map[status] || status;
+}
+
+function _staffingStatusClass(status) {
+  if (status === 'dispatched') return 'status-dispatched';
+  if (status === 'countered') return 'status-countered';
+  if (status === 'proposed') return 'status-proposed';
+  return '';
+}
+
+function _renderStaffingStrip(contracts) {
+  const el = document.getElementById('s-staffing-strip');
+  if (!el) return;
+  const active = (contracts || []).filter(
+    c => c.status !== 'completed' && c.status !== 'rejected'
+  );
+  if (!active.length) { el.innerHTML = ''; return; }
+
+  const rows = active.map(c => {
+    const isDispatched = c.status === 'dispatched';
+    const isProvider = c.role === 'provider';
+    const profLabel = esc(c.profession);
+    let returnHtml;
+    if (isDispatched && c.return_year != null) {
+      returnHtml = `<div class="staffing-row-return">
+        <span class="year-label">Yr ${c.return_year}</span>
+        <span class="season-label"> ${esc(c.return_season || '')}</span>
+      </div>`;
+    } else {
+      returnHtml = `<div class="staffing-row-return" style="color:var(--dim);font-size:.69rem;max-width:5rem;white-space:normal;text-align:right">
+        ${esc(_staffingStatusLabel(c.status))}
+      </div>`;
+    }
+    const dirLabel = isProvider ? `← ${esc(c.other_player_name)}` : `→ ${esc(c.other_player_name)}`;
+    const roleClass = isProvider ? 'provider' : (isDispatched ? 'dispatched' : '');
+    const counterNote = c.counter_message
+      ? `<div style="font-size:.63rem;color:var(--gold);margin-top:.06rem">Counter: ${esc(c.counter_message.slice(0, 36))}</div>`
+      : '';
+    return `
+      <div class="staffing-row ${_staffingStatusClass(c.status)}">
+        <div class="staffing-row-left">
+          <div class="staffing-row-prof">${c.staff_count}× ${profLabel}</div>
+          <div class="staffing-row-status ${roleClass}">${esc(_staffingStatusLabel(c.status))} ${dirLabel}</div>
+          ${counterNote}
+        </div>
+        ${returnHtml}
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="staffing-strip-hdr">
+      Medical Staff
+      <button class="btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.65rem"
+              onclick="showPersonnelPopup()" title="Full staffing contract detail">↗</button>
+    </div>
+    <div class="staffing-strip">${rows}</div>`;
+}
+
+function _renderStaffingContractsSection(contracts) {
+  if (!contracts || !contracts.length) return '';
+  const active = contracts.filter(c => c.status !== 'completed' && c.status !== 'rejected');
+  if (!active.length) return '';
+  const rows = active.map(c => {
+    const isDispatched = c.status === 'dispatched';
+    const returnCell = isDispatched && c.return_year != null
+      ? `<strong>Year ${c.return_year}, ${esc(c.return_season || '')}</strong>`
+      : `<span style="color:var(--dim);font-size:.72rem">${esc(_staffingStatusLabel(c.status))}</span>`;
+    const dirLabel = c.role === 'provider' ? `← ${esc(c.other_player_name)}` : `→ ${esc(c.other_player_name)}`;
+    const counterNote = c.counter_message
+      ? `<br><em style="font-size:.72rem;color:var(--gold)">${esc(c.counter_message)}</em>` : '';
+    return `<tr>
+      <td>${c.staff_count}× ${esc(c.profession)}</td>
+      <td>${esc(dirLabel)}</td>
+      <td style="color:${c.status==='dispatched'?'var(--green)':c.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_staffingStatusLabel(c.status))}</td>
+      <td>${c.duration_seasons} season${c.duration_seasons !== 1 ? 's' : ''}</td>
+      <td>${c.fee_total.toFixed(1)} Dp${counterNote}</td>
+      <td>${returnCell}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Medical Staffing Contracts</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Staff</th><th>Direction</th><th>Status</th><th>Duration</th><th>Fee</th><th>Return</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </section>`;
+}
+
+function _renderStaffingSection(player) {
+  const wb = player.workforce_bands || {};
+  const tb = player.workforce_training_bands || {};
+  const profs = player.workforce_professions || {};
+
+  // Per-profession rows (preferred when available, falls back to band totals).
+  let rows = '';
+  let totalActive = 0, totalTraining = 0;
+  if (Object.keys(profs).length > 0) {
+    // Sort: Managers first, then Technicians, then Workers, within each band
+    // sort alphabetically by label.
+    const BAND_ORDER = { Manager: 0, Technician: 1, Worker: 2 };
+    const entries = Object.values(profs).sort((a, b) => {
+      // We don't have band info here, so just sort by label.
+      return a.label.localeCompare(b.label);
+    });
+    rows = entries.map(({ label, active, training }) => {
+      totalActive   += active;
+      totalTraining += training;
+      return `<tr><td>${esc(label)}</td><td>${active}</td><td>${training || '—'}</td></tr>`;
+    }).join('');
+  } else {
+    // Fallback: band-level aggregates.
+    const bands = [
+      ['Managers',    wb.Manager    ?? 0, tb.Manager    ?? 0],
+      ['Technicians', wb.Technician ?? 0, tb.Technician ?? 0],
+      ['Workers',     wb.Worker     ?? 0, tb.Worker     ?? 0],
+    ];
+    totalActive   = bands.reduce((s, [, a]) => s + a, 0);
+    totalTraining = bands.reduce((s, [, , t]) => s + t, 0);
+    rows = bands.map(([label, active, training]) =>
+      `<tr><td>${label}</td><td>${active}</td><td>${training || '—'}</td></tr>`
+    ).join('');
+  }
+
+  return `<section class="popup-section">
+    <h4>Staffing</h4>
+    <table class="popup-table">
+      <thead><tr><th>Role</th><th>Active</th><th>In training</th></tr></thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row"><td>Total</td><td>${totalActive}</td><td>${totalTraining || '—'}</td></tr>
+      </tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Workers active/total: <strong>${player.workforce_active}/${player.workforce_count}</strong></span>
+      <span>Efficiency: <strong>${player.workforce_efficiency}%</strong></span>
+      <span>Population: <strong>${player.population}</strong></span>
+    </div>
+  </section>`;
+}
+
+function showPersonnelPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const body =
+    _renderTrainingPipelineSection(me.training_pipeline || []) +
+    _renderStaffingContractsSection(me.staffing_contracts || []) +
+    _renderStaffingSection(me);
+  showPopup(`Personnel — ${esc(me.name)}`, body);
+}
+
+// ==================== INVENTORY / INSURANCE / LOANS POPUPS (Phase 6 §5) ====================
+// Sidebar surfaces keep their compact summaries; these "Details" popups
+// surface the same data in a denser, more readable table format using the
+// shared popup-shell + .popup-table styling from Phases 3 / 6.
+
+function _playerNameLookup() {
+  const map = {};
+  for (const p of (gameState?.players || [])) map[p.player_id] = p.name;
+  return map;
+}
+
+function showInventoryPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const inv = me.inventory || {};
+  const rows = Object.entries(inv).filter(([, q]) => q > 0);
+  if (!rows.length) {
+    showPopup(`Inventory — ${esc(me.name)}`,
+      `<section class="popup-section">
+        <h4>Holdings</h4>
+        <p class="empty-state">Inventory is empty.</p>
+      </section>`);
+    return;
+  }
+  // Sort by quantity descending so the largest holdings surface first.
+  rows.sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  let totalValue = 0;
+  const tbody = rows.map(([r, q]) => {
+    const info = gameState.market?.[r] || {};
+    const ask = info.ask_price ?? info.best_price ?? info.formula_price ?? null;
+    const value = (typeof ask === 'number') ? ask * q : null;
+    if (value !== null) totalValue += value;
+    return `<tr>
+      <td>${esc(r)}</td>
+      <td style="text-align:right">${q}</td>
+      <td style="text-align:right">${typeof ask === 'number' ? ask.toFixed(2) + ' Dp' : '—'}</td>
+      <td style="text-align:right">${value !== null ? value.toFixed(1) + ' Dp' : '—'}</td>
+    </tr>`;
+  }).join('');
+  const body = `<section class="popup-section">
+    <h4>Holdings</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Resource</th>
+        <th style="text-align:right">Qty</th>
+        <th style="text-align:right">Market price (ask)</th>
+        <th style="text-align:right">Est. value</th>
+      </tr></thead>
+      <tbody>
+        ${tbody}
+        <tr class="total-row">
+          <td>Total</td>
+          <td style="text-align:right">${rows.reduce((s, [, q]) => s + q, 0)}</td>
+          <td></td>
+          <td style="text-align:right">${totalValue.toFixed(1)} Dp</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Estimated value uses the current ask price; row drops to "—" when no ask is listed.</span>
+    </div>
+  </section>`;
+  showPopup(`Inventory — ${esc(me.name)}`, body);
+}
+
+function showInsurancePopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const pols = me.policies_detail || [];
+  if (!pols.length) {
+    showPopup(`Insurance — ${esc(me.name)}`,
+      `<section class="popup-section">
+        <h4>Active policies</h4>
+        <p class="empty-state">No active policies.</p>
+      </section>`);
+    return;
+  }
+  const names = _playerNameLookup();
+  const tbody = pols.map(pol => {
+    const expiring = pol.seasons_remaining <= 1;
+    const typeLabel = pol.policy_type.charAt(0).toUpperCase() + pol.policy_type.slice(1);
+    const banker = names[pol.banker_player_id] || `Player ${pol.banker_player_id}`;
+    return `<tr${expiring ? ' style="background:rgba(246,185,59,.10)"' : ''}>
+      <td>#${pol.policy_id}</td>
+      <td>${esc(typeLabel)}</td>
+      <td>${esc(banker)}</td>
+      <td style="text-align:right">${pol.premium_paid.toFixed(1)} Dp</td>
+      <td>Y${pol.expires_year} ${esc(pol.expires_season)}</td>
+      <td style="text-align:right;${expiring ? 'color:var(--gold);font-weight:600' : ''}">${pol.seasons_remaining}</td>
+      <td style="text-align:right" title="Pro-rata refund if cancelled now">${pol.cancel_refund.toFixed(1)} Dp</td>
+    </tr>`;
+  }).join('');
+  const body = `<section class="popup-section">
+    <h4>Active policies</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>ID</th><th>Type</th><th>Insurer</th>
+        <th style="text-align:right">Premium paid</th>
+        <th>Expires</th>
+        <th style="text-align:right">Seasons left</th>
+        <th style="text-align:right">Cancel refund</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Use <strong>Manage Insurance</strong> from the action menu to cancel a policy and collect the refund, or to renew.</span>
+    </div>
+  </section>`;
+  showPopup(`Insurance — ${esc(me.name)}`, body);
+}
+
+function _renderLeasesSection(leases, names) {
+  // Sister section to "Active loans" — surfaces capital-equipment leases.
+  // Per the brief, leases live under the Loans popup so players see all
+  // outstanding financial obligations in one place.
+  if (!leases || !leases.length) {
+    return `<section class="popup-section">
+      <h4>Active leases</h4>
+      <p class="empty-state">No active leases.</p>
+    </section>`;
+  }
+  const statusTone = {
+    active:           {color: 'var(--text)',  label: 'Active'},
+    awaiting_buyout:  {color: 'var(--gold)',  label: 'Buyout due'},
+    repossessed:      {color: 'var(--red)',   label: 'Repossessed'},
+    buyout_defaulted: {color: 'var(--red)',   label: 'Defaulted'},
+    completed:        {color: 'var(--green)', label: 'Completed'},
+  };
+  const tbody = leases.map(l => {
+    const tone = statusTone[l.status] || {color: 'var(--text)', label: l.status};
+    const counterparty = names[l.counterparty_id] || `Player ${l.counterparty_id}`;
+    const dueSoon = l.seasons_to_next_payment != null && l.seasons_to_next_payment <= 1
+      && (l.status === 'active' || l.status === 'awaiting_buyout');
+    const rowStyle = dueSoon ? ' style="background:rgba(246,185,59,.10)"' : '';
+    const nextPayment = l.next_payment_type === 'buyout'
+      ? `Buyout ${l.buyout_payment != null ? l.buyout_payment.toFixed(1) + ' Dp' : ''}`
+      : l.annual_payment != null ? `${l.annual_payment.toFixed(1)} Dp/yr` : '—';
+    const nextDue = (l.next_payment_year != null && l.next_payment_season)
+      ? `Y${l.next_payment_year} ${esc(l.next_payment_season)}` : '—';
+    return `<tr${rowStyle}>
+      <td>#${l.lease_id}</td>
+      <td style="color:${l.role === 'lessee' ? 'var(--red)' : 'var(--green)'}">${l.role === 'lessee' ? 'Leasing' : 'Leasing out'}</td>
+      <td>${esc(l.item_name || l.item_id)}</td>
+      <td>${esc(counterparty)}</td>
+      <td style="text-align:right">${nextPayment}</td>
+      <td style="text-align:right">${l.payments_made ?? 0}/${l.term_years ?? '?'}</td>
+      <td>${nextDue}</td>
+      <td style="color:${tone.color};font-weight:600">${tone.label}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Active leases</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>ID</th><th>Role</th><th>Item</th><th>Counterparty</th>
+        <th style="text-align:right">Next payment</th>
+        <th style="text-align:right">Annual paid</th>
+        <th>Next due</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>
+    <div class="staffing-extras">
+      <span>Use <strong>Pay Lease</strong> from the action menu to settle annual + buyout payments.</span>
+      <span>Repossessed items return one season after you settle outstanding payments.</span>
+    </div>
+  </section>`;
+}
+
+function showLoansPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const loans = me.loans_detail || [];
+  const leases = me.leases_detail || [];
+  const names = _playerNameLookup();
+
+  let loansBody;
+  if (!loans.length) {
+    loansBody = `<section class="popup-section">
+      <h4>Active loans</h4>
+      <p class="empty-state">No active loans.</p>
+    </section>`;
+  } else {
+    let totalBorrowed = 0, totalLent = 0;
+    const tbody = loans.map(loan => {
+      const isBorrower = loan.role === 'borrower';
+      if (isBorrower) totalBorrowed += loan.repayment_amount;
+      else totalLent += loan.repayment_amount;
+      const due = loan.seasons_to_maturity <= 1;
+      const counterparty = names[loan.counterparty_id] || `Player ${loan.counterparty_id}`;
+      return `<tr${due ? ' style="background:rgba(246,185,59,.10)"' : ''}>
+        <td>#${loan.loan_id}</td>
+        <td style="color:${isBorrower ? 'var(--red)' : 'var(--green)'}">${isBorrower ? 'Borrowing' : 'Lending'}</td>
+        <td>${esc(counterparty)}</td>
+        <td style="text-align:right">${loan.principal.toFixed(1)} Dp</td>
+        <td style="text-align:right">${(loan.interest_rate * 100).toFixed(2)}%</td>
+        <td>${loan.term_years}y</td>
+        <td style="text-align:right;font-weight:600">${loan.repayment_amount.toFixed(1)} Dp</td>
+        <td>Y${loan.maturity_year} ${esc(loan.maturity_season)}</td>
+        <td style="text-align:right;${due ? 'color:var(--gold);font-weight:600' : ''}">${loan.seasons_to_maturity}</td>
+      </tr>`;
+    }).join('');
+    loansBody = `<section class="popup-section">
+      <h4>Active loans</h4>
+      <table class="popup-table">
+        <thead><tr>
+          <th>ID</th><th>Role</th><th>Counterparty</th>
+          <th style="text-align:right">Principal</th>
+          <th style="text-align:right">Rate</th>
+          <th>Term</th>
+          <th style="text-align:right">Repay</th>
+          <th>Matures</th>
+          <th style="text-align:right">Seasons</th>
+        </tr></thead>
+        <tbody>${tbody}</tbody>
+      </table>
+      <div class="staffing-extras">
+        <span>Borrowing repay due: <strong>${totalBorrowed.toFixed(1)} Dp</strong></span>
+        <span>Lending repay incoming: <strong>${totalLent.toFixed(1)} Dp</strong></span>
+        <span>Use <strong>Roll Over Loan</strong> from the action menu near maturity to refinance.</span>
+      </div>
+    </section>`;
+  }
+
+  showPopup(`Loans & Leases — ${esc(me.name)}`, loansBody + _renderLeasesSection(leases, names));
 }
 
 function marketPriceOf(resourceName) {
@@ -1894,6 +2811,7 @@ function handleMessage(msg) {
       break;
     case 'game_state':
       gameState = msg;
+      syncServerLog(msg);
       // Don't auto-jump to the game screen while the user is still on the
       // auction-result overlay or the Investing Phase screen.
       if (!document.getElementById('screen-auction').classList.contains('hidden')) {
@@ -1911,11 +2829,19 @@ function handleMessage(msg) {
       break;
     case 'print':
       addLog(msg.text);
+      seenServerLogCount += 1;
       break;
     case 'choose_action':
       showActionPrompt(msg);
       break;
-    case 'choose_resource': case 'choose_profession':
+    case 'choose_action_parked':
+      // Player is in Done Trading state — server is parked waiting for
+      // either Undo or season-end.  Hide the action menu and surface a
+      // clear "Resume Trading" banner.  (2026-05-27 done-trading-undo
+      // brief Sub-issue B + C.)
+      showParkedBanner(msg);
+      break;
+    case 'choose_resource': case 'choose_profession': case 'choose_option':
       showOptionPicker(msg);
       break;
     case 'choose_quantity':
@@ -1953,6 +2879,9 @@ function handleMessage(msg) {
       break;
     case 'season_timeout':
       addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
+      break;
+    case 'season_events':
+      renderConditionsPanel(msg);
       break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
@@ -2030,9 +2959,72 @@ function renderGameState() {
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
   document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+  // Sustenance warning icon next to worker count
+  const susAlerts = (gameState.sustenance_alerts || {})[String(me.player_id)] || [];
+  const susWarnEl = document.getElementById('s-sus-warn');
+  if (susWarnEl) {
+    const hasDanger = susAlerts.some(a => a.severity === 'danger');
+    const hasWarn   = susAlerts.length > 0;
+    if (hasDanger) {
+      const minRunway = Math.min(...susAlerts.map(a => a.runway_seasons ?? 0));
+      susWarnEl.className = 'sus-warn danger';
+      susWarnEl.title = `⚠ Starvation risk! Meals runway: ${minRunway} season(s)`;
+      susWarnEl.textContent = '🍽️';
+    } else if (hasWarn) {
+      const minRunway = Math.min(...susAlerts.map(a => a.runway_seasons ?? 1));
+      susWarnEl.className = 'sus-warn warning';
+      susWarnEl.title = `Low sustenance — runway: ${minRunway} season(s)`;
+      susWarnEl.textContent = '⚠';
+    } else {
+      susWarnEl.className = '';
+      susWarnEl.title = '';
+      susWarnEl.textContent = '';
+    }
+  }
+  const wb = me.workforce_bands || {};
+  const tb = me.workforce_training_bands || {};
+  const profs = me.workforce_professions || {};
+  let personnelHtml = '';
+  if (Object.keys(profs).length > 0) {
+    // Show per-profession counts in the sidebar (exact roles, not generic bands).
+    personnelHtml = Object.values(profs)
+      .filter(p => p.active > 0 || p.training > 0)
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map(({ label, active, training }) => {
+        const trainStr = training > 0 ? `<span class="training-count">(${training} in training)</span>` : '';
+        return `<div class="personnel-line"><span>${esc(label)}: ${active}</span>${trainStr}</div>`;
+      })
+      .join('');
+    if (!personnelHtml) personnelHtml = '<span style="color:var(--dim)">No workers</span>';
+  } else {
+    // Fallback: band-level aggregates.
+    const mgr = wb.Manager ?? 0, tech = wb.Technician ?? 0, wrk = wb.Worker ?? 0;
+    personnelHtml = [
+      ['Managers', mgr, tb.Manager ?? 0],
+      ['Technicians', tech, tb.Technician ?? 0],
+      ['Workers', wrk, tb.Worker ?? 0],
+    ].map(([label, active, training]) =>
+      `<div class="personnel-line"><span>${label}: ${active}</span><span class="training-count">(${training} in training)</span></div>`
+    ).join('');
+  }
+  document.getElementById('s-personnel').innerHTML = personnelHtml;
+  _renderTrainingDecisions(me.training_decisions);
+  _renderTrainingStrip(me.training_pipeline);
+  _renderStaffingStrip(me.staffing_contracts);
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
+  // Campus load — only visible for Educators
+  const campusLoadRow = document.getElementById('s-campus-load-row');
+  const campusLoad = (me.campus_load || 0) + (me.visiting_staff_count || 0);
+  if (campusLoadRow) {
+    const isEducator = (me.role || '').toLowerCase().includes('educat');
+    campusLoadRow.style.display = (isEducator || campusLoad > 0) ? '' : 'none';
+    const loadEl = document.getElementById('s-campus-load');
+    if (loadEl) loadEl.textContent = campusLoad + ' visitor' + (campusLoad !== 1 ? 's' : '');
+    const hintEl = document.getElementById('s-campus-load-hint');
+    if (hintEl) hintEl.textContent = campusLoad > 0 ? `+${campusLoad} Food/season` : '';
+  }
   document.getElementById('hdr-wealth').textContent = 'Net Wealth ' + me.wealth + ' Dp';
 
   const inv = me.inventory || {};
@@ -2172,6 +3164,104 @@ function renderFundingRates() {
     + '<div style="font-size:.72rem;color:var(--dim);margin-top:.35rem">Rates are bank cost of funds; loan quotes add at least 2% plus borrower risk.</div>';
 }
 
+// ==================== HINT -> ACTION WIRING (Phase 4 of UX review) ====================
+// Each hint that maps onto an action menu entry carries a `triggers_action`
+// field naming the TurnAction value to dispatch.  The hint card renders an
+// "Open" button that:
+//   1. Only activates when the player is being prompted for an action.
+//   2. Calls sendResponse(action) — equivalent to clicking that action button
+//      directly.  Per the brief, hints never auto-submit the underlying game
+//      action — sendResponse picks the action menu choice, the resulting modal
+//      is what the player confirms.
+// The set of hinted actions is also surfaced to showActionPrompt so the
+// matching action menu button gets the gold .recommended outline.
+const _HINT_OPEN_LABEL = {
+  market_buy:        'Open Market Buy',
+  purchase_capital:  'Purchase Equipment',
+  request_training:  'Request Training',
+  view_loans:        'View Loans',
+  offer_loan:        'Offer Loan',
+  manage_insurance:  'Manage Insurance',
+  produce:           'Produce',
+};
+let _currentHintActions = new Set();
+// Resources currently mentioned by hints (Phase 5: drives Market Buy row
+// tiering and per-hint focus when an Open button is clicked).
+let _currentHintResources = new Set();
+// Set when an Open button is clicked; consumed (and cleared) by the next
+// modal that opens for the chosen action.  One-shot, per-click.
+let _pendingHintTarget = null;
+
+// Set when a hint click triggers an auto-undo of Done Trading.  Consumed
+// (and cleared) by the next showActionPrompt call so the queued action
+// fires as soon as the server re-prompts us.  One-shot, per-click.
+// 2026-05-27 done-trading-undo brief Sub-issue C (Option 1: auto-undo).
+let _pendingActionAfterUndo = null;
+
+// Tracks which server prompt type is currently active — set whenever a
+// prompt message arrives, cleared when the prompt area is hidden.
+// Used by _actOnHint to ensure hint buttons only fire when the action
+// menu specifically is showing, not when a sub-dialog (confirm, resource
+// picker, etc.) is open inside the same prompt area.
+let _activePromptType = null;  // 'choose_action' | 'confirm' | 'choose_resource' | null
+
+function _isActionPromptOpen() {
+  const area = document.getElementById('prompt-area');
+  return !!(area && !area.classList.contains('hidden'));
+}
+
+function _actOnHint(action, payload = {}) {
+  // Stash the focus target — both code paths below need it consumed by
+  // the next modal that opens.
+  _pendingHintTarget = Object.assign({ action }, payload);
+
+  // Sub-issue C: hint clicked while in Done Trading state.  Option 1
+  // (preferred per AyaySir IMP-04): auto-undo Done, queue the action to
+  // fire as soon as the fresh choose_action prompt arrives.
+  if (imReady) {
+    _pendingActionAfterUndo = action;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({type: 'ready', ready: false}));
+    }
+    // Optimistic UI: reset the Done button immediately.
+    imReady = false;
+    const btn = document.getElementById('ready-btn');
+    if (btn) {
+      btn.classList.remove('is-ready');
+      document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
+    }
+    return;
+  }
+
+  // Normal path: only fire if the server is waiting for a choose_action
+  // response — NOT when a sub-dialog (confirm, resource picker, quantity
+  // input, etc.) is active.  Sending a TurnAction value as the response
+  // to a confirm dialog would corrupt the dialog flow and end the turn.
+  if (_activePromptType !== 'choose_action') return;
+  sendResponse(action);
+}
+
+function _renderHintOpenButton(action, payload = {}) {
+  if (!action) return '';
+  const label = _HINT_OPEN_LABEL[action] || 'Open';
+  const open = _isActionPromptOpen();
+  // Enable the button when the action menu is visible OR when the
+  // player is in Done Trading (parked) state — in the parked case the
+  // hint click auto-undoes Done first and then fires the action.
+  // 2026-05-27 done-trading-undo brief Sub-issue C (Option 1).
+  const enabled = open || imReady;
+  const disabled = enabled ? '' : 'disabled';
+  const title = enabled
+    ? (imReady && !open ? 'title="Resumes trading then opens this action"' : '')
+    : 'title="Wait for your action prompt"';
+  // JSON-encode both args so the onclick survives any quotes / unicode in
+  // the payload values (resource names are ASCII today but defensive).
+  const argsJson = `${JSON.stringify(action)}, ${JSON.stringify(payload)}`;
+  return `<div class="hint-actions">
+    <button class="btn-gold btn-sm hint-open" ${disabled} ${title} onclick='_actOnHint(${esc(argsJson)})'>${esc(label)} →</button>
+  </div>`;
+}
+
 function renderDecisionHints(player, role) {
   const el = document.getElementById('decision-hints');
   if (!el) return;
@@ -2179,16 +3269,69 @@ function renderDecisionHints(player, role) {
   const outputs = cap.outputs || [];
   const roleLabel = role === 'ALL' ? 'these islands' : (roleDisplayName(role) || 'this island');
   const hints = [];
+  const sustenanceAlerts = gameState.sustenance_alerts?.[String(player.player_id)] || [];
+
+  for (const alert of sustenanceAlerts) {
+    // 2026-05-27 (Codex Player #6): tailor the advice to the actual
+    // market state instead of a blind "buy food".
+    //   - no supply on the market  → suggest producing / training a
+    //     Farmer / building a Kitchen, and DON'T hand off to Market Buy
+    //     (there's nothing to buy).
+    //   - player already has a resting bid → soften to "waiting on your
+    //     bid" so the hint isn't nagging them to re-bid.
+    //   - supply exists and no bid yet → the original "buy food" advice.
+    const hasSupply = alert.market_has_supply !== false;  // default true for old payloads
+    const hasBid = alert.player_has_pending_bid === true;
+    let why, triggersAction, targetResource;
+    if (!hasSupply) {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `No sustenance is for sale on the market right now — produce it yourself, `
+          + `train a Farmer, or build a Kitchen to convert raw ingredients into Food.`;
+      triggersAction = null;
+      targetResource = null;
+    } else if (hasBid) {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `You already have a standing bid — waiting for a seller to fill it. `
+          + `Raise your bid price if it's not clearing.`;
+      triggersAction = 'market_buy';
+      targetResource = alert.resource;
+    } else {
+      why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
+          + `Buy ${alert.recommended_purchase} ${alert.resource} to cover next season `
+          + `plus a one-season buffer.`;
+      triggersAction = 'market_buy';
+      targetResource = alert.resource;
+    }
+    hints.push({
+      tone: alert.severity === 'danger' ? 'blocked' : 'warn',
+      title: `${alert.resource} runway: ${fmtQty(alert.runway_seasons)} season${alert.runway_seasons === 1 ? '' : 's'}`,
+      why,
+      triggers_action: triggersAction,
+      target_resource: targetResource,
+    });
+  }
 
   for (const output of outputs) {
     const max = output.max_producible;
     const inputShort = output.inputs_short || {};
     const workforceShort = output.workforce_short || {};
+    if (output.is_service_output) {
+      hints.push({
+        tone: (max === null || max > 0) ? 'good' : 'warn',
+        title: `Underwrite ${output.output}`,
+        why: `${roleLabel} can currently support up to ${max === null ? 'unlimited' : max} active policy capacity; issue policies via insurance actions, not Produce.`,
+        // No direct action hand-off — service outputs flow through insurance UI,
+        // not Produce.  Player picks the right finance action themselves.
+        triggers_action: null,
+      });
+      continue;
+    }
     if ((max === null || max > 0) && output.binding !== 'inputs') {
       hints.push({
         tone: 'good',
         title: `Produce ${output.output}`,
-        why: `${roleLabel} can currently make up to ${max === null ? 'unlimited' : max} this season.`
+        why: `${roleLabel} can currently make up to ${max === null ? 'unlimited' : max} this season.`,
+        triggers_action: 'produce',
       });
       continue;
     }
@@ -2206,22 +3349,31 @@ function renderDecisionHints(player, role) {
         }
         return `${qty} ${resource} needed`;
       });
+      // First shortfall resource drives the Market Buy focus when the Open
+      // button is clicked.  Multi-resource shortfalls still surface all of
+      // them in `why`; only the first jumps to the top of the Market Buy
+      // table (Phase 5 — Tier 1).
+      const firstResource = Object.keys(inputShort)[0];
       hints.push({
         tone: 'blocked',
         title: `Unblock ${output.output}`,
-        why: buys.join('; ')
+        why: buys.join('; '),
+        triggers_action: 'market_buy',
+        target_resource: firstResource,
       });
     } else if (Object.keys(workforceShort).length) {
       hints.push({
         tone: 'warn',
         title: `Add workers for ${output.output}`,
-        why: Object.entries(workforceShort).map(([band, qty]) => `${qty} ${band}`).join(', ')
+        why: Object.entries(workforceShort).map(([band, qty]) => `${qty} ${band}`).join(', '),
+        triggers_action: 'request_training',
       });
     } else if (output.binding === 'equipment') {
       hints.push({
         tone: 'warn',
         title: `Capital limits ${output.output}`,
-        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.'
+        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.',
+        triggers_action: 'purchase_capital',
       });
     }
   }
@@ -2230,16 +3382,26 @@ function renderDecisionHints(player, role) {
     hints.push({
       tone: 'warn',
       title: 'Check market and deals',
-      why: 'No direct production hint is available for the selected tab yet.'
+      why: 'No direct production hint is available for the selected tab yet.',
+      triggers_action: null,
     });
   }
 
-  el.innerHTML = hints.slice(0, 4).map(h => `
+  // Cap to top 4 — same ceiling as before — but feed the action recommender
+  // from that visible slice (a hint that doesn't render shouldn't recommend).
+  const visible = hints.slice(0, 4);
+  _currentHintActions = new Set(visible.map(h => h.triggers_action).filter(Boolean));
+  _currentHintResources = new Set(visible.map(h => h.target_resource).filter(Boolean));
+
+  el.innerHTML = visible.map(h => {
+    const payload = h.target_resource ? { resource: h.target_resource } : {};
+    return `
     <div class="decision-card ${h.tone}">
       <strong>${esc(h.title)}</strong>
       <div class="why">${esc(h.why)}</div>
-    </div>
-  `).join('');
+      ${_renderHintOpenButton(h.triggers_action, payload)}
+    </div>`;
+  }).join('');
 }
 
 function fmtMarketPrice(v) {
@@ -2258,7 +3420,7 @@ function renderMarketTable(market, compact = false) {
       <td>${askQty || '—'}</td>
     </tr>`;
   }).join('');
-  const cls = compact ? 'market-mini' : 'comp-table';
+  const cls = compact ? 'market-mini' : 'market-grid';
   return `<table class="${cls}">
     <thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th></tr></thead>
     <tbody>${rows}</tbody>
@@ -2277,24 +3439,169 @@ function renderBarterMarket(compact = false) {
       <tr><td>${esc(d.from)}</td><td>${esc(d.offer)}${warnings}</td><td>${esc(d.request)}</td><td>${esc(d.to)}</td></tr>
     `;
   }).join('') : '<tr><td colspan="4" style="color:var(--dim)">No proposed barter deals.</td></tr>';
-  const needRows = needs.length ? needs.map(n => `
-    <tr><td>${esc(n.player)}</td><td>${esc(n.roles)}</td><td>${esc(n.needs.join(', '))}</td></tr>
-  `).join('') : '<tr><td colspan="3" style="color:var(--dim)">No visible unmet role needs.</td></tr>';
+  const needCards = needs.length
+    ? '<div class="needs-cards">' + needs.map(n => `
+        <div class="needs-card">
+          <div class="needs-card-header">
+            <span class="needs-card-player">${esc(n.player)}</span>
+            <span class="needs-card-role">${esc(n.roles)}</span>
+          </div>
+          <div class="needs-card-items">${n.needs.map(r => `<span class="needs-tag">${esc(r)}</span>`).join('')}</div>
+        </div>`).join('') + '</div>'
+    : '<div style="color:var(--dim);font-size:.79rem;margin-top:.2rem">No visible unmet role needs.</div>';
   const tableClass = compact ? 'market-mini' : 'comp-table';
   return `
     <h4>Proposed Deals</h4>
     <table class="${tableClass}"><thead><tr><th>From</th><th>Offers</th><th>Wants</th><th>To</th></tr></thead><tbody>${dealRows}</tbody></table>
     <h4>Visible Needs</h4>
-    <table class="${tableClass}"><thead><tr><th>Player</th><th>Role</th><th>Needs</th></tr></thead><tbody>${needRows}</tbody></table>
+    ${needCards}
   `;
 }
 
 function showMarketBoardPopup() {
   if (!gameState) return;
-  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket()
-    + '<div style="margin-top:1rem;text-align:right">'
-    + '<button class="btn-primary" onclick="closeOverlay()">Close</button></div>';
-  showDlg('Market Board', html);
+  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket();
+  showPopup('Market Board', html);
+}
+
+// ---- Dependency flowchart popup ----
+function showDependencyMap() {
+  const W = 680, H = 430;
+  const NW = 92, NH = 30;
+
+  // Node layout — Manufacturer central hub, Educator-Banker right pair
+  const nodes = [
+    { id:'Farmer',       x:285, y: 48,  label:'Farmer',       color:'#27ae60' },
+    { id:'Miner',        x: 76, y:192,  label:'Miner',        color:'#8e44ad' },
+    { id:'Transporter',  x:155, y:365,  label:'Transporter',  color:'#2980b9' },
+    { id:'Manufacturer', x:455, y:205,  label:'Manufacturer', color:'#d35400' },
+    { id:'Educator',     x:605, y: 75,  label:'Educator',     color:'#16a085' },
+    { id:'Banker',       x:605, y:335,  label:'Banker',       color:'#c0392b' },
+    { id:'Doctor',       x:320, y:388,  label:'Doctor',       color:'#2471a3' },
+  ];
+
+  // Edges — curve: perpendicular offset in px (positive = left of travel direction)
+  // Bidirectional pairs use opposite-sign curves so lines don't overlap.
+  const edges = [
+    // Raw materials
+    { from:'Miner',        to:'Manufacturer',  label:'Metal · Oil',    color:'#9b59b6', curve: 20 },
+    { from:'Miner',        to:'Farmer',        label:'Oil',            color:'#8e44ad', curve:-22 },
+    { from:'Miner',        to:'Transporter',   label:'Oil',            color:'#8e44ad', curve: 22 },
+    { from:'Transporter',  to:'Miner',         label:'Freight',        color:'#2980b9', curve: 22 },
+    // Equipment from Manufacturer
+    { from:'Manufacturer', to:'Farmer',        label:'FarmMachinery',  color:'#e67e22', curve:-25 },
+    { from:'Manufacturer', to:'Miner',         label:'MiningEquip',    color:'#e67e22', curve: 18 },
+    { from:'Manufacturer', to:'Educator',      label:'LabEquipment',   color:'#e67e22', curve:-18 },
+    { from:'Manufacturer', to:'Transporter',   label:'TransportEquip', color:'#e67e22', curve: 22 },
+    { from:'Manufacturer', to:'Doctor',        label:'MedDevices',     color:'#e67e22', curve: 20 },
+    // Education & finance
+    { from:'Educator',     to:'Doctor',        label:'Expertise',      color:'#16a085', curve: 28 },
+    { from:'Educator',     to:'Banker',        label:'Expertise',      color:'#1abc9c', curve:-22 },
+    { from:'Banker',       to:'Educator',      label:'Finance',        color:'#e74c3c', curve:-22 },
+    // Sustenance & health
+    { from:'Farmer',       to:'Transporter',   label:'Food',           color:'#27ae60', curve: 25 },
+    { from:'Doctor',       to:'Farmer',        label:'HealthSvcs',     color:'#2471a3', curve: 28 },
+  ];
+
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  const hw = NW/2, hh = NH/2;
+
+  // Return the point on the node boundary in the direction (dx,dy) FROM the center
+  function boundaryPt(cx, cy, dx, dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    const tx = hw / (Math.abs(ux) || 1e-9);
+    const ty = hh / (Math.abs(uy) || 1e-9);
+    const t = Math.min(tx, ty);
+    return [cx + ux*t, cy + uy*t];
+  }
+
+  // Collect SVG pieces — edges first, then nodes on top
+  const defs = [];
+  const edgeParts = [];
+  const nodeParts = [];
+
+  edges.forEach((e, i) => {
+    const src = nodeMap[e.from], dst = nodeMap[e.to];
+    if (!src || !dst) return;
+
+    // Control point offset perpendicular to the straight-line midpoint
+    const midX = (src.x + dst.x) / 2;
+    const midY = (src.y + dst.y) / 2;
+    const ddx = dst.x - src.x, ddy = dst.y - src.y;
+    const dLen = Math.hypot(ddx, ddy) || 1;
+    // Perpendicular unit vector (rotate 90° CCW)
+    const px = -ddy/dLen, py = ddx/dLen;
+    const cpX = midX + px * e.curve;
+    const cpY = midY + py * e.curve;
+
+    // Departure from src: direction src→cp, clipped to src boundary
+    const depDx = cpX - src.x, depDy = cpY - src.y;
+    const [sx, sy] = boundaryPt(src.x, src.y, depDx, depDy);
+
+    // Arrival at dst: direction cp→dst, pull back slightly from dst boundary
+    const arrDx = dst.x - cpX, arrDy = dst.y - cpY;
+    const [ex0, ey0] = boundaryPt(dst.x, dst.y, -arrDx, -arrDy); // boundary toward cp
+    // Pull 4px further inside so arrowhead tip is clearly visible
+    const aLen = Math.hypot(arrDx, arrDy) || 1;
+    const ex = ex0 + (arrDx/aLen)*4;
+    const ey = ey0 + (arrDy/aLen)*4;
+
+    // Bezier label position at t=0.5, offset perp outward
+    const lx = 0.25*sx + 0.5*cpX + 0.25*ex;
+    const ly = 0.25*sy + 0.5*cpY + 0.25*ey;
+    const lo = e.curve >= 0 ? 11 : -11;
+    const labX = (lx + px*lo).toFixed(1);
+    const labY = (ly + py*lo - 1).toFixed(1);
+
+    const mid = `id="arr${i}"`;
+    defs.push(
+      `<marker ${mid} markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">` +
+      `<path d="M0,0 L9,3.5 L0,7 Z" fill="${e.color}" opacity=".9"/></marker>`
+    );
+
+    const pathD = `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${cpX.toFixed(1)},${cpY.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+    edgeParts.push(
+      `<path d="${pathD}" fill="none" stroke="${e.color}" stroke-width="1.7" opacity=".72" marker-end="url(#arr${i})"/>`,
+      `<text x="${labX}" y="${labY}" text-anchor="middle" font-size="8.5" font-weight="700"` +
+        ` fill="${e.color}" paint-order="stroke" stroke="#04090f" stroke-width="3" stroke-linejoin="round">${e.label}</text>`
+    );
+  });
+
+  nodes.forEach(n => {
+    const rx = (n.x - hw).toFixed(1), ry = (n.y - hh).toFixed(1);
+    nodeParts.push(
+      `<rect x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="6" fill="#07131e" stroke="${n.color}" stroke-width="2"/>`,
+      `<text x="${n.x}" y="${n.y+5}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ecf0f1">${n.label}</text>`
+    );
+  });
+
+  const svg = `<svg class="depflow-svg" viewBox="0 0 ${W} ${H}"
+    xmlns="http://www.w3.org/2000/svg"
+    style="background:#04090f;border-radius:8px;display:block;width:100%">
+  <defs>${defs.join('')}</defs>
+  ${edgeParts.join('\n  ')}
+  ${nodeParts.join('\n  ')}
+</svg>`;
+
+  const legend = `
+    <div style="margin-top:.7rem;display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.73rem">
+      <span style="color:#27ae60">■</span> Farmer &nbsp;
+      <span style="color:#8e44ad">■</span> Miner &nbsp;
+      <span style="color:#2980b9">■</span> Transporter &nbsp;
+      <span style="color:#d35400">■</span> Manufacturer &nbsp;
+      <span style="color:#16a085">■</span> Educator &nbsp;
+      <span style="color:#c0392b">■</span> Banker &nbsp;
+      <span style="color:#2471a3">■</span> Doctor
+    </div>
+    <div style="margin-top:.3rem;font-size:.7rem;color:var(--dim)">
+      Arrows show resource flows from producer → consumer. Curved lines separate
+      bidirectional routes (e.g. Miner ↔ Transporter trade Oil for Freight).
+    </div>`;
+
+  showPopup('Island Dependency Map', `<div class="depflow-wrap">${svg}</div>${legend}`);
 }
 
 function buildIslandTabs(players) {
@@ -2425,6 +3732,10 @@ function onReadyUpdate(msg) {
     document.getElementById('ready-btn-label').textContent =
         imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
   }
+  // If this player is parked (Done Trading), refresh the banner message
+  // so "everyone is done — ending soon" appears as soon as the last
+  // player clicks Done (without waiting for the next park-loop broadcast).
+  _renderParkedBannerBody();
   if (gameState) renderGameState();
 }
 
@@ -2438,6 +3749,38 @@ function _renderPreSeasonDots(active, ready) {
     const name = playerMap[pid] || pid;
     return `<span><span class="psb-dot${isReady ? ' ready' : ''}"></span>${name}</span>`;
   }).join('');
+}
+
+function renderConditionsPanel(msg) {
+  const el = document.getElementById('conditions-panel');
+  if (!el) return;
+  const events = msg.events || {};
+  const disaster = msg.regional_disaster;
+
+  // Disaster banner.
+  let disasterHtml = '';
+  if (disaster) {
+    disasterHtml = `<div style="background:rgba(220,50,50,.18);border:1px solid rgba(220,50,50,.4);border-radius:5px;padding:.3rem .5rem;margin-bottom:.4rem;color:#f87171;font-weight:600">
+      ⛈ Regional Disaster: ${esc(disaster)}
+    </div>`;
+  }
+
+  // Per-player event rows.
+  const rows = Object.values(events).map(ev => {
+    let color = 'var(--dim)';
+    let icon  = '✓';
+    if (ev.outage) { color = '#f87171'; icon = '⛔'; }
+    else if (ev.natural_disaster) { color = '#fb923c'; icon = '⛈'; }
+    else if (ev.yield_modifier < 0.5) { color = '#facc15'; icon = '⚠'; }
+    else if (ev.yield_modifier < 1.0) { color = '#fbbf24'; icon = '↓'; }
+    return `<div style="margin:.15rem 0">
+      <span style="color:${color}">${icon}</span>
+      <strong>${esc(ev.player_name)}:</strong>
+      <span style="color:${color}">${esc(ev.description)}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = disasterHtml + (rows || '<span style="color:var(--dim)">Awaiting season start…</span>');
 }
 
 function onSeasonResolved(msg) {
@@ -2576,13 +3919,127 @@ function buildIslandMap() {
 }
 
 // ==================== INPUT PROMPTS ====================
+// Canonical render order for the grouped action menu (Phase 2 of UX review).
+// Source of truth for grouping is the server payload (option.group);
+// see ws_adapter.action_option_payload + ACTION_GROUPS.
+const ACTION_GROUP_ORDER = ['Production', 'Trade', 'People', 'Capital', 'Finance', 'Info'];
+
+function _renderActionButton(o) {
+  const classes = [];
+  if (o.value === 'produce') classes.push('highlight');
+  // Server-set recommended (Codex Phase 1 default = false) OR client-set from
+  // a live Decision Hint that triggers this action (Phase 4 hint wiring).
+  if (o.recommended || _currentHintActions.has(o.value)) classes.push('recommended');
+  const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
+  const disabled = o.enabled === false;
+  const disabledAttr = disabled ? ' disabled' : '';
+  const titleAttr = (disabled && o.disabled_reason)
+    ? ` title="${esc(o.disabled_reason)}"`
+    : '';
+  const onclick = disabled ? '' : ` onclick="sendResponse('${o.value}')"`;
+  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
+}
+
+// Show the "you're done — click Undo to resume" banner in place of the
+// action menu while the server-side park loop is waiting.  Server sends
+// this whenever choose_action's park check fires (Done Trading state).
+// 2026-05-27 done-trading-undo brief.
+function showParkedBanner(msg) {
+  _activePromptType = 'parked';
+  const area = document.getElementById('prompt-area');
+  area.classList.remove('hidden');
+  document.getElementById('prompt-title').textContent =
+      `${msg.player_name} — Done Trading ✓`;
+  _renderParkedBannerBody();
+  document.getElementById('prompt-input').innerHTML = '';
+}
+
+// Render or re-render the parked banner body.  Called by showParkedBanner
+// and by onReadyUpdate so the "all done" message appears as soon as the
+// last player clicks Done (without waiting for the next park-loop tick).
+function _renderParkedBannerBody() {
+  if (_activePromptType !== 'parked') return;
+  const allDone = seasonActiveHumans.size > 0
+      && [...seasonActiveHumans].every(pid => seasonReadySet.has(pid));
+  const statusMsg = allDone
+      ? `<div style="color:var(--accent);font-weight:600;margin-bottom:.4rem">
+           ⏳ Everyone is done — season ending in a moment…
+         </div>`
+      : `<div style="color:var(--dim);margin-bottom:.6rem">
+           You've marked yourself done for this season.  The game is waiting
+           for the timer to expire or every other player to finish.
+         </div>`;
+  document.getElementById('prompt-btns').innerHTML =
+      `<div style="padding:.5rem 0;line-height:1.5">
+        ${statusMsg}
+        <button class="btn-gold" onclick="resumeTradingFromParked()">
+          ↩ Resume Trading
+        </button>
+      </div>`;
+}
+
+// Click handler for the Resume Trading button on the parked banner.
+// Sends submit_ready(false) to the server, which clears the Ready flag
+// and wakes the parked thread; the server then re-sends a fresh
+// choose_action prompt and showActionPrompt takes over again.
+function resumeTradingFromParked() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type: 'ready', ready: false}));
+  }
+  imReady = false;
+  const btn = document.getElementById('ready-btn');
+  if (btn) {
+    btn.classList.remove('is-ready');
+    document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
+  }
+}
+
 function showActionPrompt(msg) {
+  // If we queued a hint-target while parked, replay it as soon as the
+  // fresh action prompt lands.  See _actOnHint's auto-undo path below.
+  if (_pendingActionAfterUndo) {
+    const queuedAction = _pendingActionAfterUndo;
+    _pendingActionAfterUndo = null;
+    // Defer one tick so the prompt-area is in the DOM before sendResponse.
+    setTimeout(() => sendResponse(queuedAction), 30);
+    // Still cache and render so the player sees the menu briefly.
+  }
+  // Cache the payload so the "📋 Menu" recovery button can re-render the
+  // same action menu if the prompt area goes missing mid-turn (e.g. a
+  // hint button drove a modal that the user then cancelled).
+  lastActionPromptMsg = msg;
+  _activePromptType = 'choose_action';
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
-  document.getElementById('prompt-btns').innerHTML = msg.options.map(o =>
-    `<button class="${o.value==='produce'?'highlight':''}" onclick="sendResponse('${o.value}')">${o.label}</button>`
-  ).join('');
+  // Action prompt just became active — re-render the hint sidebar so each
+  // hint's "Open" button enables and the gold .recommended ring picks up
+  // any hinted action.  Cheap; gameState is already cached.
+  if (gameState) renderGameState();
+
+  // Bucket options by their server-supplied group, defaulting to 'Info' for
+  // any older payload that predates the Phase 1 server contract.
+  const buckets = {};
+  for (const opt of msg.options) {
+    const group = opt.group || 'Info';
+    (buckets[group] = buckets[group] || []).push(opt);
+  }
+
+  // Render groups in the canonical order, skipping empty groups.  Any
+  // unexpected group label (forward-compat) gets appended at the end.
+  const knownGroups = ACTION_GROUP_ORDER.filter(g => buckets[g] && buckets[g].length);
+  const unknownGroups = Object.keys(buckets).filter(g => !ACTION_GROUP_ORDER.includes(g));
+  const groups = knownGroups.concat(unknownGroups);
+
+  const groupsHtml = groups.map(g => {
+    const buttons = buckets[g].map(_renderActionButton).join('');
+    return `<div class="action-group">
+      <div class="action-group-label">${esc(g)}</div>
+      <div class="action-btns">${buttons}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('prompt-btns').innerHTML = `<div class="action-groups">${groupsHtml}</div>`;
   document.getElementById('prompt-input').innerHTML = '';
 }
 
@@ -2602,16 +4059,36 @@ function cancelDlg() {
   document.getElementById('overlay').classList.remove('active');
 }
 
+function _renderRequestSummary(summary) {
+  // Server-side training-UX work attaches an optional
+  // {title, fields: [[label, value], ...]} payload to approval /
+  // counter-offer prompts so reviewers can see what they're agreeing to.
+  // Older payloads without it just render the bare prompt; this helper
+  // returns "" in that case.
+  if (!summary || !summary.fields || !summary.fields.length) return '';
+  const rows = summary.fields.map(([label, value]) =>
+    `<tr><td style="padding:.2rem .6rem;color:var(--dim);text-align:right;vertical-align:top">${esc(label)}</td><td style="padding:.2rem .6rem">${esc(String(value))}</td></tr>`
+  ).join('');
+  const title = summary.title ? `<div style="font-weight:700;color:var(--heading);margin-bottom:.4rem">${esc(summary.title)}</div>` : '';
+  return `<div class="request-summary" style="background:rgba(0,0,0,.18);border:1px solid var(--border);border-radius:6px;padding:.6rem;margin-bottom:.7rem">
+    ${title}
+    <table style="width:100%;font-size:.82rem;border-collapse:collapse"><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
 function showOptionPicker(msg) {
+  _activePromptType = 'dialog';
   const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
   ).join('');
   showDlg(msg.prompt || 'Choose',
-    `<div class="opts">${opts}</div>
+    `${_renderRequestSummary(msg.request_summary)}
+     <div class="opts">${opts}</div>
      <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
 function showPlayerPicker(msg) {
+  _activePromptType = 'dialog';
   const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.id}')">${esc(o.name)} (${esc(o.roles)})</button>`
   ).join('');
@@ -2621,6 +4098,7 @@ function showPlayerPicker(msg) {
 }
 
 function showQuantityInput(msg) {
+  _activePromptType = 'dialog';
   showDlg(msg.prompt, `
     <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
@@ -2631,8 +4109,14 @@ function showQuantityInput(msg) {
 }
 
 function showDollopInput(msg) {
+  _activePromptType = 'dialog';
+  const prefill = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
+  const hint = prefill > 0
+    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Pre-filled with the current best price — adjust if you wish.</div>`
+    : '';
   showDlg(msg.prompt, `
-    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.1" value="0" style="width:100%;margin:.5rem 0"/>
+    ${hint}
+    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.01" value="${prefill}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
       ${CANCEL_BTN_HTML}
@@ -2641,6 +4125,7 @@ function showDollopInput(msg) {
 }
 
 function showTextInput(msg) {
+  _activePromptType = 'dialog';
   showDlg(msg.prompt, `
     <textarea id="txt-in" rows="4" style="width:100%;margin:.5rem 0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.55rem">${esc(msg.default || '')}</textarea>
     <div style="display:flex;gap:.5rem">
@@ -2651,8 +4136,10 @@ function showTextInput(msg) {
 }
 
 function showConfirm(msg) {
+  _activePromptType = 'dialog';
   // Yes / No / Cancel — Cancel sends null (distinct from explicit "No")
   showDlg(msg.prompt, `
+    ${_renderRequestSummary(msg.request_summary)}
     <div style="display:flex;gap:.5rem;margin-top:.5rem">
       <button class="btn-gold" style="flex:1" onclick="sendResponse('true')">Yes</button>
       <button class="btn-ghost" style="flex:1" onclick="sendResponse('false')">No</button>
@@ -2677,36 +4164,133 @@ function showGameOver(msg) {
   `;
 }
 
+// Single row of the Market Buy table.  Extracted so the tiered layout
+// (Phase 5) can render identical rows in two sub-tables (Focused / live
+// vs. dormant).
+function _renderMarketBuyRow(res, d, focusResource) {
+  const askQty = d.ask_quantity ?? d.quantity ?? 0;
+  const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
+  const bidQty = d.bid_quantity ?? 0;
+  const bidPrice = d.bid_price;
+  // Place-Bid price prefills with the FORMULA (fair reference) price,
+  // not the resting ask.  2026-05-27 playtest (Comet #6): "Food showed
+  // 17.18 but the bid was calculated at 40.00/unit" — the old behaviour
+  // prefilled the bid with the ask price, so when a resting ask sat far
+  // above fair value the bid field showed a confusingly-high number
+  // that didn't match the reference price the player saw elsewhere.
+  // "Buy Now" remains the at-ask path (data-price=askPrice on the
+  // mkt-qty-in input); "Place Bid" is a limit order so it should start
+  // from fair value and let the player raise it to clear if they choose.
+  const bidPrefill = (d.formula_price ? Number(d.formula_price).toFixed(2)
+                      : (askQty && askPrice ? Number(askPrice).toFixed(2) : 0));
+  const focusClass = (focusResource && res === focusResource) ? ' class="mkt-row-focus"' : '';
+  return `<tr${focusClass}>
+    <td>${esc(res)}</td>
+    <td style="color:var(--green);border-left:2px solid var(--border)">${fmtMarketPrice(bidPrice)}</td>
+    <td>${bidQty || '—'}</td>
+    <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+    <td>${askQty || '—'}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
+  </tr>`;
+}
+
+function _marketBuyHeaderRow() {
+  return '<thead><tr>'
+    + '<th style="width:170px">Commodity</th>'
+    + '<th colspan="2" style="color:var(--green);border-left:2px solid var(--border)">Current Bid</th>'
+    + '<th colspan="2" style="color:var(--gold);border-left:2px solid var(--border)">Current Ask</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">⬤ Buy Now (qty @ ask)</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">⬤ Place Bid (qty @ your price)</th>'
+    + '</tr></thead>';
+}
+
 function showMarketBuyPopup(msg) {
+  // Phase 5: consume any pending hint target so we can both highlight the
+  // hinted resource AND ensure it appears in the visible tier.  One-shot:
+  // clear immediately so a manual Market Buy open after this doesn't
+  // inherit the focus.
+  const hint = _pendingHintTarget;
+  _pendingHintTarget = null;
+  const focusResource = (hint && hint.action === 'market_buy') ? hint.resource : null;
+
   const market = msg.market || {};
   const budget = msg.budget || 0;
   const entries = Object.entries(market);
-  let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
-  html += '<div class="market-buy-wrap"><table class="market-buy-table"><thead><tr><th style="width:190px">Commodity</th><th style="width:95px">Bid</th><th style="width:80px">Bid Qty</th><th style="width:95px">Ask</th><th style="width:80px">Ask Qty</th><th style="width:90px">Buy Qty</th><th style="width:250px">New Bid</th></tr></thead><tbody>';
-  for (const [res, d] of entries) {
-    const askQty = d.ask_quantity ?? d.quantity ?? 0;
-    const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
-    const bidQty = d.bid_quantity ?? 0;
-    const bidPrice = d.bid_price;
-    html += `<tr>
-      <td>${esc(res)}</td>
-      <td style="color:var(--green)">${fmtMarketPrice(bidPrice)}</td>
-      <td>${bidQty || '—'}</td>
-      <td style="color:var(--gold)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
-      <td>${askQty || '—'}</td>
-      <td><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-      <td><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${d.formula_price || 0}" style="background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
-    </tr>`;
+
+  // Tier each commodity row by current relevance.
+  //   Tier 1: hint-mentioned (sustenance / input shortfalls) — these are
+  //           what the player most likely needs right now.
+  //   Tier 2: live market — at least one side has standing depth.
+  //   Tier 3: dormant — no bids, no asks, not currently flagged.  Hidden
+  //           behind a "Show all other commodities" expander so the first
+  //           viewport stays focused.
+  const tier1 = [], tier2 = [], tier3 = [];
+  for (const e of entries) {
+    const [res, d] = e;
+    if (_currentHintResources.has(res) || res === focusResource) tier1.push(e);
+    else if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) tier2.push(e);
+    else tier3.push(e);
   }
-  html += '</tbody></table></div>';
-  html += '<div style="margin-top:.6rem;display:flex;justify-content:space-between;align-items:center">';
-  html += '<span style="font-size:.85rem">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>';
-  html += '<div style="display:flex;gap:.4rem"><button class="btn-gold" onclick="submitMarketBuy()">Buy</button><button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button></div>';
-  html += '</div>';
-  showDlg('Market Buy', html, 'market-dialog');
+  // Within Tier 1, float the explicitly clicked hint resource to the top.
+  if (focusResource) {
+    tier1.sort((a, b) => (a[0] === focusResource) ? -1 : (b[0] === focusResource ? 1 : 0));
+  }
+
+  let html = `<div style="margin-bottom:.5rem;font-size:.82rem;color:var(--dim)">Budget: <strong style="color:var(--gold)">${budget.toFixed(1)} Dp</strong></div>`;
+  // #22.2 — make it explicit which side is an immediate purchase vs a limit
+  // bid.  The two actions are visually separated and explained.
+  html += `<div style="font-size:.78rem;color:var(--dim);margin-bottom:.5rem;line-height:1.5">
+    <span style="color:var(--gold)">⬤ Buy Now</span> — purchases immediately at the seller's <em>Ask</em> price (only available when there's an ask).
+    &nbsp;&nbsp;<span style="color:var(--green)">⬤ Place Bid</span> — posts a limit order at <em>your</em> price; it fills when a seller's ask meets it.
+  </div>`;
+  if (focusResource) {
+    html += `<div style="font-size:.76rem;color:var(--gold);margin-bottom:.5rem">
+      Opened from a Decision Hint about <strong>${esc(focusResource)}</strong> — the row is pinned at the top and highlighted.
+    </div>`;
+  }
+
+  // Primary table: hint-mentioned + live market rows.
+  const primary = tier1.concat(tier2);
+  if (primary.length) {
+    html += '<div class="market-buy-wrap"><table class="market-buy-table">'
+      + _marketBuyHeaderRow()
+      + '<tbody>'
+      + primary.map(([res, d]) => _renderMarketBuyRow(res, d, focusResource)).join('')
+      + '</tbody></table></div>';
+  } else {
+    html += '<div style="font-size:.8rem;color:var(--dim);margin:.5rem 0">No live market activity right now — every commodity is in the collapsed section below.</div>';
+  }
+
+  // Secondary collapsed table: dormant commodities.  Only render the
+  // expander when there's anything to expand to.
+  if (tier3.length) {
+    html += `<details class="mkt-dormant"><summary>Show all other commodities (${tier3.length} dormant)</summary>`
+      + '<div class="market-buy-wrap" style="margin-top:.5rem"><table class="market-buy-table">'
+      + _marketBuyHeaderRow()
+      + '<tbody>'
+      + tier3.map(([res, d]) => _renderMarketBuyRow(res, d, focusResource)).join('')
+      + '</tbody></table></div></details>';
+  }
+
+  // Custom footer: total readout on the left, Buy + Cancel on the right.
+  const footer =
+    '<span style="font-size:.85rem;margin-right:auto">Total: <strong id="mkt-total" style="color:var(--gold)">0 Dp</strong></span>'
+    + '<button class="btn-gold" onclick="submitMarketBuy()">Buy</button>'
+    + '<button class="btn-ghost" onclick="sendResponse(CANCEL_SENTINEL)">Cancel</button>';
+  showPopup('Market Buy', html, { className: 'market-dialog', footerActions: footer });
   document.querySelectorAll('.mkt-qty-in').forEach(inp => {
     inp.addEventListener('input', updateMarketBuyTotals);
   });
+
+  // Scroll the focused row into view — the hint click opens the modal a
+  // few hundred ms after sendResponse, so the DOM is fresh at this point.
+  if (focusResource) {
+    const focusRow = document.querySelector('.mkt-row-focus');
+    if (focusRow && focusRow.scrollIntoView) {
+      focusRow.scrollIntoView({ block: 'nearest' });
+    }
+  }
 }
 
 function updateMarketBuyTotals() {
@@ -2751,9 +4335,34 @@ function showDlg(title, bodyHtml, className = '') {
   document.getElementById('overlay').classList.add('active');
 }
 
+// Standardized info-popup shell (Phase 6 of the UX review).
+// Used by read-only or action-on-confirm popups (Production Constraints,
+// Market Board, Market Buy, etc.).  IO-driven prompt dialogs (option picker,
+// quantity input, confirm) keep using showDlg directly — they have their own
+// sendResponse / CANCEL_SENTINEL lifecycle.
+//
+// opts:
+//   className      — extra dialog class (e.g. 'market-dialog' for wide layout)
+//   footerActions  — HTML for the footer area.  Defaults to a single Close
+//                    button that calls closeOverlay().  Pass an empty string
+//                    to render no footer.
+function showPopup(title, bodyHtml, opts = {}) {
+  const { className = '', footerActions } = opts;
+  const footer = footerActions !== undefined
+    ? (footerActions
+        ? `<div class="popup-footer">${footerActions}</div>`
+        : '')
+    : `<div class="popup-footer"><button class="btn-primary" onclick="closeOverlay()">Close</button></div>`;
+  showDlg(title, bodyHtml + footer, className);
+}
+
 function hideOverlay() {
   document.getElementById('overlay').classList.remove('active');
   document.getElementById('prompt-area')?.classList.add('hidden');
+  _activePromptType = null;
+  // Action prompt is no longer active — re-render hints so the "Open"
+  // buttons greys out, mirroring the action menu's disappearance.
+  if (gameState) renderGameState();
 }
 
 // ==================== EVENT LOG ====================
@@ -2783,6 +4392,18 @@ function addLog(text, cls = '') {
   log.scrollTop = log.scrollHeight;
 }
 
+function syncServerLog(msg) {
+  const total = Number(msg.log_count || 0);
+  const recent = Array.isArray(msg.recent_log) ? msg.recent_log : [];
+  if (!recent.length || total <= seenServerLogCount) return;
+  const recentStart = Math.max(0, total - recent.length);
+  const firstMissing = Math.max(seenServerLogCount, recentStart);
+  for (let idx = firstMissing; idx < total; idx++) {
+    addLog(recent[idx - recentStart]);
+  }
+  seenServerLogCount = total;
+}
+
 // ==================== HELPERS ====================
 function v(id) { return document.getElementById(id)?.value || ''; }
 
@@ -2805,7 +4426,94 @@ async function apiFetch(url, method = 'GET', body = null) {
   return res.json();
 }
 
+// ==================== VERSION / ABOUT / RECOVERY ====================
+
+// Fetch the server's reported version once on load and stamp it into the
+// landing-page footer + the in-game header.  When the user reports a bug
+// they can quote the exact build that surfaced it.
+function _setVersionLabels(v) {
+  appVersion = v;
+  const a = document.getElementById('app-version');
+  const b = document.getElementById('app-version-game');
+  if (a) a.textContent = v;
+  if (b) b.textContent = v;
+}
+
+function fetchAppVersion() {
+  fetch(`${API}/version`)
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j && j.version) _setVersionLabels(j.version); })
+    .catch(() => { _setVersionLabels('?'); });
+}
+
+function showAboutDialog() {
+  const v = appVersion || '?';
+  const body = `
+    <div style="line-height:1.55">
+      <p><strong>Island Traders</strong></p>
+      <p>Version: <strong>${esc(v)}</strong></p>
+      <p style="font-size:.82rem;color:var(--dim)">Quote this version when reporting a defect or feature request — the server team uses it to match playtest reports to a specific build.</p>
+      <p style="font-size:.78rem;color:var(--dim)">Source: <a href="https://github.com/ashersilver/island-traders" target="_blank" style="color:var(--accent)">ashersilver/island-traders</a></p>
+    </div>`;
+  // Use the shared popup shell from the UX-review work.
+  showPopup('About', body);
+}
+
+// Re-render the most recent action prompt.  Defensive feature for the
+// intermittent "hint button cleared the menu" bug — the engine action
+// loop is already correct (while True: choose_action), but if a new
+// prompt is lost in transit or the UI state drifts, this button gives
+// the player an explicit recovery path without ending the turn.
+//
+// Two-step recovery: show the cached prompt instantly for snappy
+// feedback, then ask the server for the LIVE pending prompt — the
+// server's get_state handler replays whatever message is currently
+// blocked on player input.  If the cached prompt is stale (engine has
+// already moved on to a new prompt for this player) the live replay
+// will overwrite it.  If there's no cached prompt at all we still get
+// the server replay path.
+function restoreActionMenu() {
+  if (lastActionPromptMsg) {
+    showActionPrompt(lastActionPromptMsg);
+  }
+  requestState();
+}
+
+// Pull the full server-side game log as plain text and trigger a
+// browser download.  The server's /api/rooms/{room_id}/log endpoint
+// returns text/plain with a Content-Disposition attachment header;
+// the fetch + blob dance is what makes Safari/Firefox actually offer
+// the file save dialog rather than rendering in a new tab.
+// 2026-05-27 playtest ask for offline debugging.
+async function downloadGameLog() {
+  if (!currentRoom || !currentRoom.room_id) {
+    alert("Join a room first — there's no game log to download yet.");
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/rooms/${currentRoom.room_id}/log`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      alert(`Could not download log: ${err.error || resp.statusText}`);
+      return;
+    }
+    const text = await resp.text();
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `island-traders-log-${currentRoom.room_id}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (exc) {
+    alert(`Log download failed: ${exc}`);
+  }
+}
+
 // ==================== INIT ====================
+fetchAppVersion();
 refreshPublicRooms();
 setInterval(refreshPublicRooms, 15000);
 </script>

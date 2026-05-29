@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import random
 import string
 import threading
@@ -24,10 +25,13 @@ from pathlib import Path
 from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
+from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.loan import posted_funding_rates
+from ..models.training import TrainingStatus
+from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
+    APP_VERSION,
     SEASONS, CURRENCY_SYMBOL,
     TOTAL_STARTING_POPULATION,
 )
@@ -37,7 +41,7 @@ from .ws_adapter import WebSocketIOAdapter
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 except ImportError:
     FastAPI = WebSocket = WebSocketDisconnect = None
     StaticFiles = HTMLResponse = JSONResponse = None
@@ -49,32 +53,32 @@ ALL_ROLES = ["Farmer", "Miner", "Transporter", "Educator",
 
 ROLE_INFO = {
     "Farmer":       {"display_name": ROLES["Farmer"].display_name, "short_name": ROLES["Farmer"].short_name,
-                     "island": ROLES["Farmer"].island, "produces": "Food, Fish",
+                     "island": ROLES["Farmer"].island, "produces": "Grain, Produce, Fish, Meat, Food",
                      "needs": "Farm Machinery, Oil", "color": "#27ae60"},
     "Miner":        {"display_name": ROLES["Miner"].display_name, "short_name": ROLES["Miner"].short_name,
                      "island": ROLES["Miner"].island, "produces": "Ore, Metal, Oil",
                      "needs": "Mining Equipment, Freight", "color": "#e67e22"},
     "Transporter":  {"display_name": ROLES["Transporter"].display_name, "short_name": ROLES["Transporter"].short_name,
-                     "island": ROLES["Transporter"].island, "produces": "Freight",
+                     "island": ROLES["Transporter"].island, "produces": "Freight, PassengerSeats",
                      "needs": "Transport Equipment, Oil", "color": "#3498db"},
     "Educator":     {"display_name": ROLES["Educator"].display_name, "short_name": ROLES["Educator"].short_name,
-                     "island": ROLES["Educator"].island, "produces": "Knowledge",
-                     "needs": "Laboratory Equipment, Finance", "color": "#9b59b6"},
+                     "island": ROLES["Educator"].island, "produces": "Expertise, Patents",
+                     "needs": "Laboratory Equipment", "color": "#9b59b6"},
     "Banker":       {"display_name": ROLES["Banker"].display_name, "short_name": ROLES["Banker"].short_name,
-                     "island": ROLES["Banker"].island, "produces": "Finance",
-                     "needs": "Knowledge", "color": "#f1c40f"},
+                     "island": ROLES["Banker"].island, "produces": "Loans, Insurance",
+                     "needs": "Expertise", "color": "#f1c40f"},
     "Manufacturer": {"display_name": ROLES["Manufacturer"].display_name, "short_name": ROLES["Manufacturer"].short_name,
                      "island": ROLES["Manufacturer"].island, "produces": "Machinery, Lab Equipment",
                      "needs": "Metal, Oil, Freight", "color": "#1abc9c"},
     "Doctor":       {"display_name": ROLES["Doctor"].display_name, "short_name": ROLES["Doctor"].short_name,
                      "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
-                     "needs": "Knowledge, Laboratory Equipment", "color": "#e74c3c"},
+                     "needs": "Expertise, Laboratory Equipment", "color": "#e74c3c"},
 }
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
 ISLAND_GUARANTEE_DURATION   = 90   # seconds per islandless human to choose
-DEFAULT_STARTING_CAPITAL    = 700.0   # Dp per player (7-player game default)
+DEFAULT_STARTING_CAPITAL    = 1500.0  # Dp per player (economy-lifecycle Phase A; was 700)
 DEFAULT_SEASON_TIMER        = 120     # seconds per season (0 = no timer)
 DEFAULT_PRE_SEASON_TIMER    = 30      # seconds for pre-season review window (0 = skip)
 
@@ -168,6 +172,12 @@ class AuctionState:
     phase: str = "bidding"
     timer_end: float = 0.0
     _timer_task: Any = field(default=None, repr=False)
+    # Saved auction_result payload — populated when _resolve_auction
+    # broadcasts the result.  Used by the WebSocket reconnect handler to
+    # replay the result panel to a client who joins during the brief
+    # window between resolution and the room.status transition (bug fix:
+    # "auction stuck at timer 0 with no Continue button").
+    result_payload: dict | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict:
         bids_out = {}
@@ -295,6 +305,10 @@ class GameRoom:
     season_active_humans: set[str] = field(default_factory=set)
     season_timer_task: Any = field(default=None, repr=False)
     season_timer_end: float = 0.0
+    # Grace-period task that fires interrupt_all() a few seconds after all
+    # humans mark Done Trading — gives the park loop time to engage so the
+    # "Resume Trading" banner appears before the season ends.
+    all_ready_task: Any = field(default=None, repr=False)
     # Sentinel to stop multiple Ready clicks queueing END_TURN responses
     # after a player's turn loop has already exited.
     season_human_done: set[str] = field(default_factory=set)
@@ -358,6 +372,14 @@ class GameManager:
         self.rooms: dict[str, GameRoom] = {}
         self._code_index: dict[str, str] = {}  # join_code -> room_id
         self._ws_connections: dict[str, dict[str, Any]] = {}
+        # Protects _ws_connections against concurrent register / unregister /
+        # send / broadcast — these run on the asyncio loop thread (endpoint
+        # handlers) and on the game thread (via _thread_safe_send) so a
+        # plain dict isn't enough.  Without this, a quick reconnect could
+        # interleave the new connection's register with the old connection's
+        # finally-unregister and drop the live socket from the table — the
+        # bug #2 symptom of "action menu stops displaying for some players".
+        self._ws_lock: threading.Lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -719,12 +741,16 @@ class GameManager:
                     "is_human": lp.is_human,
                 }
 
-        self._thread_safe_broadcast(room_id, {
+        result_payload = {
             "type": "auction_result",
             "assignments": result_assignments,
             "ai_roles": ai_roles,
             "deductions": {pid: round(amt, 1) for pid, amt in deductions.items()},
-        })
+        }
+        # Save before broadcast so a reconnect handler can replay it for a
+        # client that misses the live broadcast.
+        auction.result_payload = result_payload
+        self._thread_safe_broadcast(room_id, result_payload)
 
         # Post-auction human island guarantee (§19.1):
         # If any human player still has no island AND any AI controls 2+
@@ -1063,10 +1089,20 @@ class GameManager:
 
         spent_in_auction = room.investing.deductions.get(lp.player_id, 0.0)
         budget = round(room.starting_capital - spent_in_auction, 1)
+        from ..models.lease import lease_quote
         catalogue_payload = []
         mandatory_set: set[str] = set()
         for it in CAPITAL_CATALOGUE:
             if it.role in lp.role_names:
+                # Pre-compute the lease quote at the investing-phase tick
+                # (Y0/S0) so the client can render the buy-vs-lease UI
+                # without having to know about posted_funding_rates.
+                quote = None
+                if it.lease_terms:
+                    try:
+                        quote = lease_quote(it, 0, 0)
+                    except Exception:
+                        quote = None
                 catalogue_payload.append({
                     "item_id":          it.item_id,
                     "name":             it.name,
@@ -1075,6 +1111,8 @@ class GameManager:
                     "delivery_seasons": it.delivery_seasons,
                     "description":      it.description,
                     "effects":          it.effects,
+                    "lease_terms":      it.lease_terms,
+                    "lease_quote":      quote,
                 })
         for role in lp.role_names:
             mandatory_set.update(MANDATORY_MINIMUM_INVESTMENT.get(role, []))
@@ -1118,9 +1156,15 @@ class GameManager:
         # Validate items belong to one of this player's roles
         valid: list[str] = []
         for iid in item_ids:
-            item = find_item(CAPITAL_CATALOGUE, iid)
+            lease_prefix = "lease:"
+            item_id = iid[len(lease_prefix):] if isinstance(iid, str) and iid.startswith(lease_prefix) else iid
+            item = find_item(CAPITAL_CATALOGUE, item_id)
             if item and item.role in lp.role_names:
-                valid.append(iid)
+                if isinstance(iid, str) and iid.startswith(lease_prefix):
+                    if item.lease_terms:
+                        valid.append(iid)
+                else:
+                    valid.append(iid)
 
         room.investing.selections[player_id] = valid
         if ready:
@@ -1153,6 +1197,7 @@ class GameManager:
         base_dollops = room.starting_capital
 
         capital_purchases: dict[str, list[str]] = {}   # player_id -> item_ids actually bought
+        capital_leases: dict[str, list[str]] = {}      # player_id -> item_ids leased
         capital_spend: dict[str, float] = {}
 
         for lp in room.players:
@@ -1163,16 +1208,29 @@ class GameManager:
             budget_remaining = base_dollops - spent_in_auction
 
             bought: list[str] = []
+            leased: list[str] = []
             spend = 0.0
             for iid in selected:
-                item = find_item(CAPITAL_CATALOGUE, iid)
+                is_lease = isinstance(iid, str) and iid.startswith("lease:")
+                item_id = iid[6:] if is_lease else iid
+                item = find_item(CAPITAL_CATALOGUE, item_id)
                 if not item or item.role not in lp.role_names:
                     continue
-                if spend + item.cost > budget_remaining + 1e-6:
+                price = item.cost
+                if is_lease:
+                    if not item.lease_terms:
+                        continue
+                    from ..models.lease import lease_quote
+                    price = lease_quote(item, 0, 0)["annual_payment"]
+                if spend + price > budget_remaining + 1e-6:
                     continue   # over budget — skip
-                bought.append(iid)
-                spend += item.cost
+                if is_lease:
+                    leased.append(item_id)
+                else:
+                    bought.append(item_id)
+                spend += price
             capital_purchases[lp.player_id] = bought
+            capital_leases[lp.player_id] = leased
             capital_spend[lp.player_id] = round(spend, 1)
 
         # Combined deduction: auction winning bid + investing capital spend.
@@ -1189,15 +1247,21 @@ class GameManager:
         self._thread_safe_broadcast(room_id, {
             "type": "investing_resolved",
             "purchases": capital_purchases,
+            "leases": capital_leases,
             "spend": capital_spend,
         })
-        self._launch_game(room_id, total_deductions, capital_purchases=capital_purchases)
+        self._launch_game(
+            room_id, total_deductions,
+            capital_purchases=capital_purchases,
+            capital_leases=capital_leases,
+        )
 
     # ---- Game launch ----
 
     def _launch_game(self, room_id: str,
                      deductions: dict[str, float] | None = None,
-                     capital_purchases: dict[str, list[str]] | None = None) -> bool:
+                     capital_purchases: dict[str, list[str]] | None = None,
+                     capital_leases: dict[str, list[str]] | None = None) -> bool:
         room = self.rooms.get(room_id)
         if not room:
             return False
@@ -1289,6 +1353,41 @@ class GameManager:
                     if not item:
                         continue
                     p.add_capital(iid, 1)
+        if capital_leases:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            from ..models.capacity import find_item
+            from ..models.lease import lease_quote
+            banker = next(
+                (p for p in game.players if any(r.name == "Banker" for r in p.roles)),
+                None,
+            )
+            lessor_id = banker.player_id if banker else -1
+            for spec_idx, lobby_pid in spec_to_lobby_pid.items():
+                leased = capital_leases.get(lobby_pid, [])
+                if not leased or spec_idx >= len(game.players):
+                    continue
+                p = game.players[spec_idx]
+                for iid in leased:
+                    item = find_item(CAPITAL_CATALOGUE, iid)
+                    if not item or not item.lease_terms:
+                        continue
+                    p.add_capital(iid, 1)
+                    quote = lease_quote(item, 0, 0)
+                    if banker and banker.player_id != p.player_id:
+                        banker.dollops += quote["annual_payment"]
+                    game.lease_ledger.create_lease(
+                        item_id=iid,
+                        lessee_id=p.player_id,
+                        lessor_id=lessor_id,
+                        year=0,
+                        season=0,
+                        term_years=quote["term_years"],
+                        annual_payment=quote["annual_payment"],
+                        buyout_payment=quote["buyout_payment"],
+                        locked_lease_rate=quote["locked_lease_rate"],
+                        payments_made=1,
+                        last_payment_year=0,
+                    )
 
         def _broadcast_state():
             state = self.get_game_state(room_id)
@@ -1366,7 +1465,7 @@ class GameManager:
         from ..models.capacity import (
             recipes_for_role, compute_capacity, find_item,
         )
-        from ..models.profession import WorkerBand
+        from ..models.profession import WorkerBand, primary_title
 
         # Build workforce by band (active workers only)
         band_counts = p.workforce.band_summary()
@@ -1377,6 +1476,16 @@ class GameManager:
         }
 
         on_hand = {r.value: p.inventory.get(r) for r in p.inventory.amounts}
+
+        # Compute the player's expertise-degradation floor once per player
+        # (doesn't depend on the recipe), then attach to every output entry
+        # below.  Currently scaffolded but the production engine doesn't
+        # apply the floor until EXPERTISE_DEGRADATION_ENABLED flips True
+        # (calibration work pending).  Payload still reports the would-be
+        # floor so the UI can pre-stage the "Operating at X% floor" chip.
+        # 2026-05-27 graceful-degradation brief.
+        from ..engine.production import ProductionEngine as _ProdEngine
+        degradation_floor = _ProdEngine.expertise_degradation_floor(p)
 
         outputs = []
         seen: set[str] = set()
@@ -1406,6 +1515,12 @@ class GameManager:
                     boosted = _replace(recipe, inputs=boosted_inputs)
                 else:
                     boosted = recipe
+                if recipe.role == "Farmer" and recipe.output == ResourceType.FOOD.value:
+                    # Packaged Food accepts either Fish or Meat as its protein.
+                    on_hand[ResourceType.FISH.value] = (
+                        p.inventory.get(ResourceType.FISH)
+                        + p.inventory.get(ResourceType.MEAT)
+                    )
                 cap = compute_capacity(
                     recipe=boosted,
                     catalogue=CAPITAL_CATALOGUE,
@@ -1454,7 +1569,20 @@ class GameManager:
                         have = wf_by_band.get(band, 0)
                         short = need - have
                         if short > 0:
-                            workforce_short[band.value] = round(short, 2)
+                            # Name the missing workers by their specific
+                            # profession title (e.g. "Flight Crew") rather
+                            # than the generic band ("Technician") so the
+                            # constraint popup reads naturally.
+                            label = primary_title(recipe.role, band)
+                            # Round UP to whole workers — labour math is
+                            # per-output-unit fractional (e.g. 0.04 Farmer
+                            # per Food × 3 units = 0.12) but you can't
+                            # hire 0.12 of a person.  The playtest report
+                            # 2026-05-27 (Comet) flagged "0.12 Farmer" in
+                            # Decision Hints as confusing.  Always show
+                            # at least 1 missing worker when there's any
+                            # shortfall.
+                            workforce_short[label] = math.ceil(short)
 
                 # Equipment shortfall. Prefer concrete catalogue options over
                 # telling the player "buy capital" and making them hunt.
@@ -1507,6 +1635,7 @@ class GameManager:
                 outputs.append({
                     "output":         recipe.output,
                     "role":           recipe.role,
+                    "is_service_output": recipe.output == "InsurancePolicies",
                     "max_producible": round(cap.max_producible, 2)
                                       if cap.max_producible != float("inf") else None,
                     "equipment_cap":  round(cap.equipment_cap, 2),
@@ -1521,6 +1650,12 @@ class GameManager:
                     "equipment_short": equipment_short,
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
+                    # Graceful-degradation floor (2026-05-27 brief, GitHub
+                    # #47): when < 1.0, the island is missing expertise.
+                    # The dashboard surfaces this as an "Operating at X%
+                    # floor" chip so the player can see why output is
+                    # reduced (or about to be).  1.0 = no floor applies.
+                    "degradation_floor": round(degradation_floor, 3),
                 })
 
         # Render owned capital with display info (name, role, count)
@@ -1559,6 +1694,475 @@ class GameManager:
             "band_counts":     band_counts,
         }
 
+    @staticmethod
+    def _profession_label(profession: str) -> str:
+        try:
+            return PROFESSION_LABEL.get(Profession(profession), profession)
+        except ValueError:
+            return profession
+
+    def _training_pipeline_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        player_names: dict[int, str],
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        pipeline = []
+        training = getattr(game, "training", None)
+        if not training:
+            return pipeline
+
+        # Build a quick lookup of Educator players so we can re-run the
+        # capacity-status check from the requester's side and report
+        # *why* a pending batch is blocked (Sub-issue blocker + seasons-
+        # blocked counter for the requester's dashboard, per the
+        # training-expertise-deadlock brief Layer 3).
+        turn_manager = getattr(game, "turn_manager", None)
+        engine_players = {
+            ep.player_id: ep for ep in getattr(game, "players", [])
+        }
+        requester_player = engine_players.get(player_id)
+
+        for req in training.active_for_player(player_id):
+            if req.return_year >= 0 and req.return_season >= 0:
+                seasons_remaining = max(
+                    0,
+                    (req.return_year - current_year_idx) * len(SEASONS)
+                    + (req.return_season - current_season_idx),
+                )
+                return_year = req.return_year + 1
+                return_season = (
+                    SEASONS[req.return_season]
+                    if req.return_season < len(SEASONS)
+                    else str(req.return_season)
+                )
+            else:
+                seasons_remaining = None
+                return_year = None
+                return_season = None
+
+            # Pipeline-health fields (only meaningful for AWAITING_EDUCATOR
+            # requests, which are the deadlock cases).  For other statuses
+            # these stay None / 0 / False so the existing client code is
+            # untouched.
+            blocker_reason: str | None = None
+            seasons_blocked = 0
+            can_supply_expertise = False
+            if req.status.value == "awaiting_educator":
+                if req.proposed_year >= 0 and req.proposed_season >= 0:
+                    seasons_blocked = max(
+                        0,
+                        (current_year_idx - req.proposed_year) * len(SEASONS)
+                        + (current_season_idx - req.proposed_season),
+                    )
+                educator = engine_players.get(req.educator_id)
+                if educator is not None and turn_manager is not None:
+                    try:
+                        ok, reason = turn_manager._training_capacity_status(
+                            educator, req
+                        )
+                    except Exception:
+                        ok, reason = True, ""
+                    if not ok:
+                        blocker_reason = reason
+                        if (
+                            requester_player is not None
+                            and "Expertise" in reason
+                        ):
+                            # Mirror the SUPPLY_TRAINING_EXPERTISE action's
+                            # eligibility check: only show True when the
+                            # requester actually has enough Expertise to
+                            # cover the Educator's shortfall.
+                            from ..models.profession import (  # noqa: WPS433
+                                WorkerBand, band_of,
+                            )
+
+                            band = band_of(req.target_profession)
+                            per_course = 2 if band == WorkerBand.MANAGER else 1
+                            n_courses = (
+                                turn_manager.courses_needed(len(req.worker_ids))
+                            )
+                            needed = per_course * n_courses
+                            have_at_educator = educator.inventory.get(
+                                ResourceType.EXPERTISE
+                            )
+                            shortfall = max(0, needed - have_at_educator)
+                            have_at_requester = requester_player.inventory.get(
+                                ResourceType.EXPERTISE
+                            )
+                            can_supply_expertise = (
+                                shortfall > 0 and have_at_requester >= shortfall
+                            )
+
+            pipeline.append({
+                "batch_id": req.batch_id,
+                "worker_count": len(req.worker_ids),
+                "target_profession": self._profession_label(req.target_profession),
+                # Status is the canonical TrainingStatus enum value.
+                "status": req.status.value,
+                "educator_player_id": req.educator_id,
+                "educator_name": player_names.get(
+                    req.educator_id,
+                    f"Player {req.educator_id}",
+                ),
+                "transport_mode": req.transport_mode,
+                "tickets_supplied_by_requester": req.tickets_supplied_by_requester,
+                "dollops_to_educator": round(req.dollops_to_educator, 1),
+                "return_year": return_year,
+                "return_season": return_season,
+                "seasons_remaining": seasons_remaining,
+                "counter_message": req.counter_message or None,
+                # Deadlock-visibility fields (2026-05-27 training-expertise
+                # -deadlock brief Layer 3).
+                "blocker_reason": blocker_reason,
+                "seasons_blocked": seasons_blocked,
+                "can_supply_expertise": can_supply_expertise,
+            })
+        return pipeline
+
+    def _staffing_contracts_for_player(
+        self,
+        game: "Game",
+        player_id: int,
+        player_names: dict[int, str],
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        """Serialise all active staffing contracts involving this player."""
+        staffing = getattr(game, "staffing", None)
+        if not staffing:
+            return []
+        from ..models.staffing import StaffingStatus
+        from ..constants import SEASONS
+        contracts = staffing.active_for_player(player_id)
+        result = []
+        for c in contracts:
+            if c.return_year >= 0 and c.return_season >= 0:
+                return_year_display = c.return_year + 1
+                return_season_name = (
+                    SEASONS[c.return_season] if c.return_season < len(SEASONS) else str(c.return_season)
+                )
+                seasons_remaining = max(
+                    0,
+                    (c.return_year - current_year_idx) * len(SEASONS)
+                    + (c.return_season - current_season_idx),
+                )
+            else:
+                return_year_display = None
+                return_season_name = None
+                seasons_remaining = None
+            result.append({
+                "contract_id": c.contract_id,
+                "role": "requester" if c.requester_id == player_id else "provider",
+                "other_player_id": c.provider_id if c.requester_id == player_id else c.requester_id,
+                "other_player_name": player_names.get(
+                    c.provider_id if c.requester_id == player_id else c.requester_id,
+                    "Unknown",
+                ),
+                "profession": c.profession,
+                "staff_count": c.staff_count,
+                "duration_seasons": c.duration_seasons,
+                "fee_total": round(c.fee_total, 1),
+                "tickets_required": c.tickets_required,
+                "tickets_supplied_by_requester": c.tickets_supplied_by_requester,
+                "status": c.status.value,
+                "return_year": return_year_display,
+                "return_season": return_season_name,
+                "seasons_remaining": seasons_remaining,
+                "counter_fee": c.counter_fee,
+                "counter_message": c.counter_message or None,
+                "decision_acknowledged": c.decision_acknowledged,
+            })
+        return result
+
+    def _training_queue_order_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        player_names: dict[int, str],
+    ) -> list[dict]:
+        player = next((p for p in game.players if p.player_id == player_id), None)
+        if player is None or not any(role.name == "Educator" for role in player.roles):
+            return []
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        return [
+            {
+                "batch_id": req.batch_id,
+                "requester_name": player_names.get(
+                    req.requester_id, f"Player {req.requester_id}"
+                ),
+                "target_profession": self._profession_label(req.target_profession),
+                "priority": req.priority,
+                "dollops_offered": round(req.dollops_to_educator, 1),
+                "requested_year": req.proposed_year + 1,
+                "requested_season": SEASONS[req.proposed_season]
+                    if 0 <= req.proposed_season < len(SEASONS)
+                    else str(req.proposed_season),
+            }
+            for req in training.sorted_pending_for_educator(player_id)
+        ]
+
+    def _training_decisions_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        decisions = []
+        for req in training.decisions_for_requester(player_id):
+            decline_year = req.decline_year + 1 if req.decline_year >= 0 else None
+            decline_season = (
+                SEASONS[req.decline_season]
+                if 0 <= req.decline_season < len(SEASONS)
+                else None
+            )
+            decisions.append({
+                "batch_id": req.batch_id,
+                "status": req.status.value,
+                "decline_reason": req.decline_reason,
+                "decline_year": decline_year,
+                "decline_season": decline_season,
+                "original_offer": round(
+                    req.original_dollops_to_educator
+                    if req.original_dollops_to_educator
+                    else req.dollops_to_educator,
+                    1,
+                ),
+                "suggested_offer_if_any": (
+                    round(req.dollops_to_educator, 1)
+                    if req.status.value == "countered"
+                    else None
+                ),
+                "target_profession": self._profession_label(req.target_profession),
+                "n_workers": len(req.worker_ids),
+            })
+        return decisions
+
+    async def _handle_training_counter_response(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Handle a requester's response to a training counter-offer.
+
+        Message fields:
+          batch_id : int   — the TrainingRequest batch_id
+          action   : str   — "accept" | "counter" | "reject" | "ack"
+          new_fee  : float — (counter only) the new proposed fee
+          message  : str   — (counter only) optional message to Educator
+        """
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+
+        training = getattr(room.game, "training", None)
+        if not training:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Training not initialised"}))
+            return
+
+        batch_id = msg.get("batch_id")
+        action = msg.get("action", "")
+
+        try:
+            if action == "approve":
+                req = training.requester_accept_counter(batch_id)
+                req.decision_acknowledged = True
+                ack_msg = {"type": "training_counter_ack", "result": "accepted", "batch_id": batch_id}
+
+            elif action == "counter":
+                new_fee = float(msg.get("new_fee", 0))
+                message = str(msg.get("message", ""))
+                if new_fee <= 0:
+                    await websocket.send_text(json.dumps({
+                        "type": "error", "message": "Counter fee must be positive"
+                    }))
+                    return
+                training.requester_counter(batch_id, new_fee, message)
+                ack_msg = {"type": "training_counter_ack", "result": "countered", "batch_id": batch_id}
+
+            elif action == "reject":
+                req = training.requester_reject_counter(batch_id)
+                req.decision_acknowledged = True
+                ack_msg = {"type": "training_counter_ack", "result": "rejected", "batch_id": batch_id}
+
+            elif action == "ack":
+                training.acknowledge_decision(engine_pid, batch_id)
+                ack_msg = {"type": "training_counter_ack", "result": "acked", "batch_id": batch_id}
+
+            else:
+                await websocket.send_text(json.dumps({
+                    "type": "error", "message": f"Unknown training counter action: {action!r}"
+                }))
+                return
+
+        except (ValueError, KeyError) as e:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            return
+
+        await websocket.send_text(json.dumps(ack_msg))
+
+        # Broadcast fresh state to the requester so their decision cards clear
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        # If the requester counter-countered, also notify the Educator that there
+        # is a new pending review.  We can't interrupt their turn thread, but a
+        # state broadcast will refresh their sidebar on next UI poll.
+        if action in ("approve", "counter", "reject"):
+            # Find the Educator player and send them a fresh state too.
+            req_obj = training.request_by_id(batch_id)
+            if req_obj:
+                educator_lobby_id = None
+                for lp_id, ep in (room.lobby_to_engine_id or {}).items():
+                    if ep == req_obj.educator_id:
+                        educator_lobby_id = lp_id
+                        break
+                if educator_lobby_id:
+                    self._thread_safe_send(
+                        room_id, educator_lobby_id,
+                        self.get_game_state(room_id, educator_lobby_id) or {},
+                    )
+
+    def _leases_detail_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        from ..models.capacity import find_item
+        leases = getattr(game, "lease_ledger", None)
+        if not leases:
+            return []
+        details = []
+        for lease in leases.active_leases_for(player_id):
+            item = find_item(CAPITAL_CATALOGUE, lease.item_id)
+            role = "lessee" if lease.lessee_id == player_id else "lessor"
+            if lease.status.value == "awaiting_buyout":
+                next_year = lease.maturity_year
+                next_season = 0
+                payment_type = "buyout"
+            else:
+                next_year = max(current_year_idx, lease.last_payment_year + 1)
+                next_season = 0
+                payment_type = "annual"
+            seasons_to_next = max(
+                0,
+                (next_year - current_year_idx) * len(SEASONS)
+                + (next_season - current_season_idx),
+            )
+            details.append({
+                "lease_id": lease.lease_id,
+                "item_id": lease.item_id,
+                "item_name": item.name if item else lease.item_id,
+                "role": role,
+                "counterparty_id": lease.lessor_id if role == "lessee" else lease.lessee_id,
+                "annual_payment": round(lease.annual_payment, 1),
+                "buyout_payment": round(lease.buyout_payment, 1),
+                "payments_made": lease.payments_made,
+                "term_years": lease.term_years,
+                "seasons_to_next_payment": seasons_to_next,
+                "status": lease.status.value,
+                "next_payment_year": next_year + 1,
+                "next_payment_season": SEASONS[next_season],
+                "next_payment_type": payment_type,
+            })
+        return details
+
+    def _decision_hints_for_player(self, pd: dict) -> list[dict]:
+        hints: list[dict] = []
+        capacity = pd.get("capacity", {})
+        for output in capacity.get("outputs", []):
+            inputs_short = output.get("inputs_short") or {}
+            if inputs_short:
+                resource = next(iter(inputs_short))
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Unblock {output.get('output')}",
+                    "why": f"{resource} is limiting this production line.",
+                    "text": f"{resource} is limiting this production line.",
+                    "target": {
+                        "type": "resource_shortfall",
+                        "resource": resource,
+                    },
+                })
+                continue
+
+            equipment_options = (output.get("equipment_short") or {}).get("options") or []
+            if equipment_options:
+                item = equipment_options[0]
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Expand {output.get('output')}",
+                    "why": f"{item.get('name')} would increase this line's capacity.",
+                    "text": f"{item.get('name')} would increase this line's capacity.",
+                    "target": {
+                        "type": "equipment_shortfall",
+                        "capital_item": item.get("item_id"),
+                    },
+                })
+                continue
+
+            workforce_short = output.get("workforce_short") or {}
+            if workforce_short:
+                profession = next(iter(workforce_short))
+                hints.append({
+                    "tone": "blocked",
+                    "title": f"Train for {output.get('output')}",
+                    "why": f"{profession} is the tight workforce constraint.",
+                    "text": f"{profession} is the tight workforce constraint.",
+                    "target": {
+                        "type": "workforce_shortfall",
+                        "profession": profession,
+                    },
+                })
+
+        for loan in pd.get("loans_detail", []):
+            target_type = "loan_due" if loan.get("role") == "borrower" else "loan_offer"
+            hints.append({
+                "tone": "watch",
+                "title": "Review loan position",
+                "why": "There is an active loan to monitor.",
+                "text": "There is an active loan to monitor.",
+                "target": {
+                    "type": target_type,
+                    "loan_id": loan.get("loan_id"),
+                },
+            })
+            break
+
+        for policy in pd.get("policies_detail", []):
+            hints.append({
+                "tone": "watch",
+                "title": "Review insurance",
+                "why": "There is an active insurance policy to monitor.",
+                "text": "There is an active insurance policy to monitor.",
+                "target": {
+                    "type": "insurance_review",
+                    "policy_id": policy.get("policy_id"),
+                },
+            })
+            break
+
+        return hints
+
     def get_game_state(self, room_id: str, player_id: str | None = None) -> dict | None:
         room = self.rooms.get(room_id)
         if not room or not room.game:
@@ -1573,9 +2177,23 @@ class GameManager:
         current_year_idx = getattr(room, "current_year_index", 0)
         current_season_idx = getattr(room, "current_season_index", 0)
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
+        player_names = {p.player_id: p.name for p in game.players}
+
+        def banker_loan_book_status(player: Player) -> dict[str, int]:
+            if not any(role.name == "Banker" for role in player.roles):
+                return {"active": 0, "cap": 0}
+            n_bankers = player.workforce.count_profession(Profession.BANKER.value)
+            cap = max(1, 2 * n_bankers)
+            active = sum(
+                1 for loan in game.loan_ledger.loans
+                if loan.lender_id == player.player_id
+                and loan.status == LoanStatus.ACTIVE
+            )
+            return {"active": active, "cap": cap}
 
         players_data = []
         for p in game.players:
+            loan_book = banker_loan_book_status(p)
             pd = {
                 "player_id": p.player_id,
                 "lobby_player_id": engine_to_lobby.get(p.player_id),
@@ -1590,6 +2208,8 @@ class GameManager:
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
+                "banker_active_loans": loan_book["active"],
+                "banker_active_loan_cap": loan_book["cap"],
                 # Structured per-loan detail (Issue #6 — Loan rollover UI).
                 # Includes both borrower-side and lender-side active loans
                 # so the dashboard can show roles consistently.
@@ -1615,12 +2235,46 @@ class GameManager:
                     }
                     for l in game.loan_ledger.active_loans_for(p.player_id)
                 ],
+                "leases_detail": self._leases_detail_for_player(
+                    game, p.player_id, current_year_idx, current_season_idx
+                ),
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
+                "workforce_training_bands": p.workforce.training_band_summary(),
+                "workforce_professions": p.workforce.profession_summary(),
+                "training_pipeline": self._training_pipeline_for_player(
+                    game,
+                    p.player_id,
+                    player_names,
+                    current_year_idx,
+                    current_season_idx,
+                ),
+                "training_queue_order": self._training_queue_order_for_player(
+                    game,
+                    p.player_id,
+                    player_names,
+                ),
+                "training_decisions": self._training_decisions_for_player(
+                    game,
+                    p.player_id,
+                    current_year_idx,
+                    current_season_idx,
+                ),
+                "staffing_contracts": self._staffing_contracts_for_player(
+                    game, p.player_id, player_names, current_year_idx, current_season_idx,
+                ),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                "campus_load": (
+                    game.training.visiting_trainees(p.player_id)
+                    if any(r.name == "Educator" for r in p.roles) else 0
+                ),
+                "visiting_staff_count": (
+                    getattr(game, "staffing", None) and
+                    getattr(game, "staffing").visiting_staff(p.player_id) or 0
+                ),
                 # Plain descriptive strings for back-compat with older UI code
                 "policies": [
                     pol.describe() for pol in p.insurance_policies if pol.active
@@ -1659,11 +2313,16 @@ class GameManager:
                 }
             # Production capacity panel + constraint data
             pd["capacity"] = self._player_capacity(p, current_tick=current_tick)
+            pd["decision_hints"] = self._decision_hints_for_player(pd)
             players_data.append(pd)
 
         mkt_summary = game.market.market_summary()
         market_data = {}
         for r in ResourceType:
+            # Phase D1 Banker service model: Finance is no longer a tradable
+            # market commodity, but the enum remains for saved-game/back-compat.
+            if r == ResourceType.FINANCE:
+                continue
             info = mkt_summary.get(r.value, {})
             formula_price = round(game.market.current_price(r), 2)
             ask_price = info.get("ask_price")
@@ -1679,7 +2338,6 @@ class GameManager:
                 "formula_price": formula_price,
             }
 
-        player_names = {p.player_id: p.name for p in game.players}
         player_by_id = {p.player_id: p for p in game.players}
         barter_deals = []
         for deal in getattr(game.ledger, "deals", []):
@@ -1726,15 +2384,72 @@ class GameManager:
                 "warnings": warnings,
             })
         barter_needs = []
+        sustenance_alerts_by_player_id: dict[int, list[dict]] = {}
         for p in game.players:
             needs = []
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
-            for r, qty in p.population_food_fish_needs().items():
-                short = qty - p.inventory.get(r)
-                if short > 0:
-                    needs.append(f"{short} {r.value} for population")
+            campus_extra = (
+                game.training.visiting_trainees(p.player_id)
+                if any(r.name == "Educator" for r in p.roles) else 0
+            )
+            # Add visiting medical staff to the extra_residents count so
+            # the host island's sustenance calculation includes them.
+            staffing = getattr(game, "staffing", None)
+            if staffing:
+                campus_extra += staffing.visiting_staff(p.player_id)
+            # Sustenance basket alert (2026-05-25 model): aggregate the
+            # whole basket into a single "meals runway" figure rather
+            # than one alert per resource. Inventory is fungible across
+            # the basket (Food OR Grain+Produce+(Fish|Meat) with 2:1
+            # substitution), so a per-resource runway is misleading.
+            meals_per_season = p.meals_needed(extra_residents=campus_extra)
+            if meals_per_season > 0:
+                meals_on_hand = p.meals_available()
+                runway = round(meals_on_hand / meals_per_season, 2)
+                if runway < 2:
+                    # Context flags so the client can give actionable
+                    # advice rather than a blind "buy food" (2026-05-27
+                    # Codex Player: "'Meals runway: 0' told me to buy
+                    # food, but there was no ask, only bids.  The hint
+                    # remained prominent even after I posted a food
+                    # bid.").
+                    basket = (
+                        ResourceType.FOOD, ResourceType.GRAIN,
+                        ResourceType.PRODUCE, ResourceType.FISH,
+                        ResourceType.MEAT,
+                    )
+                    market_has_supply = any(
+                        game.market.available_offers(r) for r in basket
+                    )
+                    player_has_pending_bid = any(
+                        any(b.buyer_id == p.player_id
+                            for b in game.market.available_bids(r))
+                        for r in basket
+                    )
+                    sustenance_alerts_by_player_id.setdefault(p.player_id, []).append({
+                        "resource": "Meals",
+                        "on_hand": meals_on_hand,
+                        "seasonal_need": meals_per_season,
+                        "runway_seasons": runway,
+                        "recommended_purchase":
+                            max(0, meals_per_season * 2 - meals_on_hand),
+                        "severity": "danger" if runway < 1 else "warning",
+                        # When False, the client should suggest produce /
+                        # train Farmer / build Kitchen rather than "buy
+                        # food" — there's nothing on the market to buy.
+                        "market_has_supply": market_has_supply,
+                        # When True, the player already has a resting bid
+                        # for a basket resource; the client can soften the
+                        # "buy food now" urgency to "waiting on your bid".
+                        "player_has_pending_bid": player_has_pending_bid,
+                    })
+                if meals_on_hand < meals_per_season:
+                    needs.append(
+                        f"{meals_per_season - meals_on_hand} meal(s) of sustenance "
+                        f"(Food OR Grain+Produce+(Fish|Meat))"
+                    )
             if any(r.name == "Educator" for r in p.roles):
                 pending_tickets = sum(
                     len(req.worker_ids)
@@ -1769,28 +2484,45 @@ class GameManager:
                 ).items()
             },
             "players": players_data,
+            "sustenance_alerts": {
+                str(player_id): alerts
+                for player_id, alerts in sustenance_alerts_by_player_id.items()
+            },
             "market": market_data,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "price_history": [
                 {"year": s.year, "season": s.season,
-                 "prices": {r.value: round(p, 2) for r, p in s.prices.items()}}
+                 "prices": {
+                     r.value: round(p, 2)
+                     for r, p in s.prices.items()
+                     if r != ResourceType.FINANCE
+                 }}
                 for s in game.market.price_history[-8:]
             ],
+            # Replay a bounded slice of the ticker so late/reconnecting tabs
+            # still see AI turns, which intentionally run before humans.
+            "recent_log": list(room.io_adapter._log[-200:]) if room.io_adapter else [],
+            "log_count": len(room.io_adapter._log) if room.io_adapter else 0,
         }
 
     # ---- Thread-safe WebSocket sending ----
 
     def _thread_safe_send(self, room_id: str, lobby_player_id: str, msg: dict) -> None:
-        ws = self._ws_connections.get(room_id, {}).get(lobby_player_id)
+        with self._ws_lock:
+            ws = self._ws_connections.get(room_id, {}).get(lobby_player_id)
         if ws and self._loop:
             asyncio.run_coroutine_threadsafe(
                 self._async_send(ws, msg), self._loop
             )
 
     def _thread_safe_broadcast(self, room_id: str, msg: dict) -> None:
-        connections = self._ws_connections.get(room_id, {})
+        # Snapshot the values inside the lock so the loop iterates an
+        # immutable list (asyncio.run_coroutine_threadsafe is fast enough
+        # to do outside the lock — we just need the values, not the dict).
+        with self._ws_lock:
+            connections = list(self._ws_connections.get(room_id, {}).values())
         if self._loop:
-            for ws in connections.values():
+            for ws in connections:
                 asyncio.run_coroutine_threadsafe(
                     self._async_send(ws, msg), self._loop
                 )
@@ -1803,13 +2535,30 @@ class GameManager:
             pass
 
     def register_ws(self, room_id: str, lobby_player_id: str, ws) -> None:
-        if room_id not in self._ws_connections:
-            self._ws_connections[room_id] = {}
-        self._ws_connections[room_id][lobby_player_id] = ws
+        with self._ws_lock:
+            if room_id not in self._ws_connections:
+                self._ws_connections[room_id] = {}
+            self._ws_connections[room_id][lobby_player_id] = ws
 
-    def unregister_ws(self, room_id: str, lobby_player_id: str) -> None:
-        conns = self._ws_connections.get(room_id, {})
-        conns.pop(lobby_player_id, None)
+    def unregister_ws(self, room_id: str, lobby_player_id: str, ws=None) -> bool:
+        """Remove this player's socket entry from the connection table.
+
+        When ``ws`` is provided, only removes the entry if the stored
+        socket is the same object — fixes the reconnect race where a new
+        connection has already replaced this slot before the old
+        connection's ``finally`` block fires.  Returns ``True`` iff an
+        entry was actually removed (i.e. this socket was still the live
+        one).  Without ``ws``, removes whatever is stored (legacy /
+        forced cleanup).
+        """
+        with self._ws_lock:
+            conns = self._ws_connections.get(room_id, {})
+            if ws is None:
+                return conns.pop(lobby_player_id, None) is not None
+            if conns.get(lobby_player_id) is ws:
+                del conns[lobby_player_id]
+                return True
+            return False
 
     def handle_player_response(self, room_id: str, lobby_player_id: str, value) -> None:
         """Route a WS response message to the right engine player's event."""
@@ -1918,6 +2667,15 @@ class GameManager:
                     self._auction_timer(room.room_id, remaining), self._loop,
                 )
                 room.auction._timer_task = fut
+            elif (remaining <= 0
+                    and room.status == "auction"
+                    and room.auction.phase != "complete"):
+                # Pause happened right at (or after) auction expiry — the
+                # cancelled timer task never got to call _resolve_auction.
+                # Resolve immediately on resume so the auction doesn't sit
+                # forever with timer_remaining=0 and no Continue button.
+                # Bug fix: "auction stuck at timer 0 after pause/resume".
+                self._resolve_auction(room.room_id)
 
         if room.investing and room.investing.timer_end > 0:
             room.investing.timer_end += pause_duration
@@ -1955,12 +2713,21 @@ class GameManager:
                     room.room_id, pause_duration)
 
         # After resume, re-check the Ready quorum.  If everyone became Ready
-        # during the pause we close the phase now.
+        # during the pause, close the phase now (grace period for action phase,
+        # immediate for pre-season).
         if (room.status == "running"
                 and room.season_active_humans
                 and room.season_ready_set >= room.season_active_humans):
             if room.season_phase == "action" and room.io_adapter:
-                room.io_adapter.interrupt_all()
+                if self._loop is not None:
+                    if room.all_ready_task is None:
+                        fut = asyncio.run_coroutine_threadsafe(
+                            self._delayed_interrupt(room.room_id), self._loop
+                        )
+                        room.all_ready_task = fut
+                else:
+                    # No event loop (e.g. unit-test environment): interrupt immediately.
+                    room.io_adapter.interrupt_all()
             elif room.season_phase == "pre_season":
                 room._pre_season_done.set()
 
@@ -2037,6 +2804,7 @@ class GameManager:
         room.season_active_humans = humans
         room.season_ready_set = set()
         room.season_human_done = set()
+        room.all_ready_task = None   # reset any stale grace task from prior season
         secs = max(0, int(room.season_timer_seconds))
         room.season_timer_end = (time.time() + secs) if secs > 0 else 0.0
 
@@ -2048,6 +2816,40 @@ class GameManager:
             "timer_seconds": secs,        # 0 = Ready-only mode
             "active_humans": list(humans),
         })
+
+        # Broadcast per-player event results for the Conditions panel.
+        # game._last_event_results is set by game.run() just before calling
+        # before_season, so it's always fresh at this point.
+        if room.game:
+            event_results = getattr(room.game, "_last_event_results", {})
+            player_names = {p.player_id: p.name for p in room.game.players}
+            events_payload = {}
+            has_disaster = False
+            disaster_name = None
+            for pid, ev in event_results.items():
+                events_payload[str(pid)] = {
+                    "player_name": player_names.get(pid, f"Player {pid}"),
+                    "event_name": ev.event_name,
+                    "yield_modifier": ev.yield_modifier,
+                    "outage": ev.outage,
+                    "natural_disaster": ev.natural_disaster,
+                    "description": ev.describe(),
+                }
+                if ev.natural_disaster and not has_disaster:
+                    has_disaster = True
+                    disaster_name = ev.event_name
+            self._thread_safe_broadcast(room_id, {
+                "type": "season_events",
+                "year": year + 1,
+                "season": season_name,
+                "events": events_payload,
+                "regional_disaster": disaster_name,
+            })
+        # Defensive: broadcast the cleared Ready/Done sets immediately so
+        # the client's `imReady` / `seasonDoneSet` can't ride over from
+        # the previous season due to message ordering / stale state.
+        # (2026-05-27 done-trading-undo brief Sub-issue A.)
+        self._broadcast_ready_update(room)
 
         # Only install the action-phase timer if it's > 0.
         if secs > 0 and self._loop:
@@ -2063,6 +2865,10 @@ class GameManager:
             return
         room.season_timer_task = None
         room.season_timer_end = 0.0
+        # Cancel any pending all-ready grace interrupt (season is already done).
+        if room.all_ready_task is not None:
+            room.all_ready_task.cancel()
+            room.all_ready_task = None
         season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
         self._thread_safe_broadcast(room_id, {
             "type": "season_resolved",
@@ -2083,6 +2889,29 @@ class GameManager:
         self._thread_safe_broadcast(room_id, {
             "type": "season_timeout",
         })
+
+    # Grace period (seconds) between "all humans ready" and the actual
+    # interrupt_all().  Gives the park loop time to engage + show the
+    # "Resume Trading" banner, especially in single-player games where the
+    # interrupt would otherwise fire on the same request as mark_player_ready.
+    _ALL_READY_GRACE_SECONDS: float = 3.0
+
+    async def _delayed_interrupt(self, room_id: str) -> None:
+        """Wait for the grace period, then end the season if still all-ready."""
+        await asyncio.sleep(self._ALL_READY_GRACE_SECONDS)
+        room = self.rooms.get(room_id)
+        if not room or not room.io_adapter:
+            return
+        room.all_ready_task = None
+        # Only interrupt if the season is still active and all active humans
+        # are still in the ready set (someone may have clicked Undo during
+        # the grace window).
+        if (room.status == "running"
+                and room.season_phase == "action"
+                and not room.paused
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
+            room.io_adapter.interrupt_all()
 
     def _broadcast_ready_update(self, room: "GameRoom") -> None:
         """Tell every connected client who has clicked Ready / completed."""
@@ -2154,12 +2983,27 @@ class GameManager:
 
         self._broadcast_ready_update(room)
 
-        # All active humans Ready → close the season immediately.
-        # While paused, defer this until resume (see _do_resume).
-        if (not room.paused
-                and room.season_active_humans
-                and room.season_ready_set >= room.season_active_humans):
-            room.io_adapter.interrupt_all()
+        if ready:
+            # All active humans Ready → end the season after a brief grace
+            # period so the park loop can engage and the "Resume Trading"
+            # banner appears before the interrupt fires.  While paused,
+            # defer until resume (see _do_resume).
+            if (not room.paused
+                    and room.season_active_humans
+                    and room.season_ready_set >= room.season_active_humans
+                    and room.all_ready_task is None
+                    and self._loop is not None):
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._delayed_interrupt(room.room_id), self._loop
+                )
+                room.all_ready_task = fut
+        else:
+            # Player un-readied — cancel any pending grace-period interrupt
+            # so the season doesn't end while they're back in the menu.
+            if room.all_ready_task is not None:
+                room.all_ready_task.cancel()
+                room.all_ready_task = None
+
         return {"ok": True, "ready": ready}
 
 
@@ -2174,8 +3018,12 @@ def create_app() -> FastAPI:
             "Install with: pip install fastapi uvicorn[standard] websockets"
         )
 
-    app = FastAPI(title="Island Traders", version="0.1.0")
+    app = FastAPI(title="Island Traders", version=APP_VERSION)
     manager = GameManager()
+
+    @app.get("/version")
+    async def _get_version():
+        return {"version": APP_VERSION}
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
@@ -2292,6 +3140,36 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "No game state"}, status_code=404)
         return JSONResponse(state)
 
+    @app.get("/api/rooms/{room_id}/log")
+    async def get_log(room_id: str):
+        """Download the full server-side game log as plain text.
+
+        Driven by the dashboard's "Download Log" button (2026-05-27
+        playtest ask for offline debugging).  Returns 404 if the room
+        doesn't exist or has no IO adapter (game hasn't started yet).
+        """
+        room = manager.rooms.get(room_id)
+        if room is None or room.io_adapter is None:
+            return JSONResponse({"error": "No game log available"}, status_code=404)
+        log_text = room.io_adapter.export_log()
+        header = (
+            f"# Island Traders game log\n"
+            f"# Room: {room.name} ({room.room_id})\n"
+            f"# Version: {APP_VERSION}\n"
+            f"# Status: {room.status}\n"
+            f"# Year/Season: {getattr(room.game, 'year', '?')} / "
+            f"{getattr(room.game, 'season', '?')}\n"
+            f"# ----------------------------------------\n\n"
+        )
+        return PlainTextResponse(
+            header + log_text,
+            media_type="text/plain",
+            headers={
+                "Content-Disposition":
+                    f'attachment; filename="island-traders-log-{room.room_id}.txt"',
+            },
+        )
+
     @app.get("/api/roles")
     async def list_roles():
         return JSONResponse([{**ROLE_INFO[r], "name": r} for r in ALL_ROLES])
@@ -2317,19 +3195,33 @@ def create_app() -> FastAPI:
         try:
             # Send current state
             if room.status == "auction" and room.auction:
-                remaining = max(0.0, round(room.auction.timer_end - time.time(), 1))
-                await websocket.send_text(json.dumps({
-                    "type": "auction_start",
-                    "roles": [
-                        {**ROLE_INFO[r], "name": r} for r in ALL_ROLES
-                    ],
-                    "timer_seconds": remaining,
-                    "budget": round(room.starting_capital, 1),
-                }))
-                await websocket.send_text(json.dumps({
-                    "type": "auction_update",
-                    "auction": room.auction.to_dict(),
-                }))
+                # If the auction has already resolved but the room.status
+                # hasn't flipped yet (the 2-second window before
+                # _delayed_investing_start / _delayed_guarantee_start fires)
+                # — OR a client missed the live auction_result broadcast —
+                # replay the saved result so they see the Continue button.
+                # Without this, clients that reconnect during that window
+                # got dropped back into the auction view with timer=0 and
+                # no way to advance.  Bug: "auction stuck at timer 0".
+                if (room.auction.phase == "complete"
+                        and room.auction.result_payload is not None):
+                    await websocket.send_text(json.dumps(
+                        room.auction.result_payload
+                    ))
+                else:
+                    remaining = max(0.0, round(room.auction.timer_end - time.time(), 1))
+                    await websocket.send_text(json.dumps({
+                        "type": "auction_start",
+                        "roles": [
+                            {**ROLE_INFO[r], "name": r} for r in ALL_ROLES
+                        ],
+                        "timer_seconds": remaining,
+                        "budget": round(room.starting_capital, 1),
+                    }))
+                    await websocket.send_text(json.dumps({
+                        "type": "auction_update",
+                        "auction": room.auction.to_dict(),
+                    }))
             elif room.status == "guarantee" and room.guarantee:
                 await websocket.send_text(json.dumps({
                     "type": "island_guarantee_state",
@@ -2350,6 +3242,12 @@ def create_app() -> FastAPI:
                 engine_pid = room.lobby_to_engine_id.get(player_id)
                 if room.io_adapter and engine_pid is not None:
                     room.io_adapter.replay_pending_prompt(engine_pid)
+                # Fresh ready_update on reconnect — otherwise the client's
+                # cached `imReady` from before disconnect persists and
+                # the "Done Trading ✓" button can appear stuck for a
+                # season the player has not actually opted out of.
+                # (2026-05-27 done-trading-undo brief Sub-issue A.)
+                manager._broadcast_ready_update(room)
 
             # If the game is paused, let the reconnecting client know so it
             # can show the paused overlay immediately.
@@ -2373,6 +3271,20 @@ def create_app() -> FastAPI:
                     state = manager.get_game_state(room_id, player_id)
                     if state:
                         await websocket.send_text(json.dumps(state))
+                    # Also replay any unresolved IO prompt for this player.
+                    # The initial WS connect already does this, but mid-game
+                    # the client can lose its action prompt (Decision-Hint
+                    # button drove a modal the user cancelled, dialog state
+                    # drift, etc).  The "📋 Menu" recovery button calls
+                    # requestState() — which lands here — and expects the
+                    # server to redeliver the live engine prompt so the user
+                    # can continue trading instead of staring at a dead
+                    # season clock.
+                    engine_pid = room.lobby_to_engine_id.get(player_id)
+                    if (room.status == "running"
+                            and room.io_adapter
+                            and engine_pid is not None):
+                        room.io_adapter.replay_pending_prompt(engine_pid)
                 elif msg_type == "bid":
                     result = manager.place_bid(
                         room_id, player_id,
@@ -2421,14 +3333,24 @@ def create_app() -> FastAPI:
                         "from": lp.name,
                         "text": msg.get("text", ""),
                     })
+                elif msg_type == "training_counter_response":
+                    await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
 
         except WebSocketDisconnect:
             pass
         except Exception as e:
             logger.exception("WebSocket error for %s/%s", room_id, player_id)
         finally:
-            lp.connected = False
-            manager.unregister_ws(room_id, player_id)
+            # Identity-aware unregister: only flip `connected` to False if
+            # this socket was still the live one for the slot.  If a quick
+            # reconnect has already replaced it (a new tab, browser refresh,
+            # network blip + auto-reconnect), the new socket stays in the
+            # table and `connected` stays True so subsequent server-to-client
+            # messages still reach the player.  Fixes bug #2.
+            if manager.unregister_ws(room_id, player_id, websocket):
+                lp.connected = False
 
     return app
 

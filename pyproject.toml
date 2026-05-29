@@ -2,6 +2,8 @@
 name = "island-traders"
 version = "0.1.0"
 requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]

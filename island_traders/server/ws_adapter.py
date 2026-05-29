@@ -18,12 +18,83 @@ Concurrent per-player design:
 from __future__ import annotations
 import logging
 import threading
-from ..cli.prompts import IOAdapter, ActionCancelled, CANCEL_SENTINEL
+from ..cli.prompts import IOAdapter, ActionCancelled, CANCEL_SENTINEL, action_label
 from ..models.resource import ResourceType
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..engine.turn import TurnAction
 
 logger = logging.getLogger("island_traders.ws_adapter")
+
+
+ACTION_GROUPS: dict[TurnAction, str] = {
+    TurnAction.PRODUCE: "Production",
+    TurnAction.APPLY_PATENT: "Production",
+    TurnAction.MARKET_BUY: "Trade",
+    TurnAction.MARKET_SELL: "Trade",
+    TurnAction.PROPOSE_DEAL: "Trade",
+    TurnAction.REQUEST_TRAINING: "People",
+    TurnAction.REVIEW_TRAINING: "People",
+    TurnAction.REORDER_TRAINING_QUEUE: "People",
+    TurnAction.REJECT_TRAINING_REQUEST: "People",
+    TurnAction.COUNTER_TRAINING_REQUEST: "People",
+    TurnAction.ACK_TRAINING_DECISION: "People",
+    TurnAction.SUPPLY_TRAINING_EXPERTISE: "People",
+    TurnAction.ARRANGE_TRANSPORT: "People",
+    TurnAction.RECRUIT_WORKERS: "People",
+    TurnAction.REPURPOSE_WORKER: "People",
+    TurnAction.REQUEST_MEDICAL_STAFF: "People",
+    TurnAction.REVIEW_STAFFING_REQUESTS: "People",
+    TurnAction.PURCHASE_CAPITAL: "Capital",
+    TurnAction.LEASE_CAPITAL: "Capital",
+    TurnAction.INVEST: "Capital",
+    TurnAction.TAKE_LOAN: "Finance",
+    TurnAction.OFFER_LOAN: "Finance",
+    TurnAction.ROLLOVER_LOAN: "Finance",
+    TurnAction.VIEW_LOANS: "Finance",
+    TurnAction.PAY_LEASE: "Finance",
+    TurnAction.BUY_INSURANCE: "Finance",
+    TurnAction.SELL_INSURANCE: "Finance",
+    TurnAction.MANAGE_INSURANCE: "Finance",
+    TurnAction.VIEW_MARKET: "Info",
+    TurnAction.VIEW_PLAYERS: "Info",
+    TurnAction.INVENTORY: "Info",
+    TurnAction.END_TURN: "Info",
+}
+
+
+def _player_has_role(player, role_name: str) -> bool:
+    return any(getattr(role, "name", None) == role_name for role in getattr(player, "roles", []))
+
+
+def action_option_payload(action: TurnAction, player) -> dict:
+    """Structured action option metadata for dashboard clients."""
+    enabled = True
+    disabled_reason = ""
+
+    if action == TurnAction.OFFER_LOAN and not _player_has_role(player, "Banker"):
+        enabled = False
+        disabled_reason = "Only Banking can offer loans."
+    elif action == TurnAction.SELL_INSURANCE and not _player_has_role(player, "Banker"):
+        enabled = False
+        disabled_reason = "Only Banking can sell insurance."
+    elif action == TurnAction.ARRANGE_TRANSPORT and not _player_has_role(player, "Transporter"):
+        enabled = False
+        disabled_reason = "Only Transportation can arrange training transport."
+    elif action == TurnAction.APPLY_PATENT and player.inventory.get(ResourceType.PATENTS) <= 0:
+        enabled = False
+        disabled_reason = "No Patents available to apply."
+    elif action == TurnAction.REVIEW_STAFFING_REQUESTS and not _player_has_role(player, "Doctor"):
+        enabled = False
+        disabled_reason = "Only the Healthcare island can review staffing requests."
+
+    return {
+        "value": action.value,
+        "label": action_label(action),
+        "group": ACTION_GROUPS.get(action, "Info"),
+        "enabled": enabled,
+        "disabled_reason": disabled_reason,
+        "recommended": False,
+    }
 
 
 class WebSocketIOAdapter(IOAdapter):
@@ -100,15 +171,41 @@ class WebSocketIOAdapter(IOAdapter):
         self._player_ready_flags.clear()
 
     def mark_player_ready(self, player_id: int) -> None:
-        """Mark a player as Ready; their next choose_action returns END_TURN."""
+        """Mark a player as parked (Done Trading).
+
+        Parking does NOT terminate the player's turn — it pauses it.  The
+        per-player turn thread stays alive in ``choose_action``'s park loop
+        and resumes the action menu if the player later clicks Undo
+        (``unmark_player_ready``).  The thread only really exits when the
+        season ends for real (``interrupt_all``).
+
+        If the player is currently inside a sub-dialog (market form,
+        training picker, etc.) when they click Done, the in-flight prompt
+        is cancelled cleanly via CANCEL_SENTINEL so control returns to the
+        action loop, which then notices the Ready flag and parks.
+        """
         self._player_ready_flags.add(player_id)
-        # Also unblock anything they're currently waiting on with a sentinel
-        # so the in-flight prompt completes quickly.
-        self.receive_response(player_id, "end_turn")
+        # Cancel any in-flight prompt so the player drops back into the
+        # action loop where the park check fires.  CANCEL_SENTINEL is the
+        # normal way the engine signals "abort this dialog" (see
+        # ActionCancelled handling in engine/turn.py); reusing it keeps
+        # the abort path uniform.
+        self.receive_response(player_id, CANCEL_SENTINEL)
 
     def unmark_player_ready(self, player_id: int) -> None:
-        """Clear a player's Ready flag (e.g. they un-click Ready)."""
+        """Clear a player's parked flag (Undo Done Trading).
+
+        Also signals the parked thread's wait event so ``choose_action``'s
+        park loop wakes up immediately and re-prompts the player with a
+        fresh action menu.
+        """
         self._player_ready_flags.discard(player_id)
+        # Wake any parked choose_action so it re-enters the prompt path.
+        # No response is stored — the park loop checks the flag, sees it
+        # clear, and falls through to a fresh prompt.
+        ev = self._player_events.get(player_id)
+        if ev is not None:
+            ev.set()
 
     def interrupt_all(self) -> None:
         """Unblock every pending player prompt with a None response.
@@ -203,39 +300,93 @@ class WebSocketIOAdapter(IOAdapter):
         self._log.append(text)
         self._broadcast({"type": "print", "text": text})
 
+    def export_log(self) -> str:
+        """Return the full server-side game log as plain text.
+
+        Used by the dashboard's "Download Log" button (2026-05-27
+        playtest ask) to dump the complete log for offline debugging.
+        Each entry is a line as the engine emitted it; entries are not
+        timestamped (the engine doesn't carry timestamps yet) but ordering
+        is preserved.
+        """
+        return "\n".join(self._log)
+
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
+        """Top of the per-player action loop in TurnManager.execute_turn.
+
+        Done Trading is a *pause*, not a *terminate*.  When the player
+        clicks Done their Ready flag is set and any in-flight prompt is
+        cancelled (mark_player_ready), which drops them back here; this
+        method then parks the thread (instead of returning END_TURN) until
+        the player clicks Undo or the season really ends.  This keeps the
+        turn thread alive so we can re-enter the prompt path on undo.
+        """
         # Set TLS active player for this thread so subsequent prompts in this
         # action chain route correctly.
         self.set_active_player(player.player_id)
-        # Honour the Ready flag — short-circuit straight to END_TURN.
-        if player.player_id in self._player_ready_flags:
-            logger.debug("Player %d (%s): Ready flag set, returning END_TURN",
-                         player.player_id, player.name)
-            return TurnAction.END_TURN
-        if self._interrupted:
-            logger.debug("Player %d (%s): season interrupted, returning END_TURN",
-                         player.player_id, player.name)
-            return TurnAction.END_TURN
-        options = [{"value": a.value, "label": a.value.replace("_", " ").title()} for a in available]
-        resp = self._send_and_wait({
-            "type": "choose_action",
-            "player_id": player.player_id,
-            "player_name": player.name,
-            "options": options,
-        })
-        if resp is None:
-            logger.warning("Player %d (%s): choose_action got None response — "
-                           "ending turn (interrupted=%s, ready=%s)",
-                           player.player_id, player.name,
-                           self._interrupted,
-                           player.player_id in self._player_ready_flags)
-            return TurnAction.END_TURN
-        try:
-            return TurnAction(resp)
-        except ValueError:
-            logger.warning("Player %d (%s): invalid action '%s', ending turn",
-                           player.player_id, player.name, resp)
-            return TurnAction.END_TURN
+
+        while True:
+            # Season interrupt is the true end-of-season signal — fires
+            # when the season timer expires or every active human is Ready.
+            if self._interrupted:
+                logger.debug("Player %d (%s): season interrupted, returning END_TURN",
+                             player.player_id, player.name)
+                return TurnAction.END_TURN
+
+            # Park loop — hold here while the player is in Done state.
+            # While parked we broadcast `choose_action_parked` so the
+            # dashboard shows the "you're done; click Undo to resume" UI
+            # in place of the action menu.  We wake on:
+            #   - unmark_player_ready (player clicked Undo) → flag clears
+            #   - interrupt_all (season truly ending) → re-check at top
+            if player.player_id in self._player_ready_flags:
+                self._send_to(player.player_id, {
+                    "type": "choose_action_parked",
+                    "player_id": player.player_id,
+                    "player_name": player.name,
+                })
+                ev = self._player_events.get(player.player_id)
+                if ev is None:
+                    return TurnAction.END_TURN
+                # 1s poll is just a safety net — both wake paths .set()
+                # the event so normally we wake immediately.
+                ev.wait(timeout=1.0)
+                with self._player_locks[player.player_id]:
+                    ev.clear()
+                    # Drop any stale response (e.g. the CANCEL_SENTINEL
+                    # mark_player_ready injected to abort an in-flight
+                    # dialog) so it doesn't leak into the next prompt.
+                    self._player_responses[player.player_id] = None
+                # Loop back to top to re-check flags.
+                continue
+
+            # Normal prompt path — not parked, not interrupted.
+            options = [action_option_payload(a, player) for a in available]
+            resp = self._send_and_wait({
+                "type": "choose_action",
+                "player_id": player.player_id,
+                "player_name": player.name,
+                "options": options,
+            })
+            if resp is None:
+                logger.warning(
+                    "Player %d (%s): choose_action got None response — "
+                    "ending turn (interrupted=%s, ready=%s)",
+                    player.player_id, player.name,
+                    self._interrupted,
+                    player.player_id in self._player_ready_flags,
+                )
+                return TurnAction.END_TURN
+            if resp == CANCEL_SENTINEL:
+                # mark_player_ready (or a player Cancel from a stray
+                # dialog) lands here — loop to re-check the park flag.
+                continue
+            try:
+                return TurnAction(resp)
+            except ValueError:
+                logger.warning("Player %d (%s): invalid action '%s', ending turn",
+                               player.player_id, player.name, resp)
+                return TurnAction.END_TURN
 
     @staticmethod
     def _check_cancel(resp) -> None:
@@ -295,11 +446,14 @@ class WebSocketIOAdapter(IOAdapter):
         except (ValueError, TypeError):
             return players[0]
 
-    def confirm(self, prompt: str) -> bool:
-        resp = self._send_and_wait({
+    def confirm(self, prompt: str, request_summary: dict | None = None) -> bool:
+        msg = {
             "type": "confirm",
             "prompt": prompt,
-        })
+        }
+        if request_summary:
+            msg["request_summary"] = request_summary
+        resp = self._send_and_wait(msg)
         self._check_cancel(resp)
         if resp is None:
             return False
@@ -323,11 +477,40 @@ class WebSocketIOAdapter(IOAdapter):
             return resp
         return available[0] if available else ""
 
-    def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
+    def choose_option(
+        self, prompt: str, options: list[dict], request_summary: dict | None = None
+    ) -> object:
+        """Present named choices (buttons), return the chosen option's value.
+
+        `options` is `[{"value": <json-serialisable>, "label": str}, ...]`.
+        The client renders these as buttons (reusing the option picker) and
+        sends back the value as a string; we match on str(value).
+        """
+        msg = {
+            "type": "choose_option",
+            "prompt": prompt,
+            "options": [
+                {"value": o["value"], "label": o["label"]} for o in options
+            ],
+        }
+        if request_summary:
+            msg["request_summary"] = request_summary
+        resp = self._send_and_wait(msg)
+        self._check_cancel(resp)
+        if resp is None:
+            return options[0]["value"] if options else None
+        for o in options:
+            if str(o["value"]) == str(resp):
+                return o["value"]
+        return options[0]["value"] if options else None
+
+    def ask_dollop_amount(self, prompt: str, max_dollops: float,
+                          prefill: float = 0.0) -> float:
         resp = self._send_and_wait({
             "type": "ask_dollop_amount",
             "prompt": prompt,
             "max": max_dollops,
+            "prefill": round(prefill, 2) if prefill else 0,
         })
         self._check_cancel(resp)
         if resp is None:

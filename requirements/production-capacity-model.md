@@ -138,10 +138,12 @@ distinct operating lines.
 | Transportation | Captain; Pilot / Copilot | Petty Officer; Aircraft Service Technician | Sailor; Steward; Ground Crew | Sea and air operations share the island. |
 | Educator | Professor; Technical Director | Lecturer; Mentor | Worker; Apprentice | Top line is academic; second line is technical/apprenticeship. |
 
-**University grad seasons** (Education pipeline):
-- Doctor: 2 seasons
+**University grad seasons** (Education pipeline) — canonical table is in
+`requirements/education-model.md` (Duration table):
+- Doctor: **3 seasons** (ruled 2026-05-17)
 - Nurse: 1 season
-- Other Managers (Farmer, Engineer, Banker, Professor, etc.): 2 seasons
+- Other Managers (Farmer, Engineer, Banker, Professor, Lecturer,
+  Logistics Manager, Miner): 2 seasons
 
 ### Starting workforce mix (default)
 
@@ -160,19 +162,32 @@ Items marked "(2 seasons)" take 2 seasons to arrive when purchased mid-game
 (immediate availability during the Investing Phase).
 
 ### 🌾 Farmer
-**Outputs:** Food, Fish, Apprentice Farming Foreman *(see §8)*
+**Outputs:** Grain, Produce, Fish, Meat, Food, Apprentice Farming Foreman *(see §8)*
 
-| Output | Oil | Food | Fish | Manager | Technician | Worker |
-|---|---|---|---|---|---|---|
-| 1 Food | 3 | — | 1 | 0.1 | 0.4 | 1 |
-| 1 Fish | 2 | 1 | — | 0.1 | 0.4 | 1 |
+| Output | Grain | Produce | Fish/Meat | Oil | Manager | Technician | Worker |
+|---|---|---|---|---|---|---|---|
+| 1 Grain | — | — | — | 1/6 | 0.1 | 0.4 | 1 |
+| 1 Produce | — | — | — | 1/2 | 0.1 | 0.4 | 1 |
+| 1 Fish | — | — | — | 1/3 | 0.1 | 0.4 | 1 |
+| 1 Meat | 4 | — | — | — | 0.1 | 0.4 | 1 |
+| 1 Food | 1 | 1 | 1 | — | 0.1 | 0.4 | 1 |
 
 | Capital item | Cost | Effect |
 |---|---|---|
-| Tractor | 60 Dp | +5 Food capacity |
-| Harvester (2 seasons) | 90 Dp | +3 Food, –1 Technician need |
+| Tractor | 60 Dp | +10 Grain, +6 Produce capacity |
+| Harvester (2 seasons) | 90 Dp | +6 Grain, +4 Produce, –1 Technician need |
 | Fishing Boat | 50 Dp | +4 Fish capacity |
+| Livestock Barn | 70 Dp | +4 Meat capacity |
+| Industrial Kitchen | 75 Dp | +6 packaged Food capacity |
 | Storage Building | 40 Dp | +10 inventory cap |
+
+Notes: Meat consumes **4 Grain** as feedstock.  Food is a convenience
+product: a balanced packaged ration made from 1 Grain + 1 Produce + 1 Fish
+**or** Meat.  Agriculture needs Horticulturalist depth for Produce and
+Veterinarian depth for Meat if it wants those lines to scale efficiently.
+After the second season of the year, Produce productivity drops by **25%**
+without a Horticulturalist, and Meat productivity drops by **25%** without a
+Veterinarian.
 
 ### ⛏️ Miner
 **Outputs:** Ore, Oil, Apprentice Mining Foreman
@@ -291,23 +306,23 @@ Research Lab or Computer Cluster.
 
 ## 8. Apprenticeships
 
-The University coordinates the curriculum, but **the apprentice stays on their
-home island** for the duration and continues working at their existing level
-(no productivity loss while training).
+> **Canonical model: see `requirements/education-model.md` →
+> "Apprenticeship pipeline (Technician training)".**  The earlier
+> "apprentice stays home / no productivity loss / in-house sellable
+> token" model documented here was **superseded on 2026-05-17**.  This
+> section is kept only as a pointer to avoid divergence.
 
-- Apprentice consumes a **separate Apprenticeship slot pool** at the Educator
-  (gated by Apprenticeship Programme capital + Lecturer/Trainer Technicians).
-- After N seasons (typically 2), the worker promotes from Worker → Technician
-  on their home island.
-- An island that already employs Technicians of the relevant kind (Farmer,
-  Engineer, Mechanic) can run **in-house apprenticeships** as a sellable
-  output (cheaper / faster than the University route). Buyers receive an
-  Apprentice token that joins their workforce as a Technician after a 2-season
-  probation.
+In brief (full detail in `education-model.md`):
 
-Examples:
-- Farmer island sells "Apprentice Farming Foreman" tokens.
-- Manufacturer sells "Apprentice Mechanic" or "Apprentice Engineer".
+- Technician apprenticeship is gated by the Educator's **apprenticeship
+  slot pool** (`educator.apprenticeship_programme` capital,
+  `apprenticeship_slots`) **and Instructor (trainer) capacity** — *not*
+  by Courses (Courses gate Manager-tier university training only).
+- The apprentice spends **1 season at the Education Island**, then
+  returns home and works at **75% productivity for exactly one season**
+  before reaching 100%.
+- **Dropped:** the "home-island Apprenticeship Facility" capital flag and
+  the cross-island "in-house apprenticeship sellable token" mechanic.
 
 ---
 
@@ -658,3 +673,132 @@ withdrawal mechanics.
 - Cross-island machinery: licence requirement, efficiency penalty, and perk
   offsets for standard-of-living penalties
 - Final Help copy for each product/resource and capital-equipment item
+
+## 21. Food demand model refinement
+
+*(From the 2026-05-15 playtest inbox.)*
+
+Target model: a healthy seasonal diet requires **Grain + Produce + either Fish
+or Meat**.  Packaged **Food** is the convenience substitute for that balanced
+ration and should reasonably command a premium because it saves governors from
+managing three lines.  Populations can survive on an unbalanced diet, but they
+should lose productivity and become more susceptible to illness.
+
+Legacy implementation note: the current coded alert model still speaks in
+Food/Fish terms while this richer nutrition model is being introduced.  It
+should be replaced with a balance-aware sustenance model rather than merely
+renamed, otherwise packaged Food and raw ingredients will double-count demand.
+
+Previous playtest feedback was that
+the **base starting population should be modelled as already self-fed**
+(they live off the island's own subsistence agriculture or local
+fisheries) — only **additional population** beyond the starting headcount
+creates *incremental* sustenance demand on the market.
+
+Concretely:
+
+- Baseline self-sufficiency: each island's starting ~100 residents are
+  notionally fed by their own kitchen gardens / fishery; no Food demand
+  generated by them on the global market.
+- Each new resident added by population growth (or recruited from another
+  island via future migration mechanics) creates **+1 unit of marginal
+  Food demand per season** (number to be tuned).
+- Educated workers continue to drive Fish demand (per the existing
+  educated-workforce signal); this layer is unchanged.
+
+**Why:** today's model has the Farmer fighting an uphill battle because
+every island appears "hungry" from turn 1, which masks growth-driven
+demand signals.  Decoupling base sustenance from marginal demand makes
+population growth a meaningful trade-flow trigger.
+
+**Implementation pointer:** `models/player.py` — `population_food_demand`
+(or equivalent) computation; refactor to subtract a `BASE_POPULATION_SELF_FED`
+constant before scaling.  Add a constant in `constants.py`
+(suggest: `BASE_POPULATION_SELF_FED = 100`).
+
+### Sustenance runway warnings
+
+Players should not discover population hunger only after a shortage lands.
+The dashboard should surface a forward-looking warning for Food and Fish:
+
+- show current runway in **seasons** (`on_hand / seasonal_need`);
+- warn below 2 seasons of runway;
+- mark it as urgent below 1 season;
+- recommend a concrete purchase quantity equal to
+  `max(0, 2 × seasonal_need - on_hand)`, covering next season plus a
+  one-season safety buffer.
+
+The message should read like a decision aid, not a ledger entry:
+“Fish runway: 0.5 seasons. You have 1; projected population need is
+2/season. Buy 3 Fish to cover next season plus a one-season buffer.”
+
+### Starting Food reserve and shortage recovery
+
+Each island should begin with enough **Food** to feed its starting population
+for one full year.  If an island later runs out of Food:
+
+1. in the first shortage season, productivity falls by **30%**;
+2. once Food is replenished, the island recovers naturally by **10 percentage
+   points per season** until the penalty clears;
+3. alternatively, the island may hire a **Nurse** from Healthcare to restore
+   productivity immediately on arrival.
+
+Nurse deployment is a cross-island service:
+
+- the affected island pays Healthcare for the Nurse and the airfare;
+- Healthcare must procure the required **PassengerSeat**;
+- the Nurse restores productivity on arrival;
+- the Nurse remains away from Healthcare and returns at the end of the
+  following season.
+
+This creates an emergency trade loop among Agriculture, Healthcare, and
+Transportation without making one missed Food purchase an unrecoverable death
+spiral.
+
+## 22. Capital maintenance and fleet condition
+
+Capital should not become free forever after purchase.  Every plant,
+equipment, and property item carries a small **seasonal maintenance cost** in
+Dollops, abstracting routine spares, repairs, upkeep, and minor consumables.
+
+### Core rule
+
+```
+seasonal_maintenance_due = Σ(capital_item.maintenance_cost × owned_count)
+```
+
+This should be shown persistently on the left-hand island panel as a visible
+line item:
+
+- `Seasonal maintenance: 14 Dp`
+- optionally, `Cash after maintenance: 86 Dp`
+
+The UX goal is not to punish the player by surprise; it is to make the
+operating burden of expansion legible before they overbuild.
+
+### Deferred maintenance
+
+If maintenance is not paid:
+
+1. first missed season: warning / deferred-maintenance state;
+2. repeated misses: capital condition declines;
+3. poor condition: productive capacity or outage risk worsens.
+
+The exact decay curve remains to be tuned, but maintenance should never reduce
+to zero merely because a specialist is present.
+
+### Transportation-specific consequence
+
+Transportation is the clearest expression of this model.  Its fleet should
+require:
+
+- **Oil** for fuel;
+- **Food** for crew provisioning;
+- **Mechanics** as a meaningful workforce capability;
+- enough paid maintenance to keep fleet condition healthy.
+
+Mechanics should interact with fleet condition rather than replace money:
+adequate Mechanics may reduce breakdown risk, slow condition decay, or modestly
+improve maintenance efficiency, but they should not erase the maintenance bill.
+This gives Transportation a richer operating problem without inventing a spare
+parts commodity solely to make the spreadsheet busier.

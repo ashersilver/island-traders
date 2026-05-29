@@ -7,10 +7,12 @@ from ..models.player import Player
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
+from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.profession import Profession
+from ..models.profession import Profession, band_of
 from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
+from ..models.staffing import StaffingRegistry, StaffingContract, StaffingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
@@ -20,6 +22,8 @@ from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
     STARTING_WORKERS_BY_PROFESSION,
+    WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
+    DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
@@ -30,6 +34,40 @@ from ..constants import (
 from ..constants_capacity import CAPITAL_CATALOGUE
 
 SAVE_VERSION = 5
+
+LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {
+    "educator.apprenticeship_programme": "educator.technical_workshop",
+}
+
+
+def _current_capital_item_id(item_id: str) -> str:
+    return LEGACY_CAPITAL_ITEM_IDS.get(item_id, item_id)
+
+
+def _migrate_capital_inventory(raw: dict) -> dict[str, int]:
+    migrated: dict[str, int] = {}
+    for item_id, count in raw.items():
+        current_id = _current_capital_item_id(str(item_id))
+        migrated[current_id] = migrated.get(current_id, 0) + int(count)
+    return migrated
+
+
+def _migrate_capital_ticks(raw: dict) -> dict[str, list[int]]:
+    migrated: dict[str, list[int]] = {}
+    for item_id, ticks in raw.items():
+        current_id = _current_capital_item_id(str(item_id))
+        migrated.setdefault(current_id, []).extend(int(t) for t in ticks)
+    return migrated
+
+
+def _migrate_capital_in_transit(raw: list[dict]) -> list[dict]:
+    migrated: list[dict] = []
+    for entry in raw:
+        current = dict(entry)
+        if "item_id" in current:
+            current["item_id"] = _current_capital_item_id(str(current["item_id"]))
+        migrated.append(current)
+    return migrated
 
 
 @dataclass
@@ -65,7 +103,9 @@ class Game:
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
         self.loan_ledger: LoanLedger | None = None
+        self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
+        self.staffing: StaffingRegistry | None = None
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
@@ -74,7 +114,9 @@ class Game:
         self.market = Market()
         self.ledger = DealLedger()
         self.loan_ledger = LoanLedger()
+        self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
+        self.staffing = StaffingRegistry()
 
         num_players = len(self.config.player_specs)
         default_dollops = TOTAL_STARTING_DOLLOPS / num_players
@@ -117,9 +159,21 @@ class Game:
                 profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
 
                 allocated = 0
+                role_age_seed = STARTING_WORKER_AGES.get(rname, {})
                 for profession_name, count in profession_breakdown:
                     scaled_count = max(1, round(count * workforce_scale))
-                    player.workforce.add_workers(scaled_count, training_level=1, profession=profession_name)
+                    seed_age = 0
+                    seasons_left = role_age_seed.get(profession_name)
+                    if seasons_left is not None:
+                        life = WORKING_LIFE_SEASONS.get(
+                            band_of(profession_name).value,
+                            DEFAULT_WORKING_LIFE_SEASONS,
+                        )
+                        seed_age = max(0, life - seasons_left)
+                    player.workforce.add_workers(
+                        scaled_count, training_level=1,
+                        profession=profession_name, age_seasons=seed_age,
+                    )
                     allocated += scaled_count
 
                 # Remaining slots are Unskilled
@@ -127,6 +181,12 @@ class Game:
                 if unskilled_count > 0:
                     player.workforce.add_workers(unskilled_count, training_level=0,
                                                  profession=Profession.UNSKILLED.value)
+
+                # Phase C — seed pre-existing aged capital for this role.
+                # acquired_tick = -age means age = 0 - (-age) at start
+                # (game starts at tick 0).
+                for item_id, qty, age in STARTING_AGED_CAPITAL.get(rname, []):
+                    player.add_capital(item_id, qty, acquired_tick=-age)
 
             self.players.append(player)
 
@@ -140,7 +200,7 @@ class Game:
         trading = TradingEngine(self.market, self.ledger)
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
-            self.loan_ledger,
+            self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
     def run(self) -> GameSummary:
@@ -148,9 +208,18 @@ class Game:
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
+                self._process_staffing_returns(year, season_index)
+                self._process_retirements(year, season_index)
+                self._process_capital_maintenance(year, season_index)
                 event_results = self.event_resolver.resolve_all(
-                    self.players, self.turn_manager._damage_counters
+                    self.players, self.turn_manager._damage_counters, year=year,
                 )
+                # Surface any halt-cap suppressions in the game log
+                # (2026-05-27 event-frequency-cap brief).
+                for msg in self.event_resolver.last_suppressions:
+                    self.io.print(f"[EVENT] Suppressed halt: {msg}")
+                # Expose resolved events to server hooks (conditions panel etc.).
+                self._last_event_results = event_results
                 # Optional hooks — set by the server to install/clear the
                 # per-season Ready timer in simultaneous-play mode.
                 cb = getattr(self, "before_season", None)
@@ -196,21 +265,157 @@ class Game:
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
 
+    def _process_capital_maintenance(self, year: int, season: int) -> None:
+        """Expire end-of-life capital, then charge per-season maintenance.
+
+        Expiry: any unit whose age (current_tick − acquired_tick) is at
+        least its CapitalItem.service_life_seasons is removed from
+        capital_inventory (oldest units first, FIFO).  The owner must
+        re-purchase from the Manufacturer to restore that capacity.
+
+        Maintenance: each surviving unit costs
+        ``maintenance_per_season`` Dp (or DEFAULT_MAINTENANCE_FRACTION ×
+        cost when not overridden) per season.  Paid per-unit; a unit
+        the owner can't afford is flagged *unmaintained* and
+        contributes 0 capacity this season via
+        ``Player.effective_capital_inventory``.  The flag resets each
+        season.
+        """
+        current_tick = year * len(SEASONS) + season
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        for player in self.players:
+            # Reset transient unmaintained state at the start of the season.
+            player.unmaintained_capital = {}
+
+            # 1) Expiry — remove units past their service life (oldest first).
+            for item_id in list(player.capital_inventory.keys()):
+                item = catalogue.get(item_id)
+                if not item or item.service_life_seasons <= 0:
+                    continue
+                ticks = player.capital_acquired_ticks.get(item_id, [])
+                expired = sum(
+                    1 for t in ticks
+                    if current_tick - t >= item.service_life_seasons
+                )
+                if expired > 0:
+                    player.remove_capital(item_id, expired)
+                    self.io.print(
+                        f"\n[CAPITAL EXPIRED] {player.name}: {expired} × "
+                        f"{item.name} reached end of service life. "
+                        f"Repurchase from the Manufacturer to restore capacity."
+                    )
+
+            # 2) Maintenance — pay per surviving unit; mark shortfalls.
+            for item_id, count in list(player.capital_inventory.items()):
+                item = catalogue.get(item_id)
+                if not item:
+                    continue
+                per_unit = (
+                    item.maintenance_per_season
+                    if item.maintenance_per_season > 0
+                    else DEFAULT_MAINTENANCE_FRACTION * item.cost
+                )
+                if per_unit <= 0:
+                    continue
+                unmaintained = 0
+                for _ in range(count):
+                    if player.dollops >= per_unit:
+                        player.dollops -= per_unit
+                    else:
+                        unmaintained += 1
+                if unmaintained > 0:
+                    player.unmaintained_capital[item_id] = unmaintained
+                    self.io.print(
+                        f"\n[CAPITAL UNMAINTAINED] {player.name}: "
+                        f"{unmaintained} × {item.name} unmaintained this "
+                        f"season (insufficient Dp); contributes 0 capacity "
+                        f"until paid."
+                    )
+
+    def _process_retirements(self, year: int, season: int) -> None:
+        """Age every island's workers one season; remove retirees.
+
+        A worker away at training who retires is also dropped from its
+        training batch so it cannot 'return' (it no longer exists).
+        """
+        for player in self.players:
+            retired = player.workforce.advance_age_and_retire(
+                WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS
+            )
+            if not retired:
+                continue
+            for w in retired:
+                if w.in_training:
+                    self.training.drop_worker(w.worker_id)
+            professions = ", ".join(sorted({w.profession for w in retired}))
+            self.io.print(
+                f"\n[RETIREMENT] {player.name}: {len(retired)} worker(s) "
+                f"retired ({professions}). Recruit + retrain to replace."
+            )
+
     def _process_training_returns(self, year: int, season: int) -> None:
         player_map = {p.player_id: p for p in self.players}
         returned_batches = self.training.process_returns(year, season)
         for batch in returned_batches:
             player = player_map.get(batch.requester_id)
-            if player:
-                returned = player.workforce.return_from_training(
-                    batch.worker_ids, batch.target_profession
+            if not player:
+                self.io.print(
+                    f"\n[Training] Request #{batch.batch_id} could not return: "
+                    f"requester island {batch.requester_id} no longer exists."
                 )
-                if returned:
-                    self.io.print(
-                        f"\n[Training] {player.name}: {len(returned)} worker(s) returned "
-                        f"as {batch.target_profession}. "
-                        f"New avg efficiency: {player.workforce.average_efficiency*100:.1f}%"
-                    )
+                continue
+            self.io.print(
+                f"\n[Training] Request #{batch.batch_id} complete: "
+                f"{len(batch.worker_ids)} trainee(s) due back to {player.name} "
+                f"as {batch.target_profession}."
+            )
+            returned = player.workforce.return_from_training(
+                batch.worker_ids, batch.target_profession
+            )
+            if returned:
+                self.io.print(
+                    f"[Training] {player.name}: {len(returned)} worker(s) returned "
+                    f"as {batch.target_profession}. "
+                    f"New avg efficiency: {player.workforce.average_efficiency*100:.1f}%"
+                )
+            if len(returned) != len(batch.worker_ids):
+                missing = sorted(
+                    set(batch.worker_ids) - {worker.worker_id for worker in returned}
+                )
+                missing_text = ", ".join(str(worker_id) for worker_id in missing)
+                self.io.print(
+                    f"[Training] Return warning for request #{batch.batch_id}: "
+                    f"{len(batch.worker_ids) - len(returned)} trainee(s) did not "
+                    f"rejoin the roster"
+                    f"{f' ({missing_text})' if missing_text else ''}."
+                )
+
+    def _process_staffing_returns(self, year: int, season: int) -> None:
+        """Return visiting medical staff to their home island at contract end."""
+        if not self.staffing:
+            return
+        player_map = {p.player_id: p for p in self.players}
+        returned = self.staffing.process_returns(year, season)
+        for contract in returned:
+            provider = player_map.get(contract.provider_id)
+            requester = player_map.get(contract.requester_id)
+            if not provider:
+                continue
+            # Return worker IDs to the provider's workforce active pool
+            for wid in contract.staff_worker_ids:
+                w = next(
+                    (w for w in provider.workforce.workers if w.worker_id == wid), None
+                )
+                if w is not None:
+                    # Re-activate the worker (they were marked as on_contract)
+                    w.on_contract = False
+            provider_name = provider.name if provider else f"Player {contract.provider_id}"
+            host_name = requester.name if requester else f"Player {contract.requester_id}"
+            self.io.print(
+                f"\n[Staffing] Contract #{contract.contract_id} complete: "
+                f"{contract.staff_count}× {contract.profession} returned "
+                f"from {host_name} to {provider_name}."
+            )
 
     def compute_summary(self) -> GameSummary:
         prices = self.market.current_prices()
@@ -283,7 +488,9 @@ class Game:
             "players": [self._serialise_player(p) for p in self.players],
             "market": self._serialise_market(),
             "training": self._serialise_training(),
+            "staffing": self._serialise_staffing(),
             "loan_ledger": self._serialise_loans(),
+            "lease_ledger": self._serialise_leases(),
             "damage_counters": {
                 str(k): v for k, v in self.turn_manager._damage_counters.items()
             } if self.turn_manager else {},
@@ -315,6 +522,10 @@ class Game:
                         "training_level": w.training_level,
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
+                        "on_contract": w.on_contract,
+                        "settling_seasons": w.settling_seasons,
+                        "age_seasons": w.age_seasons,
+                        "has_mba": w.has_mba,
                         "profession": w.profession,
                     }
                     for w in p.workforce.workers
@@ -358,9 +569,50 @@ class Game:
                     "return_year": r.return_year,
                     "return_season": r.return_season,
                     "transport_mode": r.transport_mode,
+                    "tickets_supplied_by_requester": r.tickets_supplied_by_requester,
                     "counter_message": r.counter_message,
+                    "priority": r.priority,
+                    "decline_reason": r.decline_reason,
+                    "decline_year": r.decline_year,
+                    "decline_season": r.decline_season,
+                    "original_dollops_to_educator": r.original_dollops_to_educator,
+                    "decision_acknowledged": r.decision_acknowledged,
                 }
                 for r in self.training.all_requests()
+            ],
+        }
+
+    def _serialise_staffing(self) -> dict:
+        if not self.staffing:
+            return {"next_id": 0, "contracts": []}
+        return {
+            "next_id": self.staffing._next_id,
+            "contracts": [
+                {
+                    "contract_id": c.contract_id,
+                    "requester_id": c.requester_id,
+                    "provider_id": c.provider_id,
+                    "profession": c.profession,
+                    "staff_count": c.staff_count,
+                    "duration_seasons": c.duration_seasons,
+                    "fee_total": c.fee_total,
+                    "tickets_required": c.tickets_required,
+                    "tickets_supplied_by_requester": c.tickets_supplied_by_requester,
+                    "status": c.status.value,
+                    "proposed_year": c.proposed_year,
+                    "proposed_season": c.proposed_season,
+                    "dispatched_year": c.dispatched_year,
+                    "dispatched_season": c.dispatched_season,
+                    "return_year": c.return_year,
+                    "return_season": c.return_season,
+                    "staff_worker_ids": c.staff_worker_ids,
+                    "counter_fee": c.counter_fee,
+                    "counter_message": c.counter_message,
+                    "decline_reason": c.decline_reason,
+                    "decision_acknowledged": c.decision_acknowledged,
+                    "original_fee": c.original_fee,
+                }
+                for c in self.staffing.all_contracts()
             ],
         }
 
@@ -380,8 +632,39 @@ class Game:
                     "maturity_season": l.maturity_season,
                     "term_years": l.term_years,
                     "status": l.status.value,
+                    "own_committed": l.own_committed,
+                    "external_funded": l.external_funded,
+                    "posted_at_issue": l.posted_at_issue,
+                    "reserve_ratio_at_issue": l.reserve_ratio_at_issue,
                 }
                 for l in self.loan_ledger.all_loans()
+            ],
+        }
+
+    def _serialise_leases(self) -> dict:
+        return {
+            "next_id": self.lease_ledger._next_id,
+            "leases": [
+                {
+                    "lease_id": l.lease_id,
+                    "item_id": l.item_id,
+                    "lessee_id": l.lessee_id,
+                    "lessor_id": l.lessor_id,
+                    "started_year": l.started_year,
+                    "started_season": l.started_season,
+                    "term_years": l.term_years,
+                    "annual_payment": l.annual_payment,
+                    "buyout_payment": l.buyout_payment,
+                    "locked_lease_rate": l.locked_lease_rate,
+                    "payments_made": l.payments_made,
+                    "last_payment_year": l.last_payment_year,
+                    "status": l.status.value,
+                    "repossessed_year": l.repossessed_year,
+                    "repossessed_season": l.repossessed_season,
+                    "return_year": l.return_year,
+                    "return_season": l.return_season,
+                }
+                for l in self.lease_ledger.all_leases()
             ],
         }
 
@@ -414,12 +697,15 @@ class Game:
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
-                capital_inventory=dict(pd.get("capital_inventory", {})),
-                capital_acquired_ticks={
-                    item_id: list(ticks)
-                    for item_id, ticks in pd.get("capital_acquired_ticks", {}).items()
-                },
-                capital_in_transit=list(pd.get("capital_in_transit", [])),
+                capital_inventory=_migrate_capital_inventory(
+                    pd.get("capital_inventory", {})
+                ),
+                capital_acquired_ticks=_migrate_capital_ticks(
+                    pd.get("capital_acquired_ticks", {})
+                ),
+                capital_in_transit=_migrate_capital_in_transit(
+                    pd.get("capital_in_transit", [])
+                ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
             )
             for r_str, qty in pd.get("inventory", {}).items():
@@ -432,6 +718,10 @@ class Game:
                     training_level=w["training_level"],
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
+                    on_contract=w.get("on_contract", False),
+                    settling_seasons=w.get("settling_seasons", 0),
+                    age_seasons=w.get("age_seasons", 0),
+                    has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
                 )
                 for w in wf_data.get("workers", [])
@@ -476,8 +766,35 @@ class Game:
                     "term_years",
                     max(1, loan_d["maturity_year"] - loan_d["issued_year"]),
                 ),
+                own_committed=loan_d.get("own_committed", 0.0),
+                external_funded=loan_d.get("external_funded", 0.0),
+                posted_at_issue=loan_d.get("posted_at_issue", 0.0),
+                reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
             )
             game.loan_ledger.loans.append(loan)
+        game.lease_ledger = LeaseLedger()
+        lease_data = data.get("lease_ledger", {})
+        game.lease_ledger._next_id = lease_data.get("next_id", 0)
+        for lease_d in lease_data.get("leases", []):
+            game.lease_ledger.leases.append(Lease(
+                lease_id=lease_d["lease_id"],
+                item_id=lease_d["item_id"],
+                lessee_id=lease_d["lessee_id"],
+                lessor_id=lease_d["lessor_id"],
+                started_year=lease_d["started_year"],
+                started_season=lease_d["started_season"],
+                term_years=lease_d["term_years"],
+                annual_payment=lease_d["annual_payment"],
+                buyout_payment=lease_d["buyout_payment"],
+                locked_lease_rate=lease_d["locked_lease_rate"],
+                payments_made=lease_d.get("payments_made", 0),
+                last_payment_year=lease_d.get("last_payment_year", -1),
+                status=LeaseStatus(lease_d.get("status", LeaseStatus.ACTIVE.value)),
+                repossessed_year=lease_d.get("repossessed_year", -1),
+                repossessed_season=lease_d.get("repossessed_season", -1),
+                return_year=lease_d.get("return_year", -1),
+                return_season=lease_d.get("return_season", -1),
+            ))
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
@@ -499,12 +816,54 @@ class Game:
                 return_year=rd.get("return_year", -1),
                 return_season=rd.get("return_season", -1),
                 transport_mode=rd.get("transport_mode", "transporter"),
+                tickets_supplied_by_requester=rd.get("tickets_supplied_by_requester", 0),
                 counter_message=rd.get("counter_message", ""),
+                priority=rd.get("priority", 0),
+                decline_reason=rd.get("decline_reason", ""),
+                decline_year=rd.get("decline_year", -1),
+                decline_season=rd.get("decline_season", -1),
+                original_dollops_to_educator=rd.get(
+                    "original_dollops_to_educator",
+                    rd.get("dollops_to_educator", 0),
+                ),
+                decision_acknowledged=rd.get("decision_acknowledged", False),
             )
             game.training._requests.append(req)
 
         game._resume_year = data.get("resume_year", 0)
         game._resume_season = data.get("resume_season", 0)
+
+        # Staffing registry (added 2026-05-28; older saves won't have this section)
+        game.staffing = StaffingRegistry()
+        staffing_data = data.get("staffing", {})
+        game.staffing._next_id = staffing_data.get("next_id", 0)
+        for cd in staffing_data.get("contracts", []):
+            from ..models.staffing import StaffingContract, StaffingStatus
+            contract = StaffingContract(
+                contract_id=cd["contract_id"],
+                requester_id=cd["requester_id"],
+                provider_id=cd["provider_id"],
+                profession=cd["profession"],
+                staff_count=cd["staff_count"],
+                duration_seasons=cd["duration_seasons"],
+                fee_total=cd["fee_total"],
+                tickets_required=cd["tickets_required"],
+                tickets_supplied_by_requester=cd.get("tickets_supplied_by_requester", 0),
+                status=StaffingStatus(cd["status"]),
+                proposed_year=cd.get("proposed_year", -1),
+                proposed_season=cd.get("proposed_season", -1),
+                dispatched_year=cd.get("dispatched_year", -1),
+                dispatched_season=cd.get("dispatched_season", -1),
+                return_year=cd.get("return_year", -1),
+                return_season=cd.get("return_season", -1),
+                staff_worker_ids=cd.get("staff_worker_ids", []),
+                counter_fee=cd.get("counter_fee", 0.0),
+                counter_message=cd.get("counter_message", ""),
+                decline_reason=cd.get("decline_reason", ""),
+                decision_acknowledged=cd.get("decision_acknowledged", False),
+                original_fee=cd.get("original_fee", cd["fee_total"]),
+            )
+            game.staffing._contracts.append(contract)
 
         charts = (
             EventChartLoader.from_yaml(config.event_charts_path)
@@ -516,7 +875,7 @@ class Game:
         trading = TradingEngine(game.market, game.ledger)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
-            game.loan_ledger,
+            game.staffing, game.loan_ledger, game.lease_ledger,
         )
         game.turn_manager._damage_counters = {
             int(k): v for k, v in data.get("damage_counters", {}).items()

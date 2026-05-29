@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Island Traders UX Review Mockups</title>
+<style>
+:root {
+  --bg:#07101b;
+  --ink:#eaf2f8;
+  --muted:#8aa2b6;
+  --panel:#0d1b2b;
+  --panel-2:#11243a;
+  --line:#23415f;
+  --cyan:#18c7df;
+  --gold:#f3b83f;
+  --green:#26de81;
+  --red:#ff6470;
+  --violet:#b47bff;
+  --radius:8px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#040912;
+  color:var(--ink);
+  font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.page{
+  max-width:1480px;
+  margin:0 auto;
+  padding:28px;
+}
+.intro{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 380px;
+  gap:24px;
+  align-items:end;
+  margin-bottom:28px;
+}
+h1{font-size:34px;margin:0 0 8px;color:var(--gold);letter-spacing:0}
+.lede{margin:0;color:var(--muted);font-size:16px;line-height:1.5;max-width:780px}
+.note{
+  border:1px solid rgba(243,184,63,.35);
+  background:rgba(243,184,63,.08);
+  border-radius:var(--radius);
+  padding:14px 16px;
+  color:#f8d98c;
+  font-size:14px;
+  line-height:1.45;
+}
+.note a{color:var(--gold);font-weight:900}
+.mockup{
+  border:1px solid #1e3956;
+  border-radius:10px;
+  overflow:hidden;
+  margin:26px 0 34px;
+  background:var(--bg);
+  box-shadow:0 18px 50px rgba(0,0,0,.35);
+}
+.mock-title{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  padding:12px 16px;
+  background:#081423;
+  border-bottom:1px solid #1e3956;
+}
+.mock-title h2{font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:.06em;margin:0}
+.mock-title span{color:var(--muted);font-size:13px}
+.app{
+  height:820px;
+  display:grid;
+  grid-template-columns:280px minmax(0,1fr) 360px;
+  grid-template-rows:52px minmax(0,1fr) 150px;
+  grid-template-areas:"head head head" "side main rail" "log log log";
+  background:#07101b;
+}
+.topbar{
+  grid-area:head;
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:0 16px;
+  background:#0b1827;
+  border-bottom:1px solid var(--line);
+}
+.brand{color:var(--gold);font-weight:800}
+.pill{
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:6px 10px;
+  background:#07101b;
+  color:var(--muted);
+  font-weight:700;
+  font-size:13px;
+}
+.pill strong{color:var(--cyan)}
+.tabs{display:flex;gap:3px;overflow:hidden}
+.tab{
+  padding:8px 14px;
+  border:1px solid var(--line);
+  border-bottom:none;
+  border-radius:6px 6px 0 0;
+  color:var(--ink);
+  background:#102137;
+  font-size:13px;
+  white-space:nowrap;
+}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.timer{color:var(--gold);font-weight:900}
+.btn{
+  border:1px solid var(--line);
+  background:#12243a;
+  color:var(--ink);
+  border-radius:6px;
+  padding:8px 11px;
+  font-weight:800;
+  font-size:13px;
+}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#1a1300}
+.btn.cyan{background:var(--cyan);border-color:var(--cyan);color:#001218}
+.side{
+  grid-area:side;
+  background:#0d1b2b;
+  border-right:1px solid var(--line);
+  padding:14px;
+  overflow:hidden;
+}
+.map-mini{
+  height:170px;
+  border-radius:var(--radius);
+  border:1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(7,16,27,.18), rgba(7,16,27,.8)),
+    url("../../island_traders/server/static/island-art/farmer-day.png") center/cover;
+  margin-bottom:14px;
+}
+.section{margin:0 0 18px}
+.section h3{
+  margin:0 0 9px;
+  padding-bottom:6px;
+  border-bottom:1px solid var(--line);
+  color:var(--cyan);
+  font-size:12px;
+  text-transform:uppercase;
+  letter-spacing:.07em;
+}
+.stat{display:flex;justify-content:space-between;gap:12px;font-size:13px;margin:5px 0;color:var(--muted)}
+.stat strong{color:var(--ink)}
+.wealth{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  border:1px solid rgba(243,184,63,.45);
+  background:rgba(243,184,63,.08);
+  border-radius:var(--radius);
+  padding:9px 10px;
+  margin-bottom:10px;
+}
+.wealth b{font-size:22px;color:var(--gold)}
+.click-summary{
+  border:1px solid rgba(24,199,223,.45);
+  background:rgba(24,199,223,.06);
+  border-radius:var(--radius);
+  padding:9px 10px;
+  margin-top:7px;
+}
+.click-summary .row{display:flex;justify-content:space-between;font-size:13px;margin:3px 0}
+.click-summary .away{color:var(--gold)}
+.main{
+  grid-area:main;
+  position:relative;
+  padding:16px;
+  overflow:hidden;
+  background:#06101b;
+}
+.main::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(90deg, rgba(6,16,27,.92) 0%, rgba(6,16,27,.74) 42%, rgba(6,16,27,.9) 100%),
+    linear-gradient(180deg, rgba(6,16,27,.38), rgba(6,16,27,.95)),
+    url("../../island_traders/server/static/island-art/farmer-day.png") center/cover;
+  opacity:.92;
+}
+.main > *{position:relative}
+.action-shell{
+  border:1px solid rgba(24,199,223,.6);
+  background:rgba(8,20,35,.88);
+  border-radius:var(--radius);
+  padding:14px;
+}
+.action-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.action-head h3{margin:0;font-size:17px}
+.hint-badge{font-size:12px;color:#001218;background:var(--cyan);border-radius:999px;padding:4px 9px;font-weight:900}
+.action-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.action-group{
+  border:1px solid var(--line);
+  background:rgba(17,36,58,.84);
+  border-radius:var(--radius);
+  padding:10px;
+  min-height:126px;
+}
+.action-group h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;color:var(--muted);letter-spacing:.06em}
+.action-list{display:flex;flex-wrap:wrap;gap:7px}
+.action{
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:#081423;
+  color:var(--ink);
+  padding:7px 9px;
+  font-size:12px;
+  font-weight:800;
+}
+.action.primary{background:var(--gold);border-color:var(--gold);color:#1a1300}
+.action.recommended{border-color:var(--cyan);box-shadow:0 0 0 1px rgba(24,199,223,.45)}
+.action.disabled{opacity:.42}
+.hint-list{
+  display:grid;
+  gap:9px;
+  margin-top:14px;
+}
+.hint{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:12px;
+  align-items:center;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:rgba(13,27,43,.84);
+  padding:12px;
+}
+.hint.warn{border-color:rgba(243,184,63,.6)}
+.hint.danger{border-color:rgba(255,100,112,.62)}
+.hint strong{display:block;margin-bottom:3px}
+.hint p{margin:0;color:var(--muted);font-size:13px}
+.rail{
+  grid-area:rail;
+  background:#0d1b2b;
+  border-left:1px solid var(--line);
+  padding:14px;
+  overflow:hidden;
+}
+.market-row{display:flex;justify-content:space-between;border-bottom:1px solid #142944;padding:6px 0;font-size:13px}
+.market-row b{color:var(--gold)}
+.log{
+  grid-area:log;
+  background:#030812;
+  border-top:1px solid var(--line);
+  padding:12px 16px;
+  color:#678099;
+  font-family:"SFMono-Regular", Consolas, monospace;
+  font-size:12px;
+  line-height:1.55;
+}
+.modal-screen{
+  height:760px;
+  position:relative;
+  overflow:hidden;
+  background:
+    linear-gradient(90deg, rgba(4,9,18,.86), rgba(4,9,18,.55)),
+    url("../../island_traders/server/static/island-art/educator-night.png") center/cover;
+}
+.blur-ui{
+  position:absolute;
+  inset:0;
+  background:rgba(4,9,18,.42);
+  backdrop-filter:blur(2px);
+}
+.dialog{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:min(920px,92%);
+  max-height:86%;
+  overflow:auto;
+  border:1px solid var(--cyan);
+  border-radius:10px;
+  background:rgba(11,24,39,.96);
+  box-shadow:0 20px 70px rgba(0,0,0,.65);
+  padding:20px;
+}
+.dialog h3{margin:0 0 14px;font-size:22px}
+.summary-strip{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:10px;
+  margin-bottom:16px;
+}
+.summary-box{border:1px solid var(--line);background:#07101b;border-radius:var(--radius);padding:12px}
+.summary-box span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase}
+.summary-box b{font-size:22px;color:var(--ink)}
+.pipeline{display:grid;gap:10px}
+.batch{
+  display:grid;
+  grid-template-columns:70px minmax(0,1fr) 170px 170px;
+  gap:12px;
+  align-items:center;
+  border:1px solid var(--line);
+  background:#0f2034;
+  border-radius:var(--radius);
+  padding:12px;
+}
+.batch-id{color:var(--cyan);font-weight:900}
+.muted{color:var(--muted)}
+.status{justify-self:start;border-radius:999px;padding:5px 9px;background:rgba(38,222,129,.14);color:var(--green);font-size:12px;font-weight:900}
+.status.wait{background:rgba(243,184,63,.13);color:var(--gold)}
+.market-screen{
+  height:760px;
+  position:relative;
+  overflow:hidden;
+  background:
+    linear-gradient(90deg, rgba(4,9,18,.9), rgba(4,9,18,.62)),
+    url("../../island_traders/server/static/island-art/transporter-day.png") center/cover;
+}
+.market-dialog{width:min(1120px,94%)}
+.market-sections{display:grid;gap:16px}
+.resource-grid{display:grid;grid-template-columns:1.2fr .7fr .7fr .9fr .9fr 1.1fr;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.resource-grid div{padding:9px 10px;border-bottom:1px solid #19324e;border-right:1px solid #19324e;font-size:13px}
+.resource-grid .hd{background:#102944;color:var(--cyan);font-weight:900;text-transform:uppercase;font-size:11px}
+.resource-grid .need{background:rgba(243,184,63,.08)}
+.resource-grid .buy{color:var(--gold);font-weight:900}
+.resource-grid .bid{color:var(--green);font-weight:900}
+.art-review{
+  display:grid;
+  grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:12px;
+  margin-top:18px;
+}
+.art-tile{
+  min-height:170px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background-size:cover;
+  background-position:center;
+  position:relative;
+  overflow:hidden;
+}
+.art-tile::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.76));
+}
+.art-tile span{
+  position:absolute;
+  z-index:1;
+  left:10px;
+  right:10px;
+  bottom:10px;
+  color:#fff;
+  font-weight:900;
+  text-shadow:0 1px 6px rgba(0,0,0,.8);
+  font-size:13px;
+}
+.island-treatment{
+  margin-top:18px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:16px;
+}
+.island-frame{
+  position:relative;
+  min-height:230px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  background:
+    radial-gradient(ellipse at 50% 48%, rgba(68,201,219,.24), transparent 42%),
+    linear-gradient(180deg,#06182a,#04101f);
+}
+.island-frame::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:48%;
+  width:78%;
+  aspect-ratio:1.35;
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:
+    radial-gradient(ellipse at 50% 52%, transparent 54%, rgba(246,211,132,.95) 55%, rgba(246,211,132,.95) 60%, rgba(24,199,223,.22) 61%, transparent 72%),
+    var(--island-art) center/cover;
+  box-shadow:
+    0 0 0 1px rgba(246,211,132,.5),
+    0 12px 30px rgba(0,0,0,.42),
+    0 0 34px rgba(24,199,223,.18);
+  clip-path:ellipse(50% 39% at 50% 50%);
+}
+.island-frame::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 34%, rgba(4,9,18,.16) 35%, rgba(4,9,18,.65) 76%),
+    linear-gradient(180deg, transparent, rgba(0,0,0,.32));
+  pointer-events:none;
+}
+.island-frame span{
+  position:absolute;
+  z-index:1;
+  left:12px;
+  right:12px;
+  bottom:12px;
+  font-size:13px;
+  font-weight:900;
+  color:var(--ink);
+}
+.recommendations{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:14px;
+  margin-top:16px;
+}
+.rec{
+  border:1px solid var(--line);
+  background:#0d1b2b;
+  border-radius:var(--radius);
+  padding:14px;
+  line-height:1.45;
+}
+.rec h3{margin:0 0 8px;color:var(--cyan);font-size:15px}
+.rec p{margin:0;color:var(--muted);font-size:14px}
+@media(max-width:980px){
+  .page{padding:16px}
+  .intro{grid-template-columns:1fr}
+  .app{height:auto;grid-template-columns:1fr;grid-template-rows:auto;grid-template-areas:"head" "side" "main" "rail" "log"}
+  .topbar{flex-wrap:wrap;height:auto;padding:12px}
+  .action-grid,.summary-strip,.recommendations{grid-template-columns:1fr}
+  .batch{grid-template-columns:1fr}
+  .art-review{grid-template-columns:repeat(2,1fr)}
+  .island-treatment{grid-template-columns:1fr}
+  .modal-screen,.market-screen{height:880px}
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="intro">
+    <div>
+      <h1>Island Traders UX Review Mockups</h1>
+      <p class="lede">Static mockups for the proposed dashboard redesign: grouped actions, actionable hints, structured personnel/training detail, filtered market dialogs, and stronger use of island background art.</p>
+    </div>
+    <div class="note">These are not implementation screens. They are composition and information-architecture mockups using the current art assets and current game language.<br><br><a href="review-ux-print.html">Open printer-friendly 11x17 copy</a></div>
+  </section>
+
+  <section class="mockup">
+    <div class="mock-title">
+      <h2>Mockup 1 - Grouped Action Dashboard</h2>
+      <span>Actions are organized by player intent; hints can promote relevant verbs.</span>
+    </div>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">Island Traders</div>
+        <div class="pill">Year <strong>1</strong> · Spring</div>
+        <div class="pill">Game <strong>PU2QCH</strong></div>
+        <nav class="tabs"><div class="tab">Agriculture</div></nav>
+        <div class="top-actions">
+          <div class="timer">104s</div>
+          <button class="btn gold">Done Trading</button>
+          <button class="btn">Pause</button>
+          <strong>1078.9 Dp</strong>
+        </div>
+      </header>
+      <aside class="side">
+        <div class="map-mini"></div>
+        <section class="section">
+          <h3>Agriculture and Fisheries</h3>
+          <div class="wealth"><span>Net Wealth</span><b>1078.9 Dp</b></div>
+          <div class="stat"><span>Working Capital</span><strong>697.3 Dp</strong></div>
+          <div class="stat"><span>Equipment Value</span><strong>72 Dp</strong></div>
+          <div class="stat"><span>Workers</span><strong>5 / 6</strong></div>
+          <div class="click-summary">
+            <div class="row"><strong>Personnel</strong><span class="away">1 away</span></div>
+            <div class="row"><span>Managers</span><b>1</b></div>
+            <div class="row"><span>Technicians</span><b>2</b></div>
+            <div class="row"><span>Workers</span><b>2 active · 1 training</b></div>
+          </div>
+        </section>
+        <section class="section">
+          <h3>Inventory</h3>
+          <div class="stat"><span>Food</span><strong>15</strong></div>
+          <div class="stat"><span>Fish</span><strong>3</strong></div>
+          <div class="stat"><span>Oil</span><strong>2</strong></div>
+          <div class="stat"><span>Farm Machinery</span><strong>2</strong></div>
+        </section>
+      </aside>
+      <section class="main">
+        <div class="action-shell">
+          <div class="action-head">
+            <h3>Choose Action</h3>
+            <span class="hint-badge">3 recommended</span>
+          </div>
+          <div class="action-grid">
+            <div class="action-group">
+              <h4>Production</h4>
+              <div class="action-list">
+                <button class="action primary">Produce</button>
+                <button class="action">Apply Patent</button>
+              </div>
+            </div>
+            <div class="action-group">
+              <h4>Trade</h4>
+              <div class="action-list">
+                <button class="action recommended">Market Buy</button>
+                <button class="action">Market Sell</button>
+                <button class="action">Propose Deal</button>
+              </div>
+            </div>
+            <div class="action-group">
+              <h4>People</h4>
+              <div class="action-list">
+                <button class="action recommended">Request Training</button>
+                <button class="action">Recruit Workers</button>
+                <button class="action disabled" title="Only Transportation can arrange transport jobs">Arrange Transport</button>
+              </div>
+            </div>
+            <div class="action-group">
+              <h4>Capital</h4>
+              <div class="action-list">
+                <button class="action recommended">Purchase Equipment</button>
+                <button class="action">Invest</button>
+              </div>
+            </div>
+            <div class="action-group">
+              <h4>Finance</h4>
+              <div class="action-list">
+                <button class="action">Take Loan</button>
+                <button class="action">Buy Insurance</button>
+                <button class="action disabled" title="Only Banking and Insurance can offer loans">Offer Loan</button>
+                <button class="action disabled" title="No active policies to manage">Manage Insurance</button>
+              </div>
+            </div>
+            <div class="action-group">
+              <h4>Info</h4>
+              <div class="action-list">
+                <button class="action">Market Board</button>
+                <button class="action">Players</button>
+                <button class="action">Inventory</button>
+                <button class="action">End Turn</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hint-list">
+          <div class="hint warn">
+            <div><strong>Fish runway: 1.5 seasons</strong><p>You have 3; population need is 2 per season. Buy 1 Fish to keep a buffer.</p></div>
+            <button class="btn gold">Buy Fish</button>
+          </div>
+          <div class="hint danger">
+            <div><strong>Unblock Grain</strong><p>Need 3 Oil to lift Grain production above 12 this season.</p></div>
+            <button class="btn cyan">Open Oil Market</button>
+          </div>
+          <div class="hint warn">
+            <div><strong>Capital limits Fish</strong><p>Fishing Boat unlocks Fish capacity. Market has no boat listed; plan equipment purchase.</p></div>
+            <button class="btn">View Equipment</button>
+          </div>
+        </div>
+      </section>
+      <aside class="rail">
+        <section class="section">
+          <h3>Market Focus</h3>
+          <div class="market-row"><span>Oil</span><b>32 Dp · 21 ask</b></div>
+          <div class="market-row"><span>Passenger Seats</span><b>15 Dp · 54 ask</b></div>
+          <div class="market-row"><span>Farm Machinery</span><b>32 Dp · 2 ask</b></div>
+        </section>
+        <section class="section">
+          <h3>Funding</h3>
+          <div class="market-row"><span>1 year</span><b>6.50%</b></div>
+          <div class="market-row"><span>2 years</span><b>7.25%</b></div>
+          <div class="market-row"><span>3 years</span><b>8.00%</b></div>
+        </section>
+      </aside>
+      <div class="log">[AI] Mining listed 21x Oil at 32 Dp/unit<br>[EVENT] Farmer: normal spring conditions<br>[UI] Personnel detail is now a popup, not a treasure hunt through log text.</div>
+    </div>
+  </section>
+
+  <section class="mockup">
+    <div class="mock-title">
+      <h2>Mockup 2 - Personnel and Training Detail Popup</h2>
+      <span>Clickable personnel summary with structured training pipeline data.</span>
+    </div>
+    <div class="modal-screen">
+      <div class="blur-ui"></div>
+      <div class="dialog">
+        <h3>Personnel - Agriculture and Fisheries</h3>
+        <div class="summary-strip">
+          <div class="summary-box"><span>Active</span><b>5</b></div>
+          <div class="summary-box"><span>Away Training</span><b>1</b></div>
+          <div class="summary-box"><span>Efficiency</span><b>20%</b></div>
+          <div class="summary-box"><span>Next Return</span><b>Summer Y1</b></div>
+        </div>
+        <section class="section">
+          <h3>Training Pipeline</h3>
+          <div class="pipeline">
+            <div class="batch">
+              <div class="batch-id">#3</div>
+              <div><strong>1 worker to Farming Technician</strong><div class="muted">Education Island · Air ticket · 40 Dp fee</div></div>
+              <div class="status">Dispatched</div>
+              <div><strong>Returns Summer Y1</strong><div class="muted">1 season remaining</div></div>
+            </div>
+            <div class="batch">
+              <div class="batch-id">#4</div>
+              <div><strong>2 workers to Veterinarian</strong><div class="muted">Awaiting educator approval · offer 80 Dp</div></div>
+              <div class="status wait">Pending</div>
+              <div><strong>Not scheduled</strong><div class="muted">Needs approval first</div></div>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <h3>Staffing Plan</h3>
+          <div class="hint warn">
+            <div><strong>Missing specialist: Veterinarian x1</strong><p>Food production is blocked by livestock skill coverage. University has 2 slots available this year.</p></div>
+            <button class="btn gold">Request Training</button>
+          </div>
+        </section>
+        <div style="text-align:right"><button class="btn cyan">Close</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mockup">
+    <div class="mock-title">
+      <h2>Mockup 3 - Filtered Market Buy Dialog</h2>
+      <span>Needs and live offers are first; empty commodities are secondary.</span>
+    </div>
+    <div class="market-screen">
+      <div class="blur-ui"></div>
+      <div class="dialog market-dialog">
+        <h3>Market Buy - Focused View</h3>
+        <div class="market-sections">
+          <section>
+            <div class="section"><h3>Needed Now</h3></div>
+            <div class="resource-grid">
+              <div class="hd">Commodity</div><div class="hd">Need</div><div class="hd">Ask</div><div class="hd">Qty</div><div class="hd">Buy Now</div><div class="hd">Place Bid</div>
+              <div class="need"><strong>Oil</strong></div><div class="need">+3 Grain</div><div class="buy">32 Dp</div><div>21</div><div><button class="btn gold">Buy 3</button></div><div><button class="btn">Bid</button></div>
+              <div class="need"><strong>Fish</strong></div><div class="need">+1 runway</div><div class="muted">No ask</div><div>-</div><div><button class="btn disabled">Buy</button></div><div><button class="btn">Bid 1</button></div>
+              <div class="need"><strong>Fishing Boat</strong></div><div class="need">Unlock Fish</div><div class="muted">No ask</div><div>-</div><div><button class="btn disabled">Buy</button></div><div><button class="btn">Request Deal</button></div>
+            </div>
+          </section>
+          <section>
+            <div class="section"><h3>Live Offers</h3></div>
+            <div class="resource-grid">
+              <div class="hd">Commodity</div><div class="hd">Why</div><div class="hd">Ask</div><div class="hd">Qty</div><div class="hd">Buy Now</div><div class="hd">Place Bid</div>
+              <div><strong>Passenger Seats</strong></div><div>Training travel</div><div class="buy">15 Dp</div><div>54</div><div><button class="btn gold">Buy</button></div><div><button class="btn">Bid</button></div>
+              <div><strong>Expertise</strong></div><div>Doctor/Banker inputs</div><div class="buy">18 Dp</div><div>58</div><div><button class="btn gold">Buy</button></div><div><button class="btn">Bid</button></div>
+            </div>
+          </section>
+          <section class="hint">
+            <div><strong>All other commodities collapsed</strong><p>Blank rows still exist for completeness, but they should not consume the first viewport.</p></div>
+            <button class="btn">Show All 22</button>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mockup">
+    <div class="mock-title">
+      <h2>Graphic Background Review</h2>
+      <span>Use island art as contextual signal, not as a dim wallpaper that fights the UI.</span>
+    </div>
+    <div style="padding:18px;background:#07101b">
+      <div class="art-review">
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/farmer-day.png')"><span>Farmer day</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/miner-day.png')"><span>Miner day</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/transporter-day.png')"><span>Transport day</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/educator-night.png')"><span>Education night</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/banker-day.png')"><span>Banker day</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/manufacturer-night.png')"><span>Manufacturing night</span></div>
+        <div class="art-tile" style="background-image:url('../../island_traders/server/static/island-art/doctor-day.png')"><span>Doctor day</span></div>
+      </div>
+      <div class="section" style="margin-top:22px">
+        <h3>Island-shaped treatment preview</h3>
+      </div>
+      <div class="island-treatment">
+        <div class="island-frame" style="--island-art:url('../../island_traders/server/static/island-art/farmer-day.png')"><span>Oval crop + beach ring + water falloff</span></div>
+        <div class="island-frame" style="--island-art:url('../../island_traders/server/static/island-art/transporter-day.png')"><span>Transport island as a navigable island tile</span></div>
+        <div class="island-frame" style="--island-art:url('../../island_traders/server/static/island-art/educator-night.png')"><span>Night art with softened coast edge</span></div>
+        <div class="island-frame" style="--island-art:url('../../island_traders/server/static/island-art/doctor-day.png')"><span>Healthcare island without square boundaries</span></div>
+      </div>
+      <div class="recommendations">
+        <div class="rec">
+          <h3>Use art by active island</h3>
+          <p>Keep the current tab's island art in the main work area, but mask it with a left-to-right gradient so buttons and text stay readable. This makes the island identity obvious without turning the screen into an eye exam.</p>
+        </div>
+        <div class="rec">
+          <h3>Add art thumbnails to tabs</h3>
+          <p>For multi-role players, use a cropped 32px thumbnail or color strip in each role tab. It gives a quick visual anchor when switching between islands.</p>
+        </div>
+        <div class="rec">
+          <h3>Create wide crops</h3>
+          <p>The 1024 square images work, but dashboard backgrounds want 16:9 or 21:9 crops. Generate curated wide exports with protected focal points so important buildings are not clipped on desktop.</p>
+        </div>
+        <div class="rec">
+          <h3>Make true island cutouts</h3>
+          <p>Batch-process each square asset with an irregular oval alpha mask, a narrow sand-colored beach ring, and feathered surf. This removes the square breakwater feeling while keeping the generated buildings.</p>
+        </div>
+        <div class="rec">
+          <h3>Separate modal backdrop art</h3>
+          <p>People/training dialogs should lean on Education art; market dialogs can use Transport art; finance dialogs can use Banker art. The player gets context before reading a single word.</p>
+        </div>
+        <div class="rec">
+          <h3>Normalize brightness</h3>
+          <p>Some day images are much brighter than night images. Ship a CSS overlay per asset or preprocessed variants so the UI contrast does not change wildly by season.</p>
+        </div>
+        <div class="rec">
+          <h3>Keep the map functional</h3>
+          <p>The mini archipelago map should remain a navigation/status object. Use the art for atmosphere and identity, not as a replacement for the role/status map.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

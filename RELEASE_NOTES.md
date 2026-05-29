@@ -5,12 +5,3690 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-staffing-2026-05-28
+
+Branch: `claude/ux-staffing-2026-05-28`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-28.4`
+
+**Blocker reason visibility in training strip**: The sidebar training strip
+and Personnel popup now show `blocker_reason` (why training is stalled — e.g.
+"Educator lacks Expertise") with a `⚠` warning. When the requester can supply
+Expertise to unblock, a hint line appears below.  "Blocked / waiting" column
+added to the popup table. `can_supply_expertise` and `seasons_blocked` fields
+were already in the server payload but never rendered until now.
+
+**Medical staffing contracts** — new feature:
+Any island can hire Doctors or Nurses from the Healthcare island on a
+fixed-term contract (1–4 seasons). Staff travel via PassengerSeats (round-trip
+= staff_count × 2 seats), are counted as extra residents at the host island
+(sustenance included), and return automatically at contract end.
+
+Backend:
+- `island_traders/models/staffing.py` — new `StaffingStatus` enum,
+  `StaffingContract` dataclass, `StaffingRegistry` class with full propose /
+  approve / counter / reject / dispatch / process_returns lifecycle.
+- `Worker.on_contract: bool` field added to `workforce.py`; excluded from
+  `active_workers` while away.
+- `game.py`: `self.staffing = StaffingRegistry()`, `_process_staffing_returns()`
+  in the game loop, full save/load serialisation.
+- `turn.py`: `TurnAction.REQUEST_MEDICAL_STAFF` and
+  `TurnAction.REVIEW_STAFFING_REQUESTS` with action handlers.
+- `app.py`: `_staffing_contracts_for_player()` payload helper; visiting staff
+  added to sustenance `extra_residents`.
+- `ws_adapter.py`: staffing actions added to `ACTION_GROUPS`;
+  `REVIEW_STAFFING_REQUESTS` disabled for non-Doctor islands.
+- Constants: `STAFFING_BASE_FEE_PER_STAFF_PER_SEASON = 20.0`,
+  `STAFFING_FOOD_PER_STAFF_PER_SEASON = 1.0`,
+  `STAFFING_MAX_DURATION_SEASONS = 4`.
+
+Frontend (`index.html`):
+- Staffing contract sidebar strip (`#s-staffing-strip`) shows active
+  contracts with profession, direction (→/← other island), status, and return
+  date.
+- `_renderStaffingContractsSection()` adds a Medical Staffing Contracts table
+  to the Personnel popup (next to the training pipeline table).
+
+**Dependency map improvements**: `showDependencyMap()` rewritten with
+quadratic bezier curved edges, per-edge arrowhead markers, and perpendicular
+label offsets. Node boundaries clipped with `boundaryPt()` helper; label text
+rendered with `paint-order="stroke"` for legibility on dark background.
+
+**Training counter-offer negotiation (counter-counter)**: When the Educator
+returns a counter-offer, the requester now sees an alert card in the sidebar
+and can **Accept / Counter / Reject**. A counter-counter sends the request back
+to the Educator (`TrainingStatus.COUNTERED → AWAITING_EDUCATOR` with the new
+fee), so the two sides can negotiate across turns.
+- `training.py`: `TrainingRegistry.requester_counter(batch_id, new_fee, message)`.
+- `turn.py`: `_review_training_counteroffers()` upgraded from Accept/Reject to
+  Accept/Counter/Reject (CLI path).
+- `app.py`: async WS handler `_handle_training_counter_response()` accepts
+  `approve / counter / reject / ack`, then rebroadcasts state to requester and
+  Educator.
+- `index.html`: counter-offer accept button sends `action: "approve"`.
+
+**Educator campus-load display**: The Educator sidebar now shows a **Campus
+Load** row (visiting trainees + contracted medical staff) with a
+"+N Food/season" hint, surfacing the sustenance burden that was previously only
+implicit in the meals-runway figure. `campus_load` and `visiting_staff_count`
+added to the per-player game-state payload.
+
+**Docs**: `RULES.md` gains a Medical Staffing Contracts section, a rewritten
+Training Step 2 covering the counter-offer/counter-counter flow, the three new
+actions (Request Medical Staff, Review Staffing Requests, Repurpose Worker),
+and a corrected Leases note. `ISLAND_BRIEFINGS.md` fixes Agriculture resource
+names, makes the Educator's campus-food burden prominent, rewrites the Doctor
+briefing around staffing contracts, and notes staffing-driven PassengerSeats
+demand for the Transporter.
+
+**Tests:** 543 tests passing (+28 staffing model tests, +1 counter-counter
+flow test `test_requester_can_counter_counter_offer`).
+
+Version bump: `0.1.0-dev.2026-05-28.5`.
+
+---
+
+### claude/playtest-fixes-2026-05-28
+
+Branch: `claude/playtest-fixes-2026-05-28`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-28.3`
+
+Addresses the 2026-05-28 playtest-session batch: three bugs that caused
+premature season/turn-end, plus five features.
+
+**Bug A — Hint buttons aborted the trading turn** (`buy_market` → `market_buy`):
+`_HINT_OPEN_LABEL` in `index.html` used `'buy_market'` but
+`TurnAction.MARKET_BUY = "market_buy"`. The server raised `ValueError` and
+silently returned `END_TURN`. Fixed by renaming every occurrence in the
+frontend hint path.
+
+**Bug B — "Resume Trading" banner never appeared / seasons ended instantly**:
+`submit_ready()` called `interrupt_all()` on the same HTTP thread as
+`mark_player_ready()`. The player's turn thread saw `_interrupted = True`
+before the park loop could engage. Fixed with a 3-second async grace period
+(`_delayed_interrupt` coroutine): the turn thread parks and shows the "Season
+ending soon" banner before the interrupt fires. The grace task is cancellable
+if a player un-readies during the window.
+
+**Bug C — Hint buttons corrupted sub-dialog responses**:
+`_isActionPromptOpen()` returned `true` even during confirm/resource-picker
+sub-dialogs, causing hint-button clicks to answer the wrong prompt. Fixed by
+adding `_activePromptType` state tracking in the frontend; hint buttons only
+fire when `_activePromptType === 'choose_action'`.
+
+**Feature 1 — Training "Next" button**: Training review now offers
+Approve / Counter / Skip. Skipped requests stay pending and are filtered by
+tick (`TrainingRequest.last_skipped_tick`) so they don't loop in one session.
+
+**Feature 2 — Conditions sidebar panel**: Server broadcasts a `season_events`
+WebSocket message at season start with per-player yield/outage/disaster data.
+Frontend renders a colour-coded "Conditions" panel in the info sidebar
+(green = normal, yellow = partial, red = outage, with a ⛈ disaster banner).
+
+**Feature 3 — Exact profession names in training display**: The training
+sidebar and training-review modal now show precise role names (e.g., "Nurse",
+"Farming Technician") instead of generic band labels ("Manager", "Worker").
+`workforce_professions` per-profession breakdown is included in game-state
+payloads.
+
+**Feature 4 — Repurpose workers between roles**: New `TurnAction.REPURPOSE_WORKER`
+action. Players pick a worker and a target profession; the worker is moved,
+resetting `training_level`, `experience_seasons`, and `settling_seasons` to 0
+(fresh start in the new role). Cost: 25 Dp (`REPURPOSE_WORKER_COST`).
+`Workforce.repurpose_worker()` added.
+
+**Feature 5 — Bid/Ask tight-spread auto-accept (≤2.5%)**: When a new bid or
+offer lands with a spread ≤ 2.5% vs. the best counter-order, the market
+auto-executes. Price priority: the order placed *first* (lower sequential ID)
+sets the trade price. Self-cross guard prevents a player trading with
+themselves. `Market._check_tight_spread()` runs in a loop to chain-clear
+multiple matching pairs.
+
+**Population cap raised**: `MAX_WORKFORCE_FRACTION_OF_POPULATION` bumped from
+0.60 → 0.80 and `STARTING_POPULATION` from 20 → 30 (pre-existing uncommitted
+tuning; included in this commit). All `test_workforce_cap` tests updated to
+match.
+
+**Tests:** all 514 tests pass. Updated `test_training_review.py`,
+`test_training_ux.py`, and `test_workforce_cap.py` for the above changes.
+
+---
+
+### claude/event-frequency-cap-2026-05-27
+
+Branch: `claude/event-frequency-cap-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 event-frequency-cap brief.  Caps
+production-halting events at `HALT_EVENTS_PER_PLAYER_PER_YEAR = 1`
+per player.  Addresses the "5 production-halting events in 5
+consecutive seasons" reports (Comet 1 #9: Factory Fire →
+Infrastructure Damage → Flood → Flood → Hospital Strike; AyaySir
+BUG-08: Pandemic + Factory Fire + Infrastructure Damage in
+consecutive seasons).
+
+The disaster-mitigation brief already re-tiered the single Flood
+event, but the other halt events (Crop Failure, Mine Collapse, Oil
+Spill, Factory Fire, Pandemic, Hospital Strike, etc.) could still
+stack arbitrarily.  This adds the general per-year cap.
+
+- New `EventResult.is_halt_event` property: `outage` OR
+  `yield_modifier <= 0.1`.  Soft damage (yield ~0.5) is not a halt
+  and stays uncapped.
+- New `EventChart.draw_avoiding_halt(rng, max_tries=3)`: re-rolls to
+  dodge a halt, falling back to Normal Operations if every roll is
+  a halt.
+- `SeasonEventResolver` now tracks a per-player, per-year halt
+  counter.  When a player has used their budget and draws another
+  halt, the resolver re-rolls avoiding halts and records a
+  suppression message.  The budget resets each game year.
+- `resolve_all` gained an optional `year` parameter.  When omitted
+  (legacy callers / unit tests) the cap is disabled — prior
+  behaviour preserved.
+- `Game.run` passes the year and prints any suppression messages to
+  the game log (`[EVENT] Suppressed halt: ...`).
+
+**Calibration improved.**  The 4-seed sweep band TIGHTENED from
+[11.8 – 18.1 %] (previous build) to [12.8 – 16.4 %]:
+
+| Role | Prev | After |
+|---|---:|---:|
+| Farmer | 11.8% | 12.8% |
+| Miner | 14.4% | 13.6% |
+| Transporter | 12.6% | 15.1% |
+| Educator | 18.1% | 15.5% |
+| Banker | 14.8% | 16.4% |
+| Manufacturer | 15.4% | 13.9% |
+| Doctor | 13.0% | 12.8% |
+
+Capping halt stacking reduces the catastrophic-failure variance
+that was spreading roles apart — Educator in particular came off
+the 18% ceiling toward the centre.  All roles comfortably in the
+[12 – 18 %] band; the distribution is the healthiest it's been.
+
+**Tests:** new `tests/test_engine/test_event_frequency_cap.py` with
+8 tests — is_halt_event classification, first-halt-allowed,
+second-halt-suppressed, all-halt-chart fallback to Normal, budget
+resets each year, soft damage doesn't consume budget, per-player
+independent budgets, and the no-year legacy-disable path.
+
+Suite: **514 passing** (was 506 + 8 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-28.2`.
+
+### claude/market-bug-cluster-2026-05-27
+
+Branch: `claude/market-bug-cluster-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 market-bug-cluster brief — three reported
+market defects.  Investigation found one was a real client bug, one
+was already-correct engine behaviour (pinned with regression tests),
+and one was a missing-context payload gap.
+
+**Bug #1 — bid price display vs commit (Comet #6).**
+
+*"Food showed 17.18 but the bid was calculated at 40.00/unit."*
+
+Root cause was client-side: the Market Buy "Place Bid" price field
+prefilled with the resting **ask** price, not the formula/reference
+price.  When a resting ask sat far above fair value (40 vs 17.18),
+the bid field showed the confusingly-high ask.  The column header
+literally says "Place Bid (qty @ **your** price)" — a limit order
+should default to fair value.  Changed `bidPrefill` in
+`_renderMarketBuyRow` to use `formula_price` (the reference the
+player sees elsewhere); "Buy Now" remains the at-ask path.
+
+**Bug #2 — same-price Bid + Ask not crossing (Comet #8).**
+
+*"FarmMachinery Ask 9 + Bid 9 never crossed."*
+
+Investigation: the engine matching is **correct** — `_auto_match_bid`
+uses `>` (not `>=`) so equal prices cross, and `_auto_match_offer`
+mirrors it.  Verified by direct reproduction in both post orders
+(bid-first and ask-first).  The reported symptom was a stale
+market-board display artifact (the board the player was looking at
+hadn't refreshed after the cross propagated), not an engine bug.
+Added three regression tests pinning same-price crossing so it can't
+silently regress, plus a sanity guard that a bid below the ask does
+NOT cross.
+
+**Bug #3 — stale "buy food" sustenance hint (Codex Player).**
+
+*"'Meals runway: 0' told me to buy food, but there was no ask, only
+bids.  The hint remained prominent even after I posted a food bid."*
+
+The sustenance alert fired on `runway < 2` with no awareness of
+market state.  Added two context flags to the alert payload:
+
+- `market_has_supply` — True if any basket resource (Food / Grain /
+  Produce / Fish / Meat) has a resting ask.  When False, the
+  dashboard now suggests "produce it yourself, train a Farmer, or
+  build a Kitchen" instead of "buy food" (and drops the Market-Buy
+  hand-off, since there's nothing to buy).
+- `player_has_pending_bid` — True if the hungry player already has a
+  resting basket bid.  When True, the hint softens to "waiting on
+  your bid — raise the price if it's not clearing" instead of nagging
+  them to re-buy.
+
+**Tests:** new `tests/test_engine/test_market_bug_cluster.py` with 7
+tests — same-price crossing (both orders) + below-ask no-cross +
+formula_price distinct from ask + the three sustenance-flag states
+(no supply / pending bid / supply exists).
+
+No engine economics changed — the matching logic is untouched (only
+tested), the prefill + hint rendering are pure UI, and the alert
+flags are additive payload fields.  Calibration is unaffected.
+
+Suite: **506 passing** (was 499 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-28`.
+
+UI note: bugs #1 and #3 are client-rendering fixes that ship in this
+same commit (no separate Claude follow-up needed).  The remaining
+market UX items from the triage (affordability indicator, List-at-
+Best-Bid, listed-on-market badge) are still in the Pass B backlog.
+
+### claude/loan-and-insurance-consent-bugs-2026-05-27
+
+Branch: `claude/loan-and-insurance-consent-bugs-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 loan-and-insurance-consent-bugs brief.
+Three independent Banker-side defects shipped in one branch.
+
+**Fix 1 — Insurance sale routes consent to BUYER.**
+
+AyaySir's BUG-07 report: *"Life Insurance (50 Dp) and Medical
+Insurance (60 Dp) were issued automatically mid-session ('Policy
+issued' appeared in the log without a player-initiated action),
+spending 110 Dp without explicit consent."*
+
+Root cause: `_action_sell_insurance` called `self.io.confirm(...)`
+while the IO adapter's active player was still the **Banker (seller)**.
+The seller's UI got the prompt; seller accepted on the buyer's
+behalf; policy was created with no buyer input.
+
+Fix: stash the seller's active-player TLS, call
+`set_active_player(buyer.player_id)`, await the confirm on the
+buyer's channel, restore the seller's active player.  Same pattern
+used elsewhere (`_pay_lease_for_lessee`).  If the buyer declines,
+no policy and no Dp move.
+
+**Fix 2 — Loan offer routes consent to BORROWER.**
+
+Codex Player report: *"the app let Banking accept a loan on behalf
+of the borrower."*
+
+Identical root cause and identical fix pattern in `_action_offer_loan`.
+The borrower's IO channel now gets the confirm; their answer
+decides whether the loan is created.  AI-borrower path (rate ≤ 0.15
+heuristic) is unchanged.
+
+**Fix 3 — Loan repayments run AFTER the action phase.**
+
+Codex Player report: *"an earlier mature loan defaulted before I
+could intervene."*
+
+Root cause: `_process_loan_repayments(year, season_index)` was
+called at `turn.py:139` — BEFORE the action loop opened at line
+142.  A loan maturing this season was repaid/defaulted before the
+borrower's action turn started, so they had no chance to rollover.
+The rollover-candidate query then said "no active loans" because
+the loan was already REPAID/DEFAULTED.
+
+Fix: move `_process_loan_repayments` to AFTER the action phase
+(right before market snapshot).  Borrowers now have their full
+action turn to rollover or repay; end-of-season processing only
+acts on what's still due.
+
+Verified end-to-end by `test_run_season_order_processes_repayments_last`
+— an AI borrower with a 1-year loan maturing in Y1 S0 now reaches
+its action turn with the loan still ACTIVE and rolls it over (or
+repays); before the fix the loan would have been auto-defaulted at
+season start.
+
+**Tests:** new `tests/test_engine/test_loan_insurance_consent.py`
+with 7 tests:
+- Insurance confirm routed to buyer (not seller)
+- Insurance refused when buyer declines (no Dp move)
+- Loan-offer confirm routed to borrower (not lender)
+- Loan-offer refused when borrower declines
+- AI borrower path uses heuristic, not the IO confirm (regression)
+- Loan due this season is still ACTIVE during action phase
+- End-to-end: AI borrower rolls over a maturing loan during their turn
+
+**Calibration:** byte-identical to previous build (4-seed sweep).
+Consent fixes don't activate in all-AI sims (no human buyers/
+borrowers in calibration runs); repayment-timing change is
+absorbed because the AI heuristic already handles rollover.
+
+Suite: **499 passing** (was 492 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.8`.
+
+UI follow-up (Claude separate, not in this commit): the buyer's
+confirm prompt may need a richer modal showing the policy terms
+(currently a bare yes/no) so the buyer can read what they're
+agreeing to.  Same for the loan-offer modal on the borrower side.
+
+### claude/disaster-mitigation-and-workforce-resilience-2026-05-27
+
+Branch: `claude/disaster-mitigation-and-workforce-resilience-2026-05-27`
+Target: `pre-release`
+
+Implements the 2026-05-27 disaster-mitigation brief.  Addresses two
+playtest reports in one branch:
+
+- **Comet's Flood report** — single Flood event that zeroed all
+  workers across multiple roles with no insurance/mitigation path,
+  hit Year 5 Winter leaving no recovery time.
+- **Manny Fracture's 5-year zero-workforce cascade** — Mining had 0
+  active workers for virtually the entire 5-year game from
+  workplace-risk attrition with no recovery mechanism.
+
+Three fixes shipped:
+
+**Fix 1 — Flood event re-tiered (`config/event_charts.yaml`).**
+
+Flood was `yield_modifier: 0.0` + `outage: true` + `damage_seasons: 1`
++ `natural_disaster: true` — the originating island lost two
+halt-equivalent seasons AND every other island dropped to 50% the
+same season.  Re-tiered to `yield_modifier: 0.25` + `outage: false`,
+keeping the damage cycle and cascade.  Origin island now retains 25%
+output rather than zero; the existential "single roll = game over"
+character is gone.
+
+**Fix 2 — Life insurance reduces fatality rate
+(`LIFE_INSURANCE_FATALITY_REDUCTION = 0.5`).**
+
+Before this brief, Life insurance was payout-only — the worker still
+died, the player just got cash.  Now the per-worker fatality
+probability is multiplied by `(1 - LIFE_INSURANCE_FATALITY_REDUCTION)`
+when a policy is in force, mirroring how Medical insurance halves
+injuries (`MEDICAL_INSURANCE_INJURY_REDUCTION` was already there;
+this is the symmetric fix).  Mining at base fatality 0.08 drops to
+0.04 with a Life policy.
+
+To prevent the resulting Banker calibration spike from FEWER deaths
+costing the Banker less in payouts, doubled the per-fatality
+`LIFE_INSURANCE_DEATH_BENEFIT` from 60 Dp to 120 Dp so expected
+Banker liability stays flat while making the policy more valuable
+to the bereaved island.
+
+**Fix 3 — Per-tick workforce-loss cap
+(`MAX_WORKFORCE_LOSS_PER_TICK_FRACTION = 0.30`).**
+
+At most 30% of an island's active workers can die from any single
+workplace-event tick (minimum 1 to avoid blocking tiny workforces
+entirely).  Without this, a streak of bad rolls could wipe most of a
+5-worker starting workforce in one tick — exactly the Manny Fracture
+cascade.  Cap keeps the most-experienced workers (sorts deceased by
+age descending, drops the oldest from the survival list since
+domain-logic is "most-vulnerable die first").
+
+`WorkforceEventReport` extended with `insurance_reduced_fatalities`,
+`loss_cap_applied`, and `would_have_lost` flags so the dashboard +
+game log can attribute survivors to the insurance / cap.
+
+**Tests:** new `tests/test_engine/test_disaster_mitigation.py` with
+7 tests covering all three fixes (Flood re-tiered config, Life
+insurance halves rate over 50 ticks with deterministic seed, Life
+flag set on report, per-tick cap fires deterministically with
+forced-100% RNG, minimum-1 cap for tiny workforces, cap preserves
+youngest survivors).
+
+**Calibration check** (4-seed sweep × 200 games):
+
+| Role | Baseline | After | Δ |
+|---|---:|---:|---:|
+| Farmer | 12.9% | 11.8% | -1.1 |
+| Miner | 13.1% | 14.4% | +1.3 |
+| Transporter | 14.9% | 12.6% | -2.3 |
+| Educator | 18.0% | 18.1% | +0.1 |
+| Banker | 14.8% | 14.8% | 0.0 |
+| Manufacturer | 12.8% | 15.4% | +2.6 |
+| Doctor | 13.6% | 13.0% | -0.6 |
+
+All roles remain in the [12 – 18 %] band.  Banker offset (doubled
+death benefit) worked precisely.  Transporter and Manufacturer drift
+just over ±2 pp from baseline but both stay inside band.
+
+Suite: **492 passing** (was 485 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.7`.
+
+### claude/graceful-degradation-2026-05-27
+
+Branch: `claude/graceful-degradation-2026-05-27`
+Target: `pre-release`
+
+Scaffolding for the graceful-degradation brief (GitHub #47 + Manny
+Fracture playtest report).  **Application gated off pending
+calibration work** — the scaffolding is ready to flip on, but the
+floor mechanism shifts the entire economy.
+
+What landed:
+
+- `EXPERTISE_DEGRADATION_FLOORS` table in `constants.py`
+  (unique_specialist / manager / technician / unskilled).
+- `UNIQUE_SPECIALIST_PROFESSION` map (Farmer / Miner / Doctor /
+  Banker / Educator's Professor / Engineer / LogisticsManager).
+- `EXPERTISE_DEGRADATION_ROLE_OVERRIDES` empty-by-default map for
+  per-role tuning later.
+- `EXPERTISE_DEGRADATION_ENABLED: bool = False` master switch —
+  gates both the production-engine application and the
+  `[DEGRADED]` log line.
+- `ProductionEngine.expertise_degradation_floor(player)` staticmethod
+  computes per-role floors (multiplicative within a role, MIN across
+  multi-role players) and returns 1.0 if no expertise gaps.
+- `_labour_productivity_factor` checks the flag before applying
+  `max(natural, floor)`.  Default behaviour unchanged.
+- `_action_produce` `[DEGRADED]` log line, also flag-gated.
+- Server `_player_capacity` payload field `degradation_floor` per
+  output entry so the UI can pre-stage the "Operating at X% floor"
+  chip.
+- 9 unit tests for the helper covering the floor-composition matrix
+  + Doctor's unique-specialist edge case + multi-role MIN + the
+  patch-flag-on / patch-flag-off branches.
+
+What did NOT ship (and why):
+
+Initial implementation with the brief-spec 0.10/0.25/0.50 floors
+broke calibration severely in the 4-seed sweep:
+
+| Role | Baseline | After floor |
+|---|---:|---:|
+| Farmer | 12.9% | **22.5%** |
+| Miner | 13.1% | **4.4%** |
+| Transporter | 14.9% | 16.8% |
+| Educator | 18.0% | 12.4% |
+| Banker | 14.8% | **2.8%** |
+| Manufacturer | 12.8% | **23.1%** |
+| Doctor | 13.6% | 18.1% |
+
+Halving to 0.05/0.10/0.25 produced byte-identical results.  Further
+reducing to 0.02/0.05/0.10 also produced byte-identical results.
+
+**Root cause**: the existing calibration depends on cascading-collapse
+positive-feedback loops — when one role's workforce empties, its
+consumers also stop, freezing the whole market.  That freeze is what
+gives high-risk roles (Miner especially) their scarcity premium when
+they recover.  Any non-zero floor — even a 1% trickle — breaks the
+freeze chain because downstream consumers can always find SOME
+input.  The displacement of the scarcity premium is what crashes
+Miner and Banker.
+
+**Path forward (for the next pass)**: pair the floor with rebalancing
+of workplace_risk fatality rates and/or starting workforce sizes
+(probably combined with the
+`disaster-mitigation-and-workforce-resilience-2026-05-27` brief's
+Life-insurance fatality reduction + per-tick cap) so the attrition
+that causes the cascade is reduced.  Then the floor becomes a real
+safety net for edge cases rather than a regular occurrence that
+shifts the entire market.  Brief was updated with this finding.
+
+Calibration restored to the documented baseline with flag off.
+Suite: **485 passing** (was 475 + 10 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.6`.
+
+### claude/workforce-display-round-up-2026-05-27
+
+Branch: `claude/workforce-display-round-up-2026-05-27`
+Target: `pre-release`
+
+Three changes from the 2026-05-27 Comet + Manny Fracture playtest
+feedback:
+
+**1. Quick fix: round up fractional worker shortfalls in Decision Hints.**
+
+Playtester observation (Comet): *"Decision Hints show fractional
+farmer requirements (0.12, 0.06, 0.04 Farmer) — these appear to be
+less than 1 full worker unit. It's unclear whether the game expects
+partial worker assignment or if this is a display/rounding bug."*
+
+Root cause: the labour-math in `app.py:1547-1561` computes
+`per_unit × workforce_target` where `per_unit` is per-output-unit
+(e.g. 0.04 Farmer-seasons per Food unit).  Real math, but you
+can't hire 0.12 of a person.  Fixed by replacing `round(short, 2)`
+with `math.ceil(short)` so shortfalls always show as whole
+workers.  Existing tests still pass because they used whole-number
+fixtures (1.0, 2.0).
+
+**2. New brief: `disaster-mitigation-and-workforce-resilience-2026-05-27.md`.**
+
+Addresses Comet's Flood report + Manny Fracture's 5-year zero-
+workforce cascade.  Three engine fixes proposed:
+
+- Re-tier `Flood` from `catastrophic` (yield 0.0 + outage) to
+  `heavy` (yield 0.25 + damage cycle).  Severity tiers via a new
+  YAML `severity` field so future events can opt in.
+- Life insurance reduces fatality *rate* by 50 %, not just pays a
+  death benefit.  Mirrors how Medical reduces injury rate.
+- Per-tick workforce-loss cap: at most 30 % of active workers can
+  die from any single workforce-event tick (`floor(N × 0.30)`,
+  minimum 1).
+- Explicit logging: when workers leave, log says WHY (workplace
+  fatality / retirement / disaster) + insurance status.
+
+**3. New brief: `graceful-degradation-2026-05-27.md`** (formalises
+GitHub issue #47).
+
+Addresses Manny Fracture's "all production lines locked at max 0"
+scenario.  An island missing required expertise produces at a
+band-tier-specific floor instead of zero:
+
+- Unique specialist missing (Doctor / Banker / Educator's Professor)
+  → 10 % floor.
+- Other Manager-tier missing → 25 % floor.
+- Technician-tier missing → 50 % floor.
+- Worker-tier (Unskilled) missing → no floor change.
+- Floors compose multiplicatively.
+
+Includes a `degradation_floor` field on the capacity payload and
+an explicit `[PRODUCTION] ... operating at X % floor` log line so
+the player can see they're degraded and what to train to recover.
+
+Suite: **475 passing** (display fix didn't break anything; tests
+fixture values were already whole numbers).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.5`.
+
+The two new briefs raise the open Codex queue to 8 — both are
+classified as **High** priority because the Manny Fracture cascade
+(Mining at 0 workers, no Oil, all Manufacturing lines locked) is
+exactly the kind of game-ending failure the rollout plan's
+`0.1.0-rc1` milestone needs to prevent.
+
+### claude/queue-summary-log-export-rollover-2026-05-27
+
+Branch: `claude/queue-summary-log-export-rollover-2026-05-27`
+Target: `pre-release`
+
+Three small playtest-driven improvements bundled in one branch:
+
+**1. Reorder training queue — per-row summary.**
+
+Playtester observation: when reordering the Educator's pending
+training queue, the picker showed bare "Move #10 to top" with no way
+to tell what Request #10 actually was.  The dashboard doesn't yet
+have a rich drag-reorder UI, so the engine falls back to a
+`choose_option` picker — fix the label format to carry full context:
+
+`#10 AyaySir -> 2x Mechanic (40 Dp) [pri -1]`
+
+Format includes batch ID, requester name, cohort size, target
+profession, fee offered, and priority chip when non-zero.  Also
+added `worker_count` to the `_training_queue_payload` (used by the
+forthcoming Pass A drag UI).
+
+**2. Game log export.**
+
+New "⬇ Log" button next to "📋 Menu" in the game header.  Triggers
+a fetch of `/api/rooms/{room_id}/log` which streams the full
+server-side game log as a plain-text attachment, with a small
+header carrying room name, version, status, and current
+year/season for context.  Solves the playtest-debugging ask "we
+should be able to export the game log."  Implemented as:
+
+- `WSAdapter.export_log()` returns the full `self._log` history as
+  newline-joined text.
+- New FastAPI `GET /api/rooms/{room_id}/log` endpoint returns
+  `text/plain` with a `Content-Disposition: attachment` header so
+  the browser saves rather than renders.
+- Client `downloadGameLog()` fetches the endpoint, wraps the
+  response in a Blob, and triggers a browser download via a
+  temporary `<a download>` element.
+
+**3. GitHub #6 — loan rollover named-options picker.**
+
+The `_action_rollover_loan` action was the last numeric-index
+picker in the engine after the purchase / lease / invest /
+product-line fixes.  Converted to `choose_option` so the dashboard
+renders loans as a labelled radio picker with all the context the
+borrower needs (principal, rate, remaining seasons, maturity
+date) — matches the pattern documented in `_choose_product_line_human`
+and standardised across the rest of the action surface.
+
+Note: this brief intentionally does NOT implement interactive
+rate negotiation (counter-offer flow between borrower and Banker).
+The current rollover already reprices at the live
+`banker_quote_rate` each time, which satisfies "negotiate a
+different rate of interest" in the literal sense (rate floats with
+the market).  A full propose-and-counter flow would mirror the
+training counter-offer plumbing and is parked for a future brief
+if playtest demands it.
+
+**Tests:**
+
+- `test_reorder_fallback_picker_labels_include_per_row_summary` —
+  pins the label format so future regressions can't reintroduce
+  bare "Move #N to top".
+- `test_export_log_returns_full_print_history` — pins the
+  `export_log()` contract.
+- `test_action_rollover_uses_named_option_picker_not_numeric_index`
+  — pins the rollover picker shape so it can't quietly regress.
+- Updated two existing rollover tests that were scripting
+  `quantities=[1, ...]` (numeric loan pick) to drop the
+  now-unused index.
+
+Suite: **475 passing** (was 472 + 3 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.4`.
+
+### claude/training-expertise-deadlock-2026-05-27
+
+Branch: `claude/training-expertise-deadlock-2026-05-27`
+Target: `pre-release`
+
+Implements the second Critical brief from the 0.1.0-dev.2026-05-26.5
+playtest triage — AyaySir's 9-season training deadlock + Codex
+Player's identical report.  Three layers shipped.
+
+**Layer 1 — AI Manufacturer demand chooser sees indirect demand.**
+
+Root cause: PR #46's `_has_human_equipment_demand` only detected
+*direct* equipment consumption (Miner → MiningEquipment, Doctor →
+MedicalDevices, etc.).  A human Miner with a pending training
+request indirectly drives LaboratoryEquipment demand (Educator needs
+Expertise → Educator needs LabEquipment), but PR #46 didn't see
+that chain.  The Manufacturer would dutifully build MiningEquipment
+for the visible human Miner while letting LabEquipment supply
+collapse — the Educator's Expertise pipeline starved and training
+requests stuck on `awaiting_educator` indefinitely.
+
+Fix: `_has_human_equipment_demand` now also returns True when any
+human player has pending training requests OR has workers already
+in training.  Both signal an active pipeline that needs Expertise
+upstream of LabEquipment.  Threaded `training_registry` through
+`AIStrategy.take_turn` and `_choose_product_line` so the AI can
+introspect pending state.
+
+**Layer 2 — `SUPPLY_TRAINING_EXPERTISE` requester escape hatch.**
+
+New `TurnAction.SUPPLY_TRAINING_EXPERTISE` lets a requester gift
+Expertise from their own inventory to an Expertise-starved Educator,
+unblocking a pending training request.  Authorization: only the
+original requester can supply, only for their own batches, only
+when the Educator's `_training_capacity_status` blocker mentions
+"Expertise".  Computes the exact shortfall (per-course requirement
+minus what's already at the Educator) and refuses cleanly if the
+requester is short.  Transfer is at zero Dp — this is a deadlock-
+breaker, not a sale.  Does NOT auto-approve; the Educator still has
+to approve (human via modal, AI via next-season re-review).
+
+Also added `TrainingRegistry.pending_for_requester(requester_id)`
+query (used by both Layer 1's indirect-demand check and Layer 3's
+payload).
+
+**Layer 3 — `training_pipeline` payload deadlock-visibility fields.**
+
+Extended the existing per-player `training_pipeline` entries with
+three new fields populated only for AWAITING_EDUCATOR requests:
+
+- `blocker_reason` — the human-readable reason string from
+  `_training_capacity_status` (e.g. "needs 2 Expertise for this
+  course", "Technical Workshop capacity full: 6/6 trainee seats
+  already in training").
+- `seasons_blocked` — how many seasons the request has been pending
+  since `proposed_year/season`.
+- `can_supply_expertise` — True if the blocker is Expertise AND the
+  requester has enough on hand to cover the shortfall.  Drives the
+  UI follow-up's "Supply Expertise" button visibility.
+
+**Tests:**
+
+- New `tests/test_engine/test_training_expertise_deadlock.py` with
+  7 tests covering all three layers:
+  - Indirect demand via pending training requests
+  - Indirect demand via in-training workers
+  - Direct-demand fallback when no registry is passed (backward
+    compat)
+  - SUPPLY action transfers Expertise correctly
+  - SUPPLY action no-op when no eligible batches
+  - SUPPLY action authorization (non-requester refused)
+  - `pending_for_requester` filter correctness
+- Updated `test_training_pipeline_shape` in `test_ux_payload.py` to
+  pin the new payload fields.
+
+Suite: **472 passing** (was 465 + 7 new).
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.3`.
+
+**Calibration unchanged.**  4-seed sweep (200g × seeds 42/1/7/99)
+returns byte-identical means to the PR #46 baseline:
+
+| Role | Mean | PR #46 baseline |
+|---|---:|---:|
+| Farmer | 12.9% | 12.9% |
+| Miner | 13.1% | 13.1% |
+| Transporter | 14.9% | 14.9% |
+| Educator | 18.0% | 18.0% |
+| Banker | 14.8% | 14.8% |
+| Manufacturer | 12.8% | 12.8% |
+| Doctor | 13.6% | 13.6% |
+
+This is by design: the indirect-demand path only fires when there
+is a *human* player with pending training.  In all-AI calibration
+sims there are no human players, so the legacy profit chooser runs
+exactly as it did before.  The change is invisible to the
+calibration sweep and only activates in the actual deadlock scenario.
+
+UI follow-up: dashboard badge for `seasons_blocked >= 3` + "Supply
+Expertise" button when `can_supply_expertise` (Pass A continuation).
+
+### claude/rollout-plan-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — adds `requirements/rollout-plan-2026-05-27.md`, the
+sequenced milestone view of all open work that pairs with `TODO.md`
+(development priority tracker) and the brief queue in
+`requirements/codex-tasks/`.
+
+Captures:
+
+- Live build (`0.1.0-dev.2026-05-27.2`) + the eight merges that landed
+  this cycle.
+- Codex brief queue (7 open, prioritised from the
+  2026-05-26.5 playtest triage) with the Done Trading fix marked
+  complete and the Training Expertise deadlock marked in progress.
+- Claude UI follow-up backlog batched into three passes (Action
+  panel + hints, Market UX, Dashboard surfaces) with carry-over
+  payloads from PR #40 (Banker chip) and PR #41 (Educator queue +
+  requester decisions) flagged.
+- Scoping items needing decisions (from the 2026-05-26 GitHub
+  issues batch) and new scoping items from today (Vaccines + Flu
+  #49, Hiring Doctors/Nurses #50, Air Freight #51).
+- Closeable GitHub issues — closed #21 (named-options purchase
+  picker shipped) and #10 (Market Board modal — already marked
+  done in TODO.md, just needed the issue closed).
+- Four proposed milestones: `0.1.0-rc1` (Critical bug-fix sweep),
+  `0.1.0-rc2` (scoping-batch features), `0.2.0` (major systems
+  incl. MPS), `0.2.x / 0.3.0` (content expansion incl. Actuaries
+  / Ecologist / Medical Lab tests).
+
+No engine changes; suite remains green at 465.
+
+### claude/done-trading-undo-and-auto-set-fix-2026-05-27
+
+Branch: `claude/done-trading-undo-and-auto-set-fix-2026-05-27`
+Target: `pre-release`
+
+Implements the Critical brief from the 0.1.0-dev.2026-05-26.5 playtest
+triage — the cross-cutting bug behind seven references across all
+three player reports (Done Trading auto-set + no undo path).  Three
+sub-issues addressed in one branch.
+
+**Sub-issue A — server stops auto-setting Done.**
+
+Diagnostic: server-side state was correct (`_on_season_start` resets
+`season_ready_set` and `season_human_done`, `begin_season` clears
+`_player_ready_flags`), but two paths could leave the *client* with
+a stale `imReady = true` from before:
+
+- WebSocket reconnect handler sent `game_state` but never a fresh
+  `ready_update`, so a player who clicked Done last season would
+  see "Done Trading ✓" on reconnect even after the season had
+  rolled over.
+- `_on_season_start` never broadcast a `ready_update` for the new
+  season, so any client that missed the `season_resolved` broadcast
+  carried its `imReady = true` forward.
+
+Both fixed defensively: reconnect now sends `_broadcast_ready_update`,
+and `_on_season_start` broadcasts `ready_update` after the
+`season_start` message with the cleared sets.
+
+**Sub-issue B — Undo path actually works (the deep fix).**
+
+Root cause: `mark_player_ready` resolved the in-flight prompt with
+the string `"end_turn"`, which made `choose_action` return
+`TurnAction.END_TURN`, which exited the `while True` action loop.
+Once the loop exited, the turn thread completed and `_on_player_done`
+fired.  Calling `unmark_player_ready` later just cleared a flag that
+nothing was reading any more.
+
+Fix: convert Done from a turn-terminator into a turn-pauser.
+
+- `mark_player_ready` now resolves the in-flight prompt with
+  `CANCEL_SENTINEL` (reusing the existing dialog-cancel sentinel), so
+  whatever sub-prompt the player was in raises `ActionCancelled` and
+  drops cleanly back to the action loop.
+- `choose_action` now has a park loop: while the Ready flag is set,
+  the thread broadcasts a new `choose_action_parked` message and
+  waits on the player's event.  Wakes on either `unmark_player_ready`
+  (flag clears → falls through to re-prompt) or `interrupt_all`
+  (real season end → returns `END_TURN`).
+- `unmark_player_ready` now `.set()`s the player's event so the park
+  loop wakes immediately.
+
+The turn thread stays alive throughout the parked state, so an Undo
+truly resumes the player's action menu instead of being a no-op.
+
+**Sub-issue C — Decision Hints policy in Done state.**
+
+Chose Option 1 (AyaySir IMP-04's preference): hint click auto-undoes
+Done first, then fires the action.
+
+- `_actOnHint` checks `imReady`; if true, sends `{type:'ready',
+  ready:false}` to undo and queues the action target in
+  `_pendingActionAfterUndo`.
+- `showActionPrompt` consumes the queued action when the fresh
+  prompt arrives from the server-side re-prompt.
+- `_renderHintOpenButton` keeps hint buttons enabled in the parked
+  state (so the auto-undo path is reachable) with a tooltip
+  explaining "Resumes trading then opens this action".
+
+New parked banner UI: when the server broadcasts
+`choose_action_parked`, the action panel area shows "You've marked
+yourself done for this season" with a prominent "↩ Resume Trading"
+button that calls the same Undo path.
+
+**Tests:**
+
+- Updated `test_mark_player_ready_short_circuits_choose_action` to
+  reflect the new contract (now
+  `test_mark_player_ready_parks_choose_action_until_interrupted`):
+  parked thread waits, broadcasts `choose_action_parked`, and only
+  exits via `interrupt_all`.
+- New `test_unmark_player_ready_wakes_parked_choose_action`:
+  parked thread wakes on Undo and sends a fresh `choose_action`
+  prompt.
+- New `test_mark_player_ready_cancels_in_flight_prompt`: regression
+  for the "action panel disappears after End Turn" symptom — Done
+  mid-dialog aborts the sub-prompt cleanly via `CANCEL_SENTINEL`.
+
+Suite: **465 passing** (was 463 + 2 net new tests).
+
+APP_VERSION bumped to `0.1.0-dev.2026-05-27.2` for playtest tracking.
+
+### claude/codex-briefs-from-playtest-26.5-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — drafts the six Codex briefs identified in the
+[`triage-0.1.0-dev.2026-05-26.5.md`](./requirements/playtest-feedback/triage-0.1.0-dev.2026-05-26.5.md)
+consolidation pass. Each brief carries the playtester source
+references, the proposed engine + payload changes, the test list,
+and the explicit out-of-scope boundary.
+
+Two Critical fixes (recommended first):
+
+- `done-trading-undo-and-auto-set-fix-2026-05-27.md` — addresses the
+  cross-cutting bug behind seven separate item references across all
+  three playtest reports (Done Trading auto-set + no undo path).
+  Three-layer fix: audit Ready-flag setters, add explicit
+  `UNDO_DONE_TRADING` action, decide Decision-Hint policy in Done
+  state (Option 1: auto-undo, preferred; Option 2: hide buttons).
+- `training-expertise-deadlock-2026-05-27.md` — addresses the
+  total-system deadlock reported by AyaySir (9 seasons stuck) and
+  Codex Player. Three layers: fix the Expertise pipeline blocker,
+  add a requester-supplied-Expertise escape hatch (AyaySir IMP-03),
+  surface `training_pipeline_health` payload on the requester
+  dashboard.
+
+Four further briefs:
+
+- `loan-and-insurance-consent-bugs-2026-05-27.md` — three related
+  Banker-side defects: insurance auto-issue, loan-acceptance on
+  borrower's behalf, loan rollover + early-default state-machine
+  fix.
+- `event-frequency-cap-2026-05-27.md` — caps production-halting
+  events at `HALT_EVENTS_PER_PLAYER_PER_YEAR = 1`. Addresses the
+  "5 halts in 5 seasons" scenario from Comet 1 and AyaySir.
+- `market-bug-cluster-2026-05-27.md` — three independent market
+  defects: bid display/commit mismatch, same-price Bid+Ask not
+  crossing, stale "buy food" hint when no Asks exist.
+- `training-request-withdraw-by-requester-2026-05-27.md` — small,
+  symmetric to the educator-side Reject/Counter shipped in PR #41.
+  Adds requester-side `WITHDRAW_TRAINING_REQUEST` with state-aware
+  refund semantics.
+
+Each brief is self-contained — Codex can pick them up in any order
+the team prefers. The two Critical briefs (Done Trading, Expertise
+deadlock) are recommended first because they currently make the
+game unplayable for affected roles.
+
+No engine or test changes; suite remains green at 463.
+
+### claude/playtest-feedback-folder-2026-05-27
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — stands up a structured home for playtest feedback under
+`requirements/playtest-feedback/` and consolidates the four reports
+that came in against `0.1.0-dev.2026-05-26.5`.
+
+Structure:
+
+- `requirements/playtest-feedback/README.md` documents the convention:
+  one raw report file per build (`playtest-{APP_VERSION}.md`), one
+  triage doc per report (`triage-{APP_VERSION}.md`), and a four-bucket
+  triage workflow (✅ already fixed / 🐛 new Codex brief / 🎨 Claude UI
+  follow-up / ⚖️ calibration design / ⏭ deferred).
+- `requirements/playtest-feedback/playtest-0.1.0-dev.2026-05-26.5.md`
+  is the verbatim report from Comet Player 1 (Manufacturer), AyaySir
+  (Mining), Codex Player (Banking), and Real Human (general).
+- `requirements/playtest-feedback/triage-0.1.0-dev.2026-05-26.5.md`
+  cross-references all four reports, identifies the shared
+  "Done Trading auto-set + no undo" root cause behind seven of the
+  bug reports, proposes six new Codex briefs, batches nine UI items
+  into three Claude follow-up passes, surfaces five calibration /
+  design questions, and lists three deferred items (server-takedown
+  reconnects excluded per operator note).
+
+Why a separate folder: keeps raw player observations distinct from
+the spec docs in `requirements/` and the Codex brief queue in
+`requirements/codex-tasks/`. The raw + triage docs stay paired so
+we keep a record of how each playtest item was handled.
+
+No engine or test changes; suite remains green at 463.
+
+### claude/purchase-named-options-2026-05-27
+
+Branch: `claude/purchase-named-options-2026-05-27`
+Target: `pre-release`
+
+Fixes a UX defect playtesters reported against `0.1.0-dev.2026-05-26.5`:
+the **Purchase Equipment** action presented capital items as a numeric
+index picker (`choose_quantity` → bare number-input field on the
+dashboard) rather than a named-option picker (`choose_option` → radio
+list with the full description on each row). The Lease, Invest, and
+product-line pickers already used the named-option pattern; Purchase
+was the only outlier.
+
+- `_action_purchase_capital` in `island_traders/engine/turn.py` now
+  builds an `options=[{value: item_id, label: "..."}]` list and calls
+  `self.io.choose_option(...)`. Same labels as before (name, role,
+  cost, manufactured-resource requirement or cash-only flag, delivery
+  ETA) — just rendered as a radio picker instead of a text paragraph
+  followed by an index input.
+- Cancel returns to the action menu cleanly (consistent with the
+  other named-option pickers).
+- New regression test `test_purchase_capital_uses_named_option_picker_not_numeric_index`
+  pins the contract so the picker can't quietly regress to an index
+  prompt again.
+- Updated `test_purchase_capital_places_delayed_item_in_transit` and
+  `test_purchase_capital_can_buy_cash_only_kitchen_without_manufacturer`
+  to override `choose_option` (by item_id) instead of `choose_quantity`
+  (by numeric index).
+
+No engine semantics changed; 463 tests passing.
+
+### claude/banker-lawyers-brief-2026-05-26
+
+Branch: direct commit on `pre-release`
+Target: `pre-release`
+
+Docs-only — drafts the Lawyers Codex brief from GitHub issue #44
+("Banking requires Lawyers"), the smallest of the six 2026-05-26
+scoping issues. Scope intentionally narrow:
+
+- New `Profession.LAWYER` (Manager band, 2-season Educator pipeline,
+  university capacity 2/year), trainable from every island like Chef.
+- Lease inception gated on the lessee holding ≥1 Lawyer on roster.
+  Existing leases at merge time are grandfathered — no retroactive
+  requirement.
+- Banker starting workforce grows from 4 → 5 (adds 1 Lawyer) so the
+  Bank can lease its own equipment from turn 1. No other island gets
+  a pre-placed Lawyer — they must train one before leasing.
+- Both investing-phase lease application and mid-game LEASE_CAPITAL
+  action respect the gate. Lawyer presence is one-shot at inception;
+  losing the Lawyer later does not affect an existing lease.
+
+Out of scope (explicit): Lawyer involvement in loans, insurance,
+deal-guarantee, dispute arbitration — those come later. Banker-side
+Lawyer requirement also deferred (assume institutional counsel for
+the lessor side).
+
+UI follow-up: Lawyer chip on the workforce display + greyed-out
+Lease button with "Train a Lawyer first" tooltip on islands with
+0 Lawyers.
+
+No engine or test changes; suite remains green at 462.
+
+### codex/educator-approval-queue-2026-05-26
+
+Branch: `codex/educator-approval-queue-2026-05-26`
+Target: `pre-release`
+
+Educator training-queue controls:
+
+- Added `TrainingRequest.priority` and sorted pending Educator queues by
+  `(priority, batch_id)` for human review and AI Educator review.
+- Added `REORDER_TRAINING_QUEUE`, `REJECT_TRAINING_REQUEST`,
+  `COUNTER_TRAINING_REQUEST`, and `ACK_TRAINING_DECISION` actions.
+- Added persistent rejection/counter metadata on training requests:
+  decline reason, decision season, original offer, and acknowledgement state.
+- Added server payloads for `training_queue_order` on Educator dashboards
+  and `training_decisions` on requester dashboards.
+- AI Educator rejections now include a fair-rate decline reason for the
+  requester notification payload.
+
+Tests:
+
+- Added 9 regression tests for priority ordering, queue reordering,
+  AI sorted processing, queue reject/counter actions, requester decision
+  payloads, acknowledgement, auth refusal, and AI decline reasons.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **452 passing** after merging the latest `pre-release`.
+- Balance check stayed unchanged:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%.
+
+### codex/ai-manufacturer-product-mix-2026-05-26
+
+Branch: `codex/ai-manufacturer-product-mix-2026-05-26`
+Target: `pre-release`
+
+AI Manufacturer product-line choice:
+
+- Added a demand-scored product-line chooser for human-visible equipment
+  demand so a human Educator/Doctor can pull AI Manufacturing toward
+  `LaboratoryEquipment` instead of being stuck behind the default
+  `FarmMachinery` line.
+- Kept the legacy profit/bid chooser for all-AI simulations so calibration
+  remains stable when there is no human demand signal.
+- Added a 10% sticky guard, input-feasibility fallback, and an idle message
+  when no Manufacturer line can be produced.
+- Added light supply memory and one-unit LabEquipment release throttling on
+  human-demand Lab runs so the AI seeds the bottleneck without dumping a
+  whole game worth of lab gear at once.
+
+Tests:
+
+- Added 5 AI Manufacturer tests for LabEquipment demand selection, sticky
+  behavior, feasible fallback, no-input idle logging, and human Educator
+  LabEquipment listing.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **453 passing** after merging the latest `pre-release`.
+- Balance check stayed on the post-calibration all-AI baseline:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%.
+
+### codex/training-profession-alignment-2026-05-26
+
+Branch: `codex/training-profession-alignment-2026-05-26`
+Target: `pre-release`
+
+Follows up the training-flow diagnostic amendment for display-title vs
+trainable-profession mismatches:
+
+- Added real Technician-band, trainable profession enums for `FactoryForeman`
+  and `MiningForeman`.
+- Kept `AssemblyWorker` and `RefinerySpecialist` as the existing engine
+  professions but changed their player-facing labels to `Assembly Tech` and
+  `Refiner`, matching the roster titles players see.
+- Left `Stevedore` and `Aide` as Worker-band population titles rather than
+  formal Education courses.
+- Added regression coverage so the playtest-reported phantom titles stay
+  aligned with the training menu.
+
+### codex/banker-wholesale-funding-2026-05-26
+
+Branch: `codex/banker-wholesale-funding-2026-05-26`
+Target: `pre-release`
+
+Banker wholesale-funding rebalance:
+
+- Lowered base Banker reserve ratio from 50% to 5%; MBA-qualified reserve
+  ratio drops from 20% to 2%.
+- Added active customer-loan caps: `max(1, 2 x Banker Manager count)` per
+  Bank. Repaid/defaulted loans free slots, and synthetic depositor funding
+  loans do not count.
+- Applied the cap to human loan offers, borrower-initiated Bank loans, and
+  AI Banker lending.
+- Added Banker loan-book cap/count fields to the server player payload for
+  dashboard follow-up.
+
+Tests:
+
+- Added/updated regression tests for the 5% / 2% reserve math, active-loan
+  cap, starter slot, freed slots after repayment/default, depositor-loan
+  exclusion, and AI cap refusal.
+- `PYTHONPATH=. /Users/ashleysilver/Documents/projects/island-traders/.venv/bin/python -m pytest -q`
+  -> **447 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%-17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%-18.0%; Banker mean 14.8%.
+
+### claude/educator-queue-brief-amend-2026-05-26
+
+Branch: `claude/educator-queue-brief-amend-2026-05-26`
+Target: `pre-release`
+
+Docs-only amendment to `educator-approval-queue-2026-05-26.md` after
+two follow-up requests from the 2026-05-26 playtest cycle:
+
+- **Reject / Counter from the queue view itself.** New
+  `REJECT_TRAINING_REQUEST` and `COUNTER_TRAINING_REQUEST` actions
+  the Educator can fire inline against any pending row, no per-
+  request modal walk required. Stores a `decline_reason` on the
+  request when an Educator declines or counters.
+- **Visual flag + popup on the requester's dashboard.** New
+  `training_decisions` server payload (per requester) carries every
+  counter / rejection of their own requests with the decline reason
+  attached. New `ACK_TRAINING_DECISION` action lets the requester
+  dismiss a notification. UI follow-up will render a badge and an
+  "Improve bid" popup so the requester can re-submit with a
+  stronger offer.
+
+Also bumps required test count and acceptance criteria in the brief
+to reflect the new actions / payloads. No code touched here; same
+brief, expanded scope.
+
+### claude/codex-briefs-2026-05-26-batch2
+
+Branch: `claude/codex-briefs-2026-05-26-batch2`
+Target: `pre-release`
+
+Docs-only — second batch of Codex briefs from a follow-up 2026-05-26
+playtest report against `0.1.0-dev.2026-05-26`. Three new briefs and
+one amendment:
+
+- **`banker-wholesale-funding-2026-05-26.md`** — drop the Banker
+  reserve ratio from 50% → 5% (and the MBA-qualified ratio from 20%
+  → 2%) so the existing wholesale-funding architecture
+  (`_fund_bank_external_portion`) actually does the work the user
+  expects. Add a per-Banker active-loan cap (`max(1, 2 × N_Banker_
+  Managers)`) so we don't drift into infinite-leverage degeneracy
+  after the reserve drop. Synthetic depositor loans don't count
+  toward the cap.
+- **`educator-approval-queue-2026-05-26.md`** — add a `priority`
+  field on `TrainingRequest` and a `REORDER_TRAINING_QUEUE` action
+  so the Educator can drag-reorder the pending approvals list.
+  Engine sorts pending requests by `(priority, batch_id)` everywhere
+  it iterates them, including in the AI Educator's response loop.
+  Server payload exposes `training_queue_order` for the Educator
+  player's dashboard; Claude will render the drag UI in a follow-up.
+- **`ai-manufacturer-product-mix-2026-05-26.md`** — make the AI
+  Manufacturer's product-line choice demand-driven each season
+  instead of statically stuck on FarmMachinery. Fixes the symptom
+  "Education never gets to buy Laboratory Equipment because
+  Manufacturing is never able to produce it." Includes a 10% sticky
+  threshold to prevent season-by-season thrashing and an
+  input-feasibility fallback when the preferred line is short on
+  Metal / Oil.
+- **Amendment to `training-flow-diagnostic-2026-05-26.md`** —
+  added hypothesis 7: display-title vs trainable-profession mismatch
+  (`BAND_TITLES` lists "Factory Foreman" but `ROLE_PROFESSIONS`
+  doesn't register a Profession.FACTORY_FOREMAN enum, so the title
+  shows on the roster but can't be trained). Same gap likely exists
+  for Miner, Transporter, Doctor band titles. Codex picks per role
+  whether to add the missing enums or collapse the display list to
+  match the trainable set.
+
+No engine or test changes; suite remains green at 429.
+
+### codex/kitchen-island-2026-05-26
+
+Branch: `codex/kitchen-island-2026-05-26`
+Target: `pre-release`
+
+Adds the cross-island Kitchen subsystem from the 2026-05-26 playtest
+brief:
+
+- Added a universal, cash-only `Kitchen` capital item (`common.kitchen`)
+  available to every island catalogue. Cost is 80 Dp, immediate
+  delivery, 12-season service life, no lease terms.
+- Added `Chef` as a Technician-band profession trainable by every
+  island through the existing technical-course pipeline. No starting
+  workforce pre-places Chefs.
+- Added a per-season Kitchen production pass: each active Kitchen needs
+  one active Chef and converts local ingredients into 6 Food using
+  `1 Food = 2 Grain + 1 Produce + 1 Fish-or-Meat`.
+- Protein selection prefers whichever of Fish or Meat is more plentiful
+  in local inventory; ties use Fish.
+- Kitchens idle gracefully when unstaffed or short on ingredients,
+  logging the reason and consuming no partial inputs.
+- Mid-game `PURCHASE_CAPITAL` can buy cash-only Kitchen equipment
+  without a Manufacturer counterparty; existing Manufacturer-built
+  equipment remains unchanged.
+
+Tests:
+
+- Added 8 Kitchen tests covering universal catalogue availability,
+  Chef training metadata, full production, no-Chef idle, missing-
+  ingredient idle, Fish/Meat tie-break, partial staffing with multiple
+  Kitchens, and cash-only purchase without a Manufacturer.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **437 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.3%–17.2%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.8%–18.0%; individual 200-game variance remains comparable to
+    the calibration baseline.
+
+### codex/training-flow-diagnostic-2026-05-26
+
+Branch: `codex/training-flow-diagnostic-2026-05-26`
+Target: `pre-release`
+
+Diagnose-and-fix pass for the recurring training-flow defect reported
+in the 2026-05-26 playtest cycle.
+
+Diagnostic findings:
+
+- Return logistics: the Game return hook did move dispatched workers
+  back correctly on the happy path, but it logged nothing when a due
+  batch returned zero or fewer workers than expected. It now logs
+  complete / returned / failed-return warnings with batch ids and
+  missing worker ids.
+- Dispatch under load: pending requests blocked by capacity or tickets
+  could remain stuck because AI Educators only responded at request
+  creation time. AI Educators now review pending requests every season,
+  so a request starts once Course / Expertise / PassengerSeats capacity
+  clears.
+- Ticket math under partial supply: existing split-ticket code already
+  checked requester and Educator inventories before consuming either
+  side. Regression coverage remains in place and no rollback bug was
+  found.
+- Sustenance accounting: dispatched cross-island trainees were counted
+  both as visiting campus load at Education Island and as mouths to feed
+  at their home island. Home islands now subtract dispatched trainees
+  while Education Island adds them.
+- Decline / cancel paths: rejected and counter-rejected requests did
+  release their logical reservation, but workers were not reserved while
+  a request was pending. The registry now rejects duplicate active
+  requests for the same worker, and the request UI filters already-
+  reserved workers out of the eligible list.
+- AI Educator behaviour: AI approval now replays seasonally and logs
+  pending reasons, approvals, dispatches, and rejections rather than
+  silently leaving blocked requests in the queue.
+
+Changes shipped:
+
+- Added active worker reservations to `TrainingRegistry` so the same
+  worker cannot be queued into overlapping training requests.
+- Added dispatch readiness checks before consuming training / transport
+  side effects.
+- Added seasonal AI Educator and legacy AI Transporter queue review.
+- Added `absent_residents` support to `Player.meals_needed` and wired
+  training campus load so trainees eat in one place, not two.
+- Improved training state-transition logging around dispatch and return.
+
+Tests:
+
+- Added 5 regression tests covering duplicate worker reservations, AI
+  Educator retry after capacity clears, three-trainee happy-path return,
+  failed-return logging, and campus-vs-home sustenance accounting.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **434 passing**.
+- Balance check stayed on the post-calibration band:
+  - `--games 1000 --years 3 --seed 42`: all roles 12.2%–17.0%.
+  - `--games 200 --years 3 --seeds 42,1,7,99`: four-seed means
+    12.9%–17.9%; individual 200-game seed variance matches the
+    calibration PR baseline (Manufacturer seed 7 at 8.5%, Doctor seed
+    42 at 9.5%).
+
+### claude/codex-briefs-2026-05-26
+
+Branch: `claude/codex-briefs-2026-05-26`
+Target: `pre-release`
+
+Docs-only — drafts two new Codex briefs from the 2026-05-26 playtest
+feedback (`0.1.0-dev.2026-05-26`):
+
+- `requirements/codex-tasks/kitchen-island-2026-05-26.md` — new
+  Kitchen capital item (1 Food = 2 Grain + 1 Produce + 1 Fish-or-Meat)
+  with a new Chef Technician profession. Cash-only purchase, capacity
+  and price deferred to Codex calibration. Lets any island convert raw
+  ingredients into Food in-house, gated by training a Chef.
+- `requirements/codex-tasks/training-flow-diagnostic-2026-05-26.md` —
+  diagnose-and-fix pass on the training pipeline end to end after a
+  third consecutive cycle of "trainees don't return / training over-
+  constrained" reports. Hypothesis list focuses on return logistics,
+  dispatch under load, ticket math under partial supply, sustenance
+  accounting for in-training workers, decline/cancel paths, and AI
+  Educator behaviour.
+
+No engine or test changes; suite remains green at 429.
+
+### claude/restore-action-menu-2026-05-26
+
+Branch: `claude/restore-action-menu-2026-05-26`
+Target: `pre-release`
+
+Fixes the "trading stops with 240s left on the season clock" defect
+playtesters reported against `0.1.0-dev.2026-05-25.2`. Root cause was
+that the 📋 Menu recovery button only re-rendered the cached prompt;
+if the engine's pending prompt for this player had moved on (or the
+cached prompt never matched the engine state) the recovery did
+nothing and the season clock kept counting down with no way to act.
+
+- `WebSocket.get_state` handler now also calls
+  `replay_pending_prompt(engine_pid)` while the room is `running`,
+  so the server redelivers the live unresolved IO prompt for this
+  player on demand. Previously this was only done on the initial
+  WebSocket connect.
+- Client `restoreActionMenu()` now always calls `requestState()`
+  after re-rendering the cached prompt — the cached re-render
+  provides instant feedback, and the live server replay overwrites
+  with the real engine prompt if it disagrees.
+
+No engine changes; 429 tests passing.
+
+### claude/ui-followups-2026-05-25
+
+Branch: `claude/ui-followups-2026-05-25`
+Target: `pre-release`
+
+UI follow-ups for the just-merged Training UX and Capital Lease
+subsystems, plus a small "About / version" feature so playtesters can
+report defects against a specific build:
+
+- Added `APP_VERSION` constant to `island_traders/constants.py` as the
+  single source of truth for the build version and exposed it via:
+  - `version=APP_VERSION` on the FastAPI app
+  - a new `GET /version` JSON endpoint
+  - a version label in the landing-page footer (with About link)
+  - a version chip in the in-game header (also opens About)
+- Added a 📋 Menu recovery button in the game header that re-opens the
+  cached Action Menu prompt — fixes the playtest observation that a
+  Decision-Hint button could cause the Action Menu to disappear until
+  the next turn.
+- Cached the last `action.prompt` payload in `lastActionPromptMsg` so
+  the Menu recovery button has something to re-render.
+- Rendered the new structured `request_summary` payload (training
+  approval / counter-offer modals) as a styled key-value table inside
+  the option-picker and confirm dialogs.
+- Reworked the Investing-phase capital list:
+  - Added a 3-way Skip / Buy / Lease `<select>` for lease-eligible items.
+  - Server `_investing_payload` now pre-computes a `lease_quote` for
+    each lease-eligible catalogue item so the client can show the
+    annual payment, buyout, and total cost without a round-trip.
+  - Investing totals now correctly sum upfront costs (first lease
+    payment for leased items, full price for purchased items).
+- Renamed the Loans popup to "Loans & Leases" and added a dedicated
+  Leases section that lists active leases with status, annual payment,
+  next payment type, and buyout amount.
+
+No engine changes; suite remains green at 429 passing.
+
+### codex/capital-equipment-lease-2026-05
+
+Branch: `codex/capital-equipment-lease-2026-05`
+Target: `pre-release`
+
+Adds the capital-equipment lease subsystem:
+
+- Added `Lease`, `LeaseStatus`, and `LeaseLedger` with active,
+  repossessed, awaiting-buyout, completed, and buyout-defaulted states.
+- Added `CapitalItem.lease_terms` and made `educator.technical_workshop`
+  lease-eligible on a 3-year term with 25% buyout and posted 3-year
+  funding rate + 2% margin.
+- Added lease inception math with locked rates, annual payments in
+  advance, and first payment at inception.
+- Added mid-game `LEASE_CAPITAL` and `PAY_LEASE` actions.
+- Wired season-start annual lease payments, repossession on missed
+  payments, one-season delayed return after catch-up, and buyout/default
+  handling.
+- Added save/load serialization for leases.
+- Extended investing payloads with `lease_terms` and accepted
+  `lease:<item_id>` selections for opening-phase lease choices.
+- Added `leases_detail` to server game-state payloads for the future
+  Loans popup section.
+- Added 16 regression tests; full suite is green at 420 passing.
+
+UI follow-up: Claude will render lease choices in investing and show
+`leases_detail` under the Loans popup.
+
+### codex/training-ux-improvements-2026-05
+
+Branch: `codex/training-ux-improvements-2026-05`
+Target: `pre-release`
+
+Implements the training UX follow-up:
+
+- Added 10 `PassengerSeats` to the Educator starting inventory to
+  bootstrap early cross-island training.
+- Added `TrainingRequest.tickets_supplied_by_requester` so requesters
+  can spend some or all of their own PassengerSeats; Educators only
+  supply the remainder.
+- Updated suggested and AI fair-rate ticket fees to charge only for
+  Educator-supplied seats.
+- Updated dispatch to consume requester and Educator PassengerSeats
+  from the correct inventories without partial burns on failure.
+- Added structured `request_summary` payloads to training approval and
+  counter-offer prompts for the future dashboard modal rendering.
+- Added 9 regression tests covering starting tickets, split ticket
+  consumption, AI fee behavior, failed pledged-ticket dispatch, and
+  prompt summaries.
+
+UI follow-up: Claude will render `request_summary` in the dashboard
+approval modal.
+
+### claude/codex-briefs-refresh-2026-05-25
+
+Branch: `claude/codex-briefs-refresh-2026-05-25`
+Target: `pre-release`
+
+Docs-only refresh of three Codex briefs after the 2026-05-25 design
+conversation:
+
+**1. `requirements/codex-tasks/capital-equipment-lease-2026-05.md` —
+locked-in decisions applied.**
+
+- **Investing phase AND mid-game** lease initiation (was investing-only
+  in v1 of the brief). Mid-game uses a sibling `TurnAction.LEASE_CAPITAL`
+  action analogous to `PURCHASE_CAPITAL`; same rate-locking math.
+- **End-of-term buyout = 25 % of original cost** (option a). Lease no
+  longer auto-completes after the 3 annual payments — flips to a new
+  `AWAITING_BUYOUT` status; lessee pays `cost × 0.25` to take ownership
+  (`COMPLETED`) or walks away (`BUYOUT_DEFAULTED`, item reclaimed).
+- **Lease rate = posted 3-year funding rate + 2 % margin**, locked at
+  inception, identical for investing-phase and mid-game leases
+  (treated as a secured loan against the asset).
+- **Annual payment math updated:**
+  `(cost − buyout) / term_years × (1 + lease_rate)`. For the Workshop
+  (cost 60, buyout 15, ~4 % posted) → ~15.9 Dp/year + 15 Dp buyout =
+  ~62.7 Dp total ≈ 4.5 % premium over outright.
+- Two new lease statuses: `AWAITING_BUYOUT`, `BUYOUT_DEFAULTED`.
+- Server `leases_detail` payload gains `buyout_payment` and
+  `next_payment_type` ("annual" | "buyout").
+- Required test count grows from 11 → 16 (mid-game lease creation,
+  buyout flow, lease-rate-locking-at-inception, etc).
+- UI direction: leases list under the Loans panel (single
+  `leases_detail` array keeps it simple).
+
+**2. New brief: `requirements/codex-tasks/training-ux-improvements-2026-05.md`.**
+
+Three related improvements addressing the Bug 1 PassengerSeats failure
+mode plus the "approval prompt doesn't show what you're approving"
+in-play observation:
+
+- **Add 10 PassengerSeats to `STARTING_INVENTORY["Educator"]`** —
+  bootstraps cross-island training; eliminates Bug 1 #5 for the first
+  few requests in a fresh game.
+- **`TrainingRequest.tickets_supplied_by_requester: int = 0`** — new
+  field. Requester can pledge to supply some/all of the air tickets
+  themselves; Educator only sources the remainder. AI Educator's fair
+  rate drops accordingly so requesters get a lower fee for
+  self-supplying.
+- **Approval prompt shows full request details** — structured payload
+  field `request_summary` on the Educator's approve/counter prompt
+  AND the requester's counter-acceptance prompt, listing trainees,
+  target profession, transport breakdown, fee, etc. Server-side; UI
+  rendering is a Claude follow-up.
+- 9 required regression tests.
+
+**3. `requirements/codex-tasks/balance-calibration-2026-05.md` —
+prerequisites list expanded.**
+
+Added the new pending Codex tasks (lease + training UX) to the
+sequencing-dependencies section. Calibration now waits for **five**
+upstream landings instead of two: Economy A–D + AI Trading v1/v2 +
+sustenance basket + training-staffing (all shipped) + capital lease
++ training UX improvements (both pending). Tuning before all five
+land is wasted work.
+
+No code / tests touched. Suite still **404 passing** on `origin/pre-release`.
+
+### claude/codex-brief-equipment-lease
+
+Branch: `claude/codex-brief-equipment-lease`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/capital-equipment-lease-2026-05.md` for the
+proper capital-equipment lease subsystem (Bug 1 / training-staffing
+follow-up).
+
+Replaces the interim "use the existing 1/2/3-year loans" approach
+documented in `codex/training-staffing-2026-05`'s release notes.
+Key spec points:
+
+- New `Lease` model + `LeaseLedger` mirroring `LoanLedger`.
+- `CapitalItem` gains an optional `lease_terms` field opting it into
+  the lease flow; only `educator.technical_workshop` opts in for v1.
+- 3-year term, annual payments **in advance**, rate locked at lease
+  inception (`posted_funding_rate + 2% margin`).
+- Missed payment triggers **repossession**: item removed from
+  `capital_inventory`, lease flips to `REPOSSESSED`.
+- Catch-up payment in a later season reinstates the lease; item
+  returns to `capital_inventory` **one season later** (Bank
+  redeploy logistics).
+- Investing-phase choice between buy outright and lease; AI default
+  buy-then-lease-then-skip; auto-pay when solvent.
+- Server `leases_detail` payload mirroring `loans_detail`; UI work
+  follows on a Claude branch after merge.
+- 11 required regression tests covering creation, in-advance payment,
+  repossession, season-delayed return, ownership transfer on
+  completion, rate math, payload shape, AI behavior.
+
+Calibration follow-up: lease changes equipment-acquisition cadence
+slightly; flag for the next calibration re-run.
+
+No code / tests touched.  Suite still **403 passing** on
+`origin/pre-release`.
+
+### codex/training-staffing-2026-05
+
+Branch: `codex/training-staffing-2026-05`
+Target: `pre-release`
+
+Implements the staffing-based training admission redesign:
+
+- Added `Profession.TECHNICAL_DIRECTOR` as a Manager-band Educator role
+  with a starting baseline of 1 Technical Director.
+- Replaced the old Manager Course-only gate and Technician slot-pool
+  gate with per-concurrent-course staffing commitments.
+- Manager courses now require 0.5 Professor + 1 Lecturer, 2 Expertise,
+  and the existing Course resource debit.
+- Technical courses now require 0.5 Technical Director + 1 Instructor,
+  1 Expertise, the existing Course resource debit, and a Technical
+  Workshop prerequisite.
+- Renamed the Educator capital item to `educator.technical_workshop`
+  with `technical_workshop_slots`, and migrated legacy save keys on load.
+- Added in-flight course accounting for Manager and Technician courses,
+  with staff slots held from Educator approval through completion.
+- Added regression coverage for capacity formulas, workshop prerequisite,
+  staff lock duration, Expertise/Course debits, capital rename, save
+  migration, and legacy helper cleanup.
+
+Follow-up: because this changes training admission cadence, calibration
+should be re-run after the branch is reviewed and merged.
+
+**Bootstrap follow-up commit (2026-05-25, Claude review pass).**
+The originally-pushed starting workforce (4 Prof + 1 TD + 4 Inst)
+left a permanent chicken-and-egg deadlock in the Manager pipeline:
+training a first Lecturer is itself a Manager-tier course, but the
+new staffing rule needs an existing Lecturer to run any Manager
+course. Two patches on top of Codex's commit address this:
+
+- **Option B starting workforce** — `STARTING_WORKERS_BY_PROFESSION["Educator"]`
+  is now `2 Professor + 4 Lecturer + 1 Technical Director + 4 Instructor`
+  (total 11). Starting Manager-course capacity = `min(2×2, 4) = 4`,
+  Technical-course capacity = `min(1×2, 4, workshop) = 2` (with the
+  workshop now in mandatory minimum, see below).
+- **Technical Workshop added to `MANDATORY_MINIMUM_INVESTMENT["Educator"]`** —
+  every Educator opens the game owning a `educator.technical_workshop`
+  (3 workshop slots) unless they explicitly deselect it during the
+  Investing Phase. Without this, the Technical pipeline was a hard
+  block at game start (workshop is a prerequisite, not just a
+  capacity multiplier).
+- **Updated `test_educator_starting_workforce_*` test** for the new
+  shape; added `test_technical_workshop_is_mandatory_minimum_for_educator`.
+
+**Workshop trainee-cap follow-up commit (2026-05-25 part 2, Claude review
+pass).** Per spec revision: the Technical Workshop now caps **at 6
+trainees in training at a time**, per workshop — a per-trainee
+headcount rather than per-course slot count.
+
+- `effects["technical_workshop_slots"] = 3` → `effects["technical_workshop_trainees"] = 6`.
+- Helper renamed: `technical_workshop_slot_capacity` →
+  `technical_workshop_trainee_capacity`.
+- Engine gate split into TWO independent technical checks:
+  1. **Staffing gate** (per-course, unchanged): `min(TD*2, Instructors)`
+     concurrent courses.  Workshop is no longer in this min().
+  2. **Workshop trainee gate** (per-trainee, new): sum of in-flight
+     batch sizes ≤ `n_workshops × 6`. A 7-trainee batch tries to admit
+     when 4 trainees are already in flight on one workshop → blocked
+     with "Technical Workshop capacity full: 4/6 trainee seat(s)
+     already in training (need 7 more for this batch)."
+- New `TrainingRegistry.technical_trainees_in_flight(educator_id)`
+  sums trainee headcount across active Technician-tier batches.
+- `_technical_course_capacity` is now staffing-only; the workshop
+  check lives inline in `_training_capacity_status`.
+- New test `test_technical_workshop_caps_trainee_headcount` covers
+  the 6-seat fit / over-cap fail / second-workshop unblock cycle.
+- Existing tests adjusted: `test_technical_capacity_min_of_2x_td_and_instructors_staffing_only`
+  reflects the staffing-only semantics; `test_technical_workshop_trainee_capacity_helper`
+  replaces the slot-capacity helper test; legacy-cleanup test now also
+  asserts `technical_workshop_slot*` names are gone.
+
+**Interim lease-equivalent financing** (until the proper Lease
+subsystem ships separately): Educators who don't want to commit
+the workshop's full `60 Dp` from their `1500 Dp` starting capital
+can finance it via the existing 1/2/3-year Bank loans at
+`banker_quote_rate` (posted funding rate + 2% margin + borrower
+risk). This is documented in the test docstring; a real Lease
+subsystem (3-year term, annual payments in advance, repossession
+on missed payment, season-delayed return on catch-up) is queued
+as a separate Codex brief (`capital-equipment-lease-2026-05`).
+
+### claude/codex-brief-training-staffing
+
+Branch: `claude/codex-brief-training-staffing`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/training-staffing-2026-05.md` for the Bug 1
+follow-up Track B (staffing-based training admission redesign).
+
+Spec captured from the 2026-05-25 design conversation:
+
+- **Per-concurrent-course staffing**, locked for course duration:
+  - Manager course: 0.5 Professor + 1 Lecturer + 2 Expertise + 1 Course
+  - Technical course: 0.5 Technical Director + 1 Instructor + 1 Expertise + 1 Course
+- **New `Profession.TECHNICAL_DIRECTOR`** (Manager-band) — tier-1 role
+  for the technical/vocational faculty, parallel to Professor for
+  academia.
+- **`educator.apprenticeship_programme` capital item renamed** to
+  `educator.technical_workshop` with the same `cost`/`delivery_seasons`;
+  effect key `apprenticeship_slots` → `technical_workshop_slots`. The
+  workshop is a **prerequisite** for Technical courses (Educator with
+  zero workshops can't run them at all), with workshop slot count
+  acting as an additional upper bound on the concurrent-course
+  capacity: `technical_capacity = min(TD*2, Instructors, workshops)`.
+- **`apprenticeship_slot_capacity` helper renamed** to
+  `technical_workshop_slot_capacity`.
+- **`TrainingRegistry` adds** `manager_courses_in_flight(educator_id)`
+  and `technical_courses_in_flight(educator_id)` for the concurrent-
+  course accounting.
+- **`_training_capacity_status` rewritten** to the staffing model;
+  `_consume_training_capacity` now debits per-course Expertise as well
+  as the existing `Courses` resource (per-batch).
+- 10 required regression tests covering capacity math, the workshop
+  prerequisite, staff-locked-for-duration, expertise debiting, and the
+  legacy `apprenticeship_*` rename completion.
+- Save-file migration callout: old saves with
+  `educator.apprenticeship_programme` in `capital_inventory` need to be
+  remapped to the new key on load.
+
+Calls out calibration follow-up: this changes training admission
+cadence, so a re-tune is likely needed after the redesign lands.
+
+Auction-stuck-at-zero fix (parked locally on
+`claude/bug-auction-stuck-at-zero`, commit `2c96369`, not pushed) and
+the sustenance basket model (pending on
+`claude/sustenance-basket-model`) are flagged in the brief's
+mini-changelog so Codex has accurate base context.
+
+No code / tests touched. Suite still **369 passing** on
+`origin/pre-release`.
+
+### claude/sustenance-basket-model
+
+Branch: `claude/sustenance-basket-model`
+Target: `pre-release`
+
+Replaces the legacy two-resource Food/Fish sustenance model with a
+**five-resource basket** model per the 2026-05-25 spec.
+
+**Old model** (`Player.population_food_fish_needs`):
+- `food = max(0, population − 100) + transients`
+- `fish = ceil(pop / 100) + ceil(educated / 8)`
+- `Grain` / `Produce` / `Meat` generated **zero** sustenance demand.
+- Below population 100, **zero** Food demand (the `BASE_POPULATION_SELF_FED`
+  baseline assumption).
+
+**New model**:
+- Each `PEOPLE_PER_MEAL` residents (default **10**) consume **one
+  meal** per season — no baseline, every resident counts.
+- A meal is satisfied by **1 Food** OR **(1 Grain + 1 Produce + 1
+  (Fish or Meat))**. Fish/Meat are 1:1 fungible for the protein slot.
+- **Cross-substitution at 2:1**: a surplus unit of any raw ingredient
+  (grain/produce/fish/meat) substitutes for a missing slot at 2 units
+  → 1 slot fill. Worked example from the spec: `3 Grain + 0 Produce +
+  1 Fish` → **1 meal** (1 grain native + 1 fish native + 2 grain
+  substituting for the missing produce slot at 2:1).
+- **Consumption order**: Food first, then raw with substitution. This
+  is now an actual inventory deduction per season (the old model only
+  posted demand without consuming).
+
+**API:**
+
+- `Player.meals_needed(extra_residents=0) -> int` — per-season meal
+  count (`ceil((population + extra) / PEOPLE_PER_MEAL)`).
+- `Player.consume_sustenance(meals_needed) -> (satisfied, used_dict,
+  shortfall)` — mutates inventory, returns per-resource consumption.
+- `Player.meals_available() -> int` — peek (no mutation); how many
+  meals current inventory could satisfy.
+- `Player.sustenance_shortfall_demand(extra_residents=0)` — market
+  basket signal (Food / Grain / Produce / Fish / Meat at the unmet
+  meals level).
+- Module-level `_allocate_raw_meals(meals_needed, grain, produce,
+  fish, meat)` — pure allocator with the waterfill+2:1 substitution
+  logic (extracted so it's unit-testable; consumed by `consume_sustenance`
+  and `meals_available`).
+
+**Engine integration**: `TurnManager._post_population_food_demand` →
+renamed `_consume_and_post_sustenance`. Each season-start: consume
+sustenance from inventory, then post the shortfall basket to the
+market (each of Food/Grain/Produce/Fish/Meat at `shortfall_meals`
+level — intentionally overcounts in absolute units; it's a signal,
+not an order book).
+
+**Server alerts**: per-island sustenance alerts collapse from the
+old per-resource Food/Fish format to a single basket-aware **"Meals"**
+alert with runway computed against `Player.meals_available()`. Avoids
+the per-resource runway being misleading when components are fungible.
+
+**Removed**: `BASE_POPULATION_SELF_FED` constant. **Added**:
+`PEOPLE_PER_MEAL = 10`.
+
+**Tests**: 21 new tests in `tests/test_models/test_population_needs.py`
+covering meal-count math, all `_allocate_raw_meals` edge cases (zero,
+native-only, the user's spec example, ingredient-shortage,
+fish/meat fungibility, partial satisfaction, target-cap), and end-to-end
+`consume_sustenance` (food-first, fall-through, partial, no-op).
+Two existing tests rewritten: `test_education_phase3.py` campus-load
+test (basket-aware), `test_game_state_loans_policies.py` server-alert
+test (single "Meals" entry).
+
+**Calibration impact (NOT addressed here)**: this change shifts
+balance — Grain/Produce/Meat now have non-zero demand (was zero);
+Food demand kicks in at population 1 (was 101). The `4e56ead`
+calibration is tuned against the old model. **A re-tune is likely
+needed** after this lands. Not a release blocker but worth flagging
+when scheduling the next calibration pass.
+
+Suite **386 passing** (was 365 + 21 new tests).
+
+### codex/balance-calibration-2026-05
+
+Branch: `codex/balance-calibration-2026-05`
+Target: `pre-release`
+
+2026-05-25 rerun after the sustenance basket model, training-staffing
+redesign, capital-equipment leases, and training UX improvements landed.
+This supersedes the earlier calibration numbers below for the current
+`pre-release` equilibrium.
+
+Current rerun diagnosis:
+
+- Fresh baseline against `pre-release` at `540b751` showed the Farmer
+  overcorrected downward after the new sustenance/training/lease changes.
+  Farmer averaged only 2.0% on the four-seed sweep while Educator,
+  Banker, and Manufacturer were mildly hot.
+- The main tuning change reprices the now-universal sustenance basket
+  and raises Farmer seasonal raw output. This restores value to the
+  island feeding every resident without reintroducing the old
+  Banker/Farmer runaway pattern.
+- Freight and PassengerSeats were lifted modestly, while Education
+  resources were cooled slightly, to keep Transporter above the floor
+  and Educator below the ceiling.
+- The simulation runner now explicitly seeds AI players with
+  `STARTING_DOLLOPS` instead of carrying the stale `100.0` literal.
+
+Historical stale baseline (pre-Economy A-D and pre-AI-v2, 800 games
+across seeds 42/1/7/99; included only as context):
+
+| Role | Historical stale mean win% |
+|---|---:|
+| Farmer | 42.5% |
+| Miner | 0.4% |
+| Transporter | 0.0% |
+| Educator | 1.0% |
+| Banker | 54.6% |
+| Manufacturer | 1.5% |
+| Doctor | 0.0% |
+
+Fresh pre-tune baseline on current `pre-release` at `540b751`, before
+this rerun's balance tuning:
+
+| Role | Seed 42, 1000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 2.3% | 1660.1 Dp | 2.0% |
+| Miner | 17.5% | 2511.8 Dp | 15.0% |
+| Transporter | 14.8% | 2377.3 Dp | 12.9% |
+| Educator | 20.4% | 3094.7 Dp | 21.8% |
+| Banker | 15.7% | 2369.1 Dp | 17.9% |
+| Manufacturer | 18.0% | 2378.2 Dp | 19.9% |
+| Doctor | 11.3% | 2867.8 Dp | 10.6% |
+
+Final post-tune verification on this rerun:
+
+| Role | Seed 42, 1000g win% | Seed 42, 5000g win% | Avg wealth (5000g) | 4-seed mean win% |
+|---|---:|---:|---:|---:|
+| Farmer | 14.7% | 13.1% | 2419.3 Dp | 13.4% |
+| Miner | 14.7% | 13.9% | 2438.3 Dp | 13.0% |
+| Transporter | 15.6% | 14.1% | 2476.2 Dp | 14.9% |
+| Educator | 17.0% | 18.3% | 2975.0 Dp | 17.9% |
+| Banker | 12.9% | 14.6% | 2373.0 Dp | 14.9% |
+| Manufacturer | 12.2% | 13.1% | 2375.8 Dp | 12.9% |
+| Doctor | 12.9% | 12.9% | 2905.2 Dp | 13.1% |
+
+Verification commands:
+
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 1000 --years 3 --seed 42`
+  passed acceptance after tuning.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 200 --years 3 --seeds 42,1,7,99`
+  produced four-seed means within the target band; no role was 0% and
+  no per-seed role exceeded ~25%. One 200-game seed sample had
+  Manufacturer at 8.5%, so watch Manufacturer variance in future runs,
+  but the sweep mean and long seed-42 run are both in band.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 5000 --years 3 --seed 42`
+  produced the final long-run table above.
+
+Release-blocking balance pass after Economy A-D and AI Trading v1/v2.
+The first fresh baseline exposed a new post-AI-v2 failure mode:
+Transporter was winning nearly every AI-only game. Diagnosis found
+three structural issues before event-chart tuning:
+
+- External depositor loans (`lender_id = -1`) crashed simulation
+  repayment; repayment now treats those as cash paid to external
+  depositors.
+- Direct buys from posted offers debited buyers but did not credit the
+  resting seller; sellers now receive the trade cash.
+- Manufacturer AI ignored Freight surcharges and live equipment bids;
+  it now buys required Freight and prioritises visible demand.
+
+Balance levers adjusted:
+
+- Reduced Transporter and Miner raw output from post-AI-v2 levels.
+- Rebalanced Farmer seasonal output, Educator/Doctor production, key
+  commodity prices, equipment prices, Freight/PassengerSeat values,
+  and insurance premiums.
+- AI now keeps no-demand services/IP (`HealthServices`, `Vaccine`,
+  `Patents`, `PassengerSeats`) unless a bid exists, avoiding stale
+  asks that removed value from final scoring.
+- Added focused regression tests for external depositor repayment,
+  seller payment on direct offer fills, Manufacturer Freight buying,
+  and bid-aware Manufacturer line choice.
+
+Historical stale baseline (pre-Economy A-D and pre-AI-v2, 800 games
+across seeds 42/1/7/99; included only as context):
+
+| Role | Historical stale mean win% |
+|---|---:|
+| Farmer | 42.5% |
+| Miner | 0.4% |
+| Transporter | 0.0% |
+| Educator | 1.0% |
+| Banker | 54.6% |
+| Manufacturer | 1.5% |
+| Doctor | 0.0% |
+
+Fresh pre-tune baseline on this branch after the simulation-blocking
+external-depositor repayment fix, before balance tuning:
+
+| Role | Seed 42, 1000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 0.8% | 2073.6 Dp | 1.0% |
+| Miner | 0.2% | 1312.3 Dp | 0.2% |
+| Transporter | 98.9% | 8556.5 Dp | 98.5% |
+| Educator | 0.0% | 1411.9 Dp | 0.0% |
+| Banker | 0.1% | 1717.4 Dp | 0.2% |
+| Manufacturer | 0.0% | 1248.1 Dp | 0.0% |
+| Doctor | 0.0% | 1271.9 Dp | 0.0% |
+
+Final post-tune verification:
+
+| Role | Seed 42, 5000g win% | Avg wealth | 4-seed mean win% |
+|---|---:|---:|---:|
+| Farmer | 11.1% | 2440.7 Dp | 11.5% |
+| Miner | 15.1% | 2492.8 Dp | 14.5% |
+| Transporter | 16.6% | 2626.8 Dp | 17.5% |
+| Educator | 18.3% | 2894.5 Dp | 17.2% |
+| Banker | 13.6% | 2367.1 Dp | 14.6% |
+| Manufacturer | 14.6% | 2409.9 Dp | 13.5% |
+| Doctor | 10.6% | 2840.5 Dp | 11.1% |
+
+Verification:
+
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 1000 --years 3 --seed 42`
+  passed acceptance before the final long run.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 200 --years 3 --seeds 42,1,7,99`
+  produced 4-seed means within the target band; no role was 0% and no
+  per-seed role exceeded ~25%.
+- `PYTHONPATH=. .venv/bin/python -m island_traders.simulation.runner --games 5000 --years 3 --seed 42`
+  produced the final table above, with every role within ±5pp of 14.3%.
+- `PYTHONPATH=. .venv/bin/python -m pytest -q` → **369 passing**.
+
+### claude/refresh-codex-calibration-brief
+
+Branch: `claude/refresh-codex-calibration-brief`
+Target: `pre-release`
+
+Docs-only — refresh of
+`requirements/codex-tasks/balance-calibration-2026-05.md` to reflect
+the work that landed between the brief's original 2026-05-18 draft and
+today's `pre-release` tip (`4e56ead`). Headlines:
+
+- **Sequencing dependencies marked satisfied** — both prerequisites
+  the brief originally waited on (Economy Lifecycle Phases A–D, AI
+  Trading v1+v2) are now merged. Brief is unblocked.
+- **Baseline table flagged as historical-stale** — the old win-rate
+  numbers (Banker 54.6%, Farmer 42.5%, Transporter / Doctor 0%) were
+  measured pre-A-D and pre-AI-v2 and should not be taken as ground
+  truth. New "What is expected to shift" subsection lists testable
+  hypotheses (Banker should come down from MBA reserve gate, Farmer
+  should come down from combine maintenance, all roles should shift
+  from 700→1500 cash).
+- **Mini-changelog added** — covers Economy A–D, AI Trading v1 + v2,
+  UX phases 1–6, training-return defect fix, WS reconnect race fix,
+  order override rule, market matcher fix. Saves Codex an
+  archaeology pass.
+- **Branch tip + suite baseline refreshed** — `pre-release` at
+  `4e56ead`, **365 passing**.
+- **Three-table RELEASE_NOTES requirement** — historical-stale,
+  fresh-pre-tune-baseline, final-post-tune. Forces Codex to record
+  what shifted just from the prereq work (without their tuning).
+- **Hand-off + after-this-lands sections** — explicit do-not-merge
+  rule (Claude wants a final read before tagging `v0.1.0`) plus the
+  v0.1.0 ship path (pre-release → master → tag) called out.
+- **Out-of-scope list expanded** — adds `server/` (WS reconnect
+  hardening), `models/loan.py`, `models/insurance.py`,
+  `models/market.py` matching semantics.
+- **AI markup constants flagged as tuning levers** — `AI_OFFER_MARKUP`,
+  `AI_ARBITRAGE_MIN_MARGIN`, `AI_MIN_LOAN_PRINCIPAL`,
+  `AI_DEBT_CEILING_MULTIPLIER`.
+
+No code / tests change. Suite still **365 passing**.
+
+### codex/ai-trading-v2
+
+Branch: `codex/ai-trading-v2`
+Target: `pre-release`
+
+AI finance + investment lifecycle pass:
+
+- AI Bankers now offer one-year loans to capital-short AI borrowers,
+  using the real `banker_quote_rate` and Phase D1 reserve/MBA gate.
+- Capital-short AI borrowers now take AI Banker loans when they do not
+  already have an active borrowing position.
+- AI borrowers now roll over loans one season before maturity when they
+  cannot afford repayment.
+- AI players now use `INVEST` mid-game to claim the cheapest unowned
+  opening-catalogue item when they have sufficient cash.
+- Dynamic offer markup was left deferred; this branch keeps the pricing
+  model unchanged and focuses on the required finance/invest behaviours.
+
+Added 5 AI tests; expected suite count is 365 passing.
+
+### claude/codex-brief-ai-trading-v2
+
+Branch: `claude/codex-brief-ai-trading-v2`
+Target: `pre-release`
+
+Docs-only — new Codex brief at
+`requirements/codex-tasks/ai-trading-v2.md` for the finance + invest
+follow-up to the shipped `codex/ai-trading` work.
+
+**Why a v2 brief.** The original `requirements/codex-tasks/ai-trading.md`
+brief was fully executed in commit `4a65a9a` ("Add proactive AI market
+trading", 2026-05-17). All five behaviours it scoped (lists offers,
+places bids, Transporter air tickets, cross-island arbitrage, deal
+valuation via last-deal / best-offer / formula) are live, covered by
+six green tests in `tests/test_engine/test_ai.py`. The v2 brief picks
+up the finance + investment lifecycle actions the original deferred:
+
+1. **AI Banker proactively offers loans** to capital-short AI
+   borrowers (mirrors the existing `_ai_offer_insurance` pattern).
+   Honours the Phase D1 Banker capital-reserve / MBA gate.
+2. **AI borrowers take loans** when capital-short and no active
+   borrowing position exists.
+3. **AI rolls over loans near maturity** when it can't repay the
+   `repayment_amount`.
+4. **AI uses INVEST mid-game** for opening-catalogue items it didn't
+   claim during the Investing Phase.
+5. *(optional)* Dynamic per-(player, resource) offer markup that
+   adapts to last-season fill rate.
+
+The brief also includes a mini-changelog of everything that has
+shipped since the original AI-trading brief was drafted (Economy
+Phases A–D, order override rule, market matcher fix, 60% workforce
+cap, UX phases 1–6 server payload, training-return fix, WS
+reconnect-race fix) so Codex has accurate context.
+
+**Sequencing note in the brief.** AI Trading v2 lands *before* the
+release-blocker sim calibration
+(`requirements/codex-tasks/balance-calibration-2026-05.md`) so the
+balance pass tunes against the final AI behaviour.
+
+No code / tests touched. Suite still **360 passing**.
+
+### claude/bug-action-menu-race
+
+Branch: `claude/bug-action-menu-race`
+Target: `pre-release`
+
+**Fixes TODO bug #2 — "Action menu stops displaying for some players"**
+(multiplayer blocker).
+
+**Diagnosis.** Not the TLS / `_send_and_wait` surface the original TODO
+note suspected — those paths were already hardened in earlier work.
+The real root cause was a reconnect race in
+`island_traders/server/app.py` around the WebSocket-to-player table:
+
+1. Browser tab A opens, registers WS_A: `_ws_connections[R][P] = WS_A`.
+2. User refreshes / loses network briefly / opens a second tab. The
+   new connection arrives and `register_ws` runs on the asyncio loop
+   thread: `_ws_connections[R][P] = WS_B`.
+3. Some time later WS_A's network handler finally notices the
+   disconnect and its `finally` block fires
+   `manager.unregister_ws(room_id, player_id)`.
+4. The old code blindly `pop`'d the entry — **evicting WS_B from the
+   table even though WS_B was still alive and connected.**
+5. Subsequent `_thread_safe_send` (including the `choose_action`
+   payload) found `None` for the slot and silently dropped every
+   message. Player saw an empty action panel.
+
+The fix is two parts:
+
+- **Identity-aware unregister.**
+  `unregister_ws(room_id, player_id, ws=None)` now takes an optional
+  socket argument and only removes the entry if the stored socket is
+  the same object. Returns `True` iff something was actually removed.
+  The endpoint's `finally` passes `websocket` so a late unregister
+  from an already-superseded socket is a no-op.
+- **Lock around the connection table.**
+  New `GameManager._ws_lock` (a `threading.Lock`) wraps every read /
+  write of `_ws_connections` — `register_ws`, `unregister_ws`,
+  `_thread_safe_send`, `_thread_safe_broadcast`. The asyncio loop
+  thread (endpoint handlers) and the game thread (server-to-client
+  sends) both touch this table, so a plain dict isn't enough.
+
+Bonus side-effect: `lp.connected = False` in the endpoint's `finally`
+now also only fires when the unregister succeeded, so the lobby
+display no longer falsely flips to "disconnected" right after a
+quick reconnect.
+
+**Regression tests** in `tests/test_server/test_ws_reconnect_race.py`
+(5 new tests):
+
+1. `test_register_then_unregister_removes_the_entry` — happy path
+2. `test_unregister_does_not_remove_newer_replacement` — the bug
+3. `test_unregister_without_ws_arg_falls_back_to_force_pop` —
+   legacy / forced-cleanup signature preserved
+4. `test_unregister_returns_false_when_slot_already_empty` —
+   double-disconnect doesn't raise
+5. `test_thread_safe_send_uses_current_socket_after_reconnect` —
+   table lookup returns the reconnected socket, not the old one
+
+Suite **360 passing** (was 355 + 5 new tests).
+
+### claude/ux-plan-status-update
+
+Branch: `claude/ux-plan-status-update`
+Target: `pre-release`
+
+Docs-only — annotate `requirements/implementation-plans/review-ux-plan.md`
+with a 2026-05-24 status block now that every in-scope UX phase has
+shipped to `pre-release`. Adds:
+
+- Status table per phase with merge commit references.
+- Note on the training-return defect (incidental fix surfaced by the
+  Phase 3 Personnel popup) — merged as `399165e`.
+- "Follow-ups identified during implementation" section listing the
+  five seams worth picking up next (state-based action gating, server
+  hint adoption, in-modal preselection for non-Market actions, inventory
+  valuation rule, capacity/deficit section, inline action affordances
+  inside Loans / Insurance popups).
+- Replaces the as-planned sequencing diagram with the as-shipped order
+  (popup-shell landed in parallel with Codex Phase 1; Phase 6 split
+  into 6a starter + 6b followups).
+- Marks the "Coordination" section as historical.
+
+No code / tests change. Suite still **355 passing**.
+
+### claude/training-return-bug
+
+Branch: `claude/training-return-bug`
+Target: `pre-release`
+
+**Fixes the playtest 2026-05-24 defect** flagged in
+`claude/ux-popup-followups`'s RELEASE_NOTES and `TODO.md` Bugs:
+self-trained workers never graduated / advanced their `training_level`.
+
+**Diagnosis.** The defect was **only** in the self-training path
+(`engine/turn.py::_action_request_training` Educator shortcut at line
+~828). The cross-island path was always wired correctly:
+
+| Path | Registry side | Workforce side |
+|---|---|---|
+| Cross-island (`_dispatch_training`) | `training.dispatch(...)` | `workforce.dispatch_for_training(worker_ids)` |
+| Self-training (Educator shortcut) | `training.dispatch(...)` | **missing** ← bug |
+
+At the return tick, `Game._process_training_returns` correctly flips
+the registry-side status from `DISPATCHED → COMPLETED` and then calls
+`workforce.return_from_training(worker_ids, target_profession)`. But
+`return_from_training` is a guarded no-op for workers whose
+`in_training` flag is still False — so the self-trained worker stays
+at their original profession / training level. The new Personnel popup
+(Phase 3) made this visible: dispatched batches accumulated with
+`seasons_remaining = 0` and a `return_season` already in the past.
+
+**Fix.** One-line addition in the self-training shortcut, mirroring
+what `_dispatch_training` already does for the cross-island path:
+
+```python
+self.training.dispatch(req.batch_id, year, season_index)
+player.workforce.dispatch_for_training(req.worker_ids)   # ← added
+```
+
+On-island training still happens at the Educator's college; the
+worker is "in class" for the course duration (`in_training=True`,
+out of `active_workers`) rather than at their normal job, then
+returns and graduates exactly like a cross-island trainee.
+
+**Regression tests** in `tests/test_engine/test_training_returns.py`
+(3 new tests, end-to-end through `Game._process_training_returns`):
+
+1. `test_cross_island_trainee_returns_at_return_season_with_upgraded_profession`
+   — Nurse, 1 season away, correct Y/S match required.
+2. `test_cross_island_doctor_three_season_round_trip` — Doctor,
+   3 seasons; verifies the longer course only releases at S3.
+3. `test_self_training_round_trip_advances_worker_training_level` —
+   exercises the actual `_action_request_training` path so the new
+   workforce dispatch is verified end-to-end.
+
+Suite **355 passing** (was 352 + 3 new tests).
+
+### claude/ux-market-filter
+
+Branch: `claude/ux-market-filter`
+Target: `pre-release`
+Depends on: `claude/ux-hints-to-actions` (built on Phase 4's hint state;
+merge Phase 4 first).
+
+UX review Phase 5 — Market Buy first-viewport filtering + hint focus
+(Mockup 3).
+
+**What:** The Market Buy modal no longer renders one flat 11-row
+table where dormant commodities crowd the urgent ones. Rows now sit
+in three tiers:
+
+1. **Hint-mentioned** — resources currently surfaced by a Decision
+   Hint (sustenance runway, input shortfall, or the resource the
+   player clicked Open on).
+2. **Live market** — resources with at least one standing ask or bid.
+3. **Dormant** — everything else, hidden behind a *"Show all other
+   commodities (N dormant)"* `<details>` expander so they don't
+   dominate the first viewport.
+
+When the modal is opened via a hint's Open button, the hinted resource
+floats to the top of Tier 1, picks up a gold left-edge ring + tinted
+background (`.mkt-row-focus`), and the row auto-scrolls into view.
+A one-line banner above the table names the hinted resource so the
+player sees why the modal opened where it did.
+
+**Hint state plumbing (Phase 4 follow-through):**
+
+- `_currentHintResources` (Set, populated by `renderDecisionHints`)
+  drives Tier 1 detection independent of which player clicks.
+- `_pendingHintTarget` (one-shot global, set in `_actOnHint`, cleared
+  on first read in the next modal) carries `{action, resource}` —
+  e.g. `{action: 'buy_market', resource: 'Oil'}` — so the modal
+  knows which row to focus.
+- Sustenance hints now carry `target_resource: alert.resource`;
+  input-shortfall hints carry `target_resource` = first key of
+  `inputs_short`.
+- `_renderHintOpenButton` accepts an optional `payload` arg passed
+  through to `_actOnHint`.
+
+**Refactor:** Extracted `_renderMarketBuyRow(res, d, focusResource)`
+and `_marketBuyHeaderRow()` so the tier 1+2 and tier 3 tables share a
+single row implementation (identical columns, same input names — the
+existing `submitMarketBuy()` aggregation still picks up inputs from
+both sub-tables via `document.querySelectorAll`).
+
+**CSS additions:** `.mkt-row-focus` (focused-row gold ring + tint),
+`.mkt-dormant` (collapsed expander styling with a rotating chevron).
+
+**Edge cases:**
+
+- If every commodity is dormant (no hints + no live depth), the
+  primary table is replaced with a one-line empty-state notice and
+  every row lives in the collapsed expander.
+- If there are no dormant commodities (everything has activity or is
+  hinted), the expander is omitted entirely.
+- If `_pendingHintTarget` is set for a non-`buy_market` action and
+  Market Buy happens to open afterwards anyway, focus is left null —
+  the target only applies to its matching modal type.
+
+**Scope discipline:**
+
+- No engine / server changes. Pure client.
+- The `<details>` element is uncontrolled — collapsed state doesn't
+  persist across modal close/reopen. Matches the brief's
+  "*should not dominate the first viewport*" requirement.
+
+Suite **352 passing** (no test changes — pure client refactor).
+
+### claude/ux-hints-to-actions
+
+Branch: `claude/ux-hints-to-actions`
+Target: `pre-release`
+
+UX review Phase 4 — Decision Hints become actionable.
+
+**What:** Each rendered hint now carries a `triggers_action` field
+naming the `TurnAction` value that addresses it (e.g. an "Unblock
+Oil" hint triggers `buy_market`; an "Add workers for X" hint triggers
+`request_training`). The hint card grows a gold "Open" button:
+
+- When the action menu is currently open for this player, the button
+  calls `sendResponse(action)` — the same effect as clicking the
+  corresponding action menu button directly. **No auto-submit**: the
+  server then surfaces the action's modal (Market Buy, etc.) and the
+  player still confirms the final game action there.
+- When the action menu is not open (waiting on other players, between
+  prompts, etc.), the button is disabled with a "Wait for your action
+  prompt" tooltip.
+
+**Recommendation bridge:** The set of currently-hinted action values
+is tracked in `_currentHintActions`. When `showActionPrompt` renders
+the grouped action menu (Phase 2 work), the matching action button
+picks up the gold `.recommended` outline — same affordance Codex's
+Phase 1 payload reserved via the `recommended: true` per-option flag
+(server-side `recommended` is still default-false as of Codex's
+shipped payload; this layers a client-driven view on top of it).
+
+**Hint → action mapping:**
+
+| Hint kind | Triggers |
+|---|---|
+| Sustenance shortfall (`*_alerts`) | `buy_market` |
+| `Produce X` (output is producible) | `produce` |
+| `Unblock X` (input shortfall) | `buy_market` |
+| `Add workers for X` | `request_training` |
+| `Capital limits X` | `purchase_capital` |
+| `Underwrite X` (service output) | _(no direct action; service-side flow)_ |
+| Fallback "Check market and deals" | _(no direct action)_ |
+
+The brief's `loan_*` and `insurance_review` targets exist in Codex's
+server-side `decision_hints` field but the client's own
+`renderDecisionHints` does not emit those kinds today, so no UI
+shortcut is added for them in this branch. They can be picked up
+when the client switches over to consuming `gameState.decision_hints`
+directly (a follow-up).
+
+**Render synchronisation:** `showActionPrompt` and `hideOverlay` now
+call `renderGameState()` so hint cards re-render their `Open` buttons
+and the action menu picks up `recommended` outlines as the prompt
+opens / closes. Cheap re-render — gameState is already cached.
+
+**Scope discipline:**
+
+- No engine / server changes. Pure client.
+- In-modal preselection / filtering (Phase 5 of the plan, e.g. Market
+  Buy with the hinted resource at the top of the table) is deferred —
+  the seam is now in place for Phase 5 to plug into.
+- Client-side hint generation is unchanged in scope; only `target`
+  and `triggers_action` are added per hint.
+
+Suite **352 passing** (no test changes — pure client refactor).
+### claude/ux-popup-followups
+
+Branch: `claude/ux-popup-followups`
+Target: `pre-release`
+Independent of Phases 4/5 — branched directly off `pre-release` so it can
+merge in any order.
+
+UX review Phase 6 follow-up — Loans / Insurance / Inventory detail
+popups, closing out the §5 "standardize detail surfaces" punch list.
+
+**What:** Each of the three sidebar sections grows a small `⊕`
+"Details" button in its header (matching the existing Production
+Capacity `⚠` pattern). Click opens a popup using the shared
+`showPopup` shell and the `.popup-table` styling from
+`claude/ux-personnel-popup`.
+
+- **Inventory popup** — table of held resources sorted by quantity
+  descending, with current ask price and estimated value (qty × ask)
+  per row. Footer row shows totals.
+- **Insurance popup** — table of active policies with insurer name,
+  premium paid, expiration, seasons remaining, and cancel refund.
+  Policies expiring next season (`seasons_remaining ≤ 1`) get a
+  gold-tinted row.
+- **Loans popup** — table of active loans with role
+  (Borrowing / Lending), counterparty name, principal, rate, term,
+  repayment amount, maturity, seasons to maturity. Loans maturing
+  next season get a gold-tinted row. Footer shows totals: borrowing
+  repay due, lending repay incoming.
+
+**Plumbing:**
+
+- New `_playerNameLookup()` helper builds an `{id → name}` map from
+  `gameState.players` for counterparty / insurer display.
+- Empty states: "Inventory is empty.", "No active policies.", "No
+  active loans." — same `empty-state` styling as the Personnel
+  popup.
+- Sidebar summaries are unchanged (still render their compact view);
+  the popup is purely additive.
+
+**Notes against the brief (`review-ux.md` §5):**
+
+- Production Constraints, Market Board, Market Buy, Personnel
+  already use the shared shell from earlier branches. With this
+  branch landing, all six surfaces named in §5 (Production,
+  Personnel, Market Board, Loans, Insurance, Inventory) share the
+  same modal chrome.
+- Action entry points inside the popups (e.g. an inline "Cancel
+  policy" button) are deferred — those require Phase-4-style
+  send-response-during-prompt plumbing and the existing
+  `MANAGE_INSURANCE` / `ROLLOVER_LOAN` actions already cover the
+  workflows.
+
+**Defect note (separate to the popup work):** `TODO.md` Bugs section
+gains a new entry — *"Trainees never return from training"* —
+flagged during playtest 2026-05-24. Workers dispatched for training
+stay in the `dispatched` state past their `return_year` /
+`return_season` and never re-join the home workforce. Likely a
+missing per-season sweep in the season bookkeeping that should
+advance dispatched batches whose `return_*` ≤ current tick into
+`COMPLETED`. The new Personnel popup makes this visible:
+`seasons_remaining = 0` rows accumulate. Not fixed in this branch.
+
+Suite **352 passing** (no test changes — pure client refactor
+plus a TODO entry).
+
+### claude/ux-personnel-popup
+
+Branch: `claude/ux-personnel-popup`
+Target: `pre-release`
+Depends on: `claude/ux-popup-shell` (merge popup-shell first).
+
+UX review Phase 3 — Personnel detail popup (Mockup 2).
+
+**What:** The sidebar Personnel summary is now clickable. Click opens
+a popup with two sections, both driven entirely by the existing game
+state payload:
+
+- **Training Pipeline** — table of in-flight batches consuming the
+  `training_pipeline` field added by `codex/ux-server-payload`. One
+  row per batch with: trainee count, target profession, status,
+  educator, transport mode, fee (Dp), return season/year, seasons
+  remaining. Counter-messages (e.g. "Try 30 Dp instead") render
+  beneath the table, one per batch that has one. Empty pipeline
+  degrades to *"No workers currently in training."*
+- **Staffing** — band table (Managers / Technicians / Workers) with
+  active and in-training counts, plus a total row. Footer shows
+  workforce active/total, efficiency %, and population — the same
+  numbers the sidebar shows individually, gathered in one place.
+
+**UI plumbing:**
+
+- `s-personnel` sidebar element gets `onclick="showPersonnelPopup()"`
+  and a tooltip; the existing `personnel-breakdown` CSS class gets
+  `cursor:pointer` + a subtle hover brightness.
+- New popup uses the `showPopup` shell from
+  `claude/ux-popup-shell` — single Close button in the standard
+  footer, no per-popup chrome.
+- New `.popup-section`, `.popup-table`, `.empty-state`, `.batch-notes`,
+  `.staffing-extras` CSS rules — reusable by the remaining Phase 6
+  popups (Loans / Insurance / Inventory) when they land.
+- `_TRAINING_STATUS_LABEL` table maps the enum values from
+  `island_traders/models/training.py::TrainingStatus` to display
+  text (`awaiting_educator` → "Awaiting educator", etc.).
+
+**Scope discipline:**
+
+- No engine or server-payload changes. Pure client refactor.
+- "Capacity/deficit summary: missing professions for the island
+  staffing plan and current university slot availability" from the
+  brief is deferred — the data is in `pd["capacity"]` but adding a
+  third popup section is out of scope for this branch and depends on
+  Phase 4 hint plumbing to be meaningful.
+- Inventory popup (also Phase 6 §5) is deferred to a follow-up branch
+  to keep this one focused on Personnel.
+
+Suite **352 passing** (no test changes — pure client refactor).
+### claude/ux-action-grouping
+
+Branch: `claude/ux-action-grouping`
+Target: `pre-release`
+
+UX review Phase 2 — grouped action menu (Mockup 1).
+
+**What:** Rewrites `showActionPrompt` in
+`island_traders/server/static/index.html` to render the per-season
+action prompt as labelled groups instead of one flat button row.
+Consumes the structured option payload that Codex's Phase 1 branch
+(`codex/ux-server-payload`) added: each option's `group`, `enabled`,
+`disabled_reason`, and `recommended` fields drive the layout directly.
+
+- Canonical group order: Production / Trade / People / Capital /
+  Finance / Info (stable, defined client-side in
+  `ACTION_GROUP_ORDER`).
+- Empty groups are skipped; unknown-group labels (forward-compat) are
+  appended at the end.
+- `Produce` keeps the existing gold `.highlight` style.
+- `recommended: true` adds a `.recommended` outline (Phase 4 will set
+  this from Decision Hint targets — currently always false).
+- `enabled: false` disables the button and shows the
+  `disabled_reason` as a native tooltip (`title` attribute). Disabled
+  buttons do not bind a click handler so the user can't accidentally
+  send a server message that the engine would reject anyway.
+
+**CSS additions:** `.action-groups`, `.action-group`,
+`.action-group-label`, `.action-btns button.recommended`,
+`.action-btns button[disabled]`. The existing `.action-btns` flex-wrap
+layout is unchanged inside each group, so buttons reflow naturally on
+narrow widths and groups stack vertically.
+
+**Back-compat:** options that arrive without `group` fall through to
+the `Info` bucket — keeps the dashboard functional even if rolled
+back to a pre-Phase-1 server.
+
+**Verification:** Suite **352 passing**. Pure client refactor; no
+Python tests exercise the prompt rendering. Browser pass deferred to
+the PR review (no automated DOM-level test scaffolding exists in this
+repo today).
+
+### claude/economy-lifecycle-spec
+
+Branch: `claude/economy-lifecycle-spec`
+Target: `pre-release`
+
+**Docs-only — requirements spec.** No code/test changes (suite
+unchanged at 297). Captures product-owner direction (2026-05-18) for a
+cross-island economic-dependency feature set:
+
+- New `requirements/economy-lifecycle-2026-05.md`: worker
+  lifecycle/retirement (general age system, Agriculture bootstrap),
+  universal capital lifespan + per-season maintenance, a Banker
+  **capital-reserve / MBA leverage** model, and an economy rebalance
+  (per-player cash 700→1500, Mining Oil 4→8, Agriculture Food →15).
+  Phased A–E, independently mergeable; A–D engine work, E = RULES.md +
+  calibration handoff.
+- **Banker model (refined 2026-05-18):** fractional-reserve, not a
+  binary gate. Loans are backed by the bank's own capital at a reserve
+  ratio (**0.50** with <3 MBA Banker Managers, **0.20** with ≥3); own
+  capital earns full interest, externally-sourced capital earns only
+  the margin over the posted rate at issuance; reserved own capital is
+  locked until the loan resolves. Banking starts with **0** MBA
+  managers (intentional early constraint, ~2× leverage) and trains up
+  (2 Professors + 3 Courses, 2 seasons) to ~5×. Without a
+  `banker.computing_centre` capital item, loan applications take +1
+  season to disburse. No MBA bootstrap roster.
+- **Loan terms & negotiation (refined 2026-05-19):** Banker may quote
+  any rate (formula = suggested default) and the applicant can
+  **counter** (reuses the training counter pattern); indicative
+  **1/2/3-year** term-rate quotes; 2/3-year loans settle interest
+  annually and roll the **original amount at the original rate** until
+  the final year (rate locked at origination) — distinct from the
+  shipped #6 post-maturity opt-in refinance.
+- New `requirements/role-player-guides.md`: on-demand per-role
+  instruction beyond the acquisition intro (esp. the Banker lending
+  rules), single content source shared with RULES.md; scheduled after
+  economy Phase D / paired with Phase E. TODO entry under Dashboard &
+  UX.
+- `TODO.md`: Economy Lifecycle section with the A–E checklist.
+- Annotates `codex-tasks/balance-calibration-2026-05.md` with a
+  **sequencing dependency**: calibration must run *after* economy
+  Phases A–D land (this feature deliberately re-balances the
+  over-dominant Banker/Farmer, so calibrating the current economy would
+  be wasted).
+
+Decisions locked via AskUserQuestion: 1500/player; general retirement
+(Agriculture first, near-retirement seeding as a tuning lever); MBA as a
+credential on existing Banker Managers; universal capital wear.
+
+### codex/ux-server-payload
+
+Branch: `codex/ux-server-payload`
+Target: `pre-release`
+
+Server-side payload support for the UX review mockups:
+
+- Action prompts now include grouped option metadata with enabled state,
+  disabled reasons, and a default `recommended` flag.
+- Game state now exposes each player's active training pipeline, including
+  canonical training status, educator, transport, return timing, and counter
+  message fields.
+- Finance is hidden from market quote/history data while retaining the enum
+  for compatibility with the Banker service model.
+- Decision hints now include structured targets so clients can open focused
+  popups without parsing display text.
+
+### claude/ux-popup-shell
+
+Branch: `claude/ux-popup-shell`
+Target: `pre-release`
+
+UX review Phase 6 starter — standardised info-popup shell. Lands the
+shared modal chrome that subsequent UI phases (Personnel popup, etc.)
+will plug into.
+
+**What:**
+
+- New `showPopup(title, body, opts)` helper in
+  `island_traders/server/static/index.html`. Adds a standard
+  right-aligned footer with a Close button by default; callers can pass
+  `footerActions` for custom buttons (Market Buy uses Total + Buy +
+  Cancel).
+- New `.popup-footer` CSS rule (flex, right-aligned, gap, top-margin).
+- Refactored three existing popups to use the shell:
+  - `showConstraintPopup` — was manipulating `dlg-title` / `dlg-body`
+    directly and baking its own Close button.
+  - `showMarketBoardPopup` — was baking its own Close button into the
+    body.
+  - `showMarketBuyPopup` — now uses `footerActions` so the Total / Buy /
+    Cancel line is in the standard footer rather than the body.
+
+**Scope discipline:** `showDlg` is untouched and remains the helper for
+IO-driven prompts (option pickers, quantity input, confirm) — those
+have a different lifecycle (`sendResponse` / `CANCEL_SENTINEL`). The
+unrelated player-onboarding modal (`hideOverlay` flow at line ~1394)
+was not touched. New popups (Personnel, Loans, Insurance, Inventory)
+are scheduled for follow-up branches alongside Phase 3, per the plan
+in `requirements/implementation-plans/review-ux-plan.md`.
+
+Suite **352 passing** (no test changes — pure client refactor; suite
+size matches Codex's Phase 1 baseline).
+
+### claude/order-override-and-invest
+
+Branch: `claude/order-override-and-invest`
+Target: `pre-release`
+
+Two requirements from continued live testing.
+
+**1. New bid/ask overrides the player's prior orders on that resource.**
+Replaces yesterday's cumulative-merge rule. Any new `post_bid` /
+`post_offer` now calls `Market.cancel_player_orders(player_id, rtype)`
+first, which:
+
+- Cancels every standing bid AND ask that player has on that resource.
+- Refunds resources from any resting ask back to the seller.
+- Decrements `market.supply` / `market.demand` by the unsold remainder
+  so the price formula doesn't see the cancelled depth.
+
+A player can therefore only hold one standing order per resource at a
+time. Switching sides (e.g. ask → bid) cancels the prior ask and
+refunds its inventory. Other players' orders and orders on other
+resources are untouched.
+
+The 5 cumulative-merge tests added in
+`claude/cumulative-orders-workforce-cap` are replaced with 6 override
+tests covering all four cancel-cases plus supply/demand counter
+decrement.
+
+**2. New `TurnAction.INVEST` — opening catalogue stays open.**
+Items from the player's role catalogue that they don't currently own
+remain takeable post-Investing-Phase. Adds:
+
+- `_action_invest(player, result, year, season)`: lists role-catalogue
+  items the player doesn't own; player picks; cost paid in Dp; item
+  delivered immediately (acquired_tick = current_tick — no Manufacturer
+  transit, distinct from `PURCHASE_CAPITAL`).
+- Wired into the action dispatch alongside the other turn actions, so
+  the web UI button renders automatically and the CLI menu surfaces
+  "Invest" as an option.
+- Tests cover: chosen item added + cost debited + acquired_tick set;
+  already-owned items omitted from the choice list; insufficient Dp →
+  refuse; fully-taken catalogue → "No remaining opening investments."
+
+> The action is distinct from `PURCHASE_CAPITAL` on purpose: Invest is
+> the post-Investing-Phase fast lane for items the player passed on at
+> game start; Purchase Capital is the commercial mid-game purchase from
+> the Manufacturer with its normal `delivery_seasons` transit and
+> Phase C lifecycle implications.
+
+Suite **346 passing** (337 baseline − 5 cumulative tests + 6 override
+tests + 4 invest tests + 4 other deltas).
+
+### claude/cumulative-orders-workforce-cap
+
+Branch: `claude/cumulative-orders-workforce-cap`
+Target: `pre-release`
+
+Two requirements from live `:8001` testing.
+
+**1. Cumulative bids & asks.** `Market.post_offer` / `post_bid` now
+merge a new order into an existing same-season same-(player, resource,
+price) standing order rather than spawning a separate book entry —
+adding to a position cumulates instead of cluttering the depth list.
+The matching rules already shipped with the defect-1 fix (cheapest
+asks fill first; within-price FIFO via stable sort; walk to the next
+price if still within the bid) remain in force.
+
+**2. Workforce capped at 60% of population.** `Player.available_unskilled`
+now returns `max(0, ⌊0.60 × population⌋ − workforce.count)` — a hard
+cap on the total workforce. Replaces the legacy
+`UNSKILLED_RECRUITMENT_RATIO = 0.5` rule (which scaled with non-worker
+residents rather than capping the total). New constant
+`MAX_WORKFORCE_FRACTION_OF_POPULATION = 0.60`.
+
+Suite **337 passing** (326 baseline + 5 cumulative-order tests + 6
+workforce-cap tests).
+
+### claude/market-matcher-and-turn-label-fix
+
+Branch: `claude/market-matcher-and-turn-label-fix`
+Target: `pre-release`
+
+**Defect fixes** found during live `:8001` testing.
+
+**1. Market matcher — bids and asks now actually cross.**
+`Market._auto_match_bid` / `_auto_match_offer` previously matched only
+on **exact-price equality** AND **only when the order's quantity fit
+inside the resting order entirely** (`tests/test_models/test_market.py
+::test_bid_does_not_auto_resolve_when_quantity_exceeds_offer` literally
+codified the bug as expected behaviour). Net effect on the live game:
+players reporting "trades don't settle even within a small range".
+
+Rewritten to standard exchange semantics:
+
+- Match when `bid_price >= ask_price` (cross when the bid covers the
+  ask, not just when they're equal).
+- **Resting (older) order sets the trade price** — the new order is
+  the price-taker, getting the better side of the spread.
+- **Partial fills supported**: a new order walks the opposite side in
+  best-price-first order (asks ascending / bids descending), consuming
+  `min(remaining, remaining)` slice by slice until exhausted or no
+  remaining cross.
+
+Tests: the broken-codified test is replaced with
+`test_bid_partially_fills_when_quantity_exceeds_offer`; new tests cover
+crossed-price matching at both the ask price and the bid price, a
+non-crossing "bid below all asks" case, and a multi-slice walk
+(`test_bid_walks_multiple_resting_asks_for_partial_fills`).
+
+**2. "Turn" terminology removed from per-player headers.**
+Players seeing log lines like `--- Bravo's turn (Education, Research,
+Manufacturing) ---` were reading them as sequential play, but the
+server runs `parallel_mode=True` (one thread per human, concurrent
+within a season). Renamed at all three sites:
+
+- `engine/turn.py`: `--- Bravo (roles) — actions this season ---`
+- `cli/prompts.py`: `Bravo (roles) — choose an action:`
+- `cli/display.py`: `Bravo — choose an action:`
+
+No engine behaviour change — the headers always referred to a single
+player's action menu, not a global turn order.
+
+Suite **330 passing** (326 baseline + 4 net new market tests).
+
+### claude/economy-phase-d
+
+Branch: `claude/economy-phase-d`
+Target: `pre-release`
+
+**Economy Lifecycle Phase D1** — Banker capital-reserve / MBA-leverage
+model (the headline Banker nerf, the principal balance lever in this
+feature set). Supersedes the earlier "no loans without 3 MBAs" binary
+gate with a proper fractional-reserve mechanic.
+
+**Behaviour:**
+
+- `Worker.has_mba` field (Manager-band Banker workers only).
+- New constants: `MBA_RESERVE_RATIO_BASE=0.50`,
+  `MBA_RESERVE_RATIO_QUALIFIED=0.20`, `MBA_QUALIFIED_THRESHOLD=3`.
+- Helpers `TurnManager._mba_banker_count(banker)` and
+  `_banker_reserve_ratio(banker)` — `0.50` while <3 MBA Banker
+  Managers are active, `0.20` once ≥3 are.
+- Every loan now funds as **own + external**: bank commits `r·P` of
+  its own capital (locked, deducted at issue) and sources `(1−r)·P`
+  externally at the posted funding rate via the renamed
+  `_fund_bank_external_portion`. The external depositor obligation
+  matures alongside the loan and is repaid through the existing
+  `_process_loan_repayments` path — economics produce **full interest
+  on the own slice + margin (loan_rate − posted) on the external
+  slice**.
+- If the bank can't afford its own share, the loan is **refused** with
+  a clear message naming the reserve ratio, the shortfall and the MBA
+  depth (e.g., `"Bank cannot back this loan at 50% reserve: needs
+  25.0 Dp of own capital but has only 10.0 Dp (MBA-qualified Banker
+  Managers: 0/3)."`).
+- `Loan` gains `own_committed`, `external_funded`, `posted_at_issue`,
+  `reserve_ratio_at_issue` (defaulted 0.0; backward-compat in save/load).
+- Self-lending (Banker borrowing from its own Banking Island) skips
+  the reserve check — preserves the existing dollops-burn semantics for
+  that special case.
+
+**Tests:** suite **326 passing** (316 baseline + 10 net new across
+`tests/test_engine/test_loans.py` (3) and
+`tests/test_models/test_banker_reserve.py` (8); one Phase-2 shortfall
+test was replaced by `test_loan_split_into_own_and_external_per_reserve_ratio`
+since the old "fund whatever shortfall" behaviour is exactly what the
+reserve gate now forbids).
+
+**Intentionally deferred — clearly flagged D1.5 / D2 follow-ups:**
+
+- In-game **MBA training UI** (Banker Managers earn `has_mba` via a
+  University request consuming 2 Professors + 3 Courses over 2
+  seasons). The flag is settable from tests today; players can't yet
+  earn MBAs through gameplay, so the bank is **stuck at r=0.50** in
+  this MVP. That's the principal nerf the calibration brief needs —
+  full upgrade path is the next phase.
+- **Multi-year annual interest servicing** with original-amount /
+  original-rate rollover (the simple rollover rule for 2/3-yr loans).
+  Today's bullet repayment still applies; multi-year loans collect all
+  interest at maturity rather than annually.
+- **Free pricing + applicant counter-offer** loop (Banker may quote
+  any rate; applicant counters).
+- **`banker.computing_centre`** capital + indicative 1/2/3-yr term
+  quotes UI (D2).
+- **Default depositor accounting** is still simple: a defaulted
+  customer loan loses the bank's `own_committed`, but the external
+  depositor obligation continues as a separate ledger entry maturing
+  later — adequate for now; a richer "bank also owes the depositors
+  even on default" path is a follow-up.
+
+### claude/economy-phase-c
+
+Branch: `claude/economy-phase-c`
+Target: `pre-release`
+
+**Economy Lifecycle Phase C** — universal capital lifecycle: every
+capital item now has a service life and a per-season maintenance cost,
+with an Agriculture **combine harvester** seeded already part-aged.
+
+- `CapitalItem` gains `service_life_seasons` (default
+  `DEFAULT_SERVICE_LIFE_SEASONS=20`, tunable accepted first-cut) and
+  `maintenance_per_season` (default 0.0 → falls back to
+  `DEFAULT_MAINTENANCE_FRACTION=0.03` × cost). Overrides bleed through
+  `_multiply_capital_capacity` (it used to drop new fields silently).
+- **`farmer.harvester` is now the "Combine Harvester"** with
+  `service_life_seasons=8` (≈2 yr) — repurchase from the Manufacturer
+  every two years.
+- `Player.unmaintained_capital` (transient, not persisted) plus
+  `Player.effective_capital_inventory()` which subtracts unmaintained
+  units. Production reads
+  `player.effective_capital_inventory()` everywhere it used
+  `capital_inventory` so unmaintained units contribute **0 capacity**
+  that season.
+- New `Game._process_capital_maintenance(year, season)` called each
+  season after `_process_retirements`:
+  - **Expiry** — units whose age ≥ `service_life_seasons` are removed
+    (oldest first / FIFO) with a `[CAPITAL EXPIRED]` log; the island
+    must repurchase from the Manufacturer to restore that capacity.
+  - **Maintenance** — per-unit Dp debit; on shortfall the unit is
+    flagged unmaintained for the season (logged `[CAPITAL
+    UNMAINTAINED]`); flag clears at the next season's maintenance step.
+- New `STARTING_AGED_CAPITAL` table seeds Agriculture with 1
+  combine harvester at age 4 — expires end of Year 1, aligning with the
+  seeded Farmer's retirement (Phase B) for a deliberate Y1 double
+  squeeze that forces real Manufacturer trade.
+
+**Tests:** suite **316 passing** (305 baseline + 11 new in
+`tests/test_engine/test_capital_lifecycle.py`). Two existing
+`test_investing` tests updated for the "Combine Harvester" rename and
+the seeded-aged-combine count.
+
+> Balance note: maintenance only bites when players actually own
+> capital, and starts modest (combine = 2.7 Dp/season at the
+> 3 %-of-cost default). With 1500/player starting cash it's
+> absorbable. The cost-pressure rises naturally with capital purchases
+> — exactly the Agriculture → Manufacture dependency the brief asks
+> for, applied game-wide.
+
+### claude/economy-phase-b
+
+Branch: `claude/economy-phase-b`
+Target: `pre-release`
+
+**Economy Lifecycle Phase B** — worker lifecycle / retirement (general
+age system, Agriculture bootstrap activated).
+
+- `Worker.age_seasons` field; `Workforce.add_workers(age_seasons=…)`.
+- New `Workforce.advance_age_and_retire(working_life_by_band, default)`
+  — ages **every** worker (active + in-training) one season per call,
+  removes and returns those whose age ≥ their band working life.
+- New constants: `WORKING_LIFE_SEASONS = {"Manager": 40, "Technician":
+  32, "Worker": 24}` (tunable; accepted first-cut),
+  `DEFAULT_WORKING_LIFE_SEASONS = 32`, and `STARTING_WORKER_AGES` with
+  Agriculture seeded (`Farmer`: 4 seasons from retirement,
+  `Horticulturalist`: 8).
+- `Game._process_retirements(year, season)` called each season after
+  `_process_training_returns`; logs `[RETIREMENT]` per island and drops
+  retiring in-training workers from their training batch via the new
+  `TrainingRegistry.drop_worker` (request rejects if it empties).
+- Game setup seeds starting workers' ages from `STARTING_WORKER_AGES`
+  using `band_of(profession)` → `WORKING_LIFE_SEASONS[band]`. Other
+  islands default to age 0.
+- Save format adds `age_seasons` per worker (backwards-compatible
+  default 0 on load).
+
+**Tests:** suite **305 passing** (297 baseline + 8 new in
+`tests/test_models/test_worker_lifecycle.py` — age tick, band-keyed
+retirement, in-training retirement, drop_worker behaviour, Agriculture
+bootstrap schedule check).
+
+> Bootstrap effect on simulations: the Agriculture Farmer retires ~4
+> seasons into the game and the Horticulturalist ~8 seasons, putting
+> real recruit+retrain pressure on the over-dominant Farmer role. This
+> is *intended* and feeds the open balance-calibration workstream — do
+> not interpret a Farmer win-rate dip post-merge as a regression.
+
+### claude/economy-phase-a
+
+Branch: `claude/economy-phase-a`
+Target: `pre-release`
+
+**Economy Lifecycle Phase A** (`requirements/economy-lifecycle-2026-05.md`)
+— constants/starting-stock only, zero new mechanics.
+
+- Per-player starting cash **700 → 1500**: `STARTING_DOLLOPS` 700→1500,
+  `TOTAL_STARTING_DOLLOPS` 700→10500 (= 1500 × 7),
+  `DEFAULT_STARTING_CAPITAL` (server) 700→1500.
+- `STARTING_INVENTORY["Miner"]["Oil"]` **4 → 8** (larger Oil buffer).
+- `STARTING_INVENTORY["Farmer"]` gains **`"Food": 15`**.
+
+Tunables accepted as first-cut per product-owner ("Accept 2").
+Suite **297 green**. Tests updated for the new economy:
+`test_economy_balance` Miner-Oil assertion 4→8;
+`test_island_guarantee` two offer-pricing tests rebased onto the 1500
+starting capital (AI prices now fall in the "low" band; floor scales
+to 0.20 × 1500).
+
+> Follow-up (not in A, flagged): `game.py` derives the CLI/sim
+> per-player default as `TOTAL_STARTING_DOLLOPS / num_players`, so a
+> non-7-player CLI/sim game won't get exactly 1500/player. Server games
+> use `DEFAULT_STARTING_CAPITAL` (1500/player) directly. Making
+> per-player the canonical constant is spec open-Q #4 — deferred.
+
+### claude/rules-training-reconcile
+
+Branch: `claude/rules-training-reconcile`
+Target: `pre-release`
+
+**Docs-only** (RULES.md). No code/test changes (suite unchanged at
+297). Reconciles the player-facing rulebook's training chapter with the
+shipped Education Phase 1–3 + personnel-sidebar mechanics — it had been
+left describing the pre-Phase-3 model.
+
+- **Two-pipeline model documented:** Manager-tier = Course-gated
+  university (1 Course per class ≤12); Technician-tier = Apprenticeship
+  Programme slot-pool + Instructor gated, never Course-gated.
+- **Profession-dependent durations** added to the capacity table
+  (Doctor **3** seasons away, other Managers 2, Nurse 1, all Technicians
+  1) and the full annual-quota table now lists every profession
+  (previously a stale "caps added in a future balance pass" note).
+- **Apprenticeship settling season** (1 season home @ 75% before 100%),
+  **itemised fee** (base + food/accom 5 Dp/trainee/season + ticket +
+  Manager-tier Expertise), **campus load**, and the **"All visible
+  skill deficits"** bundled-request option all documented.
+- Steps rewritten (the old duplicated "Educator Approval" Steps 2 & 4
+  and the charter-flight-as-default were inaccurate); air ticket is now
+  correctly the default transport. Quick Reference transport block
+  aligned.
+- Stale fixes: Educator starting workforce `4 → 8` (4 Professors + 4
+  Instructors); profession table `Tutor → Instructor`; turn-action
+  one-liner no longer claims "one season".
+
+Clears the second-order release-gate item flagged in
+`claude/release-prep` — the v0.1.0 rulebook training chapter is now
+trustworthy. (Balance calibration remains the outstanding release
+blocker.)
+
+### claude/release-prep
+
+Branch: `claude/release-prep`
+Target: `pre-release`
+
+**Docs-only — release-readiness prep.** No code/test changes (suite
+unchanged at 297).
+
+- **Balance measured on `pre-release` @ `36c74a4`** (AI-only, 3y, seeds
+  42/1/7/99): Banker 54.6% + Farmer 42.5% ≈ 97% of all wins;
+  **Transporter and Doctor win 0%** on every seed; Miner 0.4%, Educator
+  1.0%, Manufacturer 1.5%. Target ≈14.3% each. Stable across seeds →
+  structural, not RNG.
+- Adds `requirements/codex-tasks/balance-calibration-2026-05.md` — a
+  self-contained Codex brief to fix this (the release blocker). Notes
+  the old `codex/sim-calibration` branch is stale/abandoned (0 ahead,
+  ~5.8k behind) — calibration must start fresh.
+- **RULES.md fix:** the two "Healthcare full capacity" statements
+  disagreed (one "20 Medical Orderlies", one "20 unskilled workers");
+  aligned to `4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total)`,
+  consistent with `STARTING_WORKERS_BY_PROFESSION` (the CLAUDE.md
+  "workforce 12 / 10 Nurses" complaint was already fixed in an earlier
+  branch — the starting-workforce table already shows 2+2+2=6).
+
+**Release-readiness (proposed, for product-owner decision):**
+
+- **NO-GO to promote `pre-release` → `master` yet.** Blocker: AI balance
+  above (Codex brief filed). Tests green, 49 commits of real work, but a
+  game that ships with two roles unable to win and two roles taking 97%
+  of wins is not releasable.
+- **Tag scheme proposal:** no tags exist; `master` was promoted via PRs
+  #16/#17 untagged. Suggest annotated semver tags on `master` at each
+  promotion, starting **`v0.1.0`** for this milestone (pre-1.0 = rules
+  still in flux). Future: `v0.2.0` per feature-milestone promotion.
+- **Roll-up mechanic at promote time:** rename `## Unreleased` →
+  `## v0.1.0 — <date>` (the 24 accumulated sections become the v0.1.0
+  changelog), open a fresh empty `## Unreleased`, PR `pre-release` →
+  `master`, then `git tag -a v0.1.0`.
+- **Second-order release-gate item (not blocking, but should ship with
+  v0.1.0):** RULES.md training chapter is stale vs shipped Phase 1–3
+  (single-season model, no apprenticeship slot-pool/Instructor gate, no
+  profession-dependent duration, no 75% settling, "Tutor" vs
+  "Instructor"). Needs a doc-reconciliation pass before the rulebook is
+  a trustworthy v0.1.0 deliverable.
+
+### claude/education-phase3
+
+Branch: `claude/education-phase3`
+Target: `pre-release`
+
+Education Model **Phase 3** — training cost components + the
+apprenticeship pipeline (Issue #18). Implements the 2026-05-17 rulings
+now canonical in `requirements/education-model.md`.
+
+**Behaviour changes:**
+
+- **Two distinct training pipelines (decision (a)).** Phase 2 shipped a
+  Course debit for *all* tiers; Phase 3 scopes Courses to **Manager-tier
+  only**. Technician-tier training is now gated by the Educator's
+  **apprenticeship slot pool** (`educator.apprenticeship_programme`
+  capital, +3 slots each) **and** at least one **Instructor** on the
+  Education Island workforce — never by Courses. A slot is held while a
+  Technician batch is in flight and frees automatically on return.
+- **Profession-dependent course duration is now wired into dispatch.**
+  Previously every batch returned the next season regardless of
+  profession. Now: Doctor **3** seasons away, other Managers **2**,
+  Nurse **1**, all Technicians **1** (`EDUCATION_SEASONS[DOCTOR]` 2→3;
+  `APPRENTICESHIP_SEASONS` flat 2→1).
+- **Apprenticeship settling ramp.** A returning Technician works exactly
+  **one season at 75% productivity** on the home island before reaching
+  100% (`Worker.settling_seasons`; new constants
+  `APPRENTICESHIP_SETTLING_SEASONS=1`,
+  `APPRENTICESHIP_SETTLING_EFFICIENCY=0.75`). University (Manager)
+  graduates do **not** settle. Persisted in save games.
+- **Fee suggestion now itemised.** The training-fee prompt suggests
+  `base + food/accom + tickets + expertise` where food/accom is
+  `TRAINEE_FOOD_ACCOM_PER_SEASON` (5 Dp) × trainees × course duration,
+  and the Expertise term is 1 Expertise per Course per season
+  (Manager-tier only — apprenticeships are not Course/Expertise gated).
+  Expertise is **not** debited from inventory on training approval (it
+  is burned at Course *production* time, per Phase 2) — verified by
+  `test_training_approval_does_not_consume_expertise_per_attendee`.
+- **Campus load.** The Educator review screen surfaces visiting trainees
+  on campus (`TrainingRegistry.visiting_trainees`) as a forward-looking
+  "+N Food demand" note. Phase 3 merged **after** Codex's
+  `codex/sustenance-model`, so this branch also wires the seam: the
+  server now calls `population_food_fish_needs(extra_residents=…)` with
+  the Education Island's visiting-trainee count, so campus load actually
+  raises the island's marginal Food demand and runway warnings (the §21
+  balance-aware model, not the legacy Food/Fish path).
+
+**No-ops:** `provides_apprenticeship_facility` / cross-island
+sellable-apprenticeship-token never existed in code (only in the
+now-reconciled requirements docs), so nothing to remove.
+
+**Tests:** suite **293 passing** (283 baseline → 10 net new). New
+`tests/test_engine/test_education_phase3.py` covers the apprenticeship
+gate, slot-pool overbooking, duration-into-dispatch, and the settling
+ramp. Six Phase-2 Course tests were repointed to a Manager profession
+(Nurse) since Technicians are no longer Course-gated; the duration test
+and the self-training return test were updated to the new durations.
+
+**Calibration follow-up:** AI/sim Educators must now hold an
+Apprenticeship Programme + an Instructor to admit Technician trainees.
+This is a deliberate gate per spec; flag for the Codex sim-calibration
+pass if Technician supply tightens.
+
+### codex/sustenance-model
+
+Branch: `codex/sustenance-model`
+Target: `pre-release`
+
+- Replaces the legacy population Food-demand path with the §21
+  balance-aware model: the first 100 permanent residents are self-fed,
+  while residents above that baseline create 1 unit of marginal Food
+  demand each season.
+- Adds the `extra_residents` seam to
+  `Player.population_food_fish_needs()` so Education Phase 3 can charge
+  visiting trainees against campus sustenance without mutating resident
+  population.
+- Adds focused model coverage for baseline demand, population growth, and
+  transient residents.
+- Leaves the Healthcare workforce wording unchanged because current
+  merged code and rules already agree on the newer 2 Doctors + 2 Nurses +
+  2 Medical Orderlies composition; the older handoff's “2 Doctors + 4
+  Nurses” note is stale against present `pre-release`.
+
+### codex/personnel-sidebar-breakdown
+
+Branch: `codex/personnel-sidebar-breakdown`
+Target: `pre-release`
+
+- Makes the left-side Personnel summary readable as an indented multiline
+  breakdown and shows per-band workers currently in training.
+- Adds a Request Training deficit report so players can see which formal
+  professions their island staffing plan is missing.
+- Adds an “All visible skill deficits” training option that submits the
+  currently requestable missing professions together while preserving
+  per-profession University-capacity batches internally.
+
+### claude/codex-brief-sustenance
+
+Branch: `claude/codex-brief-sustenance`
+Target: `pre-release`
+
+**Docs-only.** Adds `requirements/codex-tasks/sustenance-model.md` — a
+self-contained Codex hand-off to implement the §21 balance-aware
+sustenance model (and the standing RULES.md Doctor-workforce fix) in
+parallel with Education Phase 3. Defines the campus-load interface seam
+and an explicit file-ownership split so the two tracks merge cleanly.
+No code or test changes (suite unchanged at 283).
+
+### claude/docs-phase3-reconcile
+
+Branch: `claude/docs-phase3-reconcile`
+Target: `pre-release`
+
+**Docs-only.** No code or test changes (suite unchanged at 283).
+Reconciles the requirements so Education Phase 3 is unambiguous, after
+Codex's role-structuring merge changed the surrounding model.
+
+Decisions ruled by the product owner 2026-05-17, now canonical:
+
+- **Doctor training = 3 seasons** (was ambiguous 2-vs-4). Fixed in
+  `education-model.md` duration table + `production-capacity-model.md §5`
+  (and flagged for `EDUCATION_SEASONS[DOCTOR] 2→3` in Phase 3 code).
+- **Courses vs apprenticeship are distinct, non-overlapping pipelines
+  (decision (a))**: Manager-tier = Course-gated; Technician-tier =
+  Educator apprenticeship-slot-pool + Instructor gated, **not**
+  Course-gated. Phase 2 (shipped) Course-gates all tiers — Phase 3
+  scopes that to Manager-tier.
+- **Apprenticeship model**: 1 season away at Education, then **75%
+  productivity for exactly one season** on the home island, then 100%.
+  Supersedes both the old "home-island Apprenticeship Facility" idea
+  and `production-capacity-model.md §8`'s "stays home / no loss" model.
+- **Dropped**: `provides_apprenticeship_facility` capital flag; the
+  in-house cross-island apprenticeship sellable-token mechanic.
+- **1 Expertise per Course per season** (per Course, not per trainee).
+- **Campus load** must use the new balance-aware sustenance model
+  (`production-capacity-model.md §21`), not the legacy Food/Fish path.
+
+Files touched: `requirements/education-model.md` (Phase 1/2 marked done,
+Phase 3 promoted + spec'd, training-pipelines split, duration table,
+open-questions closed), `requirements/production-capacity-model.md`
+(§5 Doctor=3, §8 now points to education-model.md as canonical),
+`requirements/medical-laboratory.md` (Ecologist/Actuary durations align
+to the apprenticeship model), `TODO.md` (Phase 2 ✅, Phase 3 rewritten).
+
+### claude/education-phase2
+
+Branch: `claude/education-phase2`
+Target: `pre-release`
+Implements: `requirements/education-model.md` Phase 2 + GitHub #22 (market UX)
+
+Rebased onto `pre-release` after Codex's `codex/role-structuring` split
+landed (`f0c0960`). Both bodies of work came from the same combined
+safety snapshot `fd519e0`; this branch is exactly the Claude-owned delta
+(`git diff f0c0960 fd519e0`), re-applied cleanly in the separate
+`island-traders-claude` worktree.
+
+#### Education Model — Phase 2 (Courses + Instructor)
+
+- **New resource `Courses`** (`ResourceType.COURSES`, base price 25 Dp) —
+  classroom slots produced by the Education Island.
+- **New Educator recipe**: Courses production consumes `Expertise` as an
+  input; Patents production now also consumes a small Expertise input.
+- **`Tutor` → `Instructor` consolidation**: `Profession.TUTOR` renamed to
+  `Profession.INSTRUCTOR` (canonical Technician on the Education Island);
+  "Tutor" kept as a display-title alias in `BAND_TITLES`.
+- **Course-gated training**: `_action_request_training` /
+  `_approve_training_request` / AI educator / self-training now debit
+  `ceil(trainees / MAX_CLASS_SIZE_PER_COURSE)` Courses on approval
+  (`MAX_CLASS_SIZE_PER_COURSE = 12`). No Courses → request stays pending.
+  Course availability is peeked *before* air tickets are consumed so a
+  shortfall can't burn the Educator's PassengerSeats.
+- **Starting state**: Educator workforce 4 → 8 (4 Professors + 4
+  Instructors); starting inventory gains 6 Expertise + 5 Courses.
+
+#### GitHub #22 — Market UX
+
+- New generic `choose_option(prompt, options)` IO prompt (named choice
+  buttons) used for product selection — replaces the numeric-index
+  picker.
+- `ask_dollop_amount` gained a `prefill` argument; market **sell** prompt
+  pre-fills the best bid, market **buy** modal pre-fills the ask, with
+  bid-vs-buy made visually explicit.
+- Market board popup rendered as a clean grid.
+- Immediate-fill on a bid that crosses an existing ask now logs the fill.
+
+#### Tests
+
+- New `tests/test_engine/test_education_courses.py`.
+- Updated `test_educator_self_training.py`, `test_training_review.py`,
+  `test_training_menu.py`, `test_profession_bands.py`,
+  `test_market_prefill.py` for Courses + Instructor + prefill.
+- **Full suite: 283 passed** in the Claude worktree on top of
+  `pre-release` @ `f0c0960` (Codex's 271 + this delta = 283 — reconciles
+  exactly with the original combined `fd519e0`).
+
+---
+
+### codex/ai-trading
+
+Branch: `codex/ai-trading`
+Target: `pre-release`
+Implements: `requirements/codex-tasks/ai-trading.md`
+
+#### Player-Facing Changes
+
+- AI islands now place standing bids when they are short of required production inputs instead of waiting for humans to rescue the supply chain.
+- AI islands review pending peer deals with market-aware valuation and accept profitable deals while rejecting value-destroying ones.
+- AI islands can capture visible bid/ask arbitrage when the market already exposes a profitable spread.
+- Transporter AI now lists produced `PassengerSeats` for sale; previously those seats were produced but omitted from AI selling because the stale role metadata only advertised `Freight`.
+
+#### Before / After Market Activity
+
+- Before: an input-starved Farmer with 0 `FarmMachinery` placed no standing bid; after: it posts a market bid for the missing machinery on its turn.
+- Before: Transporter AI produced `PassengerSeats` but did not list them; after: a post-production regression test confirms a standing `PassengerSeats` offer exists.
+- Before: AI deal acceptance used only formula prices in the human-turn path; after: AI-targeted deals use latest accepted cash/unit deal price, then current best offer, then formula price as fallback.
+
+#### Known Follow-Ups
+
+- The task brief asks for trade-row verification in the simulation price-history CSV, but the current simulation exporter records seasonal price snapshots only, not executed-trade rows. I left that exporter untouched to stay inside the agreed file scope.
+- `Transporter` role metadata still lists only `Freight` in `models/role.py` even though production constants also emit `PassengerSeats`; this branch works around that by selling actual produced resources, but the metadata should be reconciled separately.
+- The 1000-game AI-only run still shows structural balance drift once active trading is enabled (Banker 68.0% wins, Educator and Doctor 0.0%); balancing is intentionally left for the separate calibration workstream.
+
+#### Verification
+
+- Test suite: `265 passed` (baseline 262, +3 AI-trading regressions).
+- Simulation: `.venv/bin/python -m island_traders.simulation.runner --games 1000 --seed 42 --output simulation_results/ai_trading`.
+
+---
+
+### claude/education-phase1-rename
+
+Branch: `claude/education-phase1-rename`
+Target: `pre-release`
+Implements: `requirements/education-model.md` — Phase 1 (mechanical rename)
+
+**Pure rename — zero behavioural change.** Test suite unchanged at
+**262 passed** (same count and same tests as before).
+
+`ResourceType.KNOWLEDGE` (`"Knowledge"`) → `ResourceType.EXPERTISE`
+(`"Expertise"`) everywhere:
+
+- `models/resource.py` — enum member + value
+- `models/role.py` — Educator produces / Banker & Doctor need Expertise
+- `constants.py` — `BASE_PRICES`, `BASE_PRODUCTION`, `PRODUCTION_INPUTS`,
+  `STARTING_INVENTORY`, comments; dead `TRAINING_KNOWLEDGE_COST` →
+  `TRAINING_EXPERTISE_COST`
+- `constants_capacity.py` — Educator recipe `output="Expertise"`, capacity
+  effects, input-relief, descriptions
+- `server/app.py` — `ROLE_INFO` produce/needs display strings
+- `config/event_charts.yaml` — price-shock resource keys
+- `RULES.md`, `README.md` — all player-facing references
+- `board/game_board.html` — visible label text (internal DOM id
+  `res-knowledge` and JS `gameState.knowledge` left as-is; that file is a
+  standalone demo, not the live dashboard)
+- `tests/test_engine/test_production.py` — assertions
+
+Phase 2 (add `Courses` resource, Educator produces Courses by consuming
+Expertise, Course-gated training, `Profession.INSTRUCTOR`, rebalanced
+Education starting workforce) remains a separate future branch per the
+spec.
+
+#### Verification
+
+- Test suite: 262 passed (unchanged — confirms pure rename).
+- Smoke-tested: enum has `EXPERTISE` and no `KNOWLEDGE`; server imports;
+  `island-traders-export` printables contain no "Knowledge".
+
+---
+
+### claude/issue-22-market-ux
+
+Branch: `claude/issue-22-market-ux`
+Target: `pre-release`
+Closes: GitHub #22
+
+Four market UI/UX fixes from the 2026-05-15 playtest:
+
+1. **Market Prices popup as a grid** — `renderMarketTable` now uses a new
+   `.market-grid` style (gridlined, tabular-numeric, right-aligned,
+   zebra-striped, colour-coded bid/ask) in the board popup.  The compact
+   side-panel mini-table is unchanged.
+2. **Bid vs Buy clarity** — the Market Buy popup now has a legend
+   ("⬤ Buy Now" = immediate at the ask; "⬤ Place Bid" = limit order at
+   your price), grouped headers, gridline separators, tinted columns
+   (gold for buy-now, green for place-bid), and tooltips on each input.
+3. **Buying prefill** — the new-bid price field is pre-filled with the
+   current ask (when one exists) instead of the formula price, so a
+   buyer placing a bid starts from the price that would clear.
+4. **Selling prefill** — the asking-price prompt is pre-filled with the
+   best bid (when one exists).  New optional `prefill` parameter on
+   `ask_dollop_amount` across all three IO adapters; the WS message
+   carries `prefill` and the dashboard input uses it as its initial
+   value with a hint line.
+
+#### Tests
+
+- 7 new tests in `tests/test_engine/test_market_prefill.py`: base
+  adapter honours/overrides prefill, FakeIOAdapter accepts the new
+  kwarg, WS message carries `prefill`, and `_action_market_sell`
+  prefills the asking price with the best bid.
+
+#### Verification
+
+- Test suite: 262 passed (was 255, +7).  Existing test IO adapters that
+  override `ask_dollop_amount` with the old 2-arg signature are
+  unaffected (they aren't on the market-sell path).
+
+---
+
+### claude/ux-quickwins-20-21
+
+Branch: `claude/ux-quickwins-20-21`
+Target: `pre-release`
+Closes: GitHub #20, #21
+
+#### #21 — Product selection by name, not index
+
+Producing used to print a numbered list then ask via `choose_quantity`
+(a numeric input box on the dashboard).  Players had to read the list and
+type a number.
+
+New generic **`choose_option(prompt, options)`** prompt added to all three
+IO adapters (base terminal `IOAdapter`, `FakeIOAdapter`, and
+`WebSocketIOAdapter`).  `options` is `[{"value", "label"}, …]`; it returns
+the chosen `value`.  The dashboard renders it as labelled buttons (reuses
+the existing option picker — new `choose_option` WS message case).
+
+`_action_produce` and `_choose_product_line_human` now use it, so the
+player picks **"Farmer: Food — up to N now"** or
+**"Heavy Machinery — Inputs: … → …"** as a button, never an index.
+
+#### #20 — Personnel counts on the left panel
+
+New **"Personnel"** stat row in the left info panel showing the
+trained/untrained breakdown:
+`N trained (X Mgr · Y Tech) · Z untrained`.  The "Workers" row label
+clarified to "Workers (active/total)".  Server payload already exposed
+`workforce_bands`; this is UI-only.
+
+#### Tests
+
+- 9 new tests in `tests/test_engine/test_choose_option.py`:
+  base terminal picker (selection + reprompt), FakeIOAdapter default,
+  WS round-trip / timeout-first / cancel-sentinel-raises / unknown-value
+  fallback, and an integration test asserting `_action_produce` calls
+  `choose_option` with human labels.
+
+#### Verification
+
+- Test suite: 255 passed (was 246, +9 new).  No regressions — existing
+  production tests still pass (FakeIOAdapter.choose_option returns the
+  first option, same effective behaviour as the old choose_quantity=min).
+
+---
+
+### claude/issues-2026-05-15-synthesis
+
+Branch: `claude/issues-2026-05-15-synthesis`
+Target: `pre-release`
+
+Docs-only branch.  Synthesises **9 new GitHub Issues** (#18–#26) posted
+during the 2026-05-15 playtest into specs and TODO entries.  No code or
+test changes.
+
+#### New spec: `requirements/medical-laboratory.md`
+
+Roots three interconnected issues (#19, #25, #26) under a single coherent
+spec:
+
+1. **#26 — Medical & Laboratory Island** — Doctor role keeps its
+   internal identifier but display label becomes "Medical & Laboratory";
+   adds a new tradeable output `LaboratoryTests` (base price ≈ 35 Dp).
+2. **#25 — Ecologist profession** — new Technician profession required
+   to certify capital-equipment installations.  Each install needs an
+   Ecologist on staff + 1 Environmental Assessment Lab Test.
+3. **#19 — Doctor-certified insurance** — Doctors issue Lab Tests
+   ("Health Certificates") that halve insurance premiums; insured
+   workers don't lose productivity from injury; death benefits pay
+   replacement training cost.
+
+Lab Tests are the glue — same enum value, four different narrative
+"types":
+
+| Consumer | Test type | Why |
+|---|---|---|
+| Mining | Metal Assay | Required to smelt Ore + Oil → Metal |
+| Farmer | Soil Analysis | Seasonal production gate |
+| Any island installing capital | Environmental Assessment | Required for activation |
+| Banking | Health Certificate | Halves insurance premium |
+
+Five-phase implementation plan (A through E) keeps each piece
+independently mergeable.
+
+#### `requirements/education-model.md` extended with Issue #18
+
+New "Training cost components" section formalises the cost breakdown:
+
+* Profession-dependent **course duration** (Doctor=4, most Managers=2,
+  Nurse=1, Technicians=1 with apprenticeship facility or 2 without)
+* **Expertise consumption = 1 unit per trainee per season** (so a
+  Doctor batch of 2 trainees consumes 4×2 = 8 Expertise)
+* **Food & accommodation** cost layered into the suggested fee
+* **Apprenticeship Facility** — a new capital item flag
+  (`provides_apprenticeship_facility: bool`) reduces Technician training
+  to 1 season
+
+Duration table covering all professions including the new Ecologist and
+Actuary entries from `medical-laboratory.md`.
+
+#### TODO.md sections added / updated
+
+* **New section:** `Medical & Laboratory Island` with phases A–E
+  spanning #19, #25, #26
+* **Education Model Refinement** got a new Phase 3 covering #18
+* **Dashboard & UX** got 4 new entries: #20 (personnel counts), #21
+  (product names not indexes), #22 (market UX polish), #23 (bolder
+  logo + island popup)
+* Two ticked off as already done in earlier merges:
+  - `Purchase Capital` → `Purchase Equipment` (✓)
+  - Personnel shortages named by profession (✓)
+
+#### Issue #24 (Actuary)
+
+Captured in `medical-laboratory.md §4` (Banking gets a new Actuary
+Technician profession required to underwrite insurance policies).
+Cross-references this work to the Banker institutional pool in
+`island-ledger.md`.
+
+#### Verification
+
+- No code changes.  Test suite unchanged at 246 passed.
+
+---
+
+### claude/ux-polish-2026-05-15
+
+Branch: `claude/ux-polish-2026-05-15`
+Target: `pre-release`
+
+Two small UX wins from the 2026-05-15 playtest inbox.
+
+#### "Purchase Capital" → "Purchase Equipment" label
+
+Pure display-label change.  Internal identifier
+(`TurnAction.PURCHASE_CAPITAL`, value `"purchase_capital"`) is unchanged
+— saved games, server JSON, and existing tests all keep working.
+
+Implementation: new `action_label()` helper + `ACTION_LABEL_OVERRIDES`
+dict in `cli/prompts.py`, used by both the CLI `IOAdapter` and the
+WebSocket `WebSocketIOAdapter` so both menus render the same label.
+
+#### Workforce shortage messages use profession titles, not band names
+
+Constraint popup used to say *"+2 Technicians"* — not actionable.  Now
+it says *"+2 Flight Crew"* (for the Transporter), *"+2 Farming
+Technician"* (for the Farmer), *"+2 Banking Analyst"* (for the Banker),
+etc.
+
+Implementation: server-side `_player_capacity` now uses
+`primary_title(recipe.role, band)` from `models/profession.py` when
+building the `workforce_short` dict, so the dashboard receives
+profession names ready to render.  Dashboard rendering didn't need to
+change — it just prints the keys it gets.
+
+#### Tests
+
+- 4 new tests in `tests/test_engine/test_action_labels.py`:
+  * `Purchase Capital` displays as `Purchase Equipment`
+  * Unmapped actions still use default title-casing
+  * Internal enum name + value are unchanged
+  * Every override key points at a real `TurnAction` value
+- 2 new tests in `tests/test_server/test_workforce_shortage_messages.py`:
+  * Transporter shortages name Logistics Manager / Flight Crew /
+    Seaman / Warehouse Manager / Stevedore — never generic bands
+  * Banker shortages name Banker / Banking Analyst / Banking Clerk /
+    Receptionist — never generic bands
+- Updated `tests/test_server/test_investing.py` (1 assertion) to expect
+  the new profession-titled keys instead of `"Technician"` / `"Worker"`.
+
+#### Verification
+
+- Test suite: 246 passed (was 240, +6 new).
+
+---
+
+### claude/educator-self-training
+
+Branch: `claude/educator-self-training`
+Target: `pre-release`
+
+Bug fix from the 2026-05-15 playtest: the Education Island couldn't train
+its own workforce because `_action_request_training` excluded the player
+from the educator picker list, then bailed with "No Educator player in
+this game."
+
+#### Fix
+
+In `_action_request_training`, detect when the requester is the Educator
+(`is_self_training = any(r.name == "Educator" for r in player.roles)`)
+and route through a short-circuit branch that:
+
+* Sets `educator = player` (skips the educator-choice prompt)
+* Sets `dollops_educator = 0.0` (no fee — skips the prompt entirely)
+* Sets `transport_mode = "self_training"` (new mode; bypasses the
+  PassengerSeats / air-ticket consumption)
+* After submitting the request, **auto-approves and dispatches**
+  immediately — the workers go into the on-island programme this
+  season and return next season.
+
+University capacity is still consumed for the chosen profession, so
+self-training cannot bypass the annual / seasonal caps.
+
+#### Files touched
+
+- `island_traders/engine/turn.py` — self-training branch in
+  `_action_request_training`
+- `island_traders/models/training.py` — `describe()` now handles the
+  new `"self_training"` transport mode
+
+#### Tests
+
+- 5 new tests in `tests/test_engine/test_educator_self_training.py`:
+  * Skips the educator picker and fee prompt
+  * Consumes zero PassengerSeats; dispatches immediately
+  * Returns after exactly one season
+  * Still counts against University capacity (no cap bypass)
+  * Works in a solo / single-Educator scenario
+
+#### Verification
+
+- Test suite: 240 passed (was 235, +5 new).
+
+---
+
+### claude/edu-spec-and-codex-brief
+
+Branch: `claude/edu-spec-and-codex-brief`
+Target: `pre-release`
+
+Docs-only branch.  Two updates following the 2026-05-15 inbox-processing
+session and the product decisions that came out of it.
+
+#### `requirements/education-model.md` updates
+
+* **Patents now consume Expertise as an input** (~0.25 Expertise per
+  Patent) on top of Laboratory Equipment + Manager capacity.
+* **Class-size rule:** 1 Course covers a class of up to **12 students**.
+  When a training batch exceeds 12 trainees the system auto-splits across
+  multiple Courses (debiting `ceil(trainees/12)`).
+* **Self-training Course consumption** clarified: yes, self-training
+  still debits a Course even though it skips fees + transport.  The
+  12-student class size applies, so multiple workers on the Education
+  Island can be trained on a single Course.
+* **Tutor → Instructor consolidation:** Profession.TUTOR is renamed to
+  Profession.INSTRUCTOR.  The clean Manager/Technician pairing is
+  Professor / Instructor.  "Tutor" can stay as a display title alias.
+* New constant flagged: `MAX_CLASS_SIZE_PER_COURSE = 12`.
+* Open-questions section updated to mark items 1, 3, and 4 as decided.
+
+#### `requirements/codex-tasks/ai-trading.md` (new)
+
+Self-contained Codex task brief for the next parallel work item: making
+heuristic AI islands proactively participate in the market (place bids,
+list offers, evaluate cross-island arbitrage).  Mirrors the existing
+`codex-tasks/sim-calibration.md` format — goal, scope, in/out-of-scope
+files, acceptance criteria, hand-off mechanics.
+
+Specific scoped behaviours:
+
+1. List most fresh output for sale each season
+2. Bid on missing inputs
+3. **Transporter AI must list Passenger Seats** (currently silently
+   blocking training)
+4. Cross-island arbitrage / opportunistic deals
+5. Switch deal valuation to last-deal / best-offer (TODO item)
+
+#### Verification
+
+- No code changes.  Test suite unchanged.
+
+---
+
+### claude/inbox-2026-05-15
+
+Branch: `claude/inbox-2026-05-15`
+Target: `pre-release`
+
+Docs-only branch.  Processed the 8 playtest items captured in
+`requirements/inbox.md` on 2026-05-15.  No code or test changes.
+
+#### What landed where
+
+| Item | Destination |
+|---|---|
+| Educator self-training (no fee / no transport / 1 season) | `TODO.md` Bugs section |
+| Rename `Purchase Capital` → `Purchase Equipment` | `TODO.md` Dashboard & UX |
+| AI live-play economy / automated trading | `TODO.md` new "AI Trading Behaviour" section (proposed next Codex task) |
+| Personnel shortages by specialty | `TODO.md` Dashboard & UX |
+| Food: base population self-fed | `requirements/production-capacity-model.md §21` (new) + `TODO.md` |
+| Cancel open bids / offers + partial fills | `TODO.md` new "Market & Trading" section |
+| Education refinement: Knowledge → Expertise, +Courses, +Instructors | **New spec** `requirements/education-model.md` + `TODO.md` new "Education Model Refinement" section |
+| Near-match auto-clearing (±1 Dp / ±3%) | `TODO.md` "Market & Trading" |
+| Item valuation: last-deal / lower-of-cost-or-market | `TODO.md` Financial Model |
+
+#### Highlight: Education model refinement is the largest piece
+
+`requirements/education-model.md` (new) lays out a two-phase migration:
+
+* **Phase 1 (mechanical):** rename `ResourceType.KNOWLEDGE` →
+  `ResourceType.EXPERTISE` and display label "Expertise" everywhere.  Pure
+  cascade — zero behavioural change.  ~40-file touch surface.
+* **Phase 2 (gameplay):** add `ResourceType.COURSES` (new tradable);
+  Education produces Courses by consuming Expertise; training requests
+  debit Courses on approval; add `Profession.INSTRUCTOR` (consolidating
+  with Tutor is the recommended open question); rebalance Education
+  starting workforce to 4 Professors + 4 Instructors.
+
+The spec flags open questions (Tutor vs Instructor consolidation, Course
+trade-ability, self-training Course consumption) for product-side
+decisions before implementation starts.
+
+#### Highlight: AI Trading Behaviour is the next Codex candidate
+
+The playtest reported that AI islands behave too passively after
+production — humans have to push trades on them.  The new "AI Trading
+Behaviour" TODO section enumerates the concrete missing behaviours
+(placing bids, listing offers, cross-island arbitrage, deal valuation
+based on last-deal price).  This is well-scoped, lives mostly in
+`engine/ai.py`, and doesn't overlap with Claude's current workstreams —
+exactly the kind of task Codex can pick up on a `codex/ai-trading`
+branch.
+
+#### Verification
+
+- No code changes.  Test suite unchanged.
+
+---
+
+### claude/banker-rebalance
+
+Branch: `claude/banker-rebalance`
+Target: `pre-release`
+
+Banker is a **service business**, not a commodity producer.  Income comes
+from loan interest spread + insurance premiums (and, future, deal
+guarantees, brokerage, and project finance).  This branch removes the
+`Finance` commodity from the production loop — the root cause Codex
+identified for the 75.6% Banker win rate.
+
+#### What changed
+
+- **Banker BASE_PRODUCTION is now empty** (was: 30 Finance/season).  The
+  Banker no longer "produces" anything on the market.  Banker income comes
+  exclusively from the existing loan ledger (interest at the quoted rate)
+  and from insurance premiums sold via the existing `SELL_INSURANCE`
+  action.
+- **Banker PRODUCTION_INPUTS is now empty** (was: 1 Knowledge).  Banking
+  doesn't gate on per-season inputs.  Knowledge still useful for training
+  workers, but isn't consumed by an idle Produce action.
+- **Educator PRODUCTION_INPUTS dropped Finance** (was: Lab Equipment +
+  Finance, now: Lab Equipment).  No more "operating budget paid in a
+  tradeable commodity".
+- **STARTING_INVENTORY:** Banker no longer starts with 2 Finance to sell;
+  Educator no longer starts with 2 Finance to spend.
+- **`models/role.py`:** Banker `produces=()`, no longer `(FINANCE,)`.
+  Educator `needs=(LABORATORY_EQUIPMENT,)`.  Banker short_name renamed
+  from "Finance" to "Banking" to reflect the service-focus.
+- **`constants_capacity.py`:**
+  * Removed the `Banker → Finance` production recipe.
+  * Updated Banker capital items (Vault, Trading Floor) to express
+    capacity in `Loans` / `InsurancePolicies` instead of `Finance`.
+  * Removed `Finance` from Educator recipe inputs.
+- **`server/app.py` ROLE_INFO** updated: Banker produces "Loans,
+  Insurance" not "Finance"; Educator needs "Laboratory Equipment" only.
+- **`RULES.md`** updated: Seven Islands table, Production Inputs table,
+  Base Prices table, physical contents list, and Quick Reference now
+  reflect Banker as a service business with no Finance commodity.
+
+#### What didn't change
+
+- The `ResourceType.FINANCE` enum still exists — back-compat for any
+  saved games or external references.  No code now produces or consumes
+  it during normal play.
+- The existing loan engine (`models/loan.py`, banker_quote_rate, etc.)
+  is unchanged — that was already the right shape.
+- The Insurance products (Life + Medical, with manage/cancel/refund
+  flows) are unchanged.
+
+#### Simulation impact (500 games × 4 seeds {42, 1, 7, 99})
+
+| Role         | Before       | After (mean) |
+|--------------|-------------:|-------------:|
+| Banker       | **75.0%**    | **1.1%**     |
+| Transporter  | 23.6%        | 95.2%        |
+| Farmer       | 1.4%         | 3.8%         |
+| Miner        | 0.0%         | 0.0%         |
+| Educator     | 0.0%         | 0.0%         |
+| Manufacturer | 0.0%         | 0.0%         |
+| Doctor       | 0.0%         | 0.0%         |
+
+Banker dominance is **eliminated** — exactly the goal of this fix.
+
+#### Honest caveats
+
+This is a *targeted* fix for the Banker exploit.  It does **not** balance
+the overall game.  The post-fix distribution surfaces a separate
+structural problem: **Transporter now dominates at ~95%** (already over-
+monetized; with Banker out, Transporter sweeps).  Roles at 0% wins still
+need their own structural look.
+
+Two known follow-ups, both out of scope for this branch:
+
+1. **Banker AI strategy** — the heuristic AI doesn't yet proactively
+   offer/seek loans, so the Banker has almost no income in AI-only
+   simulations.  Real multiplayer should be different (humans will seek
+   loans).  Once the Island Ledger refactor lands and the institutional
+   cash pool + deposit accounts exist, the Banker's economics will be
+   meaningfully different — re-baseline at that point.
+2. **Transporter economy** — `damage_seasons` semantics and AI market
+   behaviour need separate work (Codex's diagnostics noted this).
+
+#### Future Banker revenue streams (TBD, on the roadmap)
+
+- **Deal guarantees** — Banker charges a fee to guarantee a P2P deal so
+  the counterparty is paid even if the proposer defaults
+- **Brokerage** — Banker negotiates deals between two other islands for
+  a commission
+- **Project finance** — when project-based capital expenditures are
+  introduced, Banker provides structured loans for specific projects
+- **Deal insurance** — premium-priced cover for a single transaction
+  (vs. the seasonal Life / Medical policies that exist today)
+
+#### Verification
+
+- Test suite: 235 passed (unchanged count; 3 Banker-production tests
+  rewritten to assert no production rather than asserting on Finance flow).
+- Baseline simulation (`--games 500 --seed 42`) vs post-fix simulation
+  recorded in the table above.
+
+---
+
 ### codex/sim-calibration
 
 Branch: `codex/sim-calibration`
 Target: `pre-release`
 
-Simulation calibration pass for the current `pre-release` economy.
+Simulation calibration iteration for the current `pre-release` economy.
+This is not a final balance certification; further calibration iterations are
+expected before the next major release is promoted from `pre-release` to
+`main`.
 
 #### Baseline
 

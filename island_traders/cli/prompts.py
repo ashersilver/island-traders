@@ -7,6 +7,32 @@ from ..constants import CURRENCY_SYMBOL
 from .signals import CANCEL_SENTINEL, ActionCancelled  # noqa: F401
 
 
+# Player-facing labels for TurnAction values where the default title-cased
+# rendering (`"purchase_capital".replace("_"," ").title()` = "Purchase
+# Capital") isn't the wording we want.  Internal enum names + values stay
+# unchanged — only the player-visible label changes.
+ACTION_LABEL_OVERRIDES: dict[str, str] = {
+    "purchase_capital": "Purchase Equipment",   # was "Purchase Capital" (2026-05-15 playtest)
+    "lease_capital": "Lease Equipment",
+    "pay_lease": "Pay Lease",
+    "reorder_training_queue": "Reorder Training Queue",
+    "reject_training_request": "Reject Training Request",
+    "counter_training_request": "Counter Training Request",
+    "ack_training_decision": "Acknowledge Training Decision",
+    "supply_training_expertise": "Supply Expertise to Educator",
+    "request_medical_staff": "Request Medical Staff",
+    "review_staffing_requests": "Review Staffing Requests",
+    "repurpose_worker": "Repurpose Worker",
+}
+
+
+def action_label(action: TurnAction) -> str:
+    """Display label for a TurnAction in any IO adapter's action menu."""
+    if action.value in ACTION_LABEL_OVERRIDES:
+        return ACTION_LABEL_OVERRIDES[action.value]
+    return action.value.replace("_", " ").title()
+
+
 class IOAdapter:
     """All terminal I/O goes through this class. Subclass for tests or alternative UIs."""
 
@@ -17,9 +43,9 @@ class IOAdapter:
         return input(prompt)
 
     def choose_action(self, player, available: list[TurnAction]) -> TurnAction:
-        self.print(f"\n  {player.name}'s turn ({player.role_names()}) — choose:")
+        self.print(f"\n  {player.name} ({player.role_names()}) — choose an action:")
         for i, action in enumerate(available, 1):
-            self.print(f"    {i}. {action.value.replace('_', ' ').title()}")
+            self.print(f"    {i}. {action_label(action)}")
         while True:
             raw = self.input("  > ").strip()
             if raw.isdigit():
@@ -62,7 +88,9 @@ class IOAdapter:
                     return players[idx]
             self.print("  Invalid choice.")
 
-    def confirm(self, prompt: str) -> bool:
+    def confirm(self, prompt: str, request_summary: dict | None = None) -> bool:
+        if request_summary:
+            self.print(self._format_request_summary(request_summary))
         while True:
             raw = self.input(f"  {prompt} [y/n] > ").strip().lower()
             if raw in ("y", "yes"):
@@ -83,11 +111,47 @@ class IOAdapter:
                     return available[idx]
             self.print("  Invalid choice.")
 
-    def ask_dollop_amount(self, prompt: str, max_dollops: float) -> float:
-        sym = CURRENCY_SYMBOL
-        self.print(f"\n  {prompt} (max {max_dollops:.1f} {sym}, 0 to skip)")
+    def choose_option(
+        self, prompt: str, options: list[dict], request_summary: dict | None = None
+    ) -> object:
+        """Choose from a list of labelled options.
+
+        `options` is `[{"value": <any json-serialisable>, "label": str}, ...]`.
+        Returns the chosen option's `value`.  Unlike `choose_quantity`, this
+        presents named choices rather than a free numeric input — used for
+        product selection so the player picks "Farm Machinery", not "3".
+        """
+        if request_summary:
+            self.print(self._format_request_summary(request_summary))
+        self.print(f"\n  {prompt}")
+        for i, opt in enumerate(options, 1):
+            self.print(f"    {i}. {opt['label']}")
         while True:
             raw = self.input("  > ").strip()
+            if raw.isdigit():
+                idx = int(raw) - 1
+                if 0 <= idx < len(options):
+                    return options[idx]["value"]
+            self.print("  Invalid choice.")
+
+    def _format_request_summary(self, summary: dict) -> str:
+        lines = [summary.get("title", "Training request")]
+        for label, value in summary.get("fields", []):
+            lines.append(f"  - {label:<18} {value}")
+        return "\n".join(lines)
+
+    def ask_dollop_amount(self, prompt: str, max_dollops: float,
+                          prefill: float = 0.0) -> float:
+        sym = CURRENCY_SYMBOL
+        hint = f" (max {max_dollops:.1f} {sym}, 0 to skip"
+        if prefill:
+            hint += f", suggested {prefill:.2f}"
+        hint += ")"
+        self.print(f"\n  {prompt}{hint}")
+        while True:
+            raw = self.input("  > ").strip()
+            if raw == "" and prefill:
+                return prefill
             try:
                 val = float(raw)
                 if -max_dollops <= val <= max_dollops:
@@ -135,10 +199,13 @@ class FakeIOAdapter(IOAdapter):
     def choose_profession(self, prompt, available):
         return available[0] if available else None
 
-    def confirm(self, prompt):
+    def choose_option(self, prompt, options, request_summary=None):
+        return options[0]["value"] if options else None
+
+    def confirm(self, prompt, request_summary=None):
         return True
 
-    def ask_dollop_amount(self, prompt, max_dollops):
+    def ask_dollop_amount(self, prompt, max_dollops, prefill=0.0):
         return 0.0
 
     def ask_text(self, prompt, default=""):

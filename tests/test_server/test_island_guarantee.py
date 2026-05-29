@@ -173,15 +173,18 @@ def test_build_offers_lists_all_ai_extras_with_prices():
     assert len(offers) == 2
     roles = {o["role"] for o in offers}
     assert roles == {"Banker", "Farmer"}
-    # Banker: AI paid 80 / 700 = 11.4% → mid band → 2*80 = 160
+    # Economy-lifecycle Phase A: starting capital is now 1500/player.
+    # Banker: AI paid 80 / 1500 = 5.3% → low band → formula 80; floor
+    # 0.20 * 1500 = 300 wins → 300.
     banker = next(o for o in offers if o["role"] == "Banker")
-    assert banker["breakdown"]["formula_band"] == "mid"
-    assert banker["price"] == 160.0
-    # Farmer: AI paid 50 / 700 = 7.1% → low band → 50, floor 140 wins
+    assert banker["breakdown"]["formula_band"] == "low"
+    assert banker["price"] == 300.0
+    # Farmer: AI paid 50 / 1500 = 3.3% → low band → formula 50; floor
+    # 300 wins → 300.
     farmer = next(o for o in offers if o["role"] == "Farmer")
     assert farmer["breakdown"]["formula_band"] == "low"
-    assert farmer["price"] == 140.0
-    # Affordability check: buyer has 700 Dp, both are affordable
+    assert farmer["price"] == 300.0
+    # Affordability check: buyer has 1500 Dp, both (300) are affordable
     assert all(o["affordable"] for o in offers)
 
 
@@ -189,12 +192,13 @@ def test_build_offers_marks_unaffordable_offers():
     mgr = GameManager()
     room = _make_room(mgr, islandless_humans=1, ai_with_extras=True)
     room.guarantee = IslandGuaranteeState(
-        # Buyer already spent 600 of their 700 → has 100 left.
-        auction_deductions={"h1": 600.0},
+        # Phase A: 1500/player. Spend 1440 → 60 left. Both AI prices are
+        # low-band (formula = ai_paid): Banker 80, Farmer 50. Floor
+        # 0.20 * 60 = 12 (loses). Banker 80 > 60 → unaffordable; Farmer
+        # 50 ≤ 60 → affordable.
+        auction_deductions={"h1": 1440.0},
     )
     offers = mgr._build_offers_for(room, "h1")
-    # Banker offer is 160 Dp → unaffordable; Farmer floor would be 0.20 * 100 = 20,
-    # formula = 50 (low band), final = 50 → affordable.
     banker = next(o for o in offers if o["role"] == "Banker")
     farmer = next(o for o in offers if o["role"] == "Farmer")
     assert banker["affordable"] is False
