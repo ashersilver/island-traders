@@ -3222,75 +3222,128 @@ function showMarketBoardPopup() {
 
 // ---- Dependency flowchart popup ----
 function showDependencyMap() {
-  // Static dependency graph: who produces what, who needs what.
-  // Nodes: the 7 islands. Edges: resource flows (Produces → Needs).
-  const W = 560, H = 380;
-  // Island positions (x, y, label, colour)
+  const W = 680, H = 430;
+  const NW = 92, NH = 30;
+
+  // Node layout — Manufacturer central hub, Educator-Banker right pair
   const nodes = [
-    { id: 'Farmer',       x: 280, y:  40, label: 'Farmer',       color: '#27ae60' },
-    { id: 'Miner',        x:  60, y: 150, label: 'Miner',        color: '#8e44ad' },
-    { id: 'Transporter',  x: 160, y: 290, label: 'Transporter',  color: '#2980b9' },
-    { id: 'Manufacturer', x: 400, y: 175, label: 'Manufacturer', color: '#d35400' },
-    { id: 'Educator',     x: 500, y:  55, label: 'Educator',     color: '#16a085' },
-    { id: 'Banker',       x: 500, y: 290, label: 'Banker',       color: '#c0392b' },
-    { id: 'Doctor',       x: 280, y: 330, label: 'Doctor',       color: '#2471a3' },
+    { id:'Farmer',       x:285, y: 48,  label:'Farmer',       color:'#27ae60' },
+    { id:'Miner',        x: 76, y:192,  label:'Miner',        color:'#8e44ad' },
+    { id:'Transporter',  x:155, y:365,  label:'Transporter',  color:'#2980b9' },
+    { id:'Manufacturer', x:455, y:205,  label:'Manufacturer', color:'#d35400' },
+    { id:'Educator',     x:605, y: 75,  label:'Educator',     color:'#16a085' },
+    { id:'Banker',       x:605, y:335,  label:'Banker',       color:'#c0392b' },
+    { id:'Doctor',       x:320, y:388,  label:'Doctor',       color:'#2471a3' },
   ];
-  // Edges: {from, to, label, color}
+
+  // Edges — curve: perpendicular offset in px (positive = left of travel direction)
+  // Bidirectional pairs use opposite-sign curves so lines don't overlap.
   const edges = [
-    { from:'Miner',       to:'Manufacturer', label:'Ore',              color:'#c0392b' },
-    { from:'Miner',       to:'Transporter',  label:'Oil',              color:'#8e44ad' },
-    { from:'Miner',       to:'Farmer',       label:'Oil',              color:'#8e44ad' },
-    { from:'Miner',       to:'Manufacturer', label:'Oil',              color:'#8e44ad' },
-    { from:'Transporter', to:'Miner',        label:'Freight',          color:'#2980b9' },
-    { from:'Transporter', to:'Manufacturer', label:'Freight',          color:'#2980b9' },
-    { from:'Manufacturer',to:'Farmer',       label:'CapEquip',         color:'#d35400' },
-    { from:'Manufacturer',to:'Educator',     label:'CapEquip',         color:'#d35400' },
-    { from:'Manufacturer',to:'Doctor',       label:'CapEquip',         color:'#d35400' },
-    { from:'Educator',    to:'Doctor',       label:'Knowledge',        color:'#16a085' },
-    { from:'Educator',    to:'Banker',       label:'Knowledge',        color:'#16a085' },
-    { from:'Banker',      to:'Educator',     label:'Finance',          color:'#c0392b' },
-    { from:'Doctor',      to:'Farmer',       label:'HealthSvcs',       color:'#2471a3' },
+    // Raw materials
+    { from:'Miner',        to:'Manufacturer',  label:'Metal · Oil',    color:'#9b59b6', curve: 20 },
+    { from:'Miner',        to:'Farmer',        label:'Oil',            color:'#8e44ad', curve:-22 },
+    { from:'Miner',        to:'Transporter',   label:'Oil',            color:'#8e44ad', curve: 22 },
+    { from:'Transporter',  to:'Miner',         label:'Freight',        color:'#2980b9', curve: 22 },
+    // Equipment from Manufacturer
+    { from:'Manufacturer', to:'Farmer',        label:'FarmMachinery',  color:'#e67e22', curve:-25 },
+    { from:'Manufacturer', to:'Miner',         label:'MiningEquip',    color:'#e67e22', curve: 18 },
+    { from:'Manufacturer', to:'Educator',      label:'LabEquipment',   color:'#e67e22', curve:-18 },
+    { from:'Manufacturer', to:'Transporter',   label:'TransportEquip', color:'#e67e22', curve: 22 },
+    { from:'Manufacturer', to:'Doctor',        label:'MedDevices',     color:'#e67e22', curve: 20 },
+    // Education & finance
+    { from:'Educator',     to:'Doctor',        label:'Expertise',      color:'#16a085', curve: 28 },
+    { from:'Educator',     to:'Banker',        label:'Expertise',      color:'#1abc9c', curve:-22 },
+    { from:'Banker',       to:'Educator',      label:'Finance',        color:'#e74c3c', curve:-22 },
+    // Sustenance & health
+    { from:'Farmer',       to:'Transporter',   label:'Food',           color:'#27ae60', curve: 25 },
+    { from:'Doctor',       to:'Farmer',        label:'HealthSvcs',     color:'#2471a3', curve: 28 },
   ];
 
   const nodeMap = {};
   nodes.forEach(n => { nodeMap[n.id] = n; });
 
-  // Build SVG string
-  const scale = 1;
-  // Arrow marker
-  let svg = `<svg class="depflow-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:var(--bg,#04090f);border-radius:8px">
-<defs>
-  <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
-    <path d="M0,0 L0,6 L8,3 z" fill="rgba(180,180,200,.7)"/>
-  </marker>
-</defs>
-`;
+  const hw = NW/2, hh = NH/2;
 
-  // Draw edges (compute bezier control points between node centres)
-  const NW = 84, NH = 28; // node rect width/height
-  edges.forEach(e => {
+  // Return the point on the node boundary in the direction (dx,dy) FROM the center
+  function boundaryPt(cx, cy, dx, dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx/len, uy = dy/len;
+    const tx = hw / (Math.abs(ux) || 1e-9);
+    const ty = hh / (Math.abs(uy) || 1e-9);
+    const t = Math.min(tx, ty);
+    return [cx + ux*t, cy + uy*t];
+  }
+
+  // Collect SVG pieces — edges first, then nodes on top
+  const defs = [];
+  const edgeParts = [];
+  const nodeParts = [];
+
+  edges.forEach((e, i) => {
     const src = nodeMap[e.from], dst = nodeMap[e.to];
     if (!src || !dst) return;
-    const x1 = src.x, y1 = src.y;
-    const x2 = dst.x, y2 = dst.y;
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    // label midpoint
-    svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(180,180,200,.28)" stroke-width="1.4" marker-end="url(#arr)"/>`;
-    // resource label at midpoint
-    svg += `<text x="${mx}" y="${my - 4}" text-anchor="middle" font-size="9" fill="${e.color}" font-weight="600" opacity=".95">${e.label}</text>`;
+
+    // Control point offset perpendicular to the straight-line midpoint
+    const midX = (src.x + dst.x) / 2;
+    const midY = (src.y + dst.y) / 2;
+    const ddx = dst.x - src.x, ddy = dst.y - src.y;
+    const dLen = Math.hypot(ddx, ddy) || 1;
+    // Perpendicular unit vector (rotate 90° CCW)
+    const px = -ddy/dLen, py = ddx/dLen;
+    const cpX = midX + px * e.curve;
+    const cpY = midY + py * e.curve;
+
+    // Departure from src: direction src→cp, clipped to src boundary
+    const depDx = cpX - src.x, depDy = cpY - src.y;
+    const [sx, sy] = boundaryPt(src.x, src.y, depDx, depDy);
+
+    // Arrival at dst: direction cp→dst, pull back slightly from dst boundary
+    const arrDx = dst.x - cpX, arrDy = dst.y - cpY;
+    const [ex0, ey0] = boundaryPt(dst.x, dst.y, -arrDx, -arrDy); // boundary toward cp
+    // Pull 4px further inside so arrowhead tip is clearly visible
+    const aLen = Math.hypot(arrDx, arrDy) || 1;
+    const ex = ex0 + (arrDx/aLen)*4;
+    const ey = ey0 + (arrDy/aLen)*4;
+
+    // Bezier label position at t=0.5, offset perp outward
+    const lx = 0.25*sx + 0.5*cpX + 0.25*ex;
+    const ly = 0.25*sy + 0.5*cpY + 0.25*ey;
+    const lo = e.curve >= 0 ? 11 : -11;
+    const labX = (lx + px*lo).toFixed(1);
+    const labY = (ly + py*lo - 1).toFixed(1);
+
+    const mid = `id="arr${i}"`;
+    defs.push(
+      `<marker ${mid} markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">` +
+      `<path d="M0,0 L9,3.5 L0,7 Z" fill="${e.color}" opacity=".9"/></marker>`
+    );
+
+    const pathD = `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${cpX.toFixed(1)},${cpY.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+    edgeParts.push(
+      `<path d="${pathD}" fill="none" stroke="${e.color}" stroke-width="1.7" opacity=".72" marker-end="url(#arr${i})"/>`,
+      `<text x="${labX}" y="${labY}" text-anchor="middle" font-size="8.5" font-weight="700"` +
+        ` fill="${e.color}" paint-order="stroke" stroke="#04090f" stroke-width="3" stroke-linejoin="round">${e.label}</text>`
+    );
   });
 
-  // Draw nodes
   nodes.forEach(n => {
-    const rx = n.x - NW/2, ry = n.y - NH/2;
-    svg += `<rect x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="5" ry="5" fill="rgba(7,15,30,.88)" stroke="${n.color}" stroke-width="1.8"/>`;
-    svg += `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" font-size="11" fill="#e8eaf6" font-weight="700">${n.label}</text>`;
+    const rx = (n.x - hw).toFixed(1), ry = (n.y - hh).toFixed(1);
+    nodeParts.push(
+      `<rect x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="6" fill="#07131e" stroke="${n.color}" stroke-width="2"/>`,
+      `<text x="${n.x}" y="${n.y+5}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ecf0f1">${n.label}</text>`
+    );
   });
 
-  svg += '</svg>';
+  const svg = `<svg class="depflow-svg" viewBox="0 0 ${W} ${H}"
+    xmlns="http://www.w3.org/2000/svg"
+    style="background:#04090f;border-radius:8px;display:block;width:100%">
+  <defs>${defs.join('')}</defs>
+  ${edgeParts.join('\n  ')}
+  ${nodeParts.join('\n  ')}
+</svg>`;
 
   const legend = `
-    <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem .8rem;font-size:.75rem;color:var(--dim)">
+    <div style="margin-top:.7rem;display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.73rem">
       <span style="color:#27ae60">■</span> Farmer &nbsp;
       <span style="color:#8e44ad">■</span> Miner &nbsp;
       <span style="color:#2980b9">■</span> Transporter &nbsp;
@@ -3299,9 +3352,9 @@ function showDependencyMap() {
       <span style="color:#c0392b">■</span> Banker &nbsp;
       <span style="color:#2471a3">■</span> Doctor
     </div>
-    <div style="margin-top:.35rem;font-size:.72rem;color:var(--dim)">
-      Lines show resource flows. Edge labels are the resource traded along that route.
-      Arrows point from producer to consumer.
+    <div style="margin-top:.3rem;font-size:.7rem;color:var(--dim)">
+      Arrows show resource flows from producer → consumer. Curved lines separate
+      bidirectional routes (e.g. Miner ↔ Transporter trade Oil for Freight).
     </div>`;
 
   showPopup('Island Dependency Map', `<div class="depflow-wrap">${svg}</div>${legend}`);
