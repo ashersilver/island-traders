@@ -214,6 +214,8 @@ class Game:
                 # (2026-05-27 event-frequency-cap brief).
                 for msg in self.event_resolver.last_suppressions:
                     self.io.print(f"[EVENT] Suppressed halt: {msg}")
+                # Expose resolved events to server hooks (conditions panel etc.).
+                self._last_event_results = event_results
                 # Optional hooks — set by the server to install/clear the
                 # per-season Ready timer in simultaneous-play mode.
                 cb = getattr(self, "before_season", None)

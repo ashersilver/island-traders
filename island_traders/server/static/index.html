@@ -904,6 +904,10 @@ button:active{transform:scale(.97)}
 
     <div class="g-info">
       <div class="section">
+        <h3>Conditions</h3>
+        <div id="conditions-panel" style="font-size:.82rem;line-height:1.4">—</div>
+      </div>
+      <div class="section">
         <h3>Funding Rates</h3>
         <div id="funding-rates-panel" style="font-size:.82rem">—</div>
       </div>
@@ -2030,23 +2034,45 @@ function _renderTrainingPipelineSection(pipeline) {
 function _renderStaffingSection(player) {
   const wb = player.workforce_bands || {};
   const tb = player.workforce_training_bands || {};
-  const bands = [
-    ['Managers',    wb.Manager    ?? 0, tb.Manager    ?? 0],
-    ['Technicians', wb.Technician ?? 0, tb.Technician ?? 0],
-    ['Workers',     wb.Worker     ?? 0, tb.Worker     ?? 0],
-  ];
-  const totalActive   = bands.reduce((s, [, a]) => s + a, 0);
-  const totalTraining = bands.reduce((s, [, , t]) => s + t, 0);
-  const rows = bands.map(([label, active, training]) =>
-    `<tr><td>${label}</td><td>${active}</td><td>${training}</td></tr>`
-  ).join('');
+  const profs = player.workforce_professions || {};
+
+  // Per-profession rows (preferred when available, falls back to band totals).
+  let rows = '';
+  let totalActive = 0, totalTraining = 0;
+  if (Object.keys(profs).length > 0) {
+    // Sort: Managers first, then Technicians, then Workers, within each band
+    // sort alphabetically by label.
+    const BAND_ORDER = { Manager: 0, Technician: 1, Worker: 2 };
+    const entries = Object.values(profs).sort((a, b) => {
+      // We don't have band info here, so just sort by label.
+      return a.label.localeCompare(b.label);
+    });
+    rows = entries.map(({ label, active, training }) => {
+      totalActive   += active;
+      totalTraining += training;
+      return `<tr><td>${esc(label)}</td><td>${active}</td><td>${training || '—'}</td></tr>`;
+    }).join('');
+  } else {
+    // Fallback: band-level aggregates.
+    const bands = [
+      ['Managers',    wb.Manager    ?? 0, tb.Manager    ?? 0],
+      ['Technicians', wb.Technician ?? 0, tb.Technician ?? 0],
+      ['Workers',     wb.Worker     ?? 0, tb.Worker     ?? 0],
+    ];
+    totalActive   = bands.reduce((s, [, a]) => s + a, 0);
+    totalTraining = bands.reduce((s, [, , t]) => s + t, 0);
+    rows = bands.map(([label, active, training]) =>
+      `<tr><td>${label}</td><td>${active}</td><td>${training || '—'}</td></tr>`
+    ).join('');
+  }
+
   return `<section class="popup-section">
     <h4>Staffing</h4>
     <table class="popup-table">
-      <thead><tr><th>Band</th><th>Active</th><th>In training</th></tr></thead>
+      <thead><tr><th>Role</th><th>Active</th><th>In training</th></tr></thead>
       <tbody>
         ${rows}
-        <tr class="total-row"><td>Total</td><td>${totalActive}</td><td>${totalTraining}</td></tr>
+        <tr class="total-row"><td>Total</td><td>${totalActive}</td><td>${totalTraining || '—'}</td></tr>
       </tbody>
     </table>
     <div class="staffing-extras">
@@ -2498,6 +2524,9 @@ function handleMessage(msg) {
     case 'season_timeout':
       addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
       break;
+    case 'season_events':
+      renderConditionsPanel(msg);
+      break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
       if (msg.error) addLog('Ready error: ' + msg.error, 'err');
@@ -2576,17 +2605,31 @@ function renderGameState() {
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
   const wb = me.workforce_bands || {};
   const tb = me.workforce_training_bands || {};
-  const mgr = wb.Manager ?? 0, tech = wb.Technician ?? 0, wrk = wb.Worker ?? 0;
-  const personnelLines = [
-    ['Managers', mgr, tb.Manager ?? 0],
-    ['Technicians', tech, tb.Technician ?? 0],
-    ['Workers', wrk, tb.Worker ?? 0],
-  ];
-  document.getElementById('s-personnel').innerHTML = personnelLines
-    .map(([label, active, training]) =>
+  const profs = me.workforce_professions || {};
+  let personnelHtml = '';
+  if (Object.keys(profs).length > 0) {
+    // Show per-profession counts in the sidebar (exact roles, not generic bands).
+    personnelHtml = Object.values(profs)
+      .filter(p => p.active > 0 || p.training > 0)
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map(({ label, active, training }) => {
+        const trainStr = training > 0 ? `<span class="training-count">(${training} in training)</span>` : '';
+        return `<div class="personnel-line"><span>${esc(label)}: ${active}</span>${trainStr}</div>`;
+      })
+      .join('');
+    if (!personnelHtml) personnelHtml = '<span style="color:var(--dim)">No workers</span>';
+  } else {
+    // Fallback: band-level aggregates.
+    const mgr = wb.Manager ?? 0, tech = wb.Technician ?? 0, wrk = wb.Worker ?? 0;
+    personnelHtml = [
+      ['Managers', mgr, tb.Manager ?? 0],
+      ['Technicians', tech, tb.Technician ?? 0],
+      ['Workers', wrk, tb.Worker ?? 0],
+    ].map(([label, active, training]) =>
       `<div class="personnel-line"><span>${label}: ${active}</span><span class="training-count">(${training} in training)</span></div>`
-    )
-    .join('');
+    ).join('');
+  }
+  document.getElementById('s-personnel').innerHTML = personnelHtml;
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;
@@ -2741,7 +2784,7 @@ function renderFundingRates() {
 // The set of hinted actions is also surfaced to showActionPrompt so the
 // matching action menu button gets the gold .recommended outline.
 const _HINT_OPEN_LABEL = {
-  buy_market:        'Open Market Buy',
+  market_buy:        'Open Market Buy',
   purchase_capital:  'Purchase Equipment',
   request_training:  'Request Training',
   view_loans:        'View Loans',
@@ -2762,6 +2805,13 @@ let _pendingHintTarget = null;
 // fires as soon as the server re-prompts us.  One-shot, per-click.
 // 2026-05-27 done-trading-undo brief Sub-issue C (Option 1: auto-undo).
 let _pendingActionAfterUndo = null;
+
+// Tracks which server prompt type is currently active — set whenever a
+// prompt message arrives, cleared when the prompt area is hidden.
+// Used by _actOnHint to ensure hint buttons only fire when the action
+// menu specifically is showing, not when a sub-dialog (confirm, resource
+// picker, etc.) is open inside the same prompt area.
+let _activePromptType = null;  // 'choose_action' | 'confirm' | 'choose_resource' | null
 
 function _isActionPromptOpen() {
   const area = document.getElementById('prompt-area');
@@ -2791,10 +2841,11 @@ function _actOnHint(action, payload = {}) {
     return;
   }
 
-  // Normal path: action prompt is open, fire the chosen action straight
-  // through.  If the action prompt isn't open (some other edge case),
-  // bail rather than send a stray response.
-  if (!_isActionPromptOpen()) return;
+  // Normal path: only fire if the server is waiting for a choose_action
+  // response — NOT when a sub-dialog (confirm, resource picker, quantity
+  // input, etc.) is active.  Sending a TurnAction value as the response
+  // to a confirm dialog would corrupt the dialog flow and end the turn.
+  if (_activePromptType !== 'choose_action') return;
   sendResponse(action);
 }
 
@@ -2850,13 +2901,13 @@ function renderDecisionHints(player, role) {
       why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
           + `You already have a standing bid — waiting for a seller to fill it. `
           + `Raise your bid price if it's not clearing.`;
-      triggersAction = 'buy_market';
+      triggersAction = 'market_buy';
       targetResource = alert.resource;
     } else {
       why = `You have ${alert.on_hand}; population needs ${alert.seasonal_need}/season. `
           + `Buy ${alert.recommended_purchase} ${alert.resource} to cover next season `
           + `plus a one-season buffer.`;
-      triggersAction = 'buy_market';
+      triggersAction = 'market_buy';
       targetResource = alert.resource;
     }
     hints.push({
@@ -2915,7 +2966,7 @@ function renderDecisionHints(player, role) {
         tone: 'blocked',
         title: `Unblock ${output.output}`,
         why: buys.join('; '),
-        triggers_action: 'buy_market',
+        triggers_action: 'market_buy',
         target_resource: firstResource,
       });
     } else if (Object.keys(workforceShort).length) {
@@ -3142,6 +3193,10 @@ function onReadyUpdate(msg) {
     document.getElementById('ready-btn-label').textContent =
         imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
   }
+  // If this player is parked (Done Trading), refresh the banner message
+  // so "everyone is done — ending soon" appears as soon as the last
+  // player clicks Done (without waiting for the next park-loop broadcast).
+  _renderParkedBannerBody();
   if (gameState) renderGameState();
 }
 
@@ -3155,6 +3210,38 @@ function _renderPreSeasonDots(active, ready) {
     const name = playerMap[pid] || pid;
     return `<span><span class="psb-dot${isReady ? ' ready' : ''}"></span>${name}</span>`;
   }).join('');
+}
+
+function renderConditionsPanel(msg) {
+  const el = document.getElementById('conditions-panel');
+  if (!el) return;
+  const events = msg.events || {};
+  const disaster = msg.regional_disaster;
+
+  // Disaster banner.
+  let disasterHtml = '';
+  if (disaster) {
+    disasterHtml = `<div style="background:rgba(220,50,50,.18);border:1px solid rgba(220,50,50,.4);border-radius:5px;padding:.3rem .5rem;margin-bottom:.4rem;color:#f87171;font-weight:600">
+      ⛈ Regional Disaster: ${esc(disaster)}
+    </div>`;
+  }
+
+  // Per-player event rows.
+  const rows = Object.values(events).map(ev => {
+    let color = 'var(--dim)';
+    let icon  = '✓';
+    if (ev.outage) { color = '#f87171'; icon = '⛔'; }
+    else if (ev.natural_disaster) { color = '#fb923c'; icon = '⛈'; }
+    else if (ev.yield_modifier < 0.5) { color = '#facc15'; icon = '⚠'; }
+    else if (ev.yield_modifier < 1.0) { color = '#fbbf24'; icon = '↓'; }
+    return `<div style="margin:.15rem 0">
+      <span style="color:${color}">${icon}</span>
+      <strong>${esc(ev.player_name)}:</strong>
+      <span style="color:${color}">${esc(ev.description)}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = disasterHtml + (rows || '<span style="color:var(--dim)">Awaiting season start…</span>');
 }
 
 function onSeasonResolved(msg) {
@@ -3319,21 +3406,37 @@ function _renderActionButton(o) {
 // this whenever choose_action's park check fires (Done Trading state).
 // 2026-05-27 done-trading-undo brief.
 function showParkedBanner(msg) {
+  _activePromptType = 'parked';
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent =
       `${msg.player_name} — Done Trading ✓`;
+  _renderParkedBannerBody();
+  document.getElementById('prompt-input').innerHTML = '';
+}
+
+// Render or re-render the parked banner body.  Called by showParkedBanner
+// and by onReadyUpdate so the "all done" message appears as soon as the
+// last player clicks Done (without waiting for the next park-loop tick).
+function _renderParkedBannerBody() {
+  if (_activePromptType !== 'parked') return;
+  const allDone = seasonActiveHumans.size > 0
+      && [...seasonActiveHumans].every(pid => seasonReadySet.has(pid));
+  const statusMsg = allDone
+      ? `<div style="color:var(--accent);font-weight:600;margin-bottom:.4rem">
+           ⏳ Everyone is done — season ending in a moment…
+         </div>`
+      : `<div style="color:var(--dim);margin-bottom:.6rem">
+           You've marked yourself done for this season.  The game is waiting
+           for the timer to expire or every other player to finish.
+         </div>`;
   document.getElementById('prompt-btns').innerHTML =
       `<div style="padding:.5rem 0;line-height:1.5">
-        <div style="color:var(--dim);margin-bottom:.6rem">
-          You've marked yourself done for this season.  The game is waiting
-          for the timer to expire or every other player to finish.
-        </div>
+        ${statusMsg}
         <button class="btn-gold" onclick="resumeTradingFromParked()">
           ↩ Resume Trading
         </button>
       </div>`;
-  document.getElementById('prompt-input').innerHTML = '';
 }
 
 // Click handler for the Resume Trading button on the parked banner.
@@ -3366,6 +3469,7 @@ function showActionPrompt(msg) {
   // same action menu if the prompt area goes missing mid-turn (e.g. a
   // hint button drove a modal that the user then cancelled).
   lastActionPromptMsg = msg;
+  _activePromptType = 'choose_action';
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
@@ -3434,6 +3538,7 @@ function _renderRequestSummary(summary) {
 }
 
 function showOptionPicker(msg) {
+  _activePromptType = 'dialog';
   const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.value}')">${esc(o.label)}</button>`
   ).join('');
@@ -3444,6 +3549,7 @@ function showOptionPicker(msg) {
 }
 
 function showPlayerPicker(msg) {
+  _activePromptType = 'dialog';
   const opts = msg.options.map(o =>
     `<button onclick="sendResponse('${o.id}')">${esc(o.name)} (${esc(o.roles)})</button>`
   ).join('');
@@ -3453,6 +3559,7 @@ function showPlayerPicker(msg) {
 }
 
 function showQuantityInput(msg) {
+  _activePromptType = 'dialog';
   showDlg(msg.prompt, `
     <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
@@ -3463,6 +3570,7 @@ function showQuantityInput(msg) {
 }
 
 function showDollopInput(msg) {
+  _activePromptType = 'dialog';
   const prefill = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
   const hint = prefill > 0
     ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Pre-filled with the current best price — adjust if you wish.</div>`
@@ -3478,6 +3586,7 @@ function showDollopInput(msg) {
 }
 
 function showTextInput(msg) {
+  _activePromptType = 'dialog';
   showDlg(msg.prompt, `
     <textarea id="txt-in" rows="4" style="width:100%;margin:.5rem 0;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.55rem">${esc(msg.default || '')}</textarea>
     <div style="display:flex;gap:.5rem">
@@ -3488,6 +3597,7 @@ function showTextInput(msg) {
 }
 
 function showConfirm(msg) {
+  _activePromptType = 'dialog';
   // Yes / No / Cancel — Cancel sends null (distinct from explicit "No")
   showDlg(msg.prompt, `
     ${_renderRequestSummary(msg.request_summary)}
@@ -3563,7 +3673,7 @@ function showMarketBuyPopup(msg) {
   // inherit the focus.
   const hint = _pendingHintTarget;
   _pendingHintTarget = null;
-  const focusResource = (hint && hint.action === 'buy_market') ? hint.resource : null;
+  const focusResource = (hint && hint.action === 'market_buy') ? hint.resource : null;
 
   const market = msg.market || {};
   const budget = msg.budget || 0;
@@ -3710,6 +3820,7 @@ function showPopup(title, bodyHtml, opts = {}) {
 function hideOverlay() {
   document.getElementById('overlay').classList.remove('active');
   document.getElementById('prompt-area')?.classList.add('hidden');
+  _activePromptType = null;
   // Action prompt is no longer active — re-render hints so the "Open"
   // buttons greys out, mirroring the action menu's disappearance.
   if (gameState) renderGameState();

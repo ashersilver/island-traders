@@ -85,6 +85,10 @@ class TrainingRequest:
     decline_season: int = -1
     original_dollops_to_educator: float = 0.0
     decision_acknowledged: bool = False
+    # Tick at which an Educator last skipped this request without deciding.
+    # Prevents the same request from re-appearing multiple times in the same
+    # review session (it will appear again next season).
+    last_skipped_tick: int = -1
 
     def describe(self, player_names: dict[int, str]) -> str:
         sym = CURRENCY_SYMBOL

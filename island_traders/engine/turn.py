@@ -60,6 +60,7 @@ class TurnAction(Enum):
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
+    REPURPOSE_WORKER   = "repurpose_worker"  # reassign a worker to a new profession
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -370,6 +371,8 @@ class TurnManager:
                     self._action_pay_lease(player, result, year, season_index)
                 elif action == TurnAction.APPLY_PATENT:
                     self._action_apply_patent(player, result)
+                elif action == TurnAction.REPURPOSE_WORKER:
+                    self._action_repurpose_worker(player, result)
             except ActionCancelled:
                 # User pressed Cancel mid-prompt-chain — abort cleanly without
                 # falling back to default values that would partially execute
@@ -1691,7 +1694,10 @@ class TurnManager:
                 f"  Campus load: {on_campus} visiting trainee(s) on the Education "
                 f"Island this season → +{on_campus} Food demand until they return."
             )
+        current_tick = year * len(SEASONS) + SEASONS.index(season_name)
         pending = self.training.sorted_pending_for_educator(player.player_id)
+        # Filter out requests the Educator already skipped this tick.
+        pending = [r for r in pending if r.last_skipped_tick != current_tick]
         if not pending:
             self.io.print("  No training requests awaiting your approval.")
             return
@@ -1701,9 +1707,26 @@ class TurnManager:
             requester = player_map[req.requester_id]
             self.io.print(f"\n  Request: {self._training_request_details(req, player_names, requester)}")
             summary = self._training_request_summary(req, player_names, requester)
-            if self._confirm_with_request_summary("Approve this training request?", summary):
+            decision = self.io.choose_option(
+                "What would you like to do with this request?",
+                [
+                    {"value": "approve",  "label": "Approve"},
+                    {"value": "counter",  "label": "Counter / Reject"},
+                    {"value": "skip",     "label": "Next →  (decide later this season)"},
+                ],
+                request_summary=summary,
+            )
+            if decision == "skip":
+                req.last_skipped_tick = current_tick
+                self.io.print(f"  Skipped — request #{req.batch_id} will appear again on your next Review Training action.")
+                continue
+            if decision == "approve":
                 self._approve_training_request(player, requester, req, result, season_name, year)
             else:
+                # decision == "counter" (or None / cancelled → treat as skip)
+                if decision is None:
+                    req.last_skipped_tick = current_tick
+                    continue
                 counter = self.io.ask_dollop_amount(
                     "Counter price to Educator in Dp? (0 = reject request)",
                     1_000_000.0,
@@ -2054,6 +2077,101 @@ class TurnManager:
             f"Workforce now: {player.workforce.count}"
         )
         result.actions_taken.append(f"recruit:{recruited}_workers")
+
+    def _action_repurpose_worker(self, player: Player, result: TurnResult) -> None:
+        """Reassign a worker from one profession to another, losing experience."""
+        from ..constants import REPURPOSE_WORKER_COST
+        from ..models.profession import Profession, PROFESSION_LABEL, band_of, WorkerBand
+        sym = CURRENCY_SYMBOL
+        active = player.workforce.active_workers
+        if not active:
+            self.io.print("  No active workers to reassign.")
+            return
+        cost = REPURPOSE_WORKER_COST
+        self.io.print(
+            f"  Reassigning a worker resets their experience and training level "
+            f"but keeps them on the island in the new role.\n"
+            f"  Cost: {cost:.0f} {sym} per worker."
+        )
+        if player.dollops < cost:
+            self.io.print(f"  Insufficient funds (need {cost:.0f} {sym}).")
+            return
+        # Let the player choose a worker.
+        worker_options = [
+            {
+                "value": str(w.worker_id),
+                "label": (
+                    f"{PROFESSION_LABEL.get(Profession(w.profession), w.profession)} "
+                    f"(exp: {w.experience_seasons}s, level: {w.training_level})"
+                ),
+            }
+            for w in sorted(active, key=lambda w: w.profession)
+        ]
+        chosen_wid_str = self.io.choose_option(
+            "Which worker would you like to reassign?",
+            worker_options,
+        )
+        if chosen_wid_str is None:
+            self.io.print("  Reassignment cancelled.")
+            return
+        try:
+            chosen_wid = int(chosen_wid_str)
+        except (TypeError, ValueError):
+            self.io.print("  Invalid selection.")
+            return
+        chosen_worker = next(
+            (w for w in active if w.worker_id == chosen_wid), None
+        )
+        if not chosen_worker:
+            self.io.print("  Worker not found.")
+            return
+        # Choose target profession from all valid professions for this island's roles.
+        role_names = {r.name for r in player.roles}
+        # Build a set of valid professions for these roles.
+        from ..models.profession import ROLE_PROFESSIONS
+        valid_profs: list[Profession] = []
+        for rname in role_names:
+            valid_profs.extend(ROLE_PROFESSIONS.get(rname, []))
+        # Remove the worker's current profession to avoid no-op repurpose.
+        try:
+            current_p = Profession(chosen_worker.profession)
+            valid_profs = [p for p in valid_profs if p != current_p]
+        except ValueError:
+            pass
+        if not valid_profs:
+            self.io.print("  No alternative professions available for this island's roles.")
+            return
+        prof_options = [
+            {
+                "value": p.value,
+                "label": PROFESSION_LABEL.get(p, p.value),
+            }
+            for p in sorted(set(valid_profs), key=lambda p: PROFESSION_LABEL.get(p, p.value))
+        ]
+        new_prof_value = self.io.choose_option(
+            "Choose the new profession for this worker:",
+            prof_options,
+        )
+        if new_prof_value is None:
+            self.io.print("  Reassignment cancelled.")
+            return
+        new_label = PROFESSION_LABEL.get(Profession(new_prof_value), new_prof_value)
+        old_label = PROFESSION_LABEL.get(Profession(chosen_worker.profession), chosen_worker.profession)
+        if not self.io.confirm(
+            f"Reassign this worker from {old_label} → {new_label} for {cost:.0f} {sym}? "
+            f"All experience will be lost."
+        ):
+            self.io.print("  Reassignment cancelled.")
+            return
+        player.spend_dollops(cost)
+        player.workforce.repurpose_worker(chosen_wid, new_prof_value)
+        self.io.print(
+            f"  Worker reassigned from {old_label} to {new_label}. "
+            f"Cost: {cost:.0f} {sym}."
+        )
+        result.actions_taken.append(
+            f"repurpose_worker:{old_label}→{new_label}"
+        )
 
     def _action_sell_insurance(
         self, player: Player, result: TurnResult, year: int, season_index: int

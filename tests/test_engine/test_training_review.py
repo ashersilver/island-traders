@@ -34,17 +34,40 @@ def _manager_training_ready(educator: Player, courses: int = 1, expertise: int =
 
 
 class TrainingReviewIO(FakeIOAdapter):
+    """Fake IO adapter for testing the Educator's training review flow.
+
+    `confirms` is a list of booleans (True=Approve, False=Counter/Reject)
+    that drive the choose_option prompt in _action_review_training.
+    Internally this converts True → "approve" and False → "counter" to
+    match the new three-option picker (approve / counter / skip).
+    """
+
     def __init__(self, confirms=None, amounts=None, texts=None):
         super().__init__()
         self.confirms = list(confirms or [])
         self.amounts = list(amounts or [])
         self.texts = list(texts or [])
 
-    def confirm(self, prompt):
+    def choose_option(self, prompt, options, request_summary=None):
+        """Pop from confirms: True→'approve', False→'counter', None→'skip'."""
         self.printed.append(prompt)
+        if not self.confirms:
+            return options[0]["value"] if options else None
+        raw = self.confirms.pop(0)
+        if raw is True:
+            return "approve"
+        if raw is False:
+            return "counter"
+        return "skip"
+
+    def confirm(self, prompt, request_summary=None):
+        """Used by sub-prompts (e.g. requester accepting counter-offer)."""
+        self.printed.append(prompt)
+        if not self.confirms:
+            return True
         return self.confirms.pop(0)
 
-    def ask_dollop_amount(self, prompt, max_dollops):
+    def ask_dollop_amount(self, prompt, max_dollops, prefill=0.0):
         self.printed.append(prompt)
         return self.amounts.pop(0)
 

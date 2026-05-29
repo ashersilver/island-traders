@@ -234,10 +234,23 @@ def test_ai_educator_revisits_pending_request_after_capacity_clears():
 
 
 class SummaryCaptureIO(FakeIOAdapter):
+    """Capture request_summary payloads from choose_option and confirm calls."""
+
     def __init__(self, confirm_value: bool):
         super().__init__()
         self.confirm_value = confirm_value
         self.request_summaries: list[dict] = []
+
+    def choose_option(self, prompt, options, request_summary=None):
+        """Used by _action_review_training — captures request_summary."""
+        if request_summary is not None:
+            self.request_summaries.append(request_summary)
+        # confirm_value=True → "approve", False → "counter", None → "skip"
+        if self.confirm_value is True:
+            return "approve"
+        if self.confirm_value is False:
+            return "counter"
+        return "skip"
 
     def confirm(self, prompt, request_summary=None):
         if request_summary is not None:
