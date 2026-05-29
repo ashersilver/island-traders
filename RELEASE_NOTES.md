@@ -54,8 +54,37 @@ quadratic bezier curved edges, per-edge arrowhead markers, and perpendicular
 label offsets. Node boundaries clipped with `boundaryPt()` helper; label text
 rendered with `paint-order="stroke"` for legibility on dark background.
 
-**Tests:** 542 tests passing (+28 new staffing model tests in
-`tests/test_models/test_staffing.py`).
+**Training counter-offer negotiation (counter-counter)**: When the Educator
+returns a counter-offer, the requester now sees an alert card in the sidebar
+and can **Accept / Counter / Reject**. A counter-counter sends the request back
+to the Educator (`TrainingStatus.COUNTERED → AWAITING_EDUCATOR` with the new
+fee), so the two sides can negotiate across turns.
+- `training.py`: `TrainingRegistry.requester_counter(batch_id, new_fee, message)`.
+- `turn.py`: `_review_training_counteroffers()` upgraded from Accept/Reject to
+  Accept/Counter/Reject (CLI path).
+- `app.py`: async WS handler `_handle_training_counter_response()` accepts
+  `approve / counter / reject / ack`, then rebroadcasts state to requester and
+  Educator.
+- `index.html`: counter-offer accept button sends `action: "approve"`.
+
+**Educator campus-load display**: The Educator sidebar now shows a **Campus
+Load** row (visiting trainees + contracted medical staff) with a
+"+N Food/season" hint, surfacing the sustenance burden that was previously only
+implicit in the meals-runway figure. `campus_load` and `visiting_staff_count`
+added to the per-player game-state payload.
+
+**Docs**: `RULES.md` gains a Medical Staffing Contracts section, a rewritten
+Training Step 2 covering the counter-offer/counter-counter flow, the three new
+actions (Request Medical Staff, Review Staffing Requests, Repurpose Worker),
+and a corrected Leases note. `ISLAND_BRIEFINGS.md` fixes Agriculture resource
+names, makes the Educator's campus-food burden prominent, rewrites the Doctor
+briefing around staffing contracts, and notes staffing-driven PassengerSeats
+demand for the Transporter.
+
+**Tests:** 543 tests passing (+28 staffing model tests, +1 counter-counter
+flow test `test_requester_can_counter_counter_offer`).
+
+Version bump: `0.1.0-dev.2026-05-28.5`.
 
 ---
 
