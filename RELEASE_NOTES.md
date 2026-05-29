@@ -5,6 +5,60 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ux-staffing-2026-05-28
+
+Branch: `claude/ux-staffing-2026-05-28`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-28.4`
+
+**Blocker reason visibility in training strip**: The sidebar training strip
+and Personnel popup now show `blocker_reason` (why training is stalled — e.g.
+"Educator lacks Expertise") with a `⚠` warning. When the requester can supply
+Expertise to unblock, a hint line appears below.  "Blocked / waiting" column
+added to the popup table. `can_supply_expertise` and `seasons_blocked` fields
+were already in the server payload but never rendered until now.
+
+**Medical staffing contracts** — new feature:
+Any island can hire Doctors or Nurses from the Healthcare island on a
+fixed-term contract (1–4 seasons). Staff travel via PassengerSeats (round-trip
+= staff_count × 2 seats), are counted as extra residents at the host island
+(sustenance included), and return automatically at contract end.
+
+Backend:
+- `island_traders/models/staffing.py` — new `StaffingStatus` enum,
+  `StaffingContract` dataclass, `StaffingRegistry` class with full propose /
+  approve / counter / reject / dispatch / process_returns lifecycle.
+- `Worker.on_contract: bool` field added to `workforce.py`; excluded from
+  `active_workers` while away.
+- `game.py`: `self.staffing = StaffingRegistry()`, `_process_staffing_returns()`
+  in the game loop, full save/load serialisation.
+- `turn.py`: `TurnAction.REQUEST_MEDICAL_STAFF` and
+  `TurnAction.REVIEW_STAFFING_REQUESTS` with action handlers.
+- `app.py`: `_staffing_contracts_for_player()` payload helper; visiting staff
+  added to sustenance `extra_residents`.
+- `ws_adapter.py`: staffing actions added to `ACTION_GROUPS`;
+  `REVIEW_STAFFING_REQUESTS` disabled for non-Doctor islands.
+- Constants: `STAFFING_BASE_FEE_PER_STAFF_PER_SEASON = 20.0`,
+  `STAFFING_FOOD_PER_STAFF_PER_SEASON = 1.0`,
+  `STAFFING_MAX_DURATION_SEASONS = 4`.
+
+Frontend (`index.html`):
+- Staffing contract sidebar strip (`#s-staffing-strip`) shows active
+  contracts with profession, direction (→/← other island), status, and return
+  date.
+- `_renderStaffingContractsSection()` adds a Medical Staffing Contracts table
+  to the Personnel popup (next to the training pipeline table).
+
+**Dependency map improvements**: `showDependencyMap()` rewritten with
+quadratic bezier curved edges, per-edge arrowhead markers, and perpendicular
+label offsets. Node boundaries clipped with `boundaryPt()` helper; label text
+rendered with `paint-order="stroke"` for legibility on dark background.
+
+**Tests:** 542 tests passing (+28 new staffing model tests in
+`tests/test_models/test_staffing.py`).
+
+---
+
 ### claude/playtest-fixes-2026-05-28
 
 Branch: `claude/playtest-fixes-2026-05-28`

@@ -31,6 +31,9 @@ class Worker:
     # whose profession is `Banker`: ≥3 MBA-qualified Banker Managers drop
     # the bank's reserve ratio from 0.50 to 0.20 (≈2x → ≈5x leverage).
     has_mba: bool = False
+    # Set True while the worker is on a staffing contract at another island.
+    # Excludes them from the home island's active workforce during the contract.
+    on_contract: bool = False
 
     @property
     def plateau(self) -> float:
@@ -137,7 +140,7 @@ class Workforce:
 
     @property
     def active_workers(self) -> list[Worker]:
-        return [w for w in self.workers if not w.in_training]
+        return [w for w in self.workers if not w.in_training and not w.on_contract]
 
     @property
     def active_count(self) -> int:

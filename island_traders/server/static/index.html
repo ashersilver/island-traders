@@ -498,6 +498,31 @@ button:active{transform:scale(.97)}
   padding-bottom:.18rem;border-bottom:1px solid var(--border);
 }
 .training-strip-hdr button{margin-left:auto}
+.training-row-blocker{font-size:.66rem;color:var(--gold);margin-top:.1rem;white-space:normal;line-height:1.25}
+.training-row-supply-hint{font-size:.63rem;color:var(--dim);margin-top:.06rem;line-height:1.2}
+/* ---- Staffing contract strip ---- */
+.staffing-strip{display:grid;gap:.22rem;margin:.15rem 0 .1rem}
+.staffing-row{display:grid;grid-template-columns:1fr auto;align-items:start;gap:.3rem;
+  border:1px solid var(--border);border-radius:var(--radius-sm);padding:.3rem .45rem;
+  font-size:.75rem;line-height:1.3}
+.staffing-row.status-dispatched{border-color:rgba(39,174,96,.45)}
+.staffing-row.status-countered{border-color:rgba(231,76,60,.55)}
+.staffing-row.status-proposed{border-color:rgba(231,192,93,.35)}
+.staffing-row-prof{font-weight:600;font-size:.78rem}
+.staffing-row-status{font-size:.66rem;color:var(--dim)}
+.staffing-row-status.dispatched{color:var(--green)}
+.staffing-row-status.countered{color:var(--red)}
+.staffing-row-status.provider{color:var(--accent)}
+.staffing-row-return{font-size:.72rem;text-align:right;white-space:nowrap;padding-left:.4rem}
+.staffing-row-return .year-label{color:var(--gold);font-weight:700}
+.staffing-row-return .season-label{color:var(--dim)}
+.staffing-strip-hdr{
+  display:flex;align-items:center;gap:.3rem;
+  font-size:.69rem;text-transform:uppercase;letter-spacing:.06em;
+  color:#2471a3;font-weight:700;margin-bottom:.15rem;margin-top:.35rem;
+  padding-bottom:.18rem;border-bottom:1px solid var(--border);
+}
+.staffing-strip-hdr button{margin-left:auto}
 
 /* ---- Visible Needs cards (fix overlapping text) ---- */
 .needs-cards{display:grid;gap:.4rem;margin-top:.2rem}
@@ -897,6 +922,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
         <div id="s-training-strip"></div>
+        <div id="s-staffing-strip"></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
@@ -2094,11 +2120,18 @@ function _renderTrainingStrip(pipeline) {
       returnHtml = `<div class="training-row-return" style="color:var(--dim);font-size:.69rem;max-width:5rem;white-space:normal;text-align:right">${esc(returnText)}</div>`;
     }
     const statusClass = isDispatched ? 'dispatched' : (b.status === 'countered' ? 'countered' : '');
+    const blockerHtml = b.blocker_reason
+      ? `<div class="training-row-blocker" title="${esc(b.blocker_reason)}">⚠ ${esc(b.blocker_reason.length > 38 ? b.blocker_reason.slice(0, 36) + '…' : b.blocker_reason)}</div>`
+      : '';
+    const supplyHint = b.can_supply_expertise
+      ? `<div class="training-row-supply-hint">→ Use <em>Supply Expertise</em> action to unblock</div>`
+      : '';
     return `
       <div class="training-row ${_trainingStatusClass(b.status)}">
         <div class="training-row-left">
           <div class="training-row-prof">${b.worker_count}× ${esc(b.target_profession || '—')}</div>
           <div class="training-row-status ${statusClass}">${esc(_trainingStatusLabel(b.status))}</div>
+          ${blockerHtml}${supplyHint}
         </div>
         ${returnHtml}
       </div>`;
@@ -2128,6 +2161,15 @@ function _renderTrainingPipelineSection(pipeline) {
     const waitCell = b.seasons_remaining == null
       ? '<span style="color:var(--dim)">—</span>'
       : `<strong>${b.seasons_remaining}</strong>`;
+    let blockerCell = '<span style="color:var(--dim)">—</span>';
+    if (b.blocker_reason) {
+      blockerCell = `<span style="color:var(--gold)" title="${esc(b.blocker_reason)}">⚠ ${esc(b.blocker_reason)}</span>`;
+      if (b.can_supply_expertise) {
+        blockerCell += `<br><span style="color:var(--dim);font-size:.72rem">Use <em>Supply Expertise</em> action to unblock</span>`;
+      }
+    } else if (b.seasons_blocked > 0) {
+      blockerCell = `<span style="color:var(--dim);font-size:.72rem">${b.seasons_blocked} season${b.seasons_blocked !== 1 ? 's' : ''} waiting</span>`;
+    }
     return `
     <tr>
       <td>${b.worker_count}</td>
@@ -2137,6 +2179,7 @@ function _renderTrainingPipelineSection(pipeline) {
       <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
       <td>${returnCell}</td>
       <td>${waitCell}</td>
+      <td>${blockerCell}</td>
     </tr>`;
   }).join('');
   const notes = pipeline
@@ -2148,11 +2191,112 @@ function _renderTrainingPipelineSection(pipeline) {
     <table class="popup-table">
       <thead><tr>
         <th>Workers</th><th>Training for</th><th>Status</th><th>Educator</th>
-        <th>Fee</th><th>Return date</th><th>Seasons left</th>
+        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     ${notes}
+  </section>`;
+}
+
+// ---- Medical staffing strip helpers ----
+
+function _staffingStatusLabel(status) {
+  const map = {
+    proposed: 'Awaiting approval',
+    countered: 'Counter-offer received',
+    awaiting_transport: 'Ready — arranging transport',
+    dispatched: 'On contract',
+    completed: 'Completed',
+    rejected: 'Rejected',
+  };
+  return map[status] || status;
+}
+
+function _staffingStatusClass(status) {
+  if (status === 'dispatched') return 'status-dispatched';
+  if (status === 'countered') return 'status-countered';
+  if (status === 'proposed') return 'status-proposed';
+  return '';
+}
+
+function _renderStaffingStrip(contracts) {
+  const el = document.getElementById('s-staffing-strip');
+  if (!el) return;
+  const active = (contracts || []).filter(
+    c => c.status !== 'completed' && c.status !== 'rejected'
+  );
+  if (!active.length) { el.innerHTML = ''; return; }
+
+  const rows = active.map(c => {
+    const isDispatched = c.status === 'dispatched';
+    const isProvider = c.role === 'provider';
+    const profLabel = esc(c.profession);
+    let returnHtml;
+    if (isDispatched && c.return_year != null) {
+      returnHtml = `<div class="staffing-row-return">
+        <span class="year-label">Yr ${c.return_year}</span>
+        <span class="season-label"> ${esc(c.return_season || '')}</span>
+      </div>`;
+    } else {
+      returnHtml = `<div class="staffing-row-return" style="color:var(--dim);font-size:.69rem;max-width:5rem;white-space:normal;text-align:right">
+        ${esc(_staffingStatusLabel(c.status))}
+      </div>`;
+    }
+    const dirLabel = isProvider ? `← ${esc(c.other_player_name)}` : `→ ${esc(c.other_player_name)}`;
+    const roleClass = isProvider ? 'provider' : (isDispatched ? 'dispatched' : '');
+    const counterNote = c.counter_message
+      ? `<div style="font-size:.63rem;color:var(--gold);margin-top:.06rem">Counter: ${esc(c.counter_message.slice(0, 36))}</div>`
+      : '';
+    return `
+      <div class="staffing-row ${_staffingStatusClass(c.status)}">
+        <div class="staffing-row-left">
+          <div class="staffing-row-prof">${c.staff_count}× ${profLabel}</div>
+          <div class="staffing-row-status ${roleClass}">${esc(_staffingStatusLabel(c.status))} ${dirLabel}</div>
+          ${counterNote}
+        </div>
+        ${returnHtml}
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="staffing-strip-hdr">
+      Medical Staff
+      <button class="btn-ghost btn-sm" style="padding:.1rem .4rem;font-size:.65rem"
+              onclick="showPersonnelPopup()" title="Full staffing contract detail">↗</button>
+    </div>
+    <div class="staffing-strip">${rows}</div>`;
+}
+
+function _renderStaffingContractsSection(contracts) {
+  if (!contracts || !contracts.length) return '';
+  const active = contracts.filter(c => c.status !== 'completed' && c.status !== 'rejected');
+  if (!active.length) return '';
+  const rows = active.map(c => {
+    const isDispatched = c.status === 'dispatched';
+    const returnCell = isDispatched && c.return_year != null
+      ? `<strong>Year ${c.return_year}, ${esc(c.return_season || '')}</strong>`
+      : `<span style="color:var(--dim);font-size:.72rem">${esc(_staffingStatusLabel(c.status))}</span>`;
+    const dirLabel = c.role === 'provider' ? `← ${esc(c.other_player_name)}` : `→ ${esc(c.other_player_name)}`;
+    const counterNote = c.counter_message
+      ? `<br><em style="font-size:.72rem;color:var(--gold)">${esc(c.counter_message)}</em>` : '';
+    return `<tr>
+      <td>${c.staff_count}× ${esc(c.profession)}</td>
+      <td>${esc(dirLabel)}</td>
+      <td style="color:${c.status==='dispatched'?'var(--green)':c.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_staffingStatusLabel(c.status))}</td>
+      <td>${c.duration_seasons} season${c.duration_seasons !== 1 ? 's' : ''}</td>
+      <td>${c.fee_total.toFixed(1)} Dp${counterNote}</td>
+      <td>${returnCell}</td>
+    </tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Medical Staffing Contracts</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>Staff</th><th>Direction</th><th>Status</th><th>Duration</th><th>Fee</th><th>Return</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </section>`;
 }
 
@@ -2214,6 +2358,7 @@ function showPersonnelPopup() {
   if (!me) return;
   const body =
     _renderTrainingPipelineSection(me.training_pipeline || []) +
+    _renderStaffingContractsSection(me.staffing_contracts || []) +
     _renderStaffingSection(me);
   showPopup(`Personnel — ${esc(me.name)}`, body);
 }
@@ -2778,6 +2923,7 @@ function renderGameState() {
   }
   document.getElementById('s-personnel').innerHTML = personnelHtml;
   _renderTrainingStrip(me.training_pipeline);
+  _renderStaffingStrip(me.staffing_contracts);
   document.getElementById('s-efficiency').textContent = me.workforce_efficiency + '%';
   document.getElementById('s-capacity').textContent = me.production_capacity + '%';
   document.getElementById('s-pop').textContent = me.population;

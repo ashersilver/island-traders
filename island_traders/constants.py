@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-28.3"
+APP_VERSION: str = "0.1.0-dev.2026-05-28.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -635,6 +635,26 @@ HALT_EVENTS_PER_PLAYER_PER_YEAR: int = 1
 # loses all training_level and experience but immediately joins the new
 # role at unskilled level.  Reflects retraining overhead / disruption cost.
 REPURPOSE_WORKER_COST: float = 25.0
+
+# ---------------------------------------------------------------------------
+# Medical staffing contracts (2026-05-28)
+# ---------------------------------------------------------------------------
+# Any island can hire Doctors or Nurses from the Healthcare island on a
+# short-term contract.  Staff must travel via PassengerSeats (round-trip:
+# staff_count × 2 seats total).
+#
+# STAFFING_BASE_FEE_PER_STAFF_PER_SEASON — suggested default fee (Dollops)
+# per staff member per season when the player hasn't set their own price.
+#
+# STAFFING_FOOD_PER_STAFF_PER_SEASON — extra Food/meals the host island
+# must provide for each visiting staff member each season (in addition to
+# their standard workforce sustenance).
+#
+# STAFFING_MAX_DURATION_SEASONS — upper bound on any single contract
+# (prevents staff from being away indefinitely).
+STAFFING_BASE_FEE_PER_STAFF_PER_SEASON: float = 20.0
+STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 1.0
+STAFFING_MAX_DURATION_SEASONS: int = 4
 
 # ---------------------------------------------------------------------------
 # Workplace risk constants

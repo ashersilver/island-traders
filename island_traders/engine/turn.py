@@ -7,6 +7,7 @@ from ..models.resource import ResourceType
 from ..models.training import (
     TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
 )
+from ..models.staffing import StaffingRegistry, StaffingStatus
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
@@ -24,6 +25,8 @@ from ..constants import (
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
+    STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
+    REPURPOSE_WORKER_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
@@ -60,7 +63,9 @@ class TurnAction(Enum):
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
-    REPURPOSE_WORKER   = "repurpose_worker"  # reassign a worker to a new profession
+    REPURPOSE_WORKER         = "repurpose_worker"         # reassign a worker to a new profession
+    REQUEST_MEDICAL_STAFF    = "request_medical_staff"    # any island: hire Doctor/Nurse on contract
+    REVIEW_STAFFING_REQUESTS = "review_staffing_requests" # Doctor island: approve/reject/counter
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -86,6 +91,7 @@ class TurnManager:
         market: Market,
         io_adapter,
         training: TrainingRegistry | None = None,
+        staffing: StaffingRegistry | None = None,
         loan_ledger: LoanLedger | None = None,
         lease_ledger: LeaseLedger | None = None,
         rng=None,
@@ -98,6 +104,7 @@ class TurnManager:
         self.market = market
         self.io = io_adapter
         self.training = training or TrainingRegistry()
+        self.staffing = staffing or StaffingRegistry()
         self.loan_ledger = loan_ledger or LoanLedger()
         self.lease_ledger = lease_ledger or LeaseLedger()
         self._ai = AIStrategy()
@@ -373,6 +380,10 @@ class TurnManager:
                     self._action_apply_patent(player, result)
                 elif action == TurnAction.REPURPOSE_WORKER:
                     self._action_repurpose_worker(player, result)
+                elif action == TurnAction.REQUEST_MEDICAL_STAFF:
+                    self._action_request_medical_staff(player, result, year, season_index)
+                elif action == TurnAction.REVIEW_STAFFING_REQUESTS:
+                    self._action_review_staffing_requests(player, result, year, season_index)
             except ActionCancelled:
                 # User pressed Cancel mid-prompt-chain — abort cleanly without
                 # falling back to default values that would partially execute
@@ -2080,7 +2091,6 @@ class TurnManager:
 
     def _action_repurpose_worker(self, player: Player, result: TurnResult) -> None:
         """Reassign a worker from one profession to another, losing experience."""
-        from ..constants import REPURPOSE_WORKER_COST
         from ..models.profession import Profession, PROFESSION_LABEL, band_of, WorkerBand
         sym = CURRENCY_SYMBOL
         active = player.workforce.active_workers
@@ -3279,3 +3289,277 @@ class TurnManager:
                 f"(repay {loan.repayment_amount:.1f} {sym} "
                 f"Y{loan.maturity_year+1} S{loan.maturity_season+1})"
             )
+
+    # ------------------------------------------------------------------
+    # Medical staffing contracts (2026-05-28)
+    # ------------------------------------------------------------------
+
+    def _action_request_medical_staff(
+        self,
+        player: Player,
+        result: TurnResult,
+        year: int,
+        season_index: int,
+    ) -> None:
+        """Any island may propose a staffing contract to the Doctor island."""
+        from ..models.profession import PROFESSION_LABEL
+        sym = CURRENCY_SYMBOL
+        season_name = SEASONS[season_index % len(SEASONS)]
+
+        # Find the Doctor/Healthcare island
+        doctor_players = [
+            p for p in self.players
+            if any(r.name == "Doctor" for r in p.roles)
+            and p.player_id != player.player_id
+        ]
+        if not doctor_players:
+            self.io.print("  No Doctor island in this game — staffing contracts unavailable.")
+            return
+
+        if len(doctor_players) > 1:
+            prov_options = [
+                {"value": p.player_id, "label": f"{p.name} (Player {p.player_id + 1})"}
+                for p in doctor_players
+            ]
+            prov_id = self.io.choose_option(
+                "Which Healthcare island would you like to contract staff from?",
+                prov_options,
+            )
+            provider = next(p for p in doctor_players if p.player_id == prov_id)
+        else:
+            provider = doctor_players[0]
+
+        # Choose profession (Doctor or Nurse)
+        medical_profs = ["Doctor", "Nurse"]
+        prof_options = [
+            {"value": prof, "label": PROFESSION_LABEL.get(prof, prof)}
+            for prof in medical_profs
+        ]
+        profession = self.io.choose_option(
+            "Which medical profession are you contracting?",
+            prof_options,
+        )
+
+        # How many staff
+        max_staff = 4
+        staff_count = self.io.choose_quantity(
+            f"How many {PROFESSION_LABEL.get(profession, profession)}(s)? (1–{max_staff})",
+            1, max_staff,
+        )
+
+        # Duration
+        max_dur = STAFFING_MAX_DURATION_SEASONS
+        duration = self.io.choose_quantity(
+            f"Duration in seasons? (1–{max_dur})", 1, max_dur,
+        )
+
+        # Fee
+        suggested_fee = round(STAFFING_BASE_FEE_PER_STAFF_PER_SEASON * staff_count * duration, 1)
+        self.io.print(
+            f"  Suggested total fee: {suggested_fee:.1f} {sym} "
+            f"({STAFFING_BASE_FEE_PER_STAFF_PER_SEASON:.0f} {sym}/staff/season × "
+            f"{staff_count} × {duration} season(s))."
+        )
+        fee_total = self.io.ask_dollop_amount(
+            f"Your offer (total fee in {sym})", 1_000_000.0, prefill=suggested_fee,
+        )
+        if fee_total <= 0:
+            fee_total = suggested_fee
+
+        # PassengerSeats allocation
+        tickets_needed = staff_count * 2  # round-trip
+        try:
+            ps_type = ResourceType("PassengerSeats")
+            requester_has = player.inventory.get(ps_type)
+        except ValueError:
+            ps_type = None
+            requester_has = 0
+        max_req_tickets = min(tickets_needed, requester_has)
+
+        self.io.print(
+            f"  Round-trip tickets needed: {tickets_needed} PassengerSeats "
+            f"(you have {requester_has} available)."
+        )
+        tickets_by_requester = 0
+        if max_req_tickets > 0:
+            tickets_by_requester = self.io.choose_quantity(
+                f"How many PassengerSeats will you supply? (0–{max_req_tickets})",
+                0, max_req_tickets,
+            )
+
+        tickets_by_provider = tickets_needed - tickets_by_requester
+        prof_label = PROFESSION_LABEL.get(profession, profession)
+        self.io.print(
+            f"\n  ── Staffing Contract Summary ──\n"
+            f"  Staff:    {staff_count}× {prof_label} from {provider.name}\n"
+            f"  Duration: {duration} season(s) starting {season_name} Y{year + 1}\n"
+            f"  Fee:      {fee_total:.1f} {sym} (paid on dispatch)\n"
+            f"  Tickets:  {tickets_by_requester} from you, {tickets_by_provider} from {provider.name}"
+        )
+        if not self.io.confirm("Propose this contract?"):
+            self.io.print("  Contract cancelled.")
+            return
+
+        contract = self.staffing.propose(
+            requester_id=player.player_id,
+            provider_id=provider.player_id,
+            profession=profession,
+            staff_count=staff_count,
+            duration_seasons=duration,
+            fee_total=fee_total,
+            year=year,
+            season=season_index,
+            tickets_supplied_by_requester=tickets_by_requester,
+        )
+        self.io.print(
+            f"  ✓ Contract #{contract.contract_id} proposed to {provider.name}. "
+            f"Awaiting their approval."
+        )
+        result.actions_taken.append(f"request_medical_staff:{contract.contract_id}")
+
+    def _action_review_staffing_requests(
+        self,
+        player: Player,
+        result: TurnResult,
+        year: int,
+        season_index: int,
+    ) -> None:
+        """Doctor island reviews incoming staffing contract proposals."""
+        from ..models.profession import PROFESSION_LABEL
+        sym = CURRENCY_SYMBOL
+        pending = self.staffing.pending_for_provider(player.player_id)
+        if not pending:
+            self.io.print("  No pending staffing contract requests.")
+            return
+
+        player_map = {p.player_id: p for p in self.players}
+
+        for contract in list(pending):
+            requester = player_map.get(contract.requester_id)
+            req_name = requester.name if requester else f"Player {contract.requester_id}"
+            prof_label = PROFESSION_LABEL.get(contract.profession, contract.profession)
+            tickets_prov = contract.tickets_supplied_by_provider
+
+            self.io.print(
+                f"\n  Contract #{contract.contract_id} from {req_name}:\n"
+                f"    {contract.staff_count}× {prof_label} for {contract.duration_seasons} season(s)\n"
+                f"    Fee offered: {contract.fee_total:.1f} {sym}\n"
+                f"    PassengerSeats you must supply: {tickets_prov}"
+            )
+
+            available = [
+                w for w in player.workforce.active_workers
+                if w.profession == contract.profession
+            ]
+            if len(available) < contract.staff_count:
+                self.io.print(
+                    f"    ⚠ Only {len(available)} {prof_label}(s) available "
+                    f"(need {contract.staff_count})."
+                )
+
+            decision_options = [
+                {"value": "approve",  "label": "Approve"},
+                {"value": "counter",  "label": "Counter (propose different fee)"},
+                {"value": "reject",   "label": "Reject"},
+            ]
+            decision = self.io.choose_option("Decision:", decision_options)
+
+            if decision == "approve":
+                self.staffing.provider_approve(contract.contract_id)
+                self.io.print(f"  ✓ Contract #{contract.contract_id} approved.")
+                result.actions_taken.append(f"staffing_approved:{contract.contract_id}")
+                self._try_auto_dispatch_staffing(
+                    contract, player, requester, year, season_index, result
+                )
+
+            elif decision == "counter":
+                counter_fee = self.io.ask_dollop_amount(
+                    f"Counter-offer fee ({sym})", 1_000_000.0, prefill=contract.fee_total,
+                )
+                if counter_fee <= 0:
+                    counter_fee = contract.fee_total
+                msg = self.io.ask_text("Message to requester (optional)", "")
+                self.staffing.provider_counter(contract.contract_id, counter_fee, msg)
+                self.io.print(f"  Counter-offer sent: {counter_fee:.1f} {sym}.")
+                result.actions_taken.append(f"staffing_countered:{contract.contract_id}")
+
+            else:  # reject
+                reason = self.io.ask_text("Reason for rejection (optional)", "")
+                self.staffing.provider_reject(contract.contract_id, reason)
+                self.io.print(f"  Contract #{contract.contract_id} rejected.")
+                result.actions_taken.append(f"staffing_rejected:{contract.contract_id}")
+
+            pending = self.staffing.pending_for_provider(player.player_id)
+            if not pending:
+                break
+
+    def _try_auto_dispatch_staffing(
+        self,
+        contract,
+        provider: Player,
+        requester,
+        year: int,
+        season_index: int,
+        result: TurnResult,
+    ) -> None:
+        """Dispatch staff immediately after approval if tickets are available."""
+        from ..models.staffing import StaffingStatus
+        sym = CURRENCY_SYMBOL
+        if contract.status != StaffingStatus.AWAITING_TRANSPORT:
+            return
+
+        try:
+            ps_type = ResourceType("PassengerSeats")
+        except ValueError:
+            ps_type = None
+
+        needed_from_provider = contract.tickets_supplied_by_provider
+        provider_has = (ps_type and provider.inventory.get(ps_type)) or 0
+
+        if needed_from_provider > provider_has:
+            self.io.print(
+                f"  ⚠ You need {needed_from_provider} PassengerSeat(s) to send the staff "
+                f"but only have {provider_has}. Purchase tickets first."
+            )
+            return
+
+        if ps_type and needed_from_provider > 0:
+            provider.inventory.remove(ps_type, needed_from_provider)
+
+        # Select actual workers
+        available = [
+            w for w in provider.workforce.active_workers
+            if w.profession == contract.profession
+        ]
+        to_send = available[: contract.staff_count]
+        if len(to_send) < contract.staff_count:
+            self.io.print(
+                f"  ⚠ Only {len(to_send)} {contract.profession}(s) available — "
+                f"sending fewer than contracted."
+            )
+        for w in to_send:
+            w.on_contract = True
+
+        self.staffing.dispatch(
+            contract.contract_id, year, season_index,
+            num_seasons=len(SEASONS), staff_worker_ids=[w.worker_id for w in to_send],
+        )
+
+        # Collect fee
+        fee = contract.fee_total
+        if requester is not None:
+            paid = min(fee, requester.dollops)
+            requester.dollops -= paid
+            provider.dollops += paid
+            if paid < fee:
+                self.io.print(
+                    f"  ⚠ Requester paid only {paid:.1f} {sym} (short by "
+                    f"{fee - paid:.1f} {sym})."
+                )
+
+        ret_name = SEASONS[contract.return_season % len(SEASONS)]
+        self.io.print(
+            f"  ✓ {len(to_send)}× {contract.profession} dispatched from {provider.name}. "
+            f"Fee: {fee:.1f} {sym}. Return: Y{contract.return_year + 1} {ret_name}."
+        )
+        result.actions_taken.append(f"staffing_dispatched:{contract.contract_id}")

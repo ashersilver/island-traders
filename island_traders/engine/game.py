@@ -12,6 +12,7 @@ from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
 from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
+from ..models.staffing import StaffingRegistry, StaffingContract, StaffingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
@@ -104,6 +105,7 @@ class Game:
         self.loan_ledger: LoanLedger | None = None
         self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
+        self.staffing: StaffingRegistry | None = None
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
@@ -114,6 +116,7 @@ class Game:
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
+        self.staffing = StaffingRegistry()
 
         num_players = len(self.config.player_specs)
         default_dollops = TOTAL_STARTING_DOLLOPS / num_players
@@ -197,7 +200,7 @@ class Game:
         trading = TradingEngine(self.market, self.ledger)
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
-            self.loan_ledger, self.lease_ledger,
+            self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
     def run(self) -> GameSummary:
@@ -205,6 +208,7 @@ class Game:
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
+                self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
                 event_results = self.event_resolver.resolve_all(
@@ -386,6 +390,33 @@ class Game:
                     f"{f' ({missing_text})' if missing_text else ''}."
                 )
 
+    def _process_staffing_returns(self, year: int, season: int) -> None:
+        """Return visiting medical staff to their home island at contract end."""
+        if not self.staffing:
+            return
+        player_map = {p.player_id: p for p in self.players}
+        returned = self.staffing.process_returns(year, season)
+        for contract in returned:
+            provider = player_map.get(contract.provider_id)
+            requester = player_map.get(contract.requester_id)
+            if not provider:
+                continue
+            # Return worker IDs to the provider's workforce active pool
+            for wid in contract.staff_worker_ids:
+                w = next(
+                    (w for w in provider.workforce.workers if w.worker_id == wid), None
+                )
+                if w is not None:
+                    # Re-activate the worker (they were marked as on_contract)
+                    w.on_contract = False
+            provider_name = provider.name if provider else f"Player {contract.provider_id}"
+            host_name = requester.name if requester else f"Player {contract.requester_id}"
+            self.io.print(
+                f"\n[Staffing] Contract #{contract.contract_id} complete: "
+                f"{contract.staff_count}× {contract.profession} returned "
+                f"from {host_name} to {provider_name}."
+            )
+
     def compute_summary(self) -> GameSummary:
         prices = self.market.current_prices()
         final_tick = max(0, self.config.num_years * len(SEASONS) - 1)
@@ -457,6 +488,7 @@ class Game:
             "players": [self._serialise_player(p) for p in self.players],
             "market": self._serialise_market(),
             "training": self._serialise_training(),
+            "staffing": self._serialise_staffing(),
             "loan_ledger": self._serialise_loans(),
             "lease_ledger": self._serialise_leases(),
             "damage_counters": {
@@ -490,6 +522,7 @@ class Game:
                         "training_level": w.training_level,
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
+                        "on_contract": w.on_contract,
                         "settling_seasons": w.settling_seasons,
                         "age_seasons": w.age_seasons,
                         "has_mba": w.has_mba,
@@ -546,6 +579,40 @@ class Game:
                     "decision_acknowledged": r.decision_acknowledged,
                 }
                 for r in self.training.all_requests()
+            ],
+        }
+
+    def _serialise_staffing(self) -> dict:
+        if not self.staffing:
+            return {"next_id": 0, "contracts": []}
+        return {
+            "next_id": self.staffing._next_id,
+            "contracts": [
+                {
+                    "contract_id": c.contract_id,
+                    "requester_id": c.requester_id,
+                    "provider_id": c.provider_id,
+                    "profession": c.profession,
+                    "staff_count": c.staff_count,
+                    "duration_seasons": c.duration_seasons,
+                    "fee_total": c.fee_total,
+                    "tickets_required": c.tickets_required,
+                    "tickets_supplied_by_requester": c.tickets_supplied_by_requester,
+                    "status": c.status.value,
+                    "proposed_year": c.proposed_year,
+                    "proposed_season": c.proposed_season,
+                    "dispatched_year": c.dispatched_year,
+                    "dispatched_season": c.dispatched_season,
+                    "return_year": c.return_year,
+                    "return_season": c.return_season,
+                    "staff_worker_ids": c.staff_worker_ids,
+                    "counter_fee": c.counter_fee,
+                    "counter_message": c.counter_message,
+                    "decline_reason": c.decline_reason,
+                    "decision_acknowledged": c.decision_acknowledged,
+                    "original_fee": c.original_fee,
+                }
+                for c in self.staffing.all_contracts()
             ],
         }
 
@@ -651,6 +718,7 @@ class Game:
                     training_level=w["training_level"],
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
+                    on_contract=w.get("on_contract", False),
                     settling_seasons=w.get("settling_seasons", 0),
                     age_seasons=w.get("age_seasons", 0),
                     has_mba=w.get("has_mba", False),
@@ -765,6 +833,38 @@ class Game:
         game._resume_year = data.get("resume_year", 0)
         game._resume_season = data.get("resume_season", 0)
 
+        # Staffing registry (added 2026-05-28; older saves won't have this section)
+        game.staffing = StaffingRegistry()
+        staffing_data = data.get("staffing", {})
+        game.staffing._next_id = staffing_data.get("next_id", 0)
+        for cd in staffing_data.get("contracts", []):
+            from ..models.staffing import StaffingContract, StaffingStatus
+            contract = StaffingContract(
+                contract_id=cd["contract_id"],
+                requester_id=cd["requester_id"],
+                provider_id=cd["provider_id"],
+                profession=cd["profession"],
+                staff_count=cd["staff_count"],
+                duration_seasons=cd["duration_seasons"],
+                fee_total=cd["fee_total"],
+                tickets_required=cd["tickets_required"],
+                tickets_supplied_by_requester=cd.get("tickets_supplied_by_requester", 0),
+                status=StaffingStatus(cd["status"]),
+                proposed_year=cd.get("proposed_year", -1),
+                proposed_season=cd.get("proposed_season", -1),
+                dispatched_year=cd.get("dispatched_year", -1),
+                dispatched_season=cd.get("dispatched_season", -1),
+                return_year=cd.get("return_year", -1),
+                return_season=cd.get("return_season", -1),
+                staff_worker_ids=cd.get("staff_worker_ids", []),
+                counter_fee=cd.get("counter_fee", 0.0),
+                counter_message=cd.get("counter_message", ""),
+                decline_reason=cd.get("decline_reason", ""),
+                decision_acknowledged=cd.get("decision_acknowledged", False),
+                original_fee=cd.get("original_fee", cd["fee_total"]),
+            )
+            game.staffing._contracts.append(contract)
+
         charts = (
             EventChartLoader.from_yaml(config.event_charts_path)
             if config.event_charts_path
@@ -775,7 +875,7 @@ class Game:
         trading = TradingEngine(game.market, game.ledger)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
-            game.loan_ledger, game.lease_ledger,
+            game.staffing, game.loan_ledger, game.lease_ledger,
         )
         game.turn_manager._damage_counters = {
             int(k): v for k, v in data.get("damage_counters", {}).items()

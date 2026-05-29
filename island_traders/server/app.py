@@ -1821,6 +1821,61 @@ class GameManager:
             })
         return pipeline
 
+    def _staffing_contracts_for_player(
+        self,
+        game: "Game",
+        player_id: int,
+        player_names: dict[int, str],
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        """Serialise all active staffing contracts involving this player."""
+        staffing = getattr(game, "staffing", None)
+        if not staffing:
+            return []
+        from ..models.staffing import StaffingStatus
+        from ..constants import SEASONS
+        contracts = staffing.active_for_player(player_id)
+        result = []
+        for c in contracts:
+            if c.return_year >= 0 and c.return_season >= 0:
+                return_year_display = c.return_year + 1
+                return_season_name = (
+                    SEASONS[c.return_season] if c.return_season < len(SEASONS) else str(c.return_season)
+                )
+                seasons_remaining = max(
+                    0,
+                    (c.return_year - current_year_idx) * len(SEASONS)
+                    + (c.return_season - current_season_idx),
+                )
+            else:
+                return_year_display = None
+                return_season_name = None
+                seasons_remaining = None
+            result.append({
+                "contract_id": c.contract_id,
+                "role": "requester" if c.requester_id == player_id else "provider",
+                "other_player_id": c.provider_id if c.requester_id == player_id else c.requester_id,
+                "other_player_name": player_names.get(
+                    c.provider_id if c.requester_id == player_id else c.requester_id,
+                    "Unknown",
+                ),
+                "profession": c.profession,
+                "staff_count": c.staff_count,
+                "duration_seasons": c.duration_seasons,
+                "fee_total": round(c.fee_total, 1),
+                "tickets_required": c.tickets_required,
+                "tickets_supplied_by_requester": c.tickets_supplied_by_requester,
+                "status": c.status.value,
+                "return_year": return_year_display,
+                "return_season": return_season_name,
+                "seasons_remaining": seasons_remaining,
+                "counter_fee": c.counter_fee,
+                "counter_message": c.counter_message or None,
+                "decision_acknowledged": c.decision_acknowledged,
+            })
+        return result
+
     def _training_queue_order_for_player(
         self,
         game: Game,
@@ -2111,6 +2166,9 @@ class GameManager:
                     current_year_idx,
                     current_season_idx,
                 ),
+                "staffing_contracts": self._staffing_contracts_for_player(
+                    game, p.player_id, player_names, current_year_idx, current_season_idx,
+                ),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
@@ -2233,6 +2291,11 @@ class GameManager:
                 game.training.visiting_trainees(p.player_id)
                 if any(r.name == "Educator" for r in p.roles) else 0
             )
+            # Add visiting medical staff to the extra_residents count so
+            # the host island's sustenance calculation includes them.
+            staffing = getattr(game, "staffing", None)
+            if staffing:
+                campus_extra += staffing.visiting_staff(p.player_id)
             # Sustenance basket alert (2026-05-25 model): aggregate the
             # whole basket into a single "meals runway" figure rather
             # than one alert per resource. Inventory is fungible across

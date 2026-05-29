@@ -41,6 +41,9 @@ ACTION_GROUPS: dict[TurnAction, str] = {
     TurnAction.SUPPLY_TRAINING_EXPERTISE: "People",
     TurnAction.ARRANGE_TRANSPORT: "People",
     TurnAction.RECRUIT_WORKERS: "People",
+    TurnAction.REPURPOSE_WORKER: "People",
+    TurnAction.REQUEST_MEDICAL_STAFF: "People",
+    TurnAction.REVIEW_STAFFING_REQUESTS: "People",
     TurnAction.PURCHASE_CAPITAL: "Capital",
     TurnAction.LEASE_CAPITAL: "Capital",
     TurnAction.INVEST: "Capital",
@@ -80,6 +83,9 @@ def action_option_payload(action: TurnAction, player) -> dict:
     elif action == TurnAction.APPLY_PATENT and player.inventory.get(ResourceType.PATENTS) <= 0:
         enabled = False
         disabled_reason = "No Patents available to apply."
+    elif action == TurnAction.REVIEW_STAFFING_REQUESTS and not _player_has_role(player, "Doctor"):
+        enabled = False
+        disabled_reason = "Only the Healthcare island can review staffing requests."
 
     return {
         "value": action.value,
