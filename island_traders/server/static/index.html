@@ -471,6 +471,34 @@ button:active{transform:scale(.97)}
 .constraint-shortfall.inputs{color:#ffabab}
 .constraint-shortfall.workforce{color:#ffd985}
 .constraint-shortfall.equipment{color:#aabbff}
+
+/* ---- Visible Needs cards (fix overlapping text) ---- */
+.needs-cards{display:grid;gap:.4rem;margin-top:.2rem}
+.needs-card{border:1px solid var(--border);border-radius:var(--radius);padding:.42rem .55rem;background:rgba(7,15,30,.4);font-size:.79rem}
+.needs-card-header{display:flex;align-items:baseline;gap:.45rem;margin-bottom:.2rem}
+.needs-card-player{color:var(--heading);font-weight:700}
+.needs-card-role{color:var(--dim);font-size:.72rem}
+.needs-card-items{display:flex;flex-wrap:wrap;gap:.25rem}
+.needs-tag{background:rgba(231,76,60,.18);border:1px solid rgba(231,76,60,.45);color:#ffabab;border-radius:3px;padding:.08rem .3rem;font-size:.72rem;white-space:nowrap}
+
+/* ---- Sustenance warning blink ---- */
+@keyframes sus-blink{0%,100%{opacity:1}50%{opacity:.25}}
+.sus-warn{
+  display:inline-block;margin-left:.35rem;
+  font-size:.9rem;line-height:1;vertical-align:middle;
+  animation:sus-blink 1s ease-in-out infinite;
+  cursor:default;
+}
+.sus-warn.danger{color:var(--red)}
+.sus-warn.warning{color:var(--gold)}
+
+/* ---- Dependency flowchart popup ---- */
+.depflow-wrap{overflow:auto;max-height:60vh}
+.depflow-svg{min-width:520px;width:100%}
+.depflow-node rect{rx:6;ry:6}
+.depflow-lbl{font-family:inherit;font-size:12px;fill:var(--heading,#e8eaf6);font-weight:600}
+.depflow-res{font-family:inherit;font-size:10px;fill:var(--gold,#e7c05d)}
+.depflow-arrow{fill:none;stroke-width:1.5;marker-end:url(#arrowhead)}
 </style>
 </head>
 <body>
@@ -839,7 +867,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Working Capital</span><span class="val gold" id="s-dollops">—</span></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
-        <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span></div>
+        <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
         <div class="stat"><span class="lbl">Efficiency</span><span class="val" id="s-efficiency">—</span></div>
         <div class="stat"><span class="lbl">Capacity</span><span class="val" id="s-capacity">—</span></div>
@@ -904,7 +932,11 @@ button:active{transform:scale(.97)}
 
     <div class="g-info">
       <div class="section">
-        <h3>Conditions</h3>
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          Conditions
+          <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
+                  onclick="showDependencyMap()" title="Show island dependency flowchart">🗺</button>
+        </h3>
         <div id="conditions-panel" style="font-size:.82rem;line-height:1.4">—</div>
       </div>
       <div class="section">
@@ -2603,6 +2635,28 @@ function renderGameState() {
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
   document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+  // Sustenance warning icon next to worker count
+  const susAlerts = (gameState.sustenance_alerts || {})[String(me.player_id)] || [];
+  const susWarnEl = document.getElementById('s-sus-warn');
+  if (susWarnEl) {
+    const hasDanger = susAlerts.some(a => a.severity === 'danger');
+    const hasWarn   = susAlerts.length > 0;
+    if (hasDanger) {
+      const minRunway = Math.min(...susAlerts.map(a => a.runway_seasons ?? 0));
+      susWarnEl.className = 'sus-warn danger';
+      susWarnEl.title = `⚠ Starvation risk! Meals runway: ${minRunway} season(s)`;
+      susWarnEl.textContent = '🍽️';
+    } else if (hasWarn) {
+      const minRunway = Math.min(...susAlerts.map(a => a.runway_seasons ?? 1));
+      susWarnEl.className = 'sus-warn warning';
+      susWarnEl.title = `Low sustenance — runway: ${minRunway} season(s)`;
+      susWarnEl.textContent = '⚠';
+    } else {
+      susWarnEl.className = '';
+      susWarnEl.title = '';
+      susWarnEl.textContent = '';
+    }
+  }
   const wb = me.workforce_bands || {};
   const tb = me.workforce_training_bands || {};
   const profs = me.workforce_professions || {};
@@ -3047,15 +3101,22 @@ function renderBarterMarket(compact = false) {
       <tr><td>${esc(d.from)}</td><td>${esc(d.offer)}${warnings}</td><td>${esc(d.request)}</td><td>${esc(d.to)}</td></tr>
     `;
   }).join('') : '<tr><td colspan="4" style="color:var(--dim)">No proposed barter deals.</td></tr>';
-  const needRows = needs.length ? needs.map(n => `
-    <tr><td>${esc(n.player)}</td><td>${esc(n.roles)}</td><td>${esc(n.needs.join(', '))}</td></tr>
-  `).join('') : '<tr><td colspan="3" style="color:var(--dim)">No visible unmet role needs.</td></tr>';
+  const needCards = needs.length
+    ? '<div class="needs-cards">' + needs.map(n => `
+        <div class="needs-card">
+          <div class="needs-card-header">
+            <span class="needs-card-player">${esc(n.player)}</span>
+            <span class="needs-card-role">${esc(n.roles)}</span>
+          </div>
+          <div class="needs-card-items">${n.needs.map(r => `<span class="needs-tag">${esc(r)}</span>`).join('')}</div>
+        </div>`).join('') + '</div>'
+    : '<div style="color:var(--dim);font-size:.79rem;margin-top:.2rem">No visible unmet role needs.</div>';
   const tableClass = compact ? 'market-mini' : 'comp-table';
   return `
     <h4>Proposed Deals</h4>
     <table class="${tableClass}"><thead><tr><th>From</th><th>Offers</th><th>Wants</th><th>To</th></tr></thead><tbody>${dealRows}</tbody></table>
     <h4>Visible Needs</h4>
-    <table class="${tableClass}"><thead><tr><th>Player</th><th>Role</th><th>Needs</th></tr></thead><tbody>${needRows}</tbody></table>
+    ${needCards}
   `;
 }
 
@@ -3063,6 +3124,93 @@ function showMarketBoardPopup() {
   if (!gameState) return;
   const html = renderMarketTable(gameState.market || {}) + renderBarterMarket();
   showPopup('Market Board', html);
+}
+
+// ---- Dependency flowchart popup ----
+function showDependencyMap() {
+  // Static dependency graph: who produces what, who needs what.
+  // Nodes: the 7 islands. Edges: resource flows (Produces → Needs).
+  const W = 560, H = 380;
+  // Island positions (x, y, label, colour)
+  const nodes = [
+    { id: 'Farmer',       x: 280, y:  40, label: 'Farmer',       color: '#27ae60' },
+    { id: 'Miner',        x:  60, y: 150, label: 'Miner',        color: '#8e44ad' },
+    { id: 'Transporter',  x: 160, y: 290, label: 'Transporter',  color: '#2980b9' },
+    { id: 'Manufacturer', x: 400, y: 175, label: 'Manufacturer', color: '#d35400' },
+    { id: 'Educator',     x: 500, y:  55, label: 'Educator',     color: '#16a085' },
+    { id: 'Banker',       x: 500, y: 290, label: 'Banker',       color: '#c0392b' },
+    { id: 'Doctor',       x: 280, y: 330, label: 'Doctor',       color: '#2471a3' },
+  ];
+  // Edges: {from, to, label, color}
+  const edges = [
+    { from:'Miner',       to:'Manufacturer', label:'Ore',              color:'#c0392b' },
+    { from:'Miner',       to:'Transporter',  label:'Oil',              color:'#8e44ad' },
+    { from:'Miner',       to:'Farmer',       label:'Oil',              color:'#8e44ad' },
+    { from:'Miner',       to:'Manufacturer', label:'Oil',              color:'#8e44ad' },
+    { from:'Transporter', to:'Miner',        label:'Freight',          color:'#2980b9' },
+    { from:'Transporter', to:'Manufacturer', label:'Freight',          color:'#2980b9' },
+    { from:'Manufacturer',to:'Farmer',       label:'CapEquip',         color:'#d35400' },
+    { from:'Manufacturer',to:'Educator',     label:'CapEquip',         color:'#d35400' },
+    { from:'Manufacturer',to:'Doctor',       label:'CapEquip',         color:'#d35400' },
+    { from:'Educator',    to:'Doctor',       label:'Knowledge',        color:'#16a085' },
+    { from:'Educator',    to:'Banker',       label:'Knowledge',        color:'#16a085' },
+    { from:'Banker',      to:'Educator',     label:'Finance',          color:'#c0392b' },
+    { from:'Doctor',      to:'Farmer',       label:'HealthSvcs',       color:'#2471a3' },
+  ];
+
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  // Build SVG string
+  const scale = 1;
+  // Arrow marker
+  let svg = `<svg class="depflow-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:var(--bg,#04090f);border-radius:8px">
+<defs>
+  <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="rgba(180,180,200,.7)"/>
+  </marker>
+</defs>
+`;
+
+  // Draw edges (compute bezier control points between node centres)
+  const NW = 84, NH = 28; // node rect width/height
+  edges.forEach(e => {
+    const src = nodeMap[e.from], dst = nodeMap[e.to];
+    if (!src || !dst) return;
+    const x1 = src.x, y1 = src.y;
+    const x2 = dst.x, y2 = dst.y;
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    // label midpoint
+    svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(180,180,200,.28)" stroke-width="1.4" marker-end="url(#arr)"/>`;
+    // resource label at midpoint
+    svg += `<text x="${mx}" y="${my - 4}" text-anchor="middle" font-size="9" fill="${e.color}" font-weight="600" opacity=".95">${e.label}</text>`;
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const rx = n.x - NW/2, ry = n.y - NH/2;
+    svg += `<rect x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="5" ry="5" fill="rgba(7,15,30,.88)" stroke="${n.color}" stroke-width="1.8"/>`;
+    svg += `<text x="${n.x}" y="${n.y + 4}" text-anchor="middle" font-size="11" fill="#e8eaf6" font-weight="700">${n.label}</text>`;
+  });
+
+  svg += '</svg>';
+
+  const legend = `
+    <div style="margin-top:.75rem;display:flex;flex-wrap:wrap;gap:.4rem .8rem;font-size:.75rem;color:var(--dim)">
+      <span style="color:#27ae60">■</span> Farmer &nbsp;
+      <span style="color:#8e44ad">■</span> Miner &nbsp;
+      <span style="color:#2980b9">■</span> Transporter &nbsp;
+      <span style="color:#d35400">■</span> Manufacturer &nbsp;
+      <span style="color:#16a085">■</span> Educator &nbsp;
+      <span style="color:#c0392b">■</span> Banker &nbsp;
+      <span style="color:#2471a3">■</span> Doctor
+    </div>
+    <div style="margin-top:.35rem;font-size:.72rem;color:var(--dim)">
+      Lines show resource flows. Edge labels are the resource traded along that route.
+      Arrows point from producer to consumer.
+    </div>`;
+
+  showPopup('Island Dependency Map', `<div class="depflow-wrap">${svg}</div>${legend}`);
 }
 
 function buildIslandTabs(players) {
