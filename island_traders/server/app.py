@@ -394,8 +394,18 @@ class GameManager:
                     starting_capital: float = DEFAULT_STARTING_CAPITAL,
                     auction_timer_seconds: int = AUCTION_DURATION_SECONDS,
                     season_timer_seconds: int = DEFAULT_SEASON_TIMER,
-                    pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER) -> GameRoom:
-        room_id = _short_id()
+                    pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER,
+                    room_id: str | None = None) -> GameRoom:
+        # Playtest quick-seat: a caller may pin a deterministic room ID so all
+        # seven tabs can be pre-composed before the room exists.  Only honoured
+        # for the ``pt-`` prefix (keeps the override scoped to playtest rooms),
+        # and idempotent — re-creating an existing pinned room returns it.
+        if room_id and room_id.startswith("pt-"):
+            existing = self.rooms.get(room_id)
+            if existing is not None:
+                return existing
+        else:
+            room_id = _short_id()
         creator_id = _short_id()
         code = _join_code()
         room = GameRoom(
@@ -3055,6 +3065,7 @@ def create_app() -> FastAPI:
             auction_timer_seconds=body.get("auction_timer_seconds", AUCTION_DURATION_SECONDS),
             season_timer_seconds=body.get("season_timer_seconds", DEFAULT_SEASON_TIMER),
             pre_season_timer_seconds=body.get("pre_season_timer_seconds", DEFAULT_PRE_SEASON_TIMER),
+            room_id=body.get("room_id"),
         )
         return JSONResponse(room.to_dict())
 
