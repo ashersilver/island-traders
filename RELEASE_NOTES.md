@@ -5,6 +5,73 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/playtest-fixes-2026-05-28
+
+Branch: `claude/playtest-fixes-2026-05-28`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-28.3`
+
+Addresses the 2026-05-28 playtest-session batch: three bugs that caused
+premature season/turn-end, plus five features.
+
+**Bug A — Hint buttons aborted the trading turn** (`buy_market` → `market_buy`):
+`_HINT_OPEN_LABEL` in `index.html` used `'buy_market'` but
+`TurnAction.MARKET_BUY = "market_buy"`. The server raised `ValueError` and
+silently returned `END_TURN`. Fixed by renaming every occurrence in the
+frontend hint path.
+
+**Bug B — "Resume Trading" banner never appeared / seasons ended instantly**:
+`submit_ready()` called `interrupt_all()` on the same HTTP thread as
+`mark_player_ready()`. The player's turn thread saw `_interrupted = True`
+before the park loop could engage. Fixed with a 3-second async grace period
+(`_delayed_interrupt` coroutine): the turn thread parks and shows the "Season
+ending soon" banner before the interrupt fires. The grace task is cancellable
+if a player un-readies during the window.
+
+**Bug C — Hint buttons corrupted sub-dialog responses**:
+`_isActionPromptOpen()` returned `true` even during confirm/resource-picker
+sub-dialogs, causing hint-button clicks to answer the wrong prompt. Fixed by
+adding `_activePromptType` state tracking in the frontend; hint buttons only
+fire when `_activePromptType === 'choose_action'`.
+
+**Feature 1 — Training "Next" button**: Training review now offers
+Approve / Counter / Skip. Skipped requests stay pending and are filtered by
+tick (`TrainingRequest.last_skipped_tick`) so they don't loop in one session.
+
+**Feature 2 — Conditions sidebar panel**: Server broadcasts a `season_events`
+WebSocket message at season start with per-player yield/outage/disaster data.
+Frontend renders a colour-coded "Conditions" panel in the info sidebar
+(green = normal, yellow = partial, red = outage, with a ⛈ disaster banner).
+
+**Feature 3 — Exact profession names in training display**: The training
+sidebar and training-review modal now show precise role names (e.g., "Nurse",
+"Farming Technician") instead of generic band labels ("Manager", "Worker").
+`workforce_professions` per-profession breakdown is included in game-state
+payloads.
+
+**Feature 4 — Repurpose workers between roles**: New `TurnAction.REPURPOSE_WORKER`
+action. Players pick a worker and a target profession; the worker is moved,
+resetting `training_level`, `experience_seasons`, and `settling_seasons` to 0
+(fresh start in the new role). Cost: 25 Dp (`REPURPOSE_WORKER_COST`).
+`Workforce.repurpose_worker()` added.
+
+**Feature 5 — Bid/Ask tight-spread auto-accept (≤2.5%)**: When a new bid or
+offer lands with a spread ≤ 2.5% vs. the best counter-order, the market
+auto-executes. Price priority: the order placed *first* (lower sequential ID)
+sets the trade price. Self-cross guard prevents a player trading with
+themselves. `Market._check_tight_spread()` runs in a loop to chain-clear
+multiple matching pairs.
+
+**Population cap raised**: `MAX_WORKFORCE_FRACTION_OF_POPULATION` bumped from
+0.60 → 0.80 and `STARTING_POPULATION` from 20 → 30 (pre-existing uncommitted
+tuning; included in this commit). All `test_workforce_cap` tests updated to
+match.
+
+**Tests:** all 514 tests pass. Updated `test_training_review.py`,
+`test_training_ux.py`, and `test_workforce_cap.py` for the above changes.
+
+---
+
 ### claude/event-frequency-cap-2026-05-27
 
 Branch: `claude/event-frequency-cap-2026-05-27`

@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-28.2"
+APP_VERSION: str = "0.1.0-dev.2026-05-28.3"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -460,13 +460,13 @@ STARTING_PRODUCTION_CAPACITY: dict[str, float] = {
 
 # Total island population at game start (includes employed workers + unskilled population).
 # Board-game scale: 20 residents per island keeps recruitment tokens manageable.
-STARTING_POPULATION: int = 20
+STARTING_POPULATION: int = 30
 
 # How many unskilled people can be drawn into the workforce per 2 unskilled residents.
 # An island can employ up to this fraction of its current population as
 # workers (skilled + unskilled).  Tightens recruit availability so the
 # workforce can't outgrow the populace.
-MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
+MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.80
 
 # ---------------------------------------------------------------------------
 # Graceful degradation (GitHub #47 + 2026-05-27 playtest)
@@ -627,6 +627,14 @@ CARGO_TRANSIT_SEASONS: int = 1   # extra seasons of absence when travelling by c
 # re-rolls avoiding halts.  Addresses the "5 production-halting events in
 # 5 consecutive seasons" reports (Comet 1 #9, AyaySir BUG-08).
 HALT_EVENTS_PER_PLAYER_PER_YEAR: int = 1
+
+# ---------------------------------------------------------------------------
+# Worker repurposing (2026-05-28)
+# ---------------------------------------------------------------------------
+# Cost in Dollops to reassign one worker to a new profession.  The worker
+# loses all training_level and experience but immediately joins the new
+# role at unskilled level.  Reflects retraining overhead / disruption cost.
+REPURPOSE_WORKER_COST: float = 25.0
 
 # ---------------------------------------------------------------------------
 # Workplace risk constants

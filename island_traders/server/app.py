@@ -304,6 +304,10 @@ class GameRoom:
     season_active_humans: set[str] = field(default_factory=set)
     season_timer_task: Any = field(default=None, repr=False)
     season_timer_end: float = 0.0
+    # Grace-period task that fires interrupt_all() a few seconds after all
+    # humans mark Done Trading — gives the park loop time to engage so the
+    # "Resume Trading" banner appears before the season ends.
+    all_ready_task: Any = field(default=None, repr=False)
     # Sentinel to stop multiple Ready clicks queueing END_TURN responses
     # after a player's turn loop has already exited.
     season_human_done: set[str] = field(default_factory=set)
@@ -2088,6 +2092,7 @@ class GameManager:
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
                 "workforce_training_bands": p.workforce.training_band_summary(),
+                "workforce_professions": p.workforce.profession_summary(),
                 "training_pipeline": self._training_pipeline_for_player(
                     game,
                     p.player_id,
@@ -2542,12 +2547,21 @@ class GameManager:
                     room.room_id, pause_duration)
 
         # After resume, re-check the Ready quorum.  If everyone became Ready
-        # during the pause we close the phase now.
+        # during the pause, close the phase now (grace period for action phase,
+        # immediate for pre-season).
         if (room.status == "running"
                 and room.season_active_humans
                 and room.season_ready_set >= room.season_active_humans):
             if room.season_phase == "action" and room.io_adapter:
-                room.io_adapter.interrupt_all()
+                if self._loop is not None:
+                    if room.all_ready_task is None:
+                        fut = asyncio.run_coroutine_threadsafe(
+                            self._delayed_interrupt(room.room_id), self._loop
+                        )
+                        room.all_ready_task = fut
+                else:
+                    # No event loop (e.g. unit-test environment): interrupt immediately.
+                    room.io_adapter.interrupt_all()
             elif room.season_phase == "pre_season":
                 room._pre_season_done.set()
 
@@ -2624,6 +2638,7 @@ class GameManager:
         room.season_active_humans = humans
         room.season_ready_set = set()
         room.season_human_done = set()
+        room.all_ready_task = None   # reset any stale grace task from prior season
         secs = max(0, int(room.season_timer_seconds))
         room.season_timer_end = (time.time() + secs) if secs > 0 else 0.0
 
@@ -2635,6 +2650,35 @@ class GameManager:
             "timer_seconds": secs,        # 0 = Ready-only mode
             "active_humans": list(humans),
         })
+
+        # Broadcast per-player event results for the Conditions panel.
+        # game._last_event_results is set by game.run() just before calling
+        # before_season, so it's always fresh at this point.
+        if room.game:
+            event_results = getattr(room.game, "_last_event_results", {})
+            player_names = {p.player_id: p.name for p in room.game.players}
+            events_payload = {}
+            has_disaster = False
+            disaster_name = None
+            for pid, ev in event_results.items():
+                events_payload[str(pid)] = {
+                    "player_name": player_names.get(pid, f"Player {pid}"),
+                    "event_name": ev.event_name,
+                    "yield_modifier": ev.yield_modifier,
+                    "outage": ev.outage,
+                    "natural_disaster": ev.natural_disaster,
+                    "description": ev.describe(),
+                }
+                if ev.natural_disaster and not has_disaster:
+                    has_disaster = True
+                    disaster_name = ev.event_name
+            self._thread_safe_broadcast(room_id, {
+                "type": "season_events",
+                "year": year + 1,
+                "season": season_name,
+                "events": events_payload,
+                "regional_disaster": disaster_name,
+            })
         # Defensive: broadcast the cleared Ready/Done sets immediately so
         # the client's `imReady` / `seasonDoneSet` can't ride over from
         # the previous season due to message ordering / stale state.
@@ -2655,6 +2699,10 @@ class GameManager:
             return
         room.season_timer_task = None
         room.season_timer_end = 0.0
+        # Cancel any pending all-ready grace interrupt (season is already done).
+        if room.all_ready_task is not None:
+            room.all_ready_task.cancel()
+            room.all_ready_task = None
         season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
         self._thread_safe_broadcast(room_id, {
             "type": "season_resolved",
@@ -2675,6 +2723,29 @@ class GameManager:
         self._thread_safe_broadcast(room_id, {
             "type": "season_timeout",
         })
+
+    # Grace period (seconds) between "all humans ready" and the actual
+    # interrupt_all().  Gives the park loop time to engage + show the
+    # "Resume Trading" banner, especially in single-player games where the
+    # interrupt would otherwise fire on the same request as mark_player_ready.
+    _ALL_READY_GRACE_SECONDS: float = 3.0
+
+    async def _delayed_interrupt(self, room_id: str) -> None:
+        """Wait for the grace period, then end the season if still all-ready."""
+        await asyncio.sleep(self._ALL_READY_GRACE_SECONDS)
+        room = self.rooms.get(room_id)
+        if not room or not room.io_adapter:
+            return
+        room.all_ready_task = None
+        # Only interrupt if the season is still active and all active humans
+        # are still in the ready set (someone may have clicked Undo during
+        # the grace window).
+        if (room.status == "running"
+                and room.season_phase == "action"
+                and not room.paused
+                and room.season_active_humans
+                and room.season_ready_set >= room.season_active_humans):
+            room.io_adapter.interrupt_all()
 
     def _broadcast_ready_update(self, room: "GameRoom") -> None:
         """Tell every connected client who has clicked Ready / completed."""
@@ -2746,12 +2817,27 @@ class GameManager:
 
         self._broadcast_ready_update(room)
 
-        # All active humans Ready → close the season immediately.
-        # While paused, defer this until resume (see _do_resume).
-        if (not room.paused
-                and room.season_active_humans
-                and room.season_ready_set >= room.season_active_humans):
-            room.io_adapter.interrupt_all()
+        if ready:
+            # All active humans Ready → end the season after a brief grace
+            # period so the park loop can engage and the "Resume Trading"
+            # banner appears before the interrupt fires.  While paused,
+            # defer until resume (see _do_resume).
+            if (not room.paused
+                    and room.season_active_humans
+                    and room.season_ready_set >= room.season_active_humans
+                    and room.all_ready_task is None
+                    and self._loop is not None):
+                fut = asyncio.run_coroutine_threadsafe(
+                    self._delayed_interrupt(room.room_id), self._loop
+                )
+                room.all_ready_task = fut
+        else:
+            # Player un-readied — cancel any pending grace-period interrupt
+            # so the season doesn't end while they're back in the menu.
+            if room.all_ready_task is not None:
+                room.all_ready_task.cancel()
+                room.all_ready_task = None
+
         return {"ok": True, "ready": ready}
 
 

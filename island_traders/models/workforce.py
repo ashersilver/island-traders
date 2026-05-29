@@ -184,6 +184,57 @@ class Workforce:
                 out[band_of(w.profession).value] += 1
         return out
 
+    def profession_summary(self) -> dict[str, dict[str, int]]:
+        """Per-profession counts: {"Factory Foreman": {"active": 2, "training": 1}, ...}.
+
+        Uses the raw profession value as the key (e.g. "factory_foreman") and
+        also includes a "label" entry for display.  Unskilled workers are
+        omitted unless present.
+        """
+        from ..models.profession import PROFESSION_LABEL, Profession
+        active: dict[str, int] = {}
+        training: dict[str, int] = {}
+        for w in self.workers:
+            key = w.profession
+            if w.in_training:
+                training[key] = training.get(key, 0) + 1
+            else:
+                active[key] = active.get(key, 0) + 1
+        all_profs = set(active) | set(training)
+        result = {}
+        for key in all_profs:
+            try:
+                label = PROFESSION_LABEL.get(Profession(key), key)
+            except ValueError:
+                label = key
+            result[key] = {
+                "label": label,
+                "active": active.get(key, 0),
+                "training": training.get(key, 0),
+            }
+        return result
+
+    def repurpose_worker(self, worker_id: int, new_profession: str) -> bool:
+        """Reassign a worker to a new profession, resetting all experience.
+
+        The worker loses training_level, experience_seasons, and settling
+        bonus.  They join the new profession at the unskilled level (level 0)
+        with profession already set — effectively a direct placement rather
+        than a formal training path.
+
+        Returns True if the worker was found and reassigned; False otherwise.
+        """
+        worker = next(
+            (w for w in self.active_workers if w.worker_id == worker_id), None
+        )
+        if worker is None:
+            return False
+        worker.profession = new_profession
+        worker.training_level = 0
+        worker.experience_seasons = 0
+        worker.settling_seasons = 0
+        return True
+
     def has_mechanic(self) -> bool:
         """True if at least one active Mechanic is on staff."""
         return self.count_profession(Profession.MECHANIC.value) > 0

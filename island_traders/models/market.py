@@ -192,6 +192,7 @@ class Market:
         self._next_offer_id += 1
         self.post_supply(rtype, qty)
         self._auto_match_offer(offer)
+        self._check_tight_spread(rtype)
         return offer
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
@@ -225,6 +226,7 @@ class Market:
         self._next_bid_id += 1
         self.post_demand(rtype, qty)
         self._auto_match_bid(bid)
+        self._check_tight_spread(rtype)
         return bid
 
     def _auto_match_bid(self, bid: MarketBid) -> None:
@@ -301,6 +303,55 @@ class Market:
             buyer.receive_resources(offer.resource, qty)
             seller.receive_dollops(cost)
             offer.remaining -= qty
+            bid.remaining -= qty
+
+    # Threshold for automatic execution of near-crossing orders (2026-05-28).
+    # A spread of 2.5% or less is close enough to be auto-accepted, executing
+    # at the resting (earlier-placed) order's price.
+    TIGHT_SPREAD_THRESHOLD: float = 0.025
+
+    def _check_tight_spread(self, rtype: ResourceType) -> None:
+        """Auto-execute if the best bid and ask are within TIGHT_SPREAD_THRESHOLD.
+
+        When the spread is within 2.5%, instead of waiting for one side to
+        move, we cross the orders at the price of whichever was placed first
+        (lower sequential ID = placed earlier):
+          - Ask existed first (ask.offer_id < bid.bid_id) → cross at ask price
+          - Bid existed first (bid.bid_id < ask.offer_id) → cross at bid price
+
+        Only executes one crossing per call; loops until the spread widens.
+        """
+        while True:
+            ask = self.best_offer(rtype)
+            bid = self.best_bid(rtype)
+            if not ask or not bid:
+                break
+            if ask.seller_id == bid.buyer_id:
+                break
+            spread = (ask.price_per_unit - bid.price_per_unit) / ask.price_per_unit
+            if spread < 0 or spread > self.TIGHT_SPREAD_THRESHOLD:
+                break
+            # Determine trade price from the older (resting) order.
+            if ask.offer_id < bid.bid_id:
+                # Ask was posted first → buyer gets the ask price.
+                trade_price = ask.price_per_unit
+            else:
+                # Bid was posted first → seller gets the bid price.
+                trade_price = bid.price_per_unit
+            buyer = bid._buyer
+            seller = ask._seller
+            if buyer is None or seller is None:
+                break
+            qty = min(bid.remaining, ask.remaining)
+            if qty <= 0:
+                break
+            cost = round(trade_price * qty, 2)
+            if buyer.dollops < cost:
+                break
+            buyer.spend_dollops(cost)
+            buyer.receive_resources(rtype, qty)
+            seller.receive_dollops(cost)
+            ask.remaining -= qty
             bid.remaining -= qty
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
