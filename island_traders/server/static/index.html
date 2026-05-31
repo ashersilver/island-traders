@@ -42,6 +42,9 @@
 :root[data-theme="day"] .tag-private{background:#fdeecf;color:#9a6a12}
 :root[data-theme="day"] .needs-card{background:rgba(13,36,56,.04)}
 :root[data-theme="day"] #invest-warning{background:#fdecec !important;color:#b22834 !important}
+:root[data-theme="day"] .g-log{background:#eef5fb}
+:root[data-theme="day"] .role-card.won{background:#e3f5ea}
+:root[data-theme="day"] .depflow-svg{background:#eef5fb !important}
 /* Theme toggle button */
 #theme-toggle{
   position:fixed;top:.6rem;right:.6rem;z-index:9998;
@@ -1285,19 +1288,33 @@ function parseQuickSeat() {
   };
 }
 
-function quickSeatBanner(text, isError) {
+let _quickSeatBannerTimer = null;
+function quickSeatDismissBanner() {
+  const el = document.getElementById('quickseat-banner');
+  if (el) el.remove();
+  if (_quickSeatBannerTimer) { clearTimeout(_quickSeatBannerTimer); _quickSeatBannerTimer = null; }
+}
+// `autoHideMs` > 0 removes the banner after that delay (used once quick-seat
+// has finished); the banner is always click-to-dismiss.
+function quickSeatBanner(text, isError, autoHideMs) {
   let el = document.getElementById('quickseat-banner');
   if (!el) {
     el = document.createElement('div');
     el.id = 'quickseat-banner';
+    el.title = 'Click to dismiss';
     el.style = 'position:fixed;top:0;left:0;right:0;z-index:9999;padding:.5rem 1rem;'
       + 'font-size:.85rem;text-align:center;font-family:system-ui,sans-serif;'
-      + 'box-shadow:0 1px 4px rgba(0,0,0,.3)';
+      + 'box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer';
+    el.addEventListener('click', quickSeatDismissBanner);
     document.body.appendChild(el);
   }
   el.style.background = isError ? '#7f1d1d' : '#1e3a5f';
   el.style.color = '#fff';
-  el.textContent = '⚙ ' + text;
+  el.textContent = '⚙ ' + text + '  (click to dismiss)';
+  if (_quickSeatBannerTimer) { clearTimeout(_quickSeatBannerTimer); _quickSeatBannerTimer = null; }
+  if (autoHideMs && autoHideMs > 0) {
+    _quickSeatBannerTimer = setTimeout(quickSeatDismissBanner, autoHideMs);
+  }
 }
 
 async function quickSeatStart() {
@@ -1388,7 +1405,8 @@ function quickSeatOnInvestingStart() {
         ready: true,
       }));
       quickSeatBanner(`Quick-seat complete — invested per bitmap "`
-        + `${quickSeat.invest || '(mandatory only)'}". You're driving from here.`);
+        + `${quickSeat.invest || '(mandatory only)'}". You're driving from here.`,
+        false, 8000);
     } else {
       setTimeout(fire, 300);
     }

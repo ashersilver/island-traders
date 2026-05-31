@@ -1101,10 +1101,14 @@ class TurnManager:
             f"requester supplies {tickets_supplied_by_requester}."
         )
 
-        # AI Educator auto-responds immediately
-        if not educator.is_human:
-            for req in requests:
-                self._ai_educator_respond(educator, player, req, season_name, year)
+        # NOTE: we deliberately do NOT let an AI Educator approve+dispatch here,
+        # inside the *requester's* turn.  Doing so yanked the workers out of the
+        # requester's island the instant they clicked "Request Training" — they
+        # vanished before any approval the player could see (2026-05-29 playtest).
+        # Workers must only depart once the training is approved.  An AI Educator
+        # picks the request up on its OWN turn via _ai_review_training_queue
+        # (see the turn flow), which approves and dispatches then — so the
+        # workers stay home, producing, until that approval happens.
 
     def _training_skill_deficits(self, player: Player) -> dict[str, int]:
         """Formal-profession gaps against the player's role staffing blueprint."""

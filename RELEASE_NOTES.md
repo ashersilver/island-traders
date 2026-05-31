@@ -5,6 +5,32 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/playtest-fixes-2026-05-29
+
+Branch: `claude/playtest-fixes-2026-05-29`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-29.2`
+
+**Training: workers only depart on approval (bugfix)**:
+Requesting training from an AI Educator used to approve *and dispatch* the
+workers inside the requester's own turn — the workers vanished from the island
+the instant "Request Training" was clicked, before any visible approval. The
+AI Educator no longer auto-responds during the requester's turn; it approves
+and dispatches on its **own** turn (via `_ai_review_training_queue`), so workers
+stay home and producing until the training is actually approved. Human-Educator
+and self-training (train-in-place) behaviour is unchanged. Regression tests:
+`tests/test_engine/test_training_dispatch_on_approval.py`.
+
+**Quick-seat banner now dismissable (bugfix)**:
+The quick-seat status banner never went away. It now auto-dismisses 8s after
+quick-seat completes and is click-to-dismiss at any time.
+
+**Daytime theme: log + other dark surfaces (bugfix)**:
+The activity log (and the dependency-map SVG and "won" role card) had hardcoded
+dark backgrounds that ignored the Day/Night theme, so they stayed dark in the
+Bright Lagoon daytime palette. Added `[data-theme="day"]` overrides so the whole
+screen follows the theme.
+
 ### claude/playtest-quick-seat-2026-05-29
 
 Branch: `claude/playtest-quick-seat-2026-05-29`
