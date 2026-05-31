@@ -316,3 +316,33 @@ Dividends (Phase 2), shareholder loans (Phase 2b), buyouts (Phase 3), and
 cross-island buy-ins (Phase 4) then land as independent follow-ups, each small
 on its own — and each is a candidate to hand to Codex once the Phase 1 seam is
 stable.
+
+---
+
+## 11. Implementation findings & sequencing decision (2026-05-29)
+
+While starting Claude's side, two findings reshaped the sequencing:
+
+1. **Treasury reseed ↔ shareholder loans are coupled.** Today the web game funds
+   everything from one pool: `personal_cash(1500) − winning_bid −
+   investing_spend` becomes the island's operating money. The opening investing
+   phase routinely spends ~1000+ Dp on capital. If the island treasury is
+   reseeded to just `ISLAND_STARTING_CASH = 500` and capital is bought from the
+   treasury, the opening is unplayable **unless** the player can inject personal
+   cash — which is **Phase 2b (shareholder loans)**. ⇒ The treasury reseed must
+   ship **bundled with Phase 2b**, not in a Phase-1-alone cut.
+2. **Valuation is already available.** `Player.total_wealth(prices, loan_ledger,
+   CAPITAL_CATALOGUE, tick)` already computes the island's liquidation value, and
+   `wealth_history` already records it per year — so `equity.fair_value(...)` and
+   net-worth scoring wire in directly with no new valuation code. Also: with
+   every player owning 60% of their *own* island, switching the score to
+   net-worth is a uniform scaling (rankings unchanged) **until** buy-ins/buyouts
+   make ownership differ.
+
+**Decision (2026-05-29): HOLD the economy flip pending Codex's `equity.py`.**
+The additive foundation (Player fields `personal_cash`/`holdings`/`cap_table` +
+`net_worth` helper + save/load) is committed on branch
+`claude/equity-phase1-integration-2026-05-29` (713 tests green, not merged). We
+resume once Codex's `equity.py` lands so we integrate against the real module,
+then decide the flip scope at that point (likely: bundle treasury reseed + 2b
+shareholder loans so the opening stays playable).
