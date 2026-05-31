@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from ..models.player import Player
+from ..models.equity import CapTable
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
@@ -514,6 +515,9 @@ class Game:
             },
             "capital_in_transit": list(p.capital_in_transit),
             "active_patents": {k: list(v) for k, v in p.active_patents.items()},
+            "personal_cash": p.personal_cash,
+            "holdings": dict(p.holdings),
+            "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
             "workforce": {
                 "next_id": p.workforce._next_id,
                 "workers": [
@@ -707,6 +711,12 @@ class Game:
                     pd.get("capital_in_transit", [])
                 ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
+                personal_cash=pd.get("personal_cash", 0.0),
+                holdings=dict(pd.get("holdings", {})),
+                cap_table=(
+                    CapTable.from_dict(pd["cap_table"])
+                    if pd.get("cap_table") is not None else None
+                ),
             )
             for r_str, qty in pd.get("inventory", {}).items():
                 p.receive_resources(ResourceType(r_str), qty)
