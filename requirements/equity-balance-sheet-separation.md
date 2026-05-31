@@ -354,5 +354,10 @@ the additive foundation merged on top (`844621f`). **726 tests green.** The
 merged and deleted. `equity.py` is the leaf; `Player` now carries the additive
 fields and `net_worth` helper. **Still on hold:** the economy flip (treasury
 reseed to 500, bid→personal cash, investing-from-treasury) — to be bundled with
-**Phase 2b shareholder loans** so the opening stays playable. Next concrete step
-is a brief/decision for that bundle.
+**Phase 2b shareholder loans** so the opening stays playable.
+
+**Brief written (2026-05-29):**
+[`equity-phase2b-flip-2026-05-29.md`](./equity-phase2b-flip-2026-05-29.md)
+specs the bundle — the money model, net-worth-neutral shareholder loans, the
+exact code plug-in points, tests, and an optional Codex leaf carve-out (the
+loan/valuation math). Awaiting go-ahead to implement.
