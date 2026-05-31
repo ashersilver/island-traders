@@ -5,6 +5,36 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/equity-phase2b-flip-2026-05-29
+
+Branch: `claude/equity-phase2b-flip-2026-05-29`
+Target: `pre-release` (after the Codex shareholder-loans leaf merges first)
+Version bump: `0.1.0-dev.2026-05-29.3`
+
+**Equity model — Phase 2b + economy flip** (web game):
+- **Two balance sheets.** A player is now an *investor* with `personal_cash`
+  separate from their *island's* operating `treasury` (the engine `dollops`).
+- **Auction = buying a 60% stake.** At game start the island treasury is seeded
+  independently at `ISLAND_STARTING_CASH` (500 Dp); the winning bid leaves the
+  investor's personal cash (paid to imaginary former owners). Cap table seated
+  60% owner / 40% public float.
+- **Shareholder loans (Phase 2b).** Opening capital is bought from the treasury;
+  any shortfall is auto-lent from personal cash as a shareholder loan, recorded
+  as a senior liability the island owes back. Net-worth-neutral by construction
+  (no 60/40 leakage). 0% interest for now.
+- **Win condition = net worth** (`personal_cash + Σ shares×share_price +
+  loan receivables`) in the web game. Sidebar now shows Net Worth, Personal
+  Cash, Island Treasury, Ownership (you % / public %), and Island Value; live
+  scoreboard leads with net worth + treasury.
+- Engine/CLI/sim keep their single-pool economy and `total_wealth` scoring
+  unchanged (additive cap-table scaffolding only) — a calibration pass for the
+  flipped web economy is queued separately.
+- Model leaf `shareholder_loans.py` (lend/repay/total_owed/receivable) — Codex
+  brief `codex-tasks/shareholder-loans-model-2026-05-29.md`; a Claude-side
+  reference stub ships on this branch pending Codex's authoritative module.
+- Tests: `test_equity_flip.py` (treasury seed, auto-lend, net-worth neutrality);
+  Phase-1 `test_player_equity_fields.py`. Full suite 729 green.
+
 ### claude/playtest-fixes-2026-05-29
 
 Branch: `claude/playtest-fixes-2026-05-29`

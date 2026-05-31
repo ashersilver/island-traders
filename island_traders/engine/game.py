@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from ..models.player import Player
-from ..models.equity import CapTable
+from ..models.equity import CapTable, AUCTIONED_SHARES
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
@@ -141,6 +141,14 @@ class Game:
                 is_human=spec.is_human,
                 population=default_population,
             )
+
+            # Equity scaffolding (Phase 1/2b): every player owns a 60% majority
+            # of their own island (player_id == island id); 40% public float.
+            # Additive — the pure engine keeps its single-pool economy and
+            # total_wealth scoring; the web path (app.py) applies the full flip
+            # (treasury reseed, bid->personal cash, shareholder loans).
+            player.cap_table = CapTable.new_with_majority(str(idx))
+            player.holdings = {str(idx): AUCTIONED_SHARES}
 
             # Production capacity = max of all assigned roles
             combined_capacity = max(
@@ -518,6 +526,7 @@ class Game:
             "personal_cash": p.personal_cash,
             "holdings": dict(p.holdings),
             "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
+            "shareholder_loans": dict(p.shareholder_loans),
             "workforce": {
                 "next_id": p.workforce._next_id,
                 "workers": [
@@ -717,6 +726,7 @@ class Game:
                     CapTable.from_dict(pd["cap_table"])
                     if pd.get("cap_table") is not None else None
                 ),
+                shareholder_loans=dict(pd.get("shareholder_loans", {})),
             )
             for r_str, qty in pd.get("inventory", {}).items():
                 p.receive_resources(ResourceType(r_str), qty)
