@@ -346,3 +346,13 @@ The additive foundation (Player fields `personal_cash`/`holdings`/`cap_table` +
 resume once Codex's `equity.py` lands so we integrate against the real module,
 then decide the flip scope at that point (likely: bundle treasury reseed + 2b
 shareholder loans so the opening stays playable).
+
+### Update (2026-05-29, later): module integrated; foundation merged.
+Codex's `equity.py` (+ `test_equity.py`, 13 tests) merged to `pre-release`, and
+the additive foundation merged on top (`844621f`). **726 tests green.** The
+`claude/equity-phase1-integration` and `codex/equity-model-module` branches are
+merged and deleted. `equity.py` is the leaf; `Player` now carries the additive
+fields and `net_worth` helper. **Still on hold:** the economy flip (treasury
+reseed to 500, bid→personal cash, investing-from-treasury) — to be bundled with
+**Phase 2b shareholder loans** so the opening stays playable. Next concrete step
+is a brief/decision for that bundle.
