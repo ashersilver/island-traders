@@ -6,6 +6,7 @@ from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
 from .profession import Profession
 from .insurance import InsurancePolicy
+from .equity import CapTable
 from ..constants import (
     PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
     MAX_WORKFORCE_FRACTION_OF_POPULATION,
@@ -174,6 +175,31 @@ class Player:
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
+
+    # --- Equity / balance-sheet split (Phase 1, additive) ------------------
+    # `dollops` (above) is the ISLAND's operating treasury.  `personal_cash`
+    # is the player-as-investor's private wealth (the auction budget; the
+    # winning bid is paid from here to imaginary former owners).  `holdings`
+    # maps an island's player_id (as str) -> shares this investor owns in it.
+    # `cap_table` records who owns THIS player's island (60/40 at auction).
+    # All default empty/zero so existing games are unaffected until the
+    # economy flip wires them in.  See
+    # requirements/equity-balance-sheet-separation.md.
+    personal_cash: float = 0.0
+    holdings: dict[str, int] = field(default_factory=dict)
+    cap_table: CapTable | None = None
+
+    def net_worth(self, share_price_by_island: dict[str, float]) -> float:
+        """Investor net worth = personal cash + market value of all holdings.
+
+        `share_price_by_island` maps island player_id (str) -> price per share;
+        the caller (the engine, which has the market + valuation history)
+        computes those via `equity.share_price(equity.fair_value(...))`.
+        """
+        total = self.personal_cash
+        for island_id, shares in self.holdings.items():
+            total += shares * share_price_by_island.get(str(island_id), 0.0)
+        return total
 
     def effective_capital_inventory(self) -> dict[str, int]:
         """Capital available for production this season.
