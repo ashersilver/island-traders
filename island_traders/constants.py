@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-28.5"
+APP_VERSION: str = "0.1.0-dev.2026-05-29.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -459,14 +459,16 @@ STARTING_PRODUCTION_CAPACITY: dict[str, float] = {
 # ---------------------------------------------------------------------------
 
 # Total island population at game start (includes employed workers + unskilled population).
-# Board-game scale: 20 residents per island keeps recruitment tokens manageable.
-STARTING_POPULATION: int = 30
+# Board-game scale: 50 residents per island.  With the 0.60 workforce cap
+# (MAX_WORKFORCE_FRACTION_OF_POPULATION) this allows the workforce to expand
+# up to 0.60 × 50 = 30 workers.
+STARTING_POPULATION: int = 50
 
 # How many unskilled people can be drawn into the workforce per 2 unskilled residents.
 # An island can employ up to this fraction of its current population as
 # workers (skilled + unskilled).  Tightens recruit availability so the
 # workforce can't outgrow the populace.
-MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.80
+MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 
 # ---------------------------------------------------------------------------
 # Graceful degradation (GitHub #47 + 2026-05-27 playtest)

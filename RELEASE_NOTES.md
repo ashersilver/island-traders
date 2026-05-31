@@ -5,6 +5,61 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/playtest-fixes-2026-05-29
+
+Branch: `claude/playtest-fixes-2026-05-29`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-29.2`
+
+**Training: workers only depart on approval (bugfix)**:
+Requesting training from an AI Educator used to approve *and dispatch* the
+workers inside the requester's own turn — the workers vanished from the island
+the instant "Request Training" was clicked, before any visible approval. The
+AI Educator no longer auto-responds during the requester's turn; it approves
+and dispatches on its **own** turn (via `_ai_review_training_queue`), so workers
+stay home and producing until the training is actually approved. Human-Educator
+and self-training (train-in-place) behaviour is unchanged. Regression tests:
+`tests/test_engine/test_training_dispatch_on_approval.py`.
+
+**Quick-seat banner now dismissable (bugfix)**:
+The quick-seat status banner never went away. It now auto-dismisses 8s after
+quick-seat completes and is click-to-dismiss at any time.
+
+**Daytime theme: log + other dark surfaces (bugfix)**:
+The activity log (and the dependency-map SVG and "won" role card) had hardcoded
+dark backgrounds that ignored the Day/Night theme, so they stayed dark in the
+Bright Lagoon daytime palette. Added `[data-theme="day"]` overrides so the whole
+screen follows the theme.
+
+### claude/playtest-quick-seat-2026-05-29
+
+Branch: `claude/playtest-quick-seat-2026-05-29`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-29.1`
+
+**Quick-seat playtest URLs** — new dev/playtest convenience:
+Compose seven URLs (one per role) and paste them into seven browser tabs to
+stand up a full game without clicking through lobby/auction/investing in each
+tab. Tab 1 creates the room; tabs 2-7 join it. Each URL names the player,
+auto-bids its role in the auction, and auto-submits an investment selection
+(bitmap), then hands control back for Year 1 onward.
+
+- All tabs derive the same room ID by hashing a shared room name
+  (`room=Trading Hell`) client-side (cyrb53 → `pt-<hex>`), so the URLs can be
+  composed before the room exists.
+- `POST /api/rooms` now honours a caller-specified `room_id` for the `pt-`
+  prefix only, idempotently (re-pasting tab 1 returns the existing room rather
+  than clobbering seated players).
+- Auction start stays manual (host clicks "Start Auction") as the natural sync
+  point once all tabs are seated.
+- Full design + URL parameter reference: `requirements/playtest-quick-seat-urls.md`.
+
+**Balance — population / workforce cap**:
+- `STARTING_POPULATION` 30 → 50.
+- `MAX_WORKFORCE_FRACTION_OF_POPULATION` 0.80 → 0.60.
+- Net effect: an island can now expand its workforce up to 0.60 × 50 = 30
+  workers. `test_workforce_cap.py` updated to the new 60% expectations.
+
 ### claude/ux-staffing-2026-05-28
 
 Branch: `claude/ux-staffing-2026-05-28`

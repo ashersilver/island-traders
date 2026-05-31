@@ -19,6 +19,40 @@
   --dim:     #4a6080;
   --radius:  8px;
 }
+/* ---- Daytime theme: "Bright Lagoon" (toggle via [data-theme="day"]) ---- */
+:root[data-theme="day"] {
+  --bg:      #f0f6fb;
+  --panel:   #ffffff;
+  --panel2:  #e8f1f8;
+  --border:  #c6dbe9;
+  --text:    #1d3a52;
+  --heading: #0d2438;
+  --accent:  #0a8fb0;
+  --gold:    #d99214;
+  --green:   #119a5b;
+  --red:     #d83a44;
+  --dim:     #6f8aa3;
+}
+/* Daytime overrides for the few hardcoded dark surfaces that don't follow
+   the variables above. */
+:root[data-theme="day"] #screen-landing::before{
+  background:radial-gradient(ellipse at 50% 30%,#d8ecfa 0%,var(--bg) 70%);
+}
+:root[data-theme="day"] .tag-public{background:#dff3e7;color:#0f7a48}
+:root[data-theme="day"] .tag-private{background:#fdeecf;color:#9a6a12}
+:root[data-theme="day"] .needs-card{background:rgba(13,36,56,.04)}
+:root[data-theme="day"] #invest-warning{background:#fdecec !important;color:#b22834 !important}
+:root[data-theme="day"] .g-log{background:#eef5fb}
+:root[data-theme="day"] .role-card.won{background:#e3f5ea}
+:root[data-theme="day"] .depflow-svg{background:#eef5fb !important}
+/* Theme toggle button */
+#theme-toggle{
+  position:fixed;top:.6rem;right:.6rem;z-index:9998;
+  background:var(--panel);color:var(--text);border:1px solid var(--border);
+  border-radius:var(--radius);padding:.3rem .55rem;font-size:1rem;cursor:pointer;
+  line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.15);
+}
+#theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
 
@@ -1208,6 +1242,177 @@ function restoreIdentity() {
   }
 }
 restoreIdentity();
+
+// ==================== QUICK-SEAT (playtest URLs) ====================
+// Dev/playtest convenience: pre-composed URLs that create-or-join a room,
+// name the player, auto-bid a role in the auction, and auto-submit an
+// investment selection — then hand control back for Year 1 onward.
+// See requirements/playtest-quick-seat-urls.md.
+let quickSeat = null;
+
+// Deterministic synchronous string hash (cyrb53), so every tab maps the same
+// room name to the same room id without a round-trip to the server.
+function quickSeatHash(name) {
+  const str = (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  const hex = (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+  return 'pt-' + hex;
+}
+
+function parseQuickSeat() {
+  const p = new URLSearchParams(window.location.search);
+  const isCreate = p.get('create') === '1' || p.has('room');
+  const isJoin = p.has('join');
+  if (!isCreate && !isJoin) return null;
+  const roomName = p.get('room') || p.get('join') || '';
+  if (!roomName) return null;
+  return {
+    mode: isCreate ? 'create' : 'join',
+    roomName,
+    roomId: quickSeatHash(roomName),
+    name: p.get('player') || 'Player',
+    role: p.get('role') || null,
+    bid: parseFloat(p.get('bid') || '0') || 0,
+    invest: p.get('invest') || null,
+    capital: p.get('startcapital') ? parseFloat(p.get('startcapital')) : null,
+    season: p.get('season') ? parseInt(p.get('season'), 10) : null,
+    bidPlaced: false,
+    investDone: false,
+  };
+}
+
+let _quickSeatBannerTimer = null;
+function quickSeatDismissBanner() {
+  const el = document.getElementById('quickseat-banner');
+  if (el) el.remove();
+  if (_quickSeatBannerTimer) { clearTimeout(_quickSeatBannerTimer); _quickSeatBannerTimer = null; }
+}
+// `autoHideMs` > 0 removes the banner after that delay (used once quick-seat
+// has finished); the banner is always click-to-dismiss.
+function quickSeatBanner(text, isError, autoHideMs) {
+  let el = document.getElementById('quickseat-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'quickseat-banner';
+    el.title = 'Click to dismiss';
+    el.style = 'position:fixed;top:0;left:0;right:0;z-index:9999;padding:.5rem 1rem;'
+      + 'font-size:.85rem;text-align:center;font-family:system-ui,sans-serif;'
+      + 'box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer';
+    el.addEventListener('click', quickSeatDismissBanner);
+    document.body.appendChild(el);
+  }
+  el.style.background = isError ? '#7f1d1d' : '#1e3a5f';
+  el.style.color = '#fff';
+  el.textContent = '⚙ ' + text + '  (click to dismiss)';
+  if (_quickSeatBannerTimer) { clearTimeout(_quickSeatBannerTimer); _quickSeatBannerTimer = null; }
+  if (autoHideMs && autoHideMs > 0) {
+    _quickSeatBannerTimer = setTimeout(quickSeatDismissBanner, autoHideMs);
+  }
+}
+
+async function quickSeatStart() {
+  quickSeat = parseQuickSeat();
+  if (!quickSeat) return;
+  quickSeatBanner(`${quickSeat.mode === 'create' ? 'Creating' : 'Joining'} "`
+    + `${quickSeat.roomName}" as ${quickSeat.name}`
+    + `${quickSeat.role ? ' (' + quickSeat.role + ')' : ''}…`);
+  try {
+    if (quickSeat.mode === 'create') {
+      const body = {
+        name: quickSeat.roomName,
+        creator_name: quickSeat.name,
+        room_id: quickSeat.roomId,
+        max_players: 7,
+        is_public: false,
+      };
+      if (quickSeat.capital != null) body.starting_capital = quickSeat.capital;
+      if (quickSeat.season != null) body.season_timer_seconds = quickSeat.season;
+      const room = await apiFetch('/api/rooms', 'POST', body);
+      myPlayerId = room.players[0].player_id;
+      rememberIdentity(quickSeat.name, room);
+      enterWaiting(room);
+      quickSeatBanner(`Room "${quickSeat.roomName}" ready. Open the other tabs, then `
+        + `click "Start Auction" once everyone is seated.`);
+    } else {
+      const room = await quickSeatJoinWithRetry();
+      enterWaiting(room);
+      quickSeatBanner(`Seated as ${quickSeat.name} (${quickSeat.role || '—'}). `
+        + `Waiting for the host to start the auction…`);
+    }
+  } catch (e) {
+    quickSeatBanner('Quick-seat failed: ' + (e.message || e), true);
+  }
+}
+
+async function quickSeatJoinWithRetry(maxMs = 60000) {
+  const start = Date.now();
+  let lastErr = null;
+  while (Date.now() - start < maxMs) {
+    try {
+      const data = await apiFetch(`/api/rooms/${quickSeat.roomId}/join`, 'POST',
+        { name: quickSeat.name });
+      myPlayerId = data.player_id;
+      rememberIdentity(quickSeat.name, data.room);
+      return data.room;
+    } catch (e) {
+      lastErr = e;
+      quickSeatBanner(`Waiting for room "${quickSeat.roomName}" to be created…`);
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+  throw lastErr || new Error('room not found after retries');
+}
+
+function quickSeatOnAuctionStart() {
+  if (!quickSeat || quickSeat.bidPlaced || !quickSeat.role) return;
+  const send = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'bid', role_name: quickSeat.role, amount: quickSeat.bid }));
+      quickSeat.bidPlaced = true;
+      quickSeatBanner(`Auto-bid ${quickSeat.bid} Dp on ${quickSeat.role}. `
+        + `Investment selection next, then you drive from Year 1.`);
+    } else {
+      setTimeout(send, 300);
+    }
+  };
+  send();
+}
+
+function quickSeatOnInvestingStart() {
+  if (!quickSeat || quickSeat.investDone || !investData) return;
+  const sel = new Set(investData.mandatory || []);
+  if (quickSeat.invest) {
+    const bits = quickSeat.invest;
+    const items = investData.catalogue || [];
+    for (let i = 0; i < items.length && i < bits.length; i++) {
+      if (bits[i] === '1') sel.add(items[i].item_id);
+    }
+  }
+  investSelected = sel;
+  quickSeat.investDone = true;
+  const fire = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'investment_submit',
+        item_ids: Array.from(investSelected),
+        ready: true,
+      }));
+      quickSeatBanner(`Quick-seat complete — invested per bitmap "`
+        + `${quickSeat.invest || '(mandatory only)'}". You're driving from here.`,
+        false, 8000);
+    } else {
+      setTimeout(fire, 300);
+    }
+  };
+  fire();
+}
 
 // ==================== NAVIGATION ====================
 function showScreen(name) {
@@ -2747,6 +2952,7 @@ function handleMessage(msg) {
       break;
     case 'auction_start':
       enterAuction(msg);
+      quickSeatOnAuctionStart();
       break;
     case 'auction_update':
       updateAuctionDisplay(msg.auction);
@@ -2776,6 +2982,7 @@ function handleMessage(msg) {
         renderInvesting();
       }
       startInvestTimer(msg.timer_seconds || 180);
+      quickSeatOnInvestingStart();
       break;
     case 'island_guarantee_state':
       onIslandGuaranteeState(msg.guarantee);
@@ -4512,10 +4719,42 @@ async function downloadGameLog() {
   }
 }
 
+// ==================== THEME (Day / Night) ====================
+const THEME_KEY = 'it-theme';
+function applyTheme(theme) {
+  const day = theme === 'day';
+  document.documentElement.setAttribute('data-theme', day ? 'day' : 'night');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) {
+    // Icon shows the CURRENT mode; tooltip says what a click does.
+    btn.textContent = day ? '☀' : '🌙';
+    btn.title = day ? 'Daytime — switch to Night' : 'Night — switch to Daytime';
+  }
+}
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'day'
+    ? 'night' : 'day';
+  localStorage.setItem(THEME_KEY, next);
+  applyTheme(next);
+}
+function initTheme() {
+  let btn = document.getElementById('theme-toggle');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'theme-toggle';
+    btn.setAttribute('aria-label', 'Toggle day/night theme');
+    btn.addEventListener('click', toggleTheme);
+    document.body.appendChild(btn);
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || 'night');
+}
+initTheme();
+
 // ==================== INIT ====================
 fetchAppVersion();
 refreshPublicRooms();
 setInterval(refreshPublicRooms, 15000);
+quickSeatStart();
 </script>
 </body>
 </html>
