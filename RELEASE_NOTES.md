@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/playtest-fixes-2026-05-29b
+
+Branch: `claude/playtest-fixes-2026-05-29b`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-29.4`
+
+**Staffing request approval — detail + counter (web)**: The Doctor-island
+staffing-review modal now shows the full contract (staff × profession, duration,
+fee offered, per-staff/season rate, PassengerSeats to supply, staff available)
+via `request_summary`, instead of bare Approve/Counter/Reject buttons. The
+counter-offer fee prompt already worked; reviewers can now see what they're
+pricing.
+
+**Education capital hint clarity**: The "Capital limits <output>" decision hint
+now names the specific equipment that unblocks the output (e.g. "Needs 1×
+Laboratory Equipment — 28 Dp each …") using the catalogue options the server
+already computes, instead of the vague "plan a capital purchase" text.
+
+**(Codex brief) Shared training classrooms**: see
+`requirements/codex-tasks/training-shared-classrooms-2026-05-29.md` — same
+profession + same season should share a 12-seat classroom rather than each batch
+burning a fresh Course slot. Engine change handed to Codex.
+
 ### claude/equity-phase2b-flip-2026-05-29
 
 Branch: `claude/equity-phase2b-flip-2026-05-29`

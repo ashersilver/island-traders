@@ -3503,7 +3503,26 @@ class TurnManager:
                 {"value": "counter",  "label": "Counter (propose different fee)"},
                 {"value": "reject",   "label": "Reject"},
             ]
-            decision = self.io.choose_option("Decision:", decision_options)
+            # Surface the contract details in the decision modal (web UI renders
+            # request_summary), so the reviewer sees what they're approving.
+            avail_note = f"{len(available)} {prof_label}(s)"
+            if len(available) < contract.staff_count:
+                avail_note += f" ⚠ need {contract.staff_count}"
+            staffing_summary = {
+                "title": f"Staffing request #{contract.contract_id} from {req_name}",
+                "fields": [
+                    ["Staff requested", f"{contract.staff_count}× {prof_label}"],
+                    ["Duration", f"{contract.duration_seasons} season(s)"],
+                    ["Fee offered", f"{contract.fee_total:.1f} {sym}"],
+                    ["Per staff/season",
+                     f"{contract.fee_total / max(1, contract.staff_count * contract.duration_seasons):.1f} {sym}"],
+                    ["PassengerSeats you supply", tickets_prov],
+                    ["Available now", avail_note],
+                ],
+            }
+            decision = self.io.choose_option(
+                "Decision:", decision_options, request_summary=staffing_summary
+            )
 
             if decision == "approve":
                 self.staffing.provider_approve(contract.contract_id)
