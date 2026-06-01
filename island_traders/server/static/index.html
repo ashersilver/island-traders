@@ -3591,10 +3591,26 @@ function renderDecisionHints(player, role) {
         triggers_action: 'request_training',
       });
     } else if (output.binding === 'equipment') {
+      // Name the specific capital item that unblocks this output (the server
+      // already computed concrete catalogue options in equipment_short).
+      const opts = (output.equipment_short && output.equipment_short.options) || [];
+      let why;
+      if (opts.length) {
+        const o = opts[0];
+        const deliv = o.delivery_seasons
+          ? `, ${o.delivery_seasons} season${o.delivery_seasons !== 1 ? 's' : ''} to arrive` : '';
+        const owned = o.owned ? ` (you own ${o.owned})` : '';
+        why = `Needs ${o.count}× ${o.name}${owned} — ${o.cost_each} Dp each`
+            + ` (${o.total_cost} Dp total${deliv}). Buy it from the market/deals now, `
+            + `or in the next investing window.`;
+      } else {
+        why = `Limited by capital equipment. Buy the equipment that boosts ${output.output} `
+            + `from the market/deals, or in the next investing window.`;
+      }
       hints.push({
         tone: 'warn',
         title: `Capital limits ${output.output}`,
-        why: 'Plan a capital purchase in the next investing window or buy equipment if it appears in market/deals.',
+        why,
         triggers_action: 'purchase_capital',
       });
     }
