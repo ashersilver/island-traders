@@ -188,15 +188,28 @@ class Player:
     personal_cash: float = 0.0
     holdings: dict[str, int] = field(default_factory=dict)
     cap_table: CapTable | None = None
+    # Shareholder loans owed by THIS island back to investors who lent it
+    # personal cash (Phase 2b): lender_player_id (str) -> principal owed.
+    # A senior liability: subtracted in total_wealth/liquidation value, and the
+    # matching receivable is added to the lender's net worth, so lending is
+    # net-worth-neutral.  See models/shareholder_loans.py.
+    shareholder_loans: dict[str, float] = field(default_factory=dict)
 
-    def net_worth(self, share_price_by_island: dict[str, float]) -> float:
-        """Investor net worth = personal cash + market value of all holdings.
+    def net_worth(
+        self,
+        share_price_by_island: dict[str, float],
+        loan_receivable: float = 0.0,
+    ) -> float:
+        """Investor net worth = personal cash + holdings value + loan receivable.
 
         `share_price_by_island` maps island player_id (str) -> price per share;
         the caller (the engine, which has the market + valuation history)
         computes those via `equity.share_price(equity.fair_value(...))`.
+        `loan_receivable` is the total shareholder-loan principal owed *to* this
+        investor across all islands (the engine sums it via
+        `shareholder_loans.receivable(...)`), making a loan net-worth-neutral.
         """
-        total = self.personal_cash
+        total = self.personal_cash + loan_receivable
         for island_id, shares in self.holdings.items():
             total += shares * share_price_by_island.get(str(island_id), 0.0)
         return total
@@ -558,6 +571,9 @@ class Player:
         if loan_ledger:
             assets -= loan_ledger.outstanding_debt(self.player_id)
             assets += loan_ledger.loans_receivable(self.player_id)
+        # Shareholder loans the island owes back to its investors are a senior
+        # liability against the island's liquidation value (Phase 2b).
+        assets -= sum(self.shareholder_loans.values())
         return assets
 
     def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:

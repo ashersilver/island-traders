@@ -29,6 +29,8 @@ from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.training import TrainingStatus
+from ..models.equity import ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value
+from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
@@ -1261,22 +1263,32 @@ class GameManager:
             "spend": capital_spend,
         })
         self._launch_game(
-            room_id, total_deductions,
+            room_id, bids=auction_deductions,
             capital_purchases=capital_purchases,
             capital_leases=capital_leases,
+            capital_spend=capital_spend,
         )
 
     # ---- Game launch ----
 
     def _launch_game(self, room_id: str,
-                     deductions: dict[str, float] | None = None,
+                     bids: dict[str, float] | None = None,
                      capital_purchases: dict[str, list[str]] | None = None,
-                     capital_leases: dict[str, list[str]] | None = None) -> bool:
+                     capital_leases: dict[str, list[str]] | None = None,
+                     capital_spend: dict[str, float] | None = None) -> bool:
         room = self.rooms.get(room_id)
         if not room:
             return False
 
-        base_dollops = room.starting_capital
+        # --- Equity flip (Phase 2b) -------------------------------------
+        # Personal cash (investor wallet) = starting_capital − winning bid
+        # (the bid leaves the game, paid to imaginary former owners).
+        # Island treasury is seeded independently at ISLAND_STARTING_CASH and
+        # funds the opening capital basket; any shortfall is auto-lent from
+        # personal cash as a shareholder loan (net-worth-neutral).
+        base_capital = room.starting_capital
+        bids = bids or {}
+        capital_spend = capital_spend or {}
 
         specs = []
         spec_to_lobby_pid: dict[int, str] = {}   # PlayerSpec idx -> lobby player_id
@@ -1284,14 +1296,11 @@ class GameManager:
             roles = list(lp.role_names)
             if not roles:
                 continue
-            # Each player starts with starting_capital minus their auction bids
-            # (winning bids only) and investing capital spend.
-            player_dollops = base_dollops
-            if deductions:
-                player_dollops -= deductions.get(lp.player_id, 0)
+            # Seed each engine Player's treasury at ISLAND_STARTING_CASH; the
+            # personal-cash / loan flip is applied post-setup below.
             specs.append(PlayerSpec(
                 name=lp.name, role_names=roles, is_human=lp.is_human,
-                starting_dollops=round(player_dollops, 1),
+                starting_dollops=round(ISLAND_STARTING_CASH, 1),
             ))
             spec_to_lobby_pid[len(specs) - 1] = lp.player_id
 
@@ -1324,6 +1333,24 @@ class GameManager:
         room.lobby_to_engine_id = {
             lobby_pid: spec_idx for spec_idx, lobby_pid in spec_to_lobby_pid.items()
         }
+
+        # --- Apply the equity flip to each engine Player (post-setup) -------
+        # treasury = ISLAND_STARTING_CASH + lent − capital_spend
+        # personal_cash = starting_capital − winning_bid − lent
+        # lent (shareholder loan) = max(0, capital_spend − ISLAND_STARTING_CASH)
+        for spec_idx, lobby_pid in spec_to_lobby_pid.items():
+            if spec_idx >= len(game.players):
+                continue
+            p = game.players[spec_idx]
+            bid = float(bids.get(lobby_pid, 0.0))
+            cspend = float(capital_spend.get(lobby_pid, 0.0))
+            lent = max(0.0, cspend - ISLAND_STARTING_CASH)
+            p.dollops = round(ISLAND_STARTING_CASH + lent - cspend, 1)
+            p.personal_cash = round(base_capital - bid - lent, 1)
+            p.shareholder_loans = {}
+            if lent > 0:
+                # The owner (investor) lends to their own island (same id).
+                sh_loans.lend(p.shareholder_loans, str(p.player_id), round(lent, 1))
 
         # Simultaneous-play mode is ALWAYS on for the server: each human
         # plays on their own turn-thread, exit via Ready button or (if
@@ -1415,13 +1442,37 @@ class GameManager:
                 summary = game.run()
                 room.summary = summary
                 room.status = "finished"
+                # Web win condition is investor NET WORTH (cash + equity +
+                # loan receivables), not the engine's island total_wealth.
+                final_tick = max(0, game.config.num_years * len(SEASONS) - 1)
+                fprices = game.market.current_prices()
+                books = [p.shareholder_loans for p in game.players]
+                spi = {
+                    str(p.player_id): share_price(
+                        fair_value(
+                            p.total_wealth(fprices, game.loan_ledger,
+                                           CAPITAL_CATALOGUE, final_tick),
+                            p.wealth_history,
+                        )
+                    )
+                    for p in game.players
+                }
+                nw_ranked = sorted(
+                    game.players,
+                    key=lambda p: p.net_worth(
+                        spi, sh_loans.receivable(books, str(p.player_id))
+                    ),
+                    reverse=True,
+                )
                 broadcast({
                     "type": "game_over",
-                    "winner": summary.winner.name,
+                    "winner": nw_ranked[0].name if nw_ranked else summary.winner.name,
                     "rankings": [
                         {"name": p.name, "roles": p.role_names(),
-                         "wealth": round(w, 1)}
-                        for p, w in summary.final_rankings
+                         "wealth": round(
+                             p.net_worth(spi, sh_loans.receivable(books, str(p.player_id))), 1
+                         )}
+                        for p in nw_ranked
                     ],
                 })
             except Exception as e:
@@ -2189,6 +2240,17 @@ class GameManager:
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
         player_names = {p.player_id: p.name for p in game.players}
 
+        # --- Equity (Phase 2b): per-island share price + investor net worth ---
+        # liquidation value (= total_wealth, already net of bank + shareholder
+        # loans) feeds fair_value; share_price drives net-worth scoring.
+        share_price_by_island: dict[str, float] = {}
+        island_loan_books = [p.shareholder_loans for p in game.players]
+        for _p in game.players:
+            _liq = _p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick)
+            share_price_by_island[str(_p.player_id)] = share_price(
+                fair_value(_liq, _p.wealth_history)
+            )
+
         def banker_loan_book_status(player: Player) -> dict[str, int]:
             if not any(role.name == "Banker" for role in player.roles):
                 return {"active": 0, "cap": 0}
@@ -2211,6 +2273,27 @@ class GameManager:
                 "roles": p.role_names(),
                 "role_names": [r.name for r in p.roles],
                 "dollops": round(p.dollops, 1),
+                # --- Equity (Phase 2b): two balance sheets + ownership ---
+                "treasury": round(p.dollops, 1),          # island operating cash (alias of dollops)
+                "personal_cash": round(p.personal_cash, 1),  # investor wallet
+                "net_worth": round(
+                    p.net_worth(
+                        share_price_by_island,
+                        sh_loans.receivable(island_loan_books, str(p.player_id)),
+                    ),
+                    1,
+                ),
+                "owns_pct": round(
+                    p.cap_table.fraction(str(p.player_id)) * 100, 1
+                ) if p.cap_table else None,
+                "public_float_pct": round(
+                    (p.cap_table.public_float() / 100) * 100, 1
+                ) if p.cap_table else None,
+                "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
+                "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
+                "shareholder_loan_receivable": round(
+                    sh_loans.receivable(island_loan_books, str(p.player_id)), 1
+                ),
                 "wealth": round(
                     p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick),
                     1,
