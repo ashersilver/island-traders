@@ -5,6 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/shareholder-loan-to-company-2026-06-02
+
+Branch: `claude/shareholder-loan-to-company-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.8`
+
+**Mid-game shareholder loans (Phase 2b — manual lend/repay)**:
+The owner can now move personal cash into their island's treasury (and back) at
+any time during play, not just at the opening.
+- **Lend to island** (`Finance` action group): ask for an amount, move personal
+  cash → treasury, record the shareholder loan. Treasury goes up; personal cash
+  goes down; the island's liability goes up (subtracted in `total_wealth` →
+  net-worth-neutral).
+- **Repay shareholder loan** (`Finance` action group): move treasury → personal
+  cash, reduce the loan principal. Only available when a loan is outstanding and
+  the treasury has funds; clamped to `min(owed, treasury)`.
+- Sidebar: a **"Fund island"** row (Lend… / Repay… buttons) appears when you
+  have personal cash or an outstanding loan; buttons are individually greyed when
+  the relevant prerequisite is absent.
+- 6 new engine tests (`test_shareholder_loan_actions.py`): accounting invariants,
+  clamp logic, lend-then-full-repay restores original state. 605 tests green.
+
 ### claude/calibration-2026-06-02
 
 Branch: `claude/calibration-2026-06-02`

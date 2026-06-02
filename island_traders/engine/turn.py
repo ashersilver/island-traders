@@ -66,6 +66,8 @@ class TurnAction(Enum):
     REPURPOSE_WORKER         = "repurpose_worker"         # reassign a worker to a new profession
     REQUEST_MEDICAL_STAFF    = "request_medical_staff"    # any island: hire Doctor/Nurse on contract
     REVIEW_STAFFING_REQUESTS = "review_staffing_requests" # Doctor island: approve/reject/counter
+    LEND_TO_ISLAND     = "lend_to_island"      # owner: move personal cash → island treasury
+    REPAY_SHAREHOLDER_LOAN = "repay_shareholder_loan"  # owner: recover treasury → personal cash
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -384,6 +386,10 @@ class TurnManager:
                     self._action_request_medical_staff(player, result, year, season_index)
                 elif action == TurnAction.REVIEW_STAFFING_REQUESTS:
                     self._action_review_staffing_requests(player, result, year, season_index)
+                elif action == TurnAction.LEND_TO_ISLAND:
+                    self._action_lend_to_island(player, result)
+                elif action == TurnAction.REPAY_SHAREHOLDER_LOAN:
+                    self._action_repay_shareholder_loan(player, result)
             except ActionCancelled:
                 # User pressed Cancel mid-prompt-chain — abort cleanly without
                 # falling back to default values that would partially execute
@@ -3391,6 +3397,87 @@ class TurnManager:
                 f"(repay {loan.repayment_amount:.1f} {sym} "
                 f"Y{loan.maturity_year+1} S{loan.maturity_season+1})"
             )
+
+    # ------------------------------------------------------------------
+    # Shareholder loans to own island (Phase 2b mid-game lend/repay)
+    # ------------------------------------------------------------------
+
+    def _action_lend_to_island(self, player: Player, result: TurnResult) -> None:
+        """Move personal cash → island treasury, recording a shareholder loan.
+
+        The loan is a senior liability: total_wealth subtracts it, and the
+        investor's net_worth adds the matching receivable — so lending is
+        net-worth-neutral.  No interest (SHAREHOLDER_LOAN_RATE = 0%).
+        """
+        from ..models import shareholder_loans as sh_loans
+        sym = CURRENCY_SYMBOL
+        cash = player.personal_cash
+        if cash <= 0:
+            self.io.print(f"  No personal cash to lend (personal cash: {cash:.1f} {sym}).")
+            return
+        owed = sh_loans.total_owed(player.shareholder_loans)
+        self.io.print(
+            f"  Personal cash: {cash:.1f} {sym}  |  "
+            f"Existing shareholder loan owed by island: {owed:.1f} {sym}"
+        )
+        amount = self.io.ask_dollop_amount(
+            f"How much to lend to your island treasury ({sym})?",
+            cash,
+        )
+        if amount <= 0:
+            self.io.print("  Cancelled.")
+            return
+        amount = min(amount, cash)
+        player.personal_cash = round(player.personal_cash - amount, 1)
+        player.dollops = round(player.dollops + amount, 1)
+        sh_loans.lend(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        self.io.print(
+            f"  Lent {amount:.1f} {sym} to your island treasury.  "
+            f"Island treasury: {player.dollops:.1f} {sym}  |  "
+            f"Loan owed: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}"
+        )
+        result.actions_taken.append(f"lend_to_island:{amount:.1f}")
+
+    def _action_repay_shareholder_loan(self, player: Player, result: TurnResult) -> None:
+        """Move treasury → personal cash, reducing the shareholder-loan principal.
+
+        Only the island's own owner can repay their own loan; the treasury
+        must hold enough to cover the repayment.
+        """
+        from ..models import shareholder_loans as sh_loans
+        sym = CURRENCY_SYMBOL
+        owed = sh_loans.total_owed(player.shareholder_loans)
+        if owed <= 0:
+            self.io.print("  No shareholder loan outstanding to repay.")
+            return
+        if player.dollops <= 0:
+            self.io.print(
+                f"  Island treasury is empty ({player.dollops:.1f} {sym}); "
+                f"cannot repay."
+            )
+            return
+        max_repay = min(owed, player.dollops)
+        self.io.print(
+            f"  Outstanding shareholder loan: {owed:.1f} {sym}  |  "
+            f"Island treasury: {player.dollops:.1f} {sym} (max repayable: {max_repay:.1f} {sym})"
+        )
+        amount = self.io.ask_dollop_amount(
+            f"How much to repay from the island treasury ({sym})?",
+            max_repay,
+        )
+        if amount <= 0:
+            self.io.print("  Cancelled.")
+            return
+        amount = min(amount, max_repay)
+        paid = sh_loans.repay(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        player.dollops = round(player.dollops - paid, 1)
+        player.personal_cash = round(player.personal_cash + paid, 1)
+        self.io.print(
+            f"  Repaid {paid:.1f} {sym} to personal cash.  "
+            f"Remaining loan: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}  |  "
+            f"Treasury: {player.dollops:.1f} {sym}"
+        )
+        result.actions_taken.append(f"repay_shareholder_loan:{paid:.1f}")
 
     # ------------------------------------------------------------------
     # Medical staffing contracts (2026-05-28)
