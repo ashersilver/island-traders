@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-02.8"
+APP_VERSION: str = "0.1.0-dev.2026-06-02.9"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -68,7 +68,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
     "Educator":      {"Expertise": 6,                                 # feeds Course production
                       "Courses": 5,                                    # classroom slots ready Y1
-                      "Reagents": 2,                         # 2 seasons of Reagents (bought from Medical)
+                      "Reagents": 2,                                   # 2 seasons of Reagents
                       "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
@@ -85,21 +85,24 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                13.5,
-    "Fish":                10.8,
-    "Grain":                9.45,
-    "Produce":             12.15,
+    "Food":                18.0,
+    "Fish":                15.0,
+    "Grain":               12.0,
+    "Produce":             15.0,
     "Meat":                16.2,
     "Ore":                 12.0,
     "Metal":               20.0,
     "Oil":                 16.0,
-    "Freight":             16.5,
+    # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
+    # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
+    # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
+    "Freight":             22.0,   # was 16.5; Transporter uplift
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
-    "Reagents": 28.0,
+    "Reagents":            28.0,
     "Goods":               30.0,
-    "HealthServices":      31.5,
-    "Vaccine":             36.75,
+    "HealthServices":      18.0,   # was 31.5; Doctor/Educator value gap reduction
+    "Vaccine":             22.0,   # was 36.75; same
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
@@ -107,9 +110,9 @@ BASE_PRICES: dict[str, float] = {
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      18.7,   # charter flight / passenger berth (per seat)
+    "PassengerSeats":      24.0,   # was 18.7; Transporter uplift
     # Educator IP
-    "Patents":             47.5,   # one-time productivity boost (–20% input cost on chosen output)
+    "Patents":             32.0,   # was 47.5; curtail Patent compounding
 }
 
 # Units produced per season before event modifiers
@@ -119,8 +122,11 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Transporter":   {"Freight": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "PassengerSeats": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Rebalance 2026-06-02: Transporter was the lowest-value role (553 Dp/s vs
+    # ~1300 average). Doubled Freight and doubled PassengerSeats production so
+    # the Transporter is competitive without chart distortion.
+    "Transporter":   {"Freight": 3.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Courses are classroom slots the Educator sells/uses for training.  They
     # are produced each season (scaled by workforce skill / capacity, so they
     # taper if the academic faculty is gutted) — previously they were absent
@@ -128,15 +134,17 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # could never make more, hard-stalling all training (playtest 2026-06).
     # Not multiplied by PRODUCER_PRODUCTIVITY_MULTIPLIER: a course is one
     # classroom (up to MAX_CLASS_SIZE_PER_COURSE trainees), not a bulk crate.
-    "Educator":      {"Expertise": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    # Rebalance 2026-06-02: reduce Patent production rate (was 0.75×M = 7.5/s
+    # at 47.5 Dp → 356 Dp/s of pure compounding value).  New rate 0.35×M ≈ 3.5/s
+    # at 32 Dp (price also cut) → ~112 Dp/s — significant but no longer dominant.
+    "Educator":      {"Expertise": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Courses": 4,
-                      "Patents": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    # Banker does NOT produce a "Finance" commodity — banking earns through
-    # the spread on loans (and insurance premiums, future deal-guarantee
-    # fees, brokerage, project finance).  Finance-as-tradeable-commodity
-    # was a placeholder that made the Banker print money; removed so the
-    # business model has to come from the actual lending engine.
-    "Banker":        {},
+                      "Patents": 0.35 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Banker rebalance 2026-06-02: small Finance production so the Banker has
+    # some base value in the sim while the AI lending model is improved.
+    # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
+    # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
+    "Banker":        {"Finance": 1.0 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
@@ -151,7 +159,7 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
     "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"Reagents": 1},               # labs (operating budget paid in Dp, not Finance commodity)
+    "Educator":      {"Reagents": 1},
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
     # finance, insurance underwriting).  Expertise is still useful but is
