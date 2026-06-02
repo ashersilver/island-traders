@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-02.1"
+APP_VERSION: str = "0.1.0-dev.2026-06-02.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -273,14 +273,20 @@ SEASONAL_YIELD: dict[str, dict[str, float]] = {
 
 # Starting total workers per role (see STARTING_WORKERS_BY_PROFESSION for detail).
 # Invariant: every island starts with at least 1 Manager + 2 Technicians.
+# Each island starts with 50 workers (2026-06-02 playtest ask): the skilled
+# breakdown in STARTING_WORKERS_BY_PROFESSION is seeded first, and the
+# remainder up to 50 fills in as Unskilled — giving a deep unskilled bench
+# (~40) so production/training labour requests (sometimes up to ~10 unskilled)
+# can always be met.  NOTE: total is scaled by 7/num_players in Game.setup, so
+# a full 7-player game gets exactly 50 per island.
 STARTING_WORKFORCE: dict[str, int] = {
-    "Farmer":        6,
-    "Miner":         5,
-    "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      11,  # 2 Prof + 4 Lect + 1 TD + 4 Instructor (bootstraps Manager-course capacity)
-    "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
-    "Manufacturer":  5,
-    "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
+    "Farmer":        50,
+    "Miner":         50,
+    "Transporter":   50,
+    "Educator":      50,
+    "Banker":        50,
+    "Manufacturer":  50,
+    "Doctor":        50,
 }
 
 # Fraction of starting workers who begin with training_level >= 1.

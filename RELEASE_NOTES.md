@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/starting-workforce-50-2026-06-02
+
+Branch: `claude/starting-workforce-50-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.2`
+
+**Each island starts with 50 workers + a real 50-resident population**
+(2026-06-02 playtest ask):
+- `STARTING_WORKFORCE` → 50 for every role. The skilled faculty/specialist
+  breakdown (`STARTING_WORKERS_BY_PROFESSION`) is seeded first; the remainder
+  (~40) fills as **Unskilled**, so labour/training requests for up to ~10
+  unskilled workers can always be met.
+- **Population bug fixed:** `Game.setup` used `TOTAL_STARTING_POPULATION //
+  num_players` (= 20/island), silently overriding the intended 50. It now seeds
+  `STARTING_POPULATION` (50) per island. (An earlier "set population to 50"
+  change had landed on `STARTING_POPULATION`, which `setup` never read.)
+- Workforce no longer scales by `7/num_players` — every island gets exactly 50
+  workers regardless of player count (the old scaling, with a fixed 50-resident
+  population, would have inflated small-game islands past their populace).
+- ⚠ **Balance:** this is a large labour-base increase (was 4–11 workers/island);
+  production capacity rises substantially. A calibration pass is warranted.
+- Tests updated for the new population (sustenance math; Educator roster total).
+
 ### claude/courses-production-2026-06-02
 
 Branch: `claude/courses-production-2026-06-02`
