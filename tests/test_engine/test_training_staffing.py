@@ -135,7 +135,7 @@ def test_staff_locked_for_course_duration():
         0, [1], educator.player_id, 0.0, target_profession=Profession.BANKER.value
     )
     req2 = training.propose(
-        0, [2], educator.player_id, 0.0, target_profession=Profession.BANKER.value
+        0, [2], educator.player_id, 0.0, target_profession=Profession.ENGINEER.value
     )
 
     training.educator_approve(req1.batch_id)
@@ -188,11 +188,11 @@ def test_capacity_blocks_third_manager_course_when_lecturers_pinned():
     _fund_training(educator)
 
     first = training.propose(0, [1], educator.player_id, 0.0, target_profession="Nurse")
-    second = training.propose(0, [2], educator.player_id, 0.0, target_profession="Nurse")
+    second = training.propose(0, [2], educator.player_id, 0.0, target_profession="Engineer")
     training.educator_approve(first.batch_id)
     training.educator_approve(second.batch_id)
 
-    ok, msg = tm._training_capacity_status(educator, _request("Nurse"))
+    ok, msg = tm._training_capacity_status(educator, _request("Farmer"))
 
     assert not ok
     assert "Manager-course staffing full: 2/2" in msg

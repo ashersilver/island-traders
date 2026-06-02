@@ -349,7 +349,7 @@ class TurnManager:
                 elif action == TurnAction.ACK_TRAINING_DECISION:
                     self._action_ack_training_decision(player, result)
                 elif action == TurnAction.SUPPLY_TRAINING_EXPERTISE:
-                    self._action_supply_training_expertise(player, result)
+                    self._action_supply_training_expertise(player, result, year, season_index)
                 elif action == TurnAction.ARRANGE_TRANSPORT:
                     self._action_arrange_transport(player, result, season_name, year)
                 elif action == TurnAction.RECRUIT_WORKERS:
@@ -1067,7 +1067,7 @@ class TurnManager:
             # without a dispatch) and leave any blocked batch pending
             # until its capacity frees up.
             for req in requests:
-                ok, gate_msg = self._training_capacity_status(player, req)
+                ok, gate_msg = self._training_capacity_status(player, req, year, season_index)
                 if not ok:
                     self.io.print(
                         f"  Self-training request #{req.batch_id} "
@@ -1076,7 +1076,7 @@ class TurnManager:
                         f"once that capacity frees up."
                     )
                     continue
-                used_desc = self._consume_training_capacity(player, req)
+                used_desc = self._consume_training_capacity(player, req, year, season_index)
                 self.training.educator_approve(req.batch_id)
                 self.training.dispatch(req.batch_id, year, season_index)
                 # Mark workers as in-training on the workforce side too.
@@ -1144,7 +1144,10 @@ class TurnManager:
         educator_tickets = self._educator_ticket_count(req)
         if req.dollops_to_educator >= required_offer:
             # Peek training capacity before burning air tickets.
-            ok, gate_msg = self._training_capacity_status(educator, req)
+            season_index = SEASONS.index(season_name)
+            ok, gate_msg = self._training_capacity_status(
+                educator, req, year, season_index
+            )
             if not ok:
                 self.io.print(
                     f"  [AI] {educator.name} cannot approve training request #{req.batch_id} yet: "
@@ -1158,7 +1161,7 @@ class TurnManager:
                     f"{req.tickets_supplied_by_requester}, Educator supplies {educator_tickets}."
                 )
                 return
-            self._consume_training_capacity(educator, req)
+            self._consume_training_capacity(educator, req, year, season_index)
             self.training.educator_approve(req.batch_id)
             requester.spend_dollops(req.dollops_to_educator)
             educator.receive_dollops(req.dollops_to_educator)
@@ -1359,7 +1362,45 @@ class TurnManager:
             return 0
         return -(-num_trainees // MAX_CLASS_SIZE_PER_COURSE)  # ceil division
 
-    def _training_capacity_status(self, educator: Player, req) -> tuple[bool, str]:
+    def _cohort_year_season_for_request(
+        self,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> tuple[int, int]:
+        if req.status == TrainingStatus.DISPATCHED:
+            return req.dispatched_year, req.dispatched_season
+        if year is not None and season is not None:
+            return year, season
+        return req.proposed_year, req.proposed_season
+
+    def _incremental_courses_for_request(
+        self,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> int:
+        cohort_year, cohort_season = self._cohort_year_season_for_request(
+            req, year, season
+        )
+        existing = self.training.cohort_trainees_committed(
+            req.educator_id,
+            req.target_profession,
+            cohort_year,
+            cohort_season,
+            exclude_batch_id=req.batch_id,
+        )
+        return self.courses_needed(existing + len(req.worker_ids)) - self.courses_needed(
+            existing
+        )
+
+    def _training_capacity_status(
+        self,
+        educator: Player,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> tuple[bool, str]:
         """Can this batch be admitted?  Pure check — no side effects.
 
         Manager-tier and Technician-tier training are gated by per-course
@@ -1368,21 +1409,22 @@ class TurnManager:
         Returns (ok, reason); reason is empty when ok.
         """
         band = band_of(req.target_profession)
-        n_courses = 1
-        need_courses = self.courses_needed(len(req.worker_ids))
+        need_courses = self._incremental_courses_for_request(req, year, season)
         if band == WorkerBand.MANAGER:
             prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
             lect = educator.workforce.count_profession(Profession.LECTURER.value)
             max_concurrent = self._manager_course_capacity(educator)
-            in_flight = self.training.manager_courses_in_flight(educator.player_id)
-            if max_concurrent - in_flight < n_courses:
+            in_flight = self.training.manager_courses_in_flight(
+                educator.player_id, year, season
+            )
+            if max_concurrent - in_flight < need_courses:
                 return False, (
                     f"Manager-course staffing full: {in_flight}/{max_concurrent} "
                     f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
                     f"have {prof} Professor(s), {lect} Lecturer(s))."
                 )
-            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * n_courses:
-                return False, f"needs {2 * n_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * need_courses:
+                return False, f"needs {2 * need_courses} Expertise for this course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1404,8 +1446,10 @@ class TurnManager:
             # Staffing gate — per-course (Technical Director supervises 2
             # concurrent courses; Instructor leads 1).
             max_concurrent = self._technical_course_capacity(educator)
-            courses_in_flight = self.training.technical_courses_in_flight(educator.player_id)
-            if max_concurrent - courses_in_flight < n_courses:
+            courses_in_flight = self.training.technical_courses_in_flight(
+                educator.player_id, year, season
+            )
+            if max_concurrent - courses_in_flight < need_courses:
                 return False, (
                     f"Technical-course staffing full: {courses_in_flight}/{max_concurrent} "
                     f"concurrent courses (need 0.5 Technical Director + 1 Instructor per course; "
@@ -1421,8 +1465,8 @@ class TurnManager:
                     f"{trainees_in_flight}/{workshop_seats} trainee seat(s) "
                     f"already in training (need {batch_trainees} more for this batch)."
                 )
-            if educator.inventory.get(ResourceType.EXPERTISE) < n_courses:
-                return False, f"needs {n_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.EXPERTISE) < need_courses:
+                return False, f"needs {need_courses} Expertise for this course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1444,27 +1488,35 @@ class TurnManager:
         inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
         return min(td * 2, inst)
 
-    def _consume_training_capacity(self, educator: Player, req) -> str:
+    def _consume_training_capacity(
+        self,
+        educator: Player,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> str:
         """Debit the capacity this batch uses; return a human description.
 
         Staffing capacity is held by the request's in-flight status. Course
         and Expertise resources are spent at approval/dispatch.
         """
         band = band_of(req.target_profession)
-        n_courses = 1
-        need_courses = self.courses_needed(len(req.worker_ids))
+        need_courses = self._incremental_courses_for_request(req, year, season)
         if need_courses > 0:
             educator.give_resources(ResourceType.COURSES, need_courses)
         if band == WorkerBand.MANAGER:
-            educator.give_resources(ResourceType.EXPERTISE, 2 * n_courses)
+            expertise = 2 * need_courses
+            if expertise > 0:
+                educator.give_resources(ResourceType.EXPERTISE, expertise)
             return (
-                f"{need_courses} Course slot(s) + 2 Expertise "
+                f"{need_courses} Course slot(s) + {expertise} Expertise "
                 "for the Manager-tier course"
             )
         if band == WorkerBand.TECHNICIAN:
-            educator.give_resources(ResourceType.EXPERTISE, n_courses)
+            if need_courses > 0:
+                educator.give_resources(ResourceType.EXPERTISE, need_courses)
             return (
-                f"{need_courses} Course slot(s) + 1 Expertise "
+                f"{need_courses} Course slot(s) + {need_courses} Expertise "
                 "for the technical course"
             )
         return f"{need_courses} Course slot(s)"
@@ -1615,7 +1667,10 @@ class TurnManager:
             return False
         # Peek training capacity BEFORE consuming any air tickets so a
         # capacity shortfall doesn't burn the Educator's PassengerSeats.
-        ok, gate_msg = self._training_capacity_status(educator, req)
+        season_index = SEASONS.index(season_name)
+        ok, gate_msg = self._training_capacity_status(
+            educator, req, year, season_index
+        )
         if not ok:
             self.io.print(
                 f"  Cannot approve yet — Education Island {gate_msg} "
@@ -1641,7 +1696,7 @@ class TurnManager:
             )
             return False
         # Tickets secured; now consume Course and Expertise resources.
-        self._consume_training_capacity(educator, req)
+        self._consume_training_capacity(educator, req, year, season_index)
         requester.spend_dollops(req.dollops_to_educator)
         educator.receive_dollops(req.dollops_to_educator)
         if req.status == TrainingStatus.COUNTERED:
@@ -1940,7 +1995,11 @@ class TurnManager:
         result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
 
     def _action_supply_training_expertise(
-        self, player: Player, result: TurnResult
+        self,
+        player: Player,
+        result: TurnResult,
+        year: int | None = None,
+        season_index: int | None = None,
     ) -> None:
         """Requester gifts Expertise to the Educator to unblock a pending request.
 
@@ -1968,7 +2027,9 @@ class TurnManager:
                 continue
             # Compute Expertise shortfall from the same capacity-status
             # logic the Educator uses to gate approvals.
-            ok, reason = self._training_capacity_status(educator, req)
+            ok, reason = self._training_capacity_status(
+                educator, req, year, season_index
+            )
             if not ok and "Expertise" in reason:
                 eligible.append((req, educator, reason))
         if not eligible:
@@ -2007,7 +2068,7 @@ class TurnManager:
         # courses need 2 per course, Technician-tier need 1 per course.
         band = band_of(req.target_profession)
         per_course = 2 if band == WorkerBand.MANAGER else 1
-        n_courses = self.courses_needed(len(req.worker_ids))
+        n_courses = self._incremental_courses_for_request(req, year, season_index)
         needed = per_course * n_courses
         have_at_educator = educator.inventory.get(ResourceType.EXPERTISE)
         shortfall = max(0, needed - have_at_educator)

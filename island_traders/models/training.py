@@ -14,7 +14,7 @@ from enum import Enum
 
 from ..constants import (
     UNIVERSITY_CAPACITY, UNIVERSITY_SEASONAL_CAP, CURRENCY_SYMBOL,
-    CARGO_TRANSIT_SEASONS,
+    CARGO_TRANSIT_SEASONS, MAX_CLASS_SIZE_PER_COURSE,
 )
 from .profession import (
     Profession, WorkerBand, band_of,
@@ -134,6 +134,43 @@ class TrainingRegistry:
     # ------------------------------------------------------------------
     # Capacity queries
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classrooms_needed(num_trainees: int) -> int:
+        if num_trainees <= 0:
+            return 0
+        return -(-num_trainees // MAX_CLASS_SIZE_PER_COURSE)
+
+    @staticmethod
+    def _cohort_year_season(
+        req: TrainingRequest,
+        current_year: int | None = None,
+        current_season: int | None = None,
+    ) -> tuple[int, int]:
+        if req.status == TrainingStatus.DISPATCHED:
+            return req.dispatched_year, req.dispatched_season
+        if current_year is not None and current_season is not None:
+            return current_year, current_season
+        return req.proposed_year, req.proposed_season
+
+    def cohort_trainees_committed(
+        self,
+        educator_id: int,
+        profession: str,
+        year: int,
+        season: int,
+        exclude_batch_id: int | None = None,
+    ) -> int:
+        """Count committed trainees in one course-running cohort."""
+        return sum(
+            len(r.worker_ids)
+            for r in self._requests
+            if r.educator_id == educator_id
+            and r.target_profession == profession
+            and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
+            and r.batch_id != exclude_batch_id
+            and self._cohort_year_season(r, year, season) == (year, season)
+        )
 
     def trained_this_year(self, year: int, profession: str) -> int:
         """Count workers actively being trained (or already trained) in the given
@@ -358,27 +395,53 @@ class TrainingRegistry:
                 if not r.worker_ids:
                     r.status = TrainingStatus.REJECTED
 
-    def _courses_in_flight(self, educator_id: int, band: WorkerBand) -> int:
-        return sum(
-            1
-            for r in self._requests
-            if r.educator_id == educator_id
-            and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
-            and band_of(r.target_profession) == band
-        )
+    def _courses_in_flight(
+        self,
+        educator_id: int,
+        band: WorkerBand,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> int:
+        cohorts: dict[tuple[str, int, int], int] = {}
+        for r in self._requests:
+            if (
+                r.educator_id != educator_id
+                or r.status not in (
+                    TrainingStatus.AWAITING_TRANSPORT,
+                    TrainingStatus.DISPATCHED,
+                )
+                or band_of(r.target_profession) != band
+            ):
+                continue
+            cohort_year, cohort_season = self._cohort_year_season(r, year, season)
+            key = (r.target_profession, cohort_year, cohort_season)
+            cohorts[key] = cohorts.get(key, 0) + len(r.worker_ids)
+        return sum(self._classrooms_needed(count) for count in cohorts.values())
 
-    def manager_courses_in_flight(self, educator_id: int) -> int:
+    def manager_courses_in_flight(
+        self,
+        educator_id: int,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> int:
         """Count committed Manager-tier courses for this Educator.
 
         Staff are reserved as soon as the Educator approves, so both
         AWAITING_TRANSPORT and DISPATCHED batches count until completion
         or rejection.
         """
-        return self._courses_in_flight(educator_id, WorkerBand.MANAGER)
+        return self._courses_in_flight(educator_id, WorkerBand.MANAGER, year, season)
 
-    def technical_courses_in_flight(self, educator_id: int) -> int:
+    def technical_courses_in_flight(
+        self,
+        educator_id: int,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> int:
         """Count committed Technician-tier courses for this Educator."""
-        return self._courses_in_flight(educator_id, WorkerBand.TECHNICIAN)
+        return self._courses_in_flight(
+            educator_id, WorkerBand.TECHNICIAN, year, season
+        )
 
     def technical_trainees_in_flight(self, educator_id: int) -> int:
         """Sum of trainee headcount across committed Technician-tier
