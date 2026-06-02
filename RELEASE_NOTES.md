@@ -5,6 +5,25 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/calibration-2026-06-02
+
+Branch: `claude/calibration-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.7`
+
+**Calibration sweep — chart rebalance + structural findings**:
+- Retuned `config/event_charts.yaml` (moderate, non-distorted): trimmed the
+  over-generous roles (Educator avg-yield 1.21→0.88, Transporter→0.95) and
+  softened the over-harsh (Miner 0.53→0.92, Manufacturer 0.69→0.95, Doctor
+  0.65→0.90, Farmer→1.0). Top-role win share nearly halved in sim (Educator
+  88%→53%); Miner/Doctor pulled up.
+- **Finding (see `requirements/calibration-findings-2026-06-02.md`):** charts
+  can't reach 1/7 — the residual imbalance is structural (output value gap:
+  Educator/Doctor make high-value goods, Farmer/Transporter cheap ones; Banker
+  has no commodity and the AI underuses lending). Recommends a base-economy
+  rebalance (output values / Banker model) **before** finer chart calibration.
+  All 599 tests green.
+
 ### claude/equity-phase3-buyout-2026-06-02
 
 Branch: `claude/equity-phase3-buyout-2026-06-02`
