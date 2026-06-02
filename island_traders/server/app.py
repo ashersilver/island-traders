@@ -29,7 +29,10 @@ from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.training import TrainingStatus
-from ..models.equity import ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value
+from ..models.equity import (
+    ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
+    AUCTIONED_SHARES, PUBLIC_HOLDER,
+)
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
@@ -2101,6 +2104,80 @@ class GameManager:
                         self.get_game_state(room_id, educator_lobby_id) or {},
                     )
 
+    async def _handle_buy_out_float(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Equity Phase 3: the controlling owner buys public-float shares of
+        their own island at live fair value, paid from personal cash (the cash
+        leaves the game, like the auction bid).  Message: {shares:int}."""
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+        player = next((p for p in room.game.players if p.player_id == engine_pid), None)
+        if player is None or player.cap_table is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "No island to buy into"}))
+            return
+
+        owner_key = str(player.player_id)
+        # Only the controlling owner may buy their island's float.
+        if player.cap_table.held_by(owner_key) < AUCTIONED_SHARES:
+            await websocket.send_text(json.dumps({
+                "type": "error", "message": "Only the controlling owner can buy this float."
+            }))
+            return
+
+        try:
+            shares = int(msg.get("shares", 0))
+        except (TypeError, ValueError):
+            shares = 0
+        available = player.cap_table.public_float()
+        shares = min(max(0, shares), available)
+        if shares <= 0:
+            await websocket.send_text(json.dumps({
+                "type": "error", "message": "No public-float shares to buy."
+            }))
+            return
+
+        # Live fair value per share (= liquidation value incl. shareholder
+        # loans, fed through the going-concern premium).
+        prices = room.game.market.current_prices()
+        cyi = getattr(room, "current_year_index", 0)
+        csi = getattr(room, "current_season_index", 0)
+        tick = cyi * len(SEASONS) + csi
+        liq = player.total_wealth(prices, room.game.loan_ledger, CAPITAL_CATALOGUE, tick)
+        price = share_price(fair_value(liq, player.wealth_history))
+        cost = round(shares * price, 1)
+        if player.personal_cash < cost:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Need {cost:.1f} Dp for {shares} share(s); you have "
+                           f"{player.personal_cash:.1f} Dp.",
+            }))
+            return
+
+        # Execute: cash leaves the game (paid to imaginary public holders);
+        # shares move public -> owner; holdings mirror the cap table.
+        player.personal_cash = round(player.personal_cash - cost, 1)
+        player.cap_table.transfer(PUBLIC_HOLDER, owner_key, shares)
+        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+
+        await websocket.send_text(json.dumps({
+            "type": "buy_out_float_ack", "shares": shares,
+            "cost": cost, "price_per_share": round(price, 2),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
     def _leases_detail_for_player(
         self,
         game: Game,
@@ -2289,6 +2366,7 @@ class GameManager:
                 "public_float_pct": round(
                     (p.cap_table.public_float() / 100) * 100, 1
                 ) if p.cap_table else None,
+                "public_float_shares": p.cap_table.public_float() if p.cap_table else 0,
                 "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
                 "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
                 "shareholder_loan_receivable": round(
@@ -3429,6 +3507,10 @@ def create_app() -> FastAPI:
                     })
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "buy_out_float":
+                    await manager._handle_buy_out_float(
                         room_id, player_id, msg, websocket
                     )
 

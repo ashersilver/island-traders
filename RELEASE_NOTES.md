@@ -5,6 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/equity-phase3-buyout-2026-06-02
+
+Branch: `claude/equity-phase3-buyout-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.6`
+
+**Equity Phase 3 — buy out the public float**: the controlling owner can now
+spend personal cash to buy their island's 40% public-float shares at live fair
+value. The cash leaves the game (paid to imaginary public holders, like the
+auction bid); shares move `public → owner` via `CapTable.transfer`; `holdings`
+mirror it. Net-worth-neutral at purchase (cash → equity at fair value); the
+payoff is future growth accruing to a bigger stake.
+- WS action `buy_out_float` (owner-only, clamps to the float, affordability
+  check); payload gains `public_float_shares`.
+- Sidebar "Buy shares…" control appears when you control the island and a float
+  remains (shows available / price-per-share / affordable count).
+- Tests: `tests/test_server/test_equity_buyout_float.py` (transfer, clamp,
+  afford guard, net-worth neutrality). 599 green.
+
+Backlog noted separately: partial food production on missing ingredients
+(`requirements/food-partial-production-2026-06-02.md`).
+
 ### codex/kitchen-tiers-2026-06-02 (merged)
 
 Version bump: `0.1.0-dev.2026-06-02.5`
