@@ -78,8 +78,10 @@ def test_educator_starting_workforce_bootstrap_shape():
     + 1 TD + 4 Instructor.  Lecturers are required so Manager-tier training
     is viable from turn 1 — without them, training a first Lecturer is
     chicken-and-egg (Lecturer is itself Manager-band so it needs an
-    existing Lecturer to teach the course).  Total 11."""
-    assert STARTING_WORKFORCE["Educator"] == 11
+    existing Lecturer to teach the course).  The skilled faculty (11) is the
+    bootstrap-critical part; the rest of the 50-worker roster fills as
+    Unskilled (2026-06-02)."""
+    assert STARTING_WORKFORCE["Educator"] == 50
     mix = dict(STARTING_WORKERS_BY_PROFESSION["Educator"])
     assert mix == {
         "Professor": 2,

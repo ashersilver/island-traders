@@ -223,8 +223,12 @@ def test_dispatched_trainees_eat_on_campus_not_at_home():
     )
     tm._consume_and_post_sustenance()
 
-    assert farmer.inventory.get(ResourceType.FOOD) == 29  # 35 - ceil((70 - 10) / 10)
-    assert educator.inventory.get(ResourceType.FOOD) == 12  # 20 - ceil((70 + 10) / 10)
+    # Each island now starts with STARTING_POPULATION = 50 residents (fixed
+    # per island, 2026-06-02).  10 of the farmer's residents are away at
+    # training (eat on campus), so the farmer feeds 40 and the educator feeds
+    # its 50 + 10 visitors.
+    assert farmer.inventory.get(ResourceType.FOOD) == 31  # 35 - ceil((50 - 10) / 10)
+    assert educator.inventory.get(ResourceType.FOOD) == 14  # 20 - ceil((50 + 10) / 10)
 
 
 # ---------------------------------------------------------------------------

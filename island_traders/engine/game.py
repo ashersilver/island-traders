@@ -121,8 +121,17 @@ class Game:
 
         num_players = len(self.config.player_specs)
         default_dollops = TOTAL_STARTING_DOLLOPS / num_players
-        default_population = TOTAL_STARTING_POPULATION // num_players
-        workforce_scale = 7 / num_players
+        # Each island starts with STARTING_POPULATION residents (50) — a fixed
+        # per-island figure, NOT a share of a global total.  (Previously this
+        # used TOTAL_STARTING_POPULATION // num_players = 20, which silently
+        # overrode the intended 50 and left population < the 50-worker
+        # workforce.  2026-06-02.)
+        default_population = STARTING_POPULATION
+        # Each island starts with a fixed STARTING_WORKFORCE (50) regardless of
+        # player count — "each island starts with 50 workers" (2026-06-02).
+        # Previously scaled by 7/num_players, which (with a fixed 50-resident
+        # population) would inflate small-game islands past their populace.
+        workforce_scale = 1.0
 
         for idx, spec in enumerate(self.config.player_specs):
             roles = []
