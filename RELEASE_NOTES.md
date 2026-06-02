@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/lab-split-2026-06-02
+
+Branch: `claude/lab-split-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.4`
+
+**Lab Supplies split** (per the 2026-06-02 brief; numbers tunable in calibration):
+- **`LaboratoryEquipment` resource renamed to `Reagents`** (display "Reagents")
+  across recipes, prices, inventory, AI, UI — with a save-migration so old saves'
+  `LaboratoryEquipment` inventory keys fold forward to `Reagents`.
+- **Reagents production moved Manufacturer → Medical Sciences (Doctor)**: the
+  Doctor now makes Reagents from **Oil + Ore** (6/season), consumes Oil+Ore+
+  Expertise, and sells surplus to the Educator. Removed the Manufacturer's
+  Reagents product line + foundry/assembly-line capacity for it.
+- **New durable capital `common.laboratory_equipment`** ("Laboratory Equipment",
+  40 Dp, cash-only, 1-season delivery): soil/sample-testing kit that adds +2
+  output capacity for Agriculture (Grain/Produce/Food), Mining (Ore) and Medical
+  (HealthServices/+1 Vaccine). Distinct from the consumable Reagents.
+- Player briefings + AI Manufacturer tests updated; the Manufacturer's
+  medical/lab tests repurposed to the remaining `MedicalDevices` line. 729 green.
+- (Kitchen tiers — the other half of the brief — are with Codex on
+  `codex/kitchen-tiers-2026-06-02`.)
+
 ### codex/training-shared-classrooms-2026-05-29 (merged)
 
 Version bump: `0.1.0-dev.2026-06-02.3`

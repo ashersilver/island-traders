@@ -62,10 +62,10 @@ def test_execute_buy_insufficient_supply_raises():
 
 def test_execute_buy_insufficient_funds_raises():
     m = Market()
-    m.post_supply(ResourceType.LABORATORY_EQUIPMENT, 10)
+    m.post_supply(ResourceType.REAGENTS, 10)
     buyer = make_player(0, "Banker", dollops=1.0)
     with pytest.raises(InsufficientFundsError):
-        m.execute_buy(buyer, ResourceType.LABORATORY_EQUIPMENT, 5)
+        m.execute_buy(buyer, ResourceType.REAGENTS, 5)
 
 
 def test_execute_sell_increases_supply():

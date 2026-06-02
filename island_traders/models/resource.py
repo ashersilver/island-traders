@@ -15,7 +15,7 @@ class ResourceType(str, Enum):
     FREIGHT           = "Freight"
     EXPERTISE         = "Expertise"
     COURSES           = "Courses"
-    LABORATORY_EQUIPMENT = "LaboratoryEquipment"
+    REAGENTS = "Reagents"
     GOODS             = "Goods"
     HEALTH_SERVICES      = "HealthServices"
     VACCINE              = "Vaccine"

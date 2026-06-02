@@ -441,8 +441,8 @@ class TurnManager:
             "Farmer": ResourceType.FARM_MACHINERY,
             "Miner": ResourceType.MINING_EQUIPMENT,
             "Transporter": ResourceType.TRANSPORT_EQUIPMENT,
-            "Educator": ResourceType.LABORATORY_EQUIPMENT,
-            "Banker": ResourceType.LABORATORY_EQUIPMENT,
+            "Educator": ResourceType.REAGENTS,
+            "Banker": ResourceType.REAGENTS,
             "Manufacturer": ResourceType.TRANSPORT_EQUIPMENT,
             "Doctor": ResourceType.MEDICAL_DEVICES,
         }

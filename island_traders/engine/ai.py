@@ -28,7 +28,7 @@ AI_EQUIPMENT_INPUT_RUNS = 5
 AI_EQUIPMENT_INPUTS = {
     ResourceType.FARM_MACHINERY,
     ResourceType.MINING_EQUIPMENT,
-    ResourceType.LABORATORY_EQUIPMENT,
+    ResourceType.REAGENTS,
     ResourceType.MEDICAL_DEVICES,
     ResourceType.TRANSPORT_EQUIPMENT,
 }
@@ -445,7 +445,7 @@ class AIStrategy:
         - **Indirect** (2026-05-27 training-expertise-deadlock brief): the
           human has pending training requests or workers already in
           training.  Both signal that the Educator must produce Expertise
-          to fulfil them, which in turn requires LaboratoryEquipment from
+          to fulfil them, which in turn requires Reagents from
           the Manufacturer.  Without this, a game with one human Miner
           (Mining is direct-demand for MiningEquipment, but NOT for
           LabEquipment) leaves the Educator's Expertise pipeline
@@ -794,7 +794,7 @@ class AIStrategy:
             qty = max(0, player.inventory.get(rtype) - reserve_inputs.get(rtype, 0))
             if (
                 is_manufacturer
-                and rtype == ResourceType.LABORATORY_EQUIPMENT
+                and rtype == ResourceType.REAGENTS
                 and getattr(player, "ai_product_line_human_demand", False)
             ):
                 qty = min(qty, 1)

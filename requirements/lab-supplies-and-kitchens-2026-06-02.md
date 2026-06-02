@@ -1,6 +1,7 @@
 # Brief — Lab Supplies/Reagents split + Kitchen tiers (2026-06-02)
 
-**Status:** **TEED UP FOR BUILD (2026-06-02).** Open `[CONFIRM]` params below are
+**Status:** **Lab split (A) DONE** on `claude/lab-split-2026-06-02` (729 green).
+Kitchens (C) with Codex. Original: **TEED UP FOR BUILD (2026-06-02).** Open `[CONFIRM]` params below are
 now locked to the defaults in this Decisions block; all are **tunable in the
 calibration pass** that follows this batch. Split: **Codex builds the kitchens**
 (`requirements/codex-tasks/kitchen-tiers-2026-06-02.md`); **Claude builds the
