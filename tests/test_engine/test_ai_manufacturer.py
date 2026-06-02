@@ -23,13 +23,17 @@ def _manufacturer(metal: int = 10, oil: int = 10) -> Player:
     return player
 
 
-def test_ai_manufacturer_picks_laboratory_equipment_for_unmet_lab_demand():
+def test_ai_manufacturer_chooses_a_feasible_line_without_demand():
+    # Reagents moved to Medical Sciences (2026-06-02); with no demand signal the
+    # Manufacturer simply settles on a feasible product line.
     ai = AIStrategy()
     manufacturer = _manufacturer()
 
     chosen = ai._choose_product_line(manufacturer, Market())
 
-    assert chosen == "LaboratoryEquipment"
+    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
+    assert chosen in MANUFACTURER_PRODUCT_LINES
+    assert "Reagents" not in MANUFACTURER_PRODUCT_LINES
 
 
 def test_ai_manufacturer_sticky_when_scores_within_ten_percent(monkeypatch):
@@ -38,7 +42,7 @@ def test_ai_manufacturer_sticky_when_scores_within_ten_percent(monkeypatch):
     manufacturer.ai_product_line = "FarmMachinery"
 
     def demand_units(output):
-        if output == ResourceType.LABORATORY_EQUIPMENT:
+        if output == ResourceType.REAGENTS:
             return 100
         if output == ResourceType.FARM_MACHINERY:
             return 95
@@ -58,7 +62,7 @@ def test_ai_manufacturer_falls_back_to_best_feasible_line(monkeypatch):
     def demand_units(output):
         if output == ResourceType.MINING_EQUIPMENT:
             return 200
-        if output == ResourceType.LABORATORY_EQUIPMENT:
+        if output == ResourceType.MEDICAL_DEVICES:
             return 100
         return 0
 
@@ -66,7 +70,9 @@ def test_ai_manufacturer_falls_back_to_best_feasible_line(monkeypatch):
 
     chosen = ai._choose_product_line(manufacturer, Market())
 
-    assert chosen == "LaboratoryEquipment"
+    # MiningEquipment has the higher demand but isn't feasible with metal=1,
+    # oil=1; the AI falls back to the best feasible line (MedicalDevices).
+    assert chosen == "MedicalDevices"
 
 
 def test_ai_manufacturer_idle_path_when_no_line_can_be_produced():
@@ -89,19 +95,18 @@ def test_ai_manufacturer_idle_path_when_no_line_can_be_produced():
     assert any("Manufacturer idle — out of inputs" in action for action in actions)
 
 
-def test_ai_manufacturer_produces_and_lists_laboratory_equipment():
+def test_ai_manufacturer_produces_and_lists_its_chosen_line():
     ai = AIStrategy(target_production_runs=2)
     manufacturer = _manufacturer()
     market = Market()
+    # A visible MedicalDevices bid steers the Manufacturer to that line.
+    educator = Player(2, "Human Educator", [ROLES["Educator"]], 500.0, is_human=True)
+    market.post_bid(educator, ResourceType.MEDICAL_DEVICES, 55.0, 5)
 
     actions = ai.take_turn(
         manufacturer,
         market,
-        [
-            manufacturer,
-            Player(2, "Human Educator", [ROLES["Educator"]], 500.0, is_human=True),
-            _player(3, "Doctor"),
-        ],
+        [manufacturer, educator, _player(3, "Doctor")],
         ProductionEngine(),
         TradingEngine(market, DealLedger()),
         EventResult("Normal"),
@@ -110,5 +115,5 @@ def test_ai_manufacturer_produces_and_lists_laboratory_equipment():
         0,
     )
 
-    assert any("Laboratory Equipment" in action for action in actions)
-    assert market.market_summary()[ResourceType.LABORATORY_EQUIPMENT.value]["ask_quantity"] > 0
+    assert any("produced" in action for action in actions)
+    assert market.market_summary()[ResourceType.MEDICAL_DEVICES.value]["ask_quantity"] > 0

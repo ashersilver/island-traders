@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-02.3"
+APP_VERSION: str = "0.1.0-dev.2026-06-02.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -56,7 +56,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
     "Educator":      {"Expertise": 6,                                 # feeds Course production
                       "Courses": 5,                                    # classroom slots ready Y1
-                      "LaboratoryEquipment": 2,                         # 2 seasons of Lab Equipment
+                      "Reagents": 2,                         # 2 seasons of Reagents (bought from Medical)
                       "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
@@ -68,7 +68,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Expertise": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
+                      "Expertise": 2, "Oil": 2, "Ore": 2},  # 2 seasons of inputs (makes own Reagents)
 }
 
 # Dollops per unit at balanced supply/demand
@@ -84,7 +84,7 @@ BASE_PRICES: dict[str, float] = {
     "Freight":             16.5,
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
-    "LaboratoryEquipment": 28.0,
+    "Reagents": 28.0,
     "Goods":               30.0,
     "HealthServices":      31.5,
     "Vaccine":             36.75,
@@ -125,8 +125,12 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # was a placeholder that made the Banker print money; removed so the
     # business model has to come from the actual lending engine.
     "Banker":        {},
+    # Medical Sciences also produces Reagents (formerly the Manufacturer's
+    # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
+    # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
     "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Reagents": 6},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -135,14 +139,16 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
     "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
+    "Educator":      {"Reagents": 1},               # labs (operating budget paid in Dp, not Finance commodity)
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
     # finance, insurance underwriting).  Expertise is still useful but is
     # not a hard requirement gating "production".
     "Banker":        {},
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
-    "Doctor":        {"Expertise": 1, "LaboratoryEquipment": 1},
+    # Medical Sciences makes its own Reagents in-house from Oil + Ore (rather
+    # than buying them), plus Expertise for clinical work (2026-06-02).
+    "Doctor":        {"Expertise": 1, "Oil": 1, "Ore": 1},
 }
 
 # Per-season input→output table for the Farmer island.
@@ -206,15 +212,9 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 3,   # heaviest line; specialist transport
         "desc":             "Mining Equipment",
     },
-    "LaboratoryEquipment": {
-        "inputs":           {"Metal": 1, "Oil": 1},
-        "output":           "LaboratoryEquipment",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-        "skilled":          3,
-        "unskilled":        1,
-        "freight_per_unit": 1,
-        "desc":             "Laboratory Equipment",
-    },
+    # Reagents (formerly "LaboratoryEquipment") moved to the Medical Sciences
+    # island (Doctor), produced from Oil + Ore — see BASE_PRODUCTION/
+    # PRODUCTION_INPUTS["Doctor"].  No longer a Manufacturer line (2026-06-02).
     "MedicalDevices": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "MedicalDevices",

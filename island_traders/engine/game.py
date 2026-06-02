@@ -36,6 +36,11 @@ from ..constants_capacity import CAPITAL_CATALOGUE
 
 SAVE_VERSION = 5
 
+# Renamed resources: old save inventory key -> current key (2026-06-02).
+LEGACY_RESOURCE_IDS: dict[str, str] = {
+    "LaboratoryEquipment": "Reagents",
+}
+
 LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {
     "educator.apprenticeship_programme": "educator.technical_workshop",
 }
@@ -738,6 +743,9 @@ class Game:
                 shareholder_loans=dict(pd.get("shareholder_loans", {})),
             )
             for r_str, qty in pd.get("inventory", {}).items():
+                # Save-migration: the consumable "LaboratoryEquipment" was
+                # renamed to "Reagents" (2026-06-02); fold legacy keys forward.
+                r_str = LEGACY_RESOURCE_IDS.get(r_str, r_str)
                 p.receive_resources(ResourceType(r_str), qty)
             wf_data = pd.get("workforce", {})
             p.workforce._next_id = wf_data.get("next_id", 0)

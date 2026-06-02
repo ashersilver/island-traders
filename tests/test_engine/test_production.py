@@ -60,22 +60,25 @@ def test_educator_needs_laboratory_equipment(normal_event):
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
-    educator.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
+    educator.receive_resources(ResourceType.REAGENTS, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
 
 
-def test_doctor_needs_laboratory_equipment(normal_event):
+def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     doctor = Player(11, "Doctor", [ROLES["Doctor"]], 100.0, is_human=False)
     doctor.receive_resources(ResourceType.EXPERTISE, 1)
-    doctor.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
+    # Medical Sciences now makes its own Reagents from Oil + Ore (2026-06-02).
+    doctor.receive_resources(ResourceType.OIL, 1)
+    doctor.receive_resources(ResourceType.ORE, 1)
     produced = ProductionEngine().produce(doctor, normal_event)
 
     assert ResourceType.HEALTH_SERVICES in produced
+    assert ResourceType.REAGENTS in produced   # produced in-house now
 
 
 def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
@@ -115,11 +118,11 @@ def test_production_preview_does_not_mutate(farmer, normal_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
     before_dollops = farmer.dollops
-    before_equip = farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT)
+    before_equip = farmer.inventory.get(ResourceType.REAGENTS)
     before_oil = farmer.inventory.get(ResourceType.OIL)
     engine.production_preview(farmer, normal_event)
     assert farmer.dollops == before_dollops
-    assert farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT) == before_equip
+    assert farmer.inventory.get(ResourceType.REAGENTS) == before_equip
     assert farmer.inventory.get(ResourceType.OIL) == before_oil
 
 

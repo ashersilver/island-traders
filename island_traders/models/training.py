@@ -510,7 +510,7 @@ class TrainingRegistry:
         """Requests this player filed that are still awaiting Educator action.
 
         Used by the AI Manufacturer's indirect-demand check (so a pending
-        training request creates upstream LaboratoryEquipment demand) and
+        training request creates upstream Reagents demand) and
         by the requester-side dashboard payload.  (2026-05-27
         training-expertise-deadlock brief Layer 1 + Layer 3.)
         """

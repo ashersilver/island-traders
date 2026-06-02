@@ -363,7 +363,8 @@ def test_manufacturer_ai_buys_freight_surcharge_before_producing():
     manufacturer.receive_resources(ResourceType.METAL, 4)
     manufacturer.receive_resources(ResourceType.OIL, 2)
     market.post_offer(transporter, ResourceType.FREIGHT, 12.0, 10)
-    market.post_bid(transporter, ResourceType.LABORATORY_EQUIPMENT, 45.0, 3)
+    # Reagents moved to Medical Sciences; use a remaining Manufacturer line.
+    market.post_bid(transporter, ResourceType.MEDICAL_DEVICES, 55.0, 3)
 
     actions = ai.take_turn(
         manufacturer,
@@ -392,7 +393,9 @@ def test_manufacturer_ai_prefers_line_with_visible_bid():
     manufacturer.receive_resources(ResourceType.METAL, 4)
     manufacturer.receive_resources(ResourceType.OIL, 2)
     market.post_offer(transporter, ResourceType.FREIGHT, 12.0, 10)
-    market.post_bid(educator, ResourceType.LABORATORY_EQUIPMENT, 40.0, 10)
+    # Reagents moved to Medical Sciences; use a remaining Manufacturer line.
+    # Bid well above MedicalDevices' base price (50) so the AI's ask auto-matches.
+    market.post_bid(educator, ResourceType.MEDICAL_DEVICES, 90.0, 10)
 
     actions = ai.take_turn(
         manufacturer,
@@ -407,5 +410,5 @@ def test_manufacturer_ai_prefers_line_with_visible_bid():
         LoanLedger(),
     )
 
-    assert any("Laboratory Equipment" in action for action in actions)
-    assert educator.inventory.get(ResourceType.LABORATORY_EQUIPMENT) > 0
+    assert any("Medical" in action for action in actions)
+    assert educator.inventory.get(ResourceType.MEDICAL_DEVICES) > 0
