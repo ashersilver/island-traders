@@ -5,6 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/kitchen-tiers-2026-06-02 (merged)
+
+Version bump: `0.1.0-dev.2026-06-02.5`
+
+**Kitchen tiers (Codex)**: the single 6-Food kitchen is replaced by two tiers
+via per-item `KITCHEN_SPECS` + a generalised `run_kitchens`:
+- **Industrial Kitchen** (`common.industrial_kitchen`, 150 Dp, opening-investment
+  + buyable): **20 Food/season, no Chef**, efficient 1 / 0.5 / 0.5 recipe.
+- **Manufacturing Kitchen** (`common.kitchen`): **10 Food/season** (up from 6),
+  **requires a Chef**; chefs are a limited pool (one per chef-requiring kitchen).
+- Kitchens idle gracefully with clear reasons ("needs a Chef" / "short on
+  <ingredient>"). Ships `tests/test_engine/test_kitchen_tiers_2026_06_02.py`.
+
+Merged on top of the lab split; the two universal capital items
+(`common.industrial_kitchen`, `common.laboratory_equipment`) now sit alongside
+`common.kitchen`. 595 tests green.
+
 ### claude/lab-split-2026-06-02
 
 Branch: `claude/lab-split-2026-06-02`
