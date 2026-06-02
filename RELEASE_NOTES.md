@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-shared-classrooms-2026-05-29 (merged)
+
+Version bump: `0.1.0-dev.2026-06-02.3`
+
+**Shared training classrooms (Codex)**: same-profession + same-season training
+batches now share a 12-seat classroom instead of each batch burning a fresh
+Course slot. Incremental Course slots and Expertise are charged per
+`(educator, profession, course-running season)` cohort, and the concurrency
+gate counts distinct classrooms rather than requests. So a second 1-trainee
+Engineer request in the same season rides the existing classroom at zero extra
+Course cost until the 12 seats fill. Per
+`requirements/codex-tasks/training-shared-classrooms-2026-05-29.md`; ships with
+`tests/test_engine/test_training_shared_classrooms.py`.
+
 ### claude/starting-workforce-50-2026-06-02
 
 Branch: `claude/starting-workforce-50-2026-06-02`
