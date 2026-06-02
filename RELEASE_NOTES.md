@@ -5,6 +5,26 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/economy-rebalance-2026-06-02
+
+Branch: `claude/economy-rebalance-2026-06-02`
+Version bump: `0.1.0-dev.2026-06-02.9`
+
+**Structural economy rebalance** (4-iteration sim-validated):
+- **Transporter** massively uplifted (was 553 Dp/s vs ~1300 avg): Freight
+  output 2.5→3.5×M, Seats 0.75→1.2×M; Freight price 16.5→22, Seats 18.7→24.
+  Win rate 0.8%→20%.
+- **Educator** output cut to match: Expertise 4.5→2.5×M, Patents 0.75→0.35×M;
+  Patents price 47.5→32. Win rate 88%→22%.
+- **Doctor** value-gap correction: HealthServices 31.5→18 Dp, Vaccine 36.75→22 Dp.
+  Win rate 34%→21%.
+- **Banker** given modest Finance production (0.5×M) for base viability. 0%→10%.
+- **Farmer** staples repriced to reflect real demand: Food 13.5→18, Fish 10.8→15,
+  Grain 9.45→12, Produce 12.15→15. Win rate 0.2%→2.5%.
+- Residual Farmer/Manufacturer gaps are AI-strategy (supply-chain/seasonal timing),
+  not pricing — flagged as Codex `ai.py` follow-up.
+- 605 tests green. Full analysis in `requirements/calibration-findings-2026-06-02.md`.
+
 ### claude/shareholder-loan-to-company-2026-06-02
 
 Branch: `claude/shareholder-loan-to-company-2026-06-02`

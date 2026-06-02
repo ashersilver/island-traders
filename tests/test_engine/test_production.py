@@ -46,21 +46,25 @@ def test_outage_blocks_production(farmer, outage_event):
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
-def test_banker_does_not_produce_a_finance_commodity(banker, normal_event):
-    """After the Banker rebalance, banking income comes from loan interest and
-    insurance premiums — not from selling a 'Finance' resource on the
-    market.  Producing should return an empty dict."""
+def test_banker_produces_finance_commodity(banker, normal_event):
+    """2026-06-02 rebalance: Banker reinstated as a Finance producer (modest
+    output so it isn't structurally unwinnable in sim while AI lending is
+    improved).  Banking ALSO earns from loan interest."""
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
-    assert produced == {}
+    assert ResourceType.FINANCE in produced
+    assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_needs_laboratory_equipment(normal_event):
+def test_educator_needs_reagents_and_finance(normal_event):
+    """2026-06-02 rebalance: Educator consumes both Reagents and Finance
+    as production inputs (Finance creates demand for Banker output)."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
     educator.receive_resources(ResourceType.REAGENTS, 1)
+    educator.receive_resources(ResourceType.FINANCE, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
@@ -97,13 +101,14 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     assert produced[ResourceType.OIL] == 40
 
 
-def test_banker_production_is_a_no_op(banker, normal_event):
-    """Banker has no commodity production (empty BASE_PRODUCTION) and no
-    required inputs after the rebalance.  Calling produce() should be
-    safe and return an empty dict without raising."""
+def test_banker_production_is_safe(banker, normal_event):
+    """produce() on a Banker with no inputs should not raise — the
+    InsufficientInputsError path is guarded by checking PRODUCTION_INPUTS.
+    2026-06-02: Banker now produces Finance (no inputs required)."""
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
-    assert produced == {}
+    # Finance production requires no inputs so the call must succeed.
+    assert produced is not None
 
 
 def test_bumper_harvest_increases_yield(farmer, bumper_event):

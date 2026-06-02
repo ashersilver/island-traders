@@ -64,3 +64,44 @@ on the balanced base:
 - Committed: the moderate chart retune (a genuine improvement; top role halved).
 - Deferred (needs sign-off): the structural rebalance above. Calibrating charts
   to 1/7 is **blocked** on it.
+
+---
+
+## Structural economy rebalance (2026-06-02, later)
+
+**Decision:** approved. Implemented on `claude/economy-rebalance-2026-06-02`.
+
+### Changes committed
+| Item | Change | Reason |
+|---|---|---|
+| Transporter Freight | 2.5×M → 3.5×M/season | Was 553 Dp/s vs ~1300 avg |
+| Transporter PassengerSeats | 0.75×M → 1.2×M/season | Same |
+| PassengerSeats price | 18.7 → 24 Dp | Aligns with uplift |
+| Freight price | 16.5 → 22 Dp | Aligns with uplift |
+| Educator Expertise | 4.5×M → 2.5×M/season | Core domination driver |
+| Educator Patents | 0.75×M → 0.35×M/season | Compounding value cut |
+| Patents price | 47.5 → 32 Dp | Same |
+| Doctor HealthServices price | 31.5 → 18 Dp | Value-gap correction |
+| Doctor Vaccine price | 36.75 → 22 Dp | Same |
+| Banker Finance | 0 → 0.5×M/season (5 units) | Base viability |
+| Farmer Food price | 13.5 → 18 Dp | Staple underpriced |
+| Farmer Fish price | 10.8 → 15 Dp | Staple underpriced |
+| Farmer Grain price | 9.45 → 12 Dp | Staple underpriced |
+| Farmer Produce price | 12.15 → 15 Dp | Staple underpriced |
+
+### After rebalance (4-seed sweep, 200 games × 3 years)
+| Role | Before (charts only) | After structural | Target |
+|---|---|---|---|
+| Educator | 53% | **22%** | 14% |
+| Doctor | 34% | **21%** | 14% |
+| Miner | 11% | **20%** | 14% |
+| Transporter | 0.8% | **20%** | 14% |
+| Banker | 0% | **10%** | 14% |
+| Manufacturer | 1.1% | **5%** | 14% |
+| Farmer | 0.2% | **2.5%** | 14% |
+
+Educator improved from 88%→22%; Transporter and Banker achieved viability.
+Remaining gaps in Farmer (2.5%) and Manufacturer (4.6%) are **AI-strategy**
+issues (seasonal production timing, supply-chain management), not pricing —
+see Codex `ai.py` task.
+
