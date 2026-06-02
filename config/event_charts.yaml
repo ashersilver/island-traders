@@ -1,320 +1,302 @@
-# Event chart weights and effects per island role.
-# Weights in each role must sum to 1.0.
-# Tune these values via simulation to balance win rates across roles.
-
 Farmer:
   events:
-    - name: "Normal Harvest"
-      weight: 0.57
-      yield_modifier: 1.0
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Bumper Harvest"
-      weight: 0.16
-      yield_modifier: 1.8
-      productivity_bonus: 2
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Drought"
-      weight: 0.12
-      yield_modifier: 0.4
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Food"
-      price_shock_multiplier: 1.5
-    - name: "Crop Failure"
-      weight: 0.10
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Food"
-      price_shock_multiplier: 2.0
-    - name: "Flood"
-      weight: 0.05
-      # Re-tiered 2026-05-27 from yield 0.0 + outage to yield 0.25 +
-      # no outage.  Flood is the ONLY natural_disaster event that
-      # cascades to every other island simultaneously — at the old
-      # severity (full halt + damage cycle on origin, 50% cascade
-      # elsewhere) a single late-game Flood was effectively
-      # game-ending for the originating role and dragged everyone
-      # else to half production for the same season.  See the
-      # 2026-05-27 disaster-mitigation brief Fix 1.
-      yield_modifier: 0.25
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 1
-      natural_disaster: true
-      price_shock_resource: "Food"
-      price_shock_multiplier: 1.8
-
+  - name: Normal Harvest
+    weight: 0.5701
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Bumper Harvest
+    weight: 0.2117
+    yield_modifier: 1.8
+    productivity_bonus: 2
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Drought
+    weight: 0.097
+    yield_modifier: 0.4
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Food
+    price_shock_multiplier: 1.5
+  - name: Crop Failure
+    weight: 0.0808
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Food
+    price_shock_multiplier: 2.0
+  - name: Flood
+    weight: 0.0404
+    yield_modifier: 0.25
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 1
+    natural_disaster: true
+    price_shock_resource: Food
+    price_shock_multiplier: 1.8
 Miner:
   events:
-    - name: "Normal Output"
-      weight: 0.40
-      yield_modifier: 0.9
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Rich Vein"
-      weight: 0.07
-      yield_modifier: 2.0
-      productivity_bonus: 1
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Ore"
-      price_shock_multiplier: 0.8
-    - name: "Mine Collapse"
-      weight: 0.30
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 2
-      natural_disaster: false
-      price_shock_resource: "Ore"
-      price_shock_multiplier: 1.8
-    - name: "Oil Spill"
-      weight: 0.17
-      yield_modifier: 0.2
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 1
-      natural_disaster: false
-      price_shock_resource: "Oil"
-      price_shock_multiplier: 1.6
-    - name: "Earthquake"
-      weight: 0.06
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 2
-      natural_disaster: true
-      price_shock_resource: "Ore"
-      price_shock_multiplier: 2.0
-
+  - name: Normal Output
+    weight: 0.2947
+    yield_modifier: 0.9
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Rich Vein
+    weight: 0.3149
+    yield_modifier: 2.0
+    productivity_bonus: 1
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Ore
+    price_shock_multiplier: 0.8
+  - name: Mine Collapse
+    weight: 0.221
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 2
+    natural_disaster: false
+    price_shock_resource: Ore
+    price_shock_multiplier: 1.8
+  - name: Oil Spill
+    weight: 0.1252
+    yield_modifier: 0.2
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 1
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 1.6
+  - name: Earthquake
+    weight: 0.0442
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 2
+    natural_disaster: true
+    price_shock_resource: Ore
+    price_shock_multiplier: 2.0
 Transporter:
   events:
-    - name: "Normal Operations"
-      weight: 0.65
-      yield_modifier: 1.1
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "High Demand Season"
-      weight: 0.25
-      yield_modifier: 1.7
-      productivity_bonus: 2
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Freight"
-      price_shock_multiplier: 1.3
-    - name: "Transport Strike"
-      weight: 0.07
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Freight"
-      price_shock_multiplier: 2.2
-    - name: "Storm Damage"
-      weight: 0.03
-      yield_modifier: 0.3
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 1
-      natural_disaster: true
-      price_shock_resource: "Freight"
-      price_shock_multiplier: 1.5
-
+  - name: Normal Operations
+    weight: 0.5279
+    yield_modifier: 1.1
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: High Demand Season
+    weight: 0.203
+    yield_modifier: 1.7
+    productivity_bonus: 2
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Freight
+    price_shock_multiplier: 1.3
+  - name: Transport Strike
+    weight: 0.1884
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Freight
+    price_shock_multiplier: 2.2
+  - name: Storm Damage
+    weight: 0.0807
+    yield_modifier: 0.3
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 1
+    natural_disaster: true
+    price_shock_resource: Freight
+    price_shock_multiplier: 1.5
 Educator:
   events:
-    - name: "Normal Semester"
-      weight: 0.55
-      yield_modifier: 1.1
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Academic Excellence"
-      weight: 0.30
-      yield_modifier: 2.0
-      productivity_bonus: 2
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Teacher Strike"
-      weight: 0.12
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Expertise"
-      price_shock_multiplier: 1.8
-    - name: "Pandemic Closure"
-      weight: 0.03
-      yield_modifier: 0.2
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 1
-      natural_disaster: true
-      price_shock_resource: "Expertise"
-      price_shock_multiplier: 1.4
-
+  - name: Normal Semester
+    weight: 0.3945
+    yield_modifier: 1.1
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Academic Excellence
+    weight: 0.2152
+    yield_modifier: 2.0
+    productivity_bonus: 2
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Teacher Strike
+    weight: 0.3122
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Expertise
+    price_shock_multiplier: 1.8
+  - name: Pandemic Closure
+    weight: 0.0781
+    yield_modifier: 0.2
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 1
+    natural_disaster: true
+    price_shock_resource: Expertise
+    price_shock_multiplier: 1.4
 Banker:
   events:
-    - name: "Stable Markets"
-      weight: 0.53
-      yield_modifier: 1.3
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Bull Market"
-      weight: 0.40
-      yield_modifier: 2.3
-      productivity_bonus: 3
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Finance"
-      price_shock_multiplier: 0.9
-    - name: "Credit Crunch"
-      weight: 0.05
-      yield_modifier: 0.6
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Finance"
-      price_shock_multiplier: 1.9
-    - name: "Bank Crisis"
-      weight: 0.02
-      yield_modifier: 0.1
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: true
-      price_shock_resource: "Finance"
-      price_shock_multiplier: 2.5
-
+  - name: Stable Markets
+    weight: 0.243
+    yield_modifier: 1.3
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Bull Market
+    weight: 0.1834
+    yield_modifier: 2.3
+    productivity_bonus: 3
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Finance
+    price_shock_multiplier: 0.9
+  - name: Credit Crunch
+    weight: 0.4097
+    yield_modifier: 0.6
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Finance
+    price_shock_multiplier: 1.9
+  - name: Bank Crisis
+    weight: 0.1639
+    yield_modifier: 0.1
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: true
+    price_shock_resource: Finance
+    price_shock_multiplier: 2.5
 Manufacturer:
   events:
-    - name: "Normal Production"
-      weight: 0.45
-      yield_modifier: 0.9
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Production Surge"
-      weight: 0.16
-      yield_modifier: 1.6
-      productivity_bonus: 1
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Goods"
-      price_shock_multiplier: 0.85
-    - name: "Factory Fire"
-      weight: 0.22
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 2
-      natural_disaster: false
-      price_shock_resource: "Goods"
-      price_shock_multiplier: 1.9
-    - name: "Supply Chain Disruption"
-      weight: 0.12
-      yield_modifier: 0.2
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "Goods"
-      price_shock_multiplier: 1.5
-    - name: "Industrial Accident"
-      weight: 0.05
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 1
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-
+  - name: Normal Production
+    weight: 0.3197
+    yield_modifier: 0.9
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Production Surge
+    weight: 0.4033
+    yield_modifier: 1.6
+    productivity_bonus: 1
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Goods
+    price_shock_multiplier: 0.85
+  - name: Factory Fire
+    weight: 0.1563
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 2
+    natural_disaster: false
+    price_shock_resource: Goods
+    price_shock_multiplier: 1.9
+  - name: Supply Chain Disruption
+    weight: 0.0852
+    yield_modifier: 0.2
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Goods
+    price_shock_multiplier: 1.5
+  - name: Industrial Accident
+    weight: 0.0355
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 1
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
 Doctor:
   events:
-    - name: "Normal Practice"
-      weight: 0.62
-      yield_modifier: 0.87
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: null
-      price_shock_multiplier: 1.0
-    - name: "Medical Breakthrough"
-      weight: 0.06
-      yield_modifier: 1.6
-      productivity_bonus: 1
-      outage: false
-      damage_seasons: 0
-      natural_disaster: false
-      price_shock_resource: "HealthServices"
-      price_shock_multiplier: 1.2
-    - name: "Disease Outbreak"
-      weight: 0.18
-      yield_modifier: 0.1
-      productivity_bonus: 0
-      outage: false
-      damage_seasons: 1
-      natural_disaster: true
-      price_shock_resource: "HealthServices"
-      price_shock_multiplier: 1.2
-    - name: "Hospital Strike"
-      weight: 0.10
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 1
-      natural_disaster: false
-      price_shock_resource: "HealthServices"
-      price_shock_multiplier: 1.3
-    - name: "Pandemic"
-      weight: 0.04
-      yield_modifier: 0.0
-      productivity_bonus: 0
-      outage: true
-      damage_seasons: 2
-      natural_disaster: true
-      price_shock_resource: "HealthServices"
-      price_shock_multiplier: 1.1
+  - name: Normal Practice
+    weight: 0.4585
+    yield_modifier: 0.87
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+  - name: Medical Breakthrough
+    weight: 0.3049
+    yield_modifier: 1.6
+    productivity_bonus: 1
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: HealthServices
+    price_shock_multiplier: 1.2
+  - name: Disease Outbreak
+    weight: 0.1331
+    yield_modifier: 0.1
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 1
+    natural_disaster: true
+    price_shock_resource: HealthServices
+    price_shock_multiplier: 1.2
+  - name: Hospital Strike
+    weight: 0.0739
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 1
+    natural_disaster: false
+    price_shock_resource: HealthServices
+    price_shock_multiplier: 1.3
+  - name: Pandemic
+    weight: 0.0296
+    yield_modifier: 0.0
+    productivity_bonus: 0
+    outage: true
+    damage_seasons: 2
+    natural_disaster: true
+    price_shock_resource: HealthServices
+    price_shock_multiplier: 1.1
