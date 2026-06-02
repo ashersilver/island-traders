@@ -970,6 +970,13 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">💰 Personal Cash</span><span class="val gold" id="s-personal-cash" title="Your private investor wallet — auction budget left after your winning bid">—</span></div>
         <div class="stat"><span class="lbl">🏦 Island Treasury</span><span class="val gold" id="s-dollops" title="Your island's operating cash (buys inputs, pays wages & maintenance)">—</span></div>
         <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. the public float">—</span></div>
+        <div class="stat" id="s-buyfloat-row" style="display:none">
+          <span class="lbl">Buy float</span>
+          <span class="val">
+            <button class="btn-ghost btn-sm" id="s-buyfloat-btn" onclick="openBuyFloat()"
+              title="Buy public-float shares of your island at fair value (paid from personal cash)">Buy shares…</button>
+          </span>
+        </div>
         <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" title="Liquidation value of the island (treasury + inventory + equipment − loans)">—</span></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
@@ -2069,6 +2076,24 @@ function submitInvestment(ready) {
   }
 }
 
+// ==================== EQUITY: buy out the public float (Phase 3) ==========
+let _buyFloatState = null;   // { shares, price, cash } when buying is offered
+function openBuyFloat() {
+  if (!_buyFloatState || !ws || ws.readyState !== WebSocket.OPEN) return;
+  const { shares: avail, price, cash } = _buyFloatState;
+  const maxAfford = price > 0 ? Math.floor(cash / price) : 0;
+  const maxBuy = Math.min(avail, maxAfford);
+  const prompt = `Buy public-float shares of your island.\n`
+    + `Available: ${avail}  ·  Price/share: ${price.toFixed(2)} Dp  ·  `
+    + `Your cash: ${cash.toFixed(1)} Dp (affords ${maxAfford}).\n`
+    + `How many shares to buy? (1–${maxBuy})`;
+  const raw = window.prompt(prompt, String(maxBuy));
+  if (raw === null) return;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return;
+  ws.send(JSON.stringify({ type: 'buy_out_float', shares: n }));
+}
+
 // ==================== PRODUCTION CAPACITY PANEL ====================
 // Return a capacity object filtered to a single role's outputs + capital.
 // When role is null / 'ALL', returns the original unfiltered object.
@@ -3019,6 +3044,10 @@ function handleMessage(msg) {
       // Server confirmation; nothing to render unless there's an error.
       if (msg.error) addLog('Investment error: ' + msg.error, 'err');
       break;
+    case 'buy_out_float_ack':
+      addLog(`🏦 Bought ${msg.shares} share(s) of your island for `
+        + `${msg.cost} Dp (${msg.price_per_share} Dp/share).`, 'ok');
+      break;
     case 'game_state':
       gameState = msg;
       syncServerLog(msg);
@@ -3178,6 +3207,17 @@ function renderGameState() {
   const ownEl = document.getElementById('s-ownership');
   if (ownEl && me.owns_pct != null)
     ownEl.textContent = `You ${me.owns_pct}% · Public ${me.public_float_pct ?? 0}%`;
+  // Phase 3: offer "Buy shares" when you control the island and a public float
+  // remains.  Stash the live figures for the prompt.
+  const bfRow = document.getElementById('s-buyfloat-row');
+  if (bfRow) {
+    const floatShares = me.public_float_shares || 0;
+    const canBuy = (me.owns_pct || 0) >= 60 && floatShares > 0;
+    bfRow.style.display = canBuy ? '' : 'none';
+    _buyFloatState = canBuy
+      ? { shares: floatShares, price: me.share_price || 0, cash: me.personal_cash || 0 }
+      : null;
+  }
   document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
   document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
   // Sustenance warning icon next to worker count
