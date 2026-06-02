@@ -968,6 +968,17 @@ button:active{transform:scale(.97)}
         <div class="stat net-wealth"><span class="lbl">Net Worth</span><span class="val" id="s-networth" title="Your investor net worth = personal cash + value of your equity stakes + loans owed to you">—</span></div>
         <div class="stat"><span class="lbl">Role</span><span class="val" id="s-role">—</span></div>
         <div class="stat"><span class="lbl">💰 Personal Cash</span><span class="val gold" id="s-personal-cash" title="Your private investor wallet — auction budget left after your winning bid">—</span></div>
+        <div class="stat" id="s-lend-row" style="display:none">
+          <span class="lbl">Fund island</span>
+          <span class="val" style="display:flex;gap:.4rem">
+            <button class="btn-ghost btn-sm" id="s-lend-btn"
+              onclick="sendResponse('lend_to_island')"
+              title="Lend personal cash to your island's treasury (shareholder loan, recorded as liability)">Lend…</button>
+            <button class="btn-ghost btn-sm" id="s-repay-btn"
+              onclick="sendResponse('repay_shareholder_loan')"
+              title="Repay shareholder loan — move treasury cash back to your personal wallet">Repay…</button>
+          </span>
+        </div>
         <div class="stat"><span class="lbl">🏦 Island Treasury</span><span class="val gold" id="s-dollops" title="Your island's operating cash (buys inputs, pays wages & maintenance)">—</span></div>
         <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. the public float">—</span></div>
         <div class="stat" id="s-buyfloat-row" style="display:none">
@@ -3209,6 +3220,18 @@ function renderGameState() {
     ownEl.textContent = `You ${me.owns_pct}% · Public ${me.public_float_pct ?? 0}%`;
   // Phase 3: offer "Buy shares" when you control the island and a public float
   // remains.  Stash the live figures for the prompt.
+  // Lend / repay row — shown when you're in-game and have cash or a loan
+  const lendRow = document.getElementById('s-lend-row');
+  if (lendRow && gameState) {
+    const hasCash = (me.personal_cash || 0) > 0;
+    const hasLoan = (me.shareholder_loan_owed || 0) > 0;
+    const hasTreasury = (me.treasury ?? me.dollops ?? 0) > 0;
+    lendRow.style.display = (hasCash || (hasLoan && hasTreasury)) ? '' : 'none';
+    const repayBtn = document.getElementById('s-repay-btn');
+    if (repayBtn) repayBtn.disabled = !(hasLoan && hasTreasury);
+    const lendBtn = document.getElementById('s-lend-btn');
+    if (lendBtn) lendBtn.disabled = !hasCash;
+  }
   const bfRow = document.getElementById('s-buyfloat-row');
   if (bfRow) {
     const floatShares = me.public_float_shares || 0;
