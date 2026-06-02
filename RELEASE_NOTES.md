@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/courses-production-2026-06-02
+
+Branch: `claude/courses-production-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.1`
+
+**Courses are now produced (training-stall bugfix)**: The Educator's
+`BASE_PRODUCTION` had no `Courses` entry, so an Educator spent the 5 starting
+Course slots training others and could **never** make more — permanently
+stalling all training (the capacity panel listed Courses as "producible" but
+production never made them). Courses are now produced each season (base 4,
+scaled by workforce skill / capacity so they taper if the faculty is gutted),
+alongside Expertise and Patents. This also fixes the panel/reality mismatch.
+
 ### claude/playtest-fixes-2026-05-29b
 
 Branch: `claude/playtest-fixes-2026-05-29b`

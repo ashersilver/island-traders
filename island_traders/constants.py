@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-29.4"
+APP_VERSION: str = "0.1.0-dev.2026-06-02.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -109,7 +109,15 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
                       "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     "Transporter":   {"Freight": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "PassengerSeats": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Courses are classroom slots the Educator sells/uses for training.  They
+    # are produced each season (scaled by workforce skill / capacity, so they
+    # taper if the academic faculty is gutted) — previously they were absent
+    # from production entirely, so the Educator spent the 5 starting slots and
+    # could never make more, hard-stalling all training (playtest 2026-06).
+    # Not multiplied by PRODUCER_PRODUCTIVITY_MULTIPLIER: a course is one
+    # classroom (up to MAX_CLASS_SIZE_PER_COURSE trainees), not a bulk crate.
     "Educator":      {"Expertise": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Courses": 4,
                       "Patents": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Banker does NOT produce a "Finance" commodity — banking earns through
     # the spread on loans (and insurance premiums, future deal-guarantee
