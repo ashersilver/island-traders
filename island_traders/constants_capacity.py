@@ -382,6 +382,20 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"vaccine_persistence": True},
         description="Vaccine doesn't expire between seasons",
     ),
+    # 2026-06-02: Reagents are made on the Medical island from Oil + Ore but
+    # had no capital item dedicated to their capacity — players saw a vague
+    # "Capital Equipment" hint with no catalogue option.  The Reagent Lab
+    # is the dedicated piece of plant.  Modest, fast delivery so it can be
+    # bought in the opening investing window.
+    CapitalItem(
+        item_id="doctor.reagent_lab",
+        name="Reagent Lab",
+        role="Doctor",
+        cost=70.0,
+        delivery_seasons=1,
+        effects={"capacity": {"Reagents": 6}},
+        description="Chemistry plant: turns Oil+Ore into Reagents (+capacity)",
+    ),
 ]
 
 
