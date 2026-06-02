@@ -1,10 +1,33 @@
 # Brief — Lab Supplies/Reagents split + Kitchen tiers (2026-06-02)
 
-**Status:** Spec for confirmation. Captures the 2026-06-02 playtest decisions.
-Numbers marked **[CONFIRM]** are my proposed defaults — adjust before/at build.
-**Owner:** TBD (Claude lead, or split: see §3). Courses-production fix (the
-third item from that playtest) is already done on
-`claude/courses-production-2026-06-02`.
+**Status:** **TEED UP FOR BUILD (2026-06-02).** Open `[CONFIRM]` params below are
+now locked to the defaults in this Decisions block; all are **tunable in the
+calibration pass** that follows this batch. Split: **Codex builds the kitchens**
+(`requirements/codex-tasks/kitchen-tiers-2026-06-02.md`); **Claude builds the
+lab split** (A1–A3, invasive rename + save-migration). Courses-production fix
+already shipped.
+
+## Locked decisions (2026-06-02)
+- **Resource name:** `LaboratoryEquipment` → **`Reagents`** (display "Reagents").
+  Chosen over "Lab Supplies" because it's unambiguous vs. the new durable
+  "Laboratory Equipment" capital item.
+- **Reagents production (Medical Sciences / Doctor):** a Doctor output line
+  consuming **1 Oil + 1 Ore → 6 Reagents/season** (modest; Reagents are consumed
+  in small per-unit amounts). Removed from `MANUFACTURER_PRODUCT_LINES`. Doctor
+  keeps HealthServices + Vaccine; Educator/Doctor still *consume* Reagents.
+- **New "Laboratory Equipment" capital** (`common.laboratory_equipment`):
+  durable, cost **40 Dp**, delivery 1 season; passive capacity boost
+  `effects.capacity = {Food:+2, Grain:+2, Ore:+2, HealthServices:+2, Vaccine:+1}`
+  so it helps Agriculture, Mining, Medical (soil/sample testing). Passive boost,
+  not an unlock.
+- **Industrial Kitchen** (`common.industrial_kitchen`): opening-investment
+  option, **20 Food/season, NO Chef**, cost **150 Dp**.
+- **Manufacturing Kitchen** (existing `common.kitchen`): **10 Food/season**
+  (up from 6), **still needs a Chef**, cost unchanged.
+- **Industrial recipe efficiency:** keep the 2:1:1 ratio but the Industrial line
+  is more efficient — **1 Grain + 0.5 Produce + 0.5 Protein per Food** (so 20
+  Food = 20 Grain + 10 Produce + 10 Protein/season), vs. the manual kitchen's
+  2:1:1. Keeps the ingredient load sane for a 20-Food run.
 
 ---
 
