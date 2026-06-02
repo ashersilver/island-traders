@@ -4507,6 +4507,13 @@ function _marketBuyHeaderRow() {
 }
 
 function showMarketBuyPopup(msg) {
+  // Mark this as an active IO-driven prompt so hint buttons are suppressed
+  // while the modal is open.  Without this, _activePromptType stays
+  // 'choose_action' (from the action menu that triggered Market Buy),
+  // causing hint-button clicks to fire sendResponse() against the wrong
+  // prompt and silently end the player's turn.  (Bug found 2026-06-02.)
+  _activePromptType = 'dialog';
+
   // Phase 5: consume any pending hint target so we can both highlight the
   // hinted resource AND ensure it appears in the visible tier.  One-shot:
   // clear immediately so a manual Market Buy open after this doesn't
