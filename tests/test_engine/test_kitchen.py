@@ -20,9 +20,9 @@ def _player(role: str = "Farmer", dollops: float = 500.0) -> Player:
     return Player(0, role, [ROLES[role]], dollops, is_human=True)
 
 
-def _stock_kitchen_inputs(player: Player, *, fish: int = 6, meat: int = 0) -> None:
-    player.receive_resources(ResourceType.GRAIN, 12)
-    player.receive_resources(ResourceType.PRODUCE, 6)
+def _stock_kitchen_inputs(player: Player, *, fish: int = 10, meat: int = 0) -> None:
+    player.receive_resources(ResourceType.GRAIN, 20)
+    player.receive_resources(ResourceType.PRODUCE, 10)
     player.receive_resources(ResourceType.FISH, fish)
     player.receive_resources(ResourceType.MEAT, meat)
 
@@ -53,80 +53,80 @@ def test_staffed_kitchen_converts_raw_ingredients_to_food():
     player = _player()
     player.add_capital(KITCHEN_ITEM_ID)
     player.workforce.add_workers(1, training_level=1, profession=Profession.CHEF.value)
-    _stock_kitchen_inputs(player, fish=8)
+    _stock_kitchen_inputs(player, fish=10)
 
     messages = ProductionEngine().run_kitchens(player)
 
     assert messages == [f"Kitchen 1: produced {KITCHEN_FOOD_PER_SEASON} Food."]
-    assert player.inventory.get(ResourceType.FOOD) == 6
+    assert player.inventory.get(ResourceType.FOOD) == 10
     assert player.inventory.get(ResourceType.GRAIN) == 0
     assert player.inventory.get(ResourceType.PRODUCE) == 0
-    assert player.inventory.get(ResourceType.FISH) == 2
+    assert player.inventory.get(ResourceType.FISH) == 0
     assert player.inventory.get(ResourceType.MEAT) == 0
 
 
 def test_kitchen_without_chef_idles_without_consuming_inputs():
     player = _player()
     player.add_capital(KITCHEN_ITEM_ID)
-    _stock_kitchen_inputs(player, fish=6)
+    _stock_kitchen_inputs(player, fish=10)
 
     messages = ProductionEngine().run_kitchens(player)
 
-    assert messages == ["Kitchen idle: 1 kitchen(s), no active Chef."]
+    assert messages == ["Kitchen 1 idle: needs a Chef."]
     assert player.inventory.get(ResourceType.FOOD) == 0
-    assert player.inventory.get(ResourceType.GRAIN) == 12
-    assert player.inventory.get(ResourceType.PRODUCE) == 6
-    assert player.inventory.get(ResourceType.FISH) == 6
+    assert player.inventory.get(ResourceType.GRAIN) == 20
+    assert player.inventory.get(ResourceType.PRODUCE) == 10
+    assert player.inventory.get(ResourceType.FISH) == 10
 
 
 def test_kitchen_missing_ingredient_idles_without_partial_consumption():
     player = _player()
     player.add_capital(KITCHEN_ITEM_ID)
     player.workforce.add_workers(1, training_level=1, profession=Profession.CHEF.value)
-    player.receive_resources(ResourceType.GRAIN, 12)
-    player.receive_resources(ResourceType.PRODUCE, 5)
-    player.receive_resources(ResourceType.FISH, 6)
+    player.receive_resources(ResourceType.GRAIN, 20)
+    player.receive_resources(ResourceType.PRODUCE, 9)
+    player.receive_resources(ResourceType.FISH, 10)
 
     messages = ProductionEngine().run_kitchens(player)
 
     assert messages == ["Kitchen 1 idle: short on Produce."]
     assert player.inventory.get(ResourceType.FOOD) == 0
-    assert player.inventory.get(ResourceType.GRAIN) == 12
-    assert player.inventory.get(ResourceType.PRODUCE) == 5
-    assert player.inventory.get(ResourceType.FISH) == 6
+    assert player.inventory.get(ResourceType.GRAIN) == 20
+    assert player.inventory.get(ResourceType.PRODUCE) == 9
+    assert player.inventory.get(ResourceType.FISH) == 10
 
 
 def test_kitchen_tie_breaks_protein_to_fish():
     player = _player()
     player.add_capital(KITCHEN_ITEM_ID)
     player.workforce.add_workers(1, training_level=1, profession=Profession.CHEF.value)
-    _stock_kitchen_inputs(player, fish=6, meat=6)
+    _stock_kitchen_inputs(player, fish=10, meat=10)
 
     ProductionEngine().run_kitchens(player)
 
-    assert player.inventory.get(ResourceType.FOOD) == 6
+    assert player.inventory.get(ResourceType.FOOD) == 10
     assert player.inventory.get(ResourceType.FISH) == 0
-    assert player.inventory.get(ResourceType.MEAT) == 6
+    assert player.inventory.get(ResourceType.MEAT) == 10
 
 
 def test_multiple_kitchens_use_one_chef_per_active_kitchen():
     player = _player()
     player.add_capital(KITCHEN_ITEM_ID, count=2)
     player.workforce.add_workers(1, training_level=1, profession=Profession.CHEF.value)
-    player.receive_resources(ResourceType.GRAIN, 24)
-    player.receive_resources(ResourceType.PRODUCE, 12)
-    player.receive_resources(ResourceType.MEAT, 12)
+    player.receive_resources(ResourceType.GRAIN, 40)
+    player.receive_resources(ResourceType.PRODUCE, 20)
+    player.receive_resources(ResourceType.MEAT, 20)
 
     messages = ProductionEngine().run_kitchens(player)
 
     assert messages == [
-        "Kitchen idle: 1 kitchen(s) need Chef staffing.",
         f"Kitchen 1: produced {KITCHEN_FOOD_PER_SEASON} Food.",
+        "Kitchen 2 idle: needs a Chef.",
     ]
-    assert player.inventory.get(ResourceType.FOOD) == 6
-    assert player.inventory.get(ResourceType.GRAIN) == 12
-    assert player.inventory.get(ResourceType.PRODUCE) == 6
-    assert player.inventory.get(ResourceType.MEAT) == 6
+    assert player.inventory.get(ResourceType.FOOD) == 10
+    assert player.inventory.get(ResourceType.GRAIN) == 20
+    assert player.inventory.get(ResourceType.PRODUCE) == 10
+    assert player.inventory.get(ResourceType.MEAT) == 10
 
 
 class KitchenPurchaseIO(FakeIOAdapter):

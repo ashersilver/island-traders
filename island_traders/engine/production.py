@@ -8,12 +8,12 @@ from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
-    KITCHEN_FOOD_PER_SEASON, KITCHEN_ITEM_ID, KITCHEN_RECIPE,
+    KITCHEN_SPECS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
     EXPERTISE_DEGRADATION_ENABLED, UNIQUE_SPECIALIST_PROFESSION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
-from ..models.capacity import compute_capacity, recipe_for
+from ..models.capacity import compute_capacity, find_item, recipe_for
 from ..models.profession import Profession, WorkerBand, band_of, PROFESSION_BAND
 
 
@@ -74,46 +74,49 @@ class ProductionEngine:
         return 3.0 if self._has_enhanced_metal_equipment(player) else 1.0
 
     def run_kitchens(self, player: Player) -> list[str]:
-        """Run Chef-staffed Kitchens once for this player this season.
+        """Run all kitchen capital once for this player this season.
 
-        A Kitchen is deliberately separate from role production: any island
-        can own one, and it idles gracefully when short on Chef staffing or
+        Kitchens are deliberately separate from role production: any island can
+        own one, and each kitchen idles gracefully when short on staffing or
         raw ingredients.
         """
-        kitchen_count = player.effective_capital_inventory().get(KITCHEN_ITEM_ID, 0)
-        if kitchen_count <= 0:
-            return []
-
         chef_count = player.workforce.count_profession(Profession.CHEF.value)
-        active_kitchens = min(kitchen_count, chef_count)
+        chefs_available = chef_count
+        effective_inventory = player.effective_capital_inventory()
         messages: list[str] = []
-        if active_kitchens <= 0:
-            messages.append(
-                f"Kitchen idle: {kitchen_count} kitchen(s), no active Chef."
-            )
-            return messages
-        if kitchen_count > chef_count:
-            messages.append(
-                f"Kitchen idle: {kitchen_count - chef_count} kitchen(s) need Chef staffing."
-            )
 
-        for kitchen_number in range(1, active_kitchens + 1):
-            produced, missing = self._run_one_kitchen(player)
-            if produced:
-                messages.append(
-                    f"Kitchen {kitchen_number}: produced {produced} Food."
-                )
-            else:
-                messages.append(
-                    f"Kitchen {kitchen_number} idle: short on {missing}."
-                )
+        for item_id, spec in KITCHEN_SPECS.items():
+            kitchen_count = effective_inventory.get(item_id, 0)
+            label = self._kitchen_label(item_id)
+            for kitchen_number in range(1, kitchen_count + 1):
+                if spec.get("requires_chef", False):
+                    if chefs_available <= 0:
+                        messages.append(
+                            f"{label} {kitchen_number} idle: needs a Chef."
+                        )
+                        continue
+                    chefs_available -= 1
+                produced, missing = self._run_one_kitchen(player, spec)
+                if produced:
+                    messages.append(
+                        f"{label} {kitchen_number}: produced {produced} Food."
+                    )
+                else:
+                    messages.append(
+                        f"{label} {kitchen_number} idle: short on {missing}."
+                    )
         return messages
 
-    def _run_one_kitchen(self, player: Player) -> tuple[int, str]:
-        food_qty = KITCHEN_FOOD_PER_SEASON
-        grain_needed = KITCHEN_RECIPE["Grain"] * food_qty
-        produce_needed = KITCHEN_RECIPE["Produce"] * food_qty
-        protein_needed = KITCHEN_RECIPE["Protein"] * food_qty
+    def _kitchen_label(self, item_id: str) -> str:
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        return item.name if item is not None else item_id
+
+    def _run_one_kitchen(self, player: Player, spec: dict) -> tuple[int, str]:
+        food_qty = int(spec["food_per_season"])
+        recipe = spec["recipe"]
+        grain_needed = ceil(recipe.get("Grain", 0) * food_qty)
+        produce_needed = ceil(recipe.get("Produce", 0) * food_qty)
+        protein_needed = ceil(recipe.get("Protein", 0) * food_qty)
         shortages: list[str] = []
         if player.inventory.get(ResourceType.GRAIN) < grain_needed:
             shortages.append("Grain")

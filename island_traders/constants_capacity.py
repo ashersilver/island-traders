@@ -26,9 +26,18 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Any",
         cost=80.0,
         delivery_seasons=0,
-        effects={"kitchen_food_per_season": 6, "cash_only": True},
-        description="Chef-staffed kitchen: converts raw ingredients into up to 6 Food/season",
+        effects={"kitchen_food_per_season": 10, "cash_only": True},
+        description="Chef-staffed kitchen: converts raw ingredients into up to 10 Food/season",
         service_life_seasons=12,
+    ),
+    CapitalItem(
+        item_id="common.industrial_kitchen",
+        name="Industrial Kitchen",
+        role="Any",
+        cost=150.0,
+        delivery_seasons=1,
+        effects={"kitchen_food_per_season": 20, "cash_only": True},
+        description="Industrial kitchen: converts raw ingredients into up to 20 Food/season, no Chef required",
     ),
 
     # ----- Farmer ----------------------------------------------------------
