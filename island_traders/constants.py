@@ -23,11 +23,23 @@ TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 # ``Player.consume_sustenance`` for the allocator.
 PEOPLE_PER_MEAL: int = 10
 
-# Kitchen capital item (cash-only, all islands). A staffed Kitchen converts
-# local raw ingredients into packaged Food once per season.
+# Kitchen capital items (cash-only, all islands). Kitchens convert local raw
+# ingredients into packaged Food once per season. "Protein" means Fish or Meat.
 KITCHEN_ITEM_ID: str = "common.kitchen"
-KITCHEN_FOOD_PER_SEASON: int = 6
-KITCHEN_RECIPE: dict[str, int] = {
+KITCHEN_SPECS: dict[str, dict] = {
+    "common.kitchen": {
+        "food_per_season": 10,
+        "requires_chef": True,
+        "recipe": {"Grain": 2, "Produce": 1, "Protein": 1},
+    },
+    "common.industrial_kitchen": {
+        "food_per_season": 20,
+        "requires_chef": False,
+        "recipe": {"Grain": 1, "Produce": 0.5, "Protein": 0.5},
+    },
+}
+KITCHEN_FOOD_PER_SEASON: int = KITCHEN_SPECS[KITCHEN_ITEM_ID]["food_per_season"]
+KITCHEN_RECIPE: dict[str, float] = {
     "Grain": 2,
     "Produce": 1,
     "Protein": 1,  # Fish or Meat, chosen from local inventory.
