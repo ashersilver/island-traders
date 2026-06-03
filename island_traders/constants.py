@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-02.11"
+APP_VERSION: str = "0.1.0-dev.2026-06-02.12"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -718,6 +718,12 @@ INSURANCE_BASE_PREMIUM: dict[str, float] = {
     "life":    50.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
     "medical": 60.0,    # flat per island; halves seasonal injury rate
 }
+
+# Per-head medical premium (2026-06-02): medical policies now cover a specified
+# number of workers/students and are priced per head for the policy term.  Used
+# both when the Banker sells a sized policy and when the Education island
+# auto-provisions cover for incoming students.  Tunable in calibration.
+MEDICAL_PREMIUM_PER_HEAD: float = 8.0  # Dp per covered head for the full term
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
 # Doubled 2026-05-27 from 60 to 120 to offset the Banker calibration

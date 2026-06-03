@@ -15,6 +15,11 @@ class InsurancePolicy:
     purchased_tick: int       # year * 4 + season_index at time of purchase
     expires_at_tick: int      # exclusive upper bound
     active: bool = True
+    # How many workers/students this policy covers (2026-06-02).  Medical
+    # policies are priced per head; student travel to the Education island
+    # consumes coverage seats.  Defaults to 1 for backward compatibility with
+    # older single-head policies / saves.
+    covered_count: int = 1
 
     def is_valid(self, year: int, season_index: int) -> bool:
         return self.active and (year * 4 + season_index) < self.expires_at_tick

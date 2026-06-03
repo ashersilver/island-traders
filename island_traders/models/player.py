@@ -340,6 +340,16 @@ class Player:
     def active_policies(self, year: int, season_index: int) -> list[InsurancePolicy]:
         return [p for p in self.insurance_policies if p.is_valid(year, season_index)]
 
+    def medical_coverage_seats(self, year: int, season_index: int) -> int:
+        """Total head-count of valid medical coverage this island holds
+        (sum of covered_count over active medical policies).  Used to gate
+        student travel to the Education island (2026-06-02)."""
+        return sum(
+            p.covered_count
+            for p in self.insurance_policies
+            if p.policy_type == "medical" and p.is_valid(year, season_index)
+        )
+
     def cancel_insurance_policy(
         self, policy_id: int, year: int, season_index: int
     ) -> float:
