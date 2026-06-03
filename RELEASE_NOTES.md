@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/supply-chain-reachability-2026-06-02
+
+Version bump: `0.1.0-dev.2026-06-02.12`
+
+**B3 — static supply-chain reachability tests**
+(`tests/test_models/test_supply_chain_reachability.py`): cheap import-time checks
+that catch the "silent bottleneck" bug class — (1) every required production
+input has a producer, (2) every capacity-recipe output is actually produced by
+the active model. Would have caught both the Courses-never-produced stall and
+the Reagents-no-producer gap. Surfaced a pre-existing latent gap (`Meat` is
+priced + has a livestock recipe but the Farmer never produces it; protein
+demand is met by Fish) — documented in an allowlist for follow-up.
+
+**Student medical insurance (per-headcount policies)**:
+- `InsurancePolicy.covered_count` + `Player.medical_coverage_seats()`; medical
+  policies are now sized and priced per head (`MEDICAL_PREMIUM_PER_HEAD = 8`),
+  asked for in the Banker's sell-insurance action.
+- Students travelling to the Education island must be medically covered, paid by
+  the Education island. At training dispatch, pre-bought cover is consumed first;
+  any shortfall is auto-provisioned (Education pays the per-head premium, routed
+  to a Banker if present), and dispatch is held only when the Educator can't
+  afford it (so training never silently stalls). Self-training needs no cover.
+- Tests: `test_student_medical_insurance.py` (7); training-fee tests updated for
+  the new dispatch-time premium. 615 green.
+
 ### claude/economy-rebalance-2026-06-02
 
 Branch: `claude/economy-rebalance-2026-06-02`

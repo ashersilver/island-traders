@@ -24,7 +24,7 @@ from ..constants import (
     TRAINEE_FOOD_ACCOM_PER_SEASON,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
-    MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
+    MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD, WORKPLACE_RISK,
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
     REPURPOSE_WORKER_COST,
 )
@@ -1317,6 +1317,18 @@ class TurnManager:
         if not self._training_workers_ready(requester, req):
             return False
         season_index = SEASONS.index(season_name)
+        # Students travelling to the Education island must be covered by medical
+        # insurance paid for by the Education island (2026-06-02).  Coverage is
+        # auto-provisioned at dispatch (premium to a Banker if present) so
+        # training never silently stalls; only an Educator that can't afford the
+        # premium holds the dispatch.
+        educator = next(
+            (p for p in self.players if p.player_id == req.educator_id), None
+        )
+        if educator is not None and not self._ensure_student_medical_coverage(
+            educator, req, year, season_index
+        ):
+            return False
         self.training.dispatch(req.batch_id, year=year, season=season_index, num_seasons=len(SEASONS))
         departed = requester.workforce.dispatch_for_training(req.worker_ids)
         if len(departed) != len(req.worker_ids):
@@ -1329,6 +1341,60 @@ class TurnManager:
         self.io.print(
             f"  {len(departed)} worker(s) from {requester.name}'s island departed for "
             f"Education Island. Return scheduled: {self._format_training_return(req)}."
+        )
+        return True
+
+    def _ensure_student_medical_coverage(
+        self, educator: Player, req, year: int, season_index: int
+    ) -> bool:
+        """Education island must hold medical cover for travelling students.
+
+        Pre-bought medical coverage (sized policies) is consumed first; any
+        shortfall is auto-provisioned — the Education island pays a per-head
+        premium (to a Banker if one exists, which also feeds Banker income) and
+        a covering policy is recorded.  Returns False only when the Educator
+        can't afford the shortfall premium (dispatch is then held)."""
+        # Self-training uses the educator's own residents — they don't travel.
+        if req.requester_id == req.educator_id:
+            return True
+        needed = self.training.visiting_trainees(educator.player_id) + len(req.worker_ids)
+        have = educator.medical_coverage_seats(year, season_index)
+        if have >= needed:
+            return True
+        shortfall = needed - have
+        premium = MEDICAL_PREMIUM_PER_HEAD * shortfall
+        if educator.dollops < premium:
+            self.io.print(
+                f"  [Training] {educator.name} cannot afford medical cover for "
+                f"{shortfall} travelling student(s) ({premium:.0f} {CURRENCY_SYMBOL}). "
+                "Dispatch held — buy a medical policy or free treasury."
+            )
+            return False
+        educator.spend_dollops(premium)
+        banker = next(
+            (p for p in self.players
+             if any(r.name == "Banker" for r in p.roles)
+             and p.player_id != educator.player_id),
+            None,
+        )
+        banker_id = banker.player_id if banker else educator.player_id
+        if banker:
+            banker.receive_dollops(premium)
+        tick = year * 4 + season_index
+        educator.add_insurance_policy(InsurancePolicy(
+            policy_id=len(educator.insurance_policies) + 1,
+            policy_type="medical",
+            holder_player_id=educator.player_id,
+            banker_player_id=banker_id,
+            premium_paid=premium,
+            purchased_tick=tick,
+            expires_at_tick=tick + INSURANCE_DURATION_SEASONS,
+            covered_count=shortfall,
+        ))
+        self.io.print(
+            f"  Education Island paid {premium:.0f} {CURRENCY_SYMBOL} medical cover "
+            f"for {shortfall} travelling student(s)"
+            + (f" (premium to {banker.name})" if banker else "") + "."
         )
         return True
 
@@ -2319,6 +2385,19 @@ class TurnManager:
         policy_type = "life" if choice == 1 else "medical"
         base = INSURANCE_BASE_PREMIUM[policy_type]
 
+        # Medical policies are sized + priced per covered head (2026-06-02).
+        covered_count = 1
+        if policy_type == "medical":
+            covered_count = self.io.choose_quantity(
+                "How many workers/students should this medical policy cover?", 1, 200
+            )
+            base = MEDICAL_PREMIUM_PER_HEAD * covered_count
+            self.io.print(
+                f"  Medical cover for {covered_count} head(s) — "
+                f"base premium {base:.0f} {sym} "
+                f"({MEDICAL_PREMIUM_PER_HEAD:.0f} {sym}/head for the term)."
+            )
+
         buyer = self.io.choose_player("Sell to which player?", eligible)
 
         # Show current cover for buyer
@@ -2376,6 +2455,7 @@ class TurnManager:
             premium_paid=premium,
             purchased_tick=purchased_tick,
             expires_at_tick=purchased_tick + INSURANCE_DURATION_SEASONS,
+            covered_count=covered_count,
         )
         buyer.add_insurance_policy(policy)
         self.io.print(

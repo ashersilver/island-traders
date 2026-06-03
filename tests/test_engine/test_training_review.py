@@ -151,7 +151,8 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     assert req.status == TrainingStatus.DISPATCHED
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     assert educator.inventory.get(ResourceType.COURSES) == 0  # 1 Course consumed
-    assert educator.dollops == 170.0
+    # 100 + 70 fee − 16 student medical cover (2 × 8) = 154 (2026-06-02).
+    assert educator.dollops == 154.0
     assert farmer.dollops == 30.0
     assert farmer.workforce.training_count == 2
 
@@ -288,7 +289,10 @@ def test_requester_can_accept_training_counter_offer_and_dispatch():
 
     assert req.status == TrainingStatus.DISPATCHED
     assert farmer.dollops == 10.0
-    assert educator.dollops == 190.0
+    # Educator receives the 90 fee but pays student medical cover at dispatch
+    # (2 students × MEDICAL_PREMIUM_PER_HEAD 8 = 16; no Banker here so it's an
+    # external insurer): 100 + 90 − 16 = 174 (2026-06-02 student insurance).
+    assert educator.dollops == 174.0
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     assert farmer.workforce.training_count == 2
     assert result.actions_taken == ["approved_training:batch#0"]
