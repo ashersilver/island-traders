@@ -47,9 +47,11 @@ try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+    from pydantic import BaseModel, Field
 except ImportError:
     FastAPI = WebSocket = WebSocketDisconnect = None
     StaticFiles = HTMLResponse = JSONResponse = None
+    BaseModel = Field = None
 
 logger = logging.getLogger("island_traders.server")
 
@@ -79,6 +81,60 @@ ROLE_INFO = {
                      "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
                      "needs": "Expertise, Laboratory Equipment", "color": "#e74c3c"},
 }
+
+
+if BaseModel is not None:
+    class CreateRoomRequest(BaseModel):
+        name: str = Field("Game Room", description="Lobby display name.")
+        creator_name: str = Field("Host", description="Name for the host lobby player.")
+        max_players: int = Field(7, ge=2, le=7, description="Maximum lobby seats.")
+        num_years: int = Field(3, ge=1, description="Number of game years to play.")
+        is_public: bool = Field(True, description="Whether the room appears in public room listings.")
+        require_all_human: bool = Field(
+            False,
+            description="If true, auction cannot resolve with AI-held roles.",
+        )
+        starting_capital: float = Field(
+            1500.0,
+            ge=0,
+            description="Starting investor cash budget per player, in Dollops.",
+        )
+        auction_timer_seconds: int = Field(
+            60,
+            ge=0,
+            description="Auction timer length in seconds.",
+        )
+        season_timer_seconds: int = Field(
+            120,
+            ge=0,
+            description="Action-phase timer length in seconds.",
+        )
+        pre_season_timer_seconds: int = Field(
+            30,
+            ge=0,
+            description="Pre-season ready timer length in seconds.",
+        )
+
+
+    class JoinByCodeRequest(BaseModel):
+        code: str = Field(..., description="Six-character room join code.")
+        name: str = Field("Player", description="Player name to join or rejoin with.")
+
+
+    class JoinRoomRequest(BaseModel):
+        name: str = Field("Player", description="Player name to join with.")
+
+
+    class AddAIRequest(BaseModel):
+        name: str = Field("AI Player", description="Display name for the built-in server AI.")
+
+
+    class AuctionBidRequest(BaseModel):
+        player_id: str = Field(..., description="Lobby player id placing the bid.")
+        role_name: str = Field(..., description="Role/island being bid on, e.g. Farmer.")
+        amount: float = Field(..., ge=0, description="Bid amount in Dollops.")
+else:
+    CreateRoomRequest = JoinByCodeRequest = JoinRoomRequest = AddAIRequest = AuctionBidRequest = dict
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
@@ -3189,10 +3245,33 @@ def create_app() -> FastAPI:
             "Install with: pip install fastapi uvicorn[standard] websockets"
         )
 
-    app = FastAPI(title="Island Traders", version=APP_VERSION)
+    app = FastAPI(
+        title="Island Traders API",
+        version=APP_VERSION,
+        description=(
+            "HTTP API for creating Island Traders rooms, joining by room code, "
+            "starting auctions/games, and reading game state. Real-time player "
+            "interaction happens over WebSocket at `/ws/{room_id}/{player_id}`; "
+            "clients send prompt replies as `{type: 'response', value: ...}`."
+        ),
+        openapi_tags=[
+            {
+                "name": "Lobby",
+                "description": "Create rooms, list public waiting rooms, and join/rejoin by code.",
+            },
+            {
+                "name": "Game Flow",
+                "description": "Advance the room through auction, quick-start, and state inspection.",
+            },
+            {
+                "name": "Reference",
+                "description": "Static reference data for clients and agents.",
+            },
+        ],
+    )
     manager = GameManager()
 
-    @app.get("/version")
+    @app.get("/version", tags=["Reference"], summary="Get server version")
     async def _get_version():
         return {"version": APP_VERSION}
 
@@ -3213,24 +3292,38 @@ def create_app() -> FastAPI:
             return HTMLResponse(html_path.read_text())
         return HTMLResponse("<h1>Island Traders Server</h1>")
 
-    @app.post("/api/rooms")
-    async def create_room(body: dict = {}):
+    @app.post(
+        "/api/rooms",
+        tags=["Lobby"],
+        summary="Create a room",
+        description=(
+            "Creates a waiting-room lobby and returns its room id, join code, "
+            "and host lobby player. External agent clients usually create a "
+            "room here or join an existing room by code."
+        ),
+    )
+    async def create_room(body: CreateRoomRequest | None = None):
+        body = body or CreateRoomRequest()
         room = manager.create_room(
-            name=body.get("name", "Game Room"),
-            max_players=body.get("max_players", 7),
-            num_years=body.get("num_years", 3),
-            creator_name=body.get("creator_name", "Host"),
-            is_public=body.get("is_public", True),
-            require_all_human=body.get("require_all_human", False),
-            starting_capital=body.get("starting_capital", DEFAULT_STARTING_CAPITAL),
-            auction_timer_seconds=body.get("auction_timer_seconds", AUCTION_DURATION_SECONDS),
-            season_timer_seconds=body.get("season_timer_seconds", DEFAULT_SEASON_TIMER),
-            pre_season_timer_seconds=body.get("pre_season_timer_seconds", DEFAULT_PRE_SEASON_TIMER),
-            room_id=body.get("room_id"),
+            name=body.name,
+            max_players=body.max_players,
+            num_years=body.num_years,
+            creator_name=body.creator_name,
+            is_public=body.is_public,
+            require_all_human=body.require_all_human,
+            starting_capital=body.starting_capital,
+            auction_timer_seconds=body.auction_timer_seconds,
+            season_timer_seconds=body.season_timer_seconds,
+            pre_season_timer_seconds=body.pre_season_timer_seconds,
         )
         return JSONResponse(room.to_dict())
 
-    @app.get("/api/rooms")
+    @app.get(
+        "/api/rooms",
+        tags=["Lobby"],
+        summary="List public waiting rooms",
+        description="Returns public rooms that are still in the waiting-room phase.",
+    )
     async def list_rooms():
         public = [
             r.to_dict() for r in manager.rooms.values()
@@ -3238,17 +3331,31 @@ def create_app() -> FastAPI:
         ]
         return JSONResponse(public)
 
-    @app.get("/api/rooms/{room_id}")
+    @app.get(
+        "/api/rooms/{room_id}",
+        tags=["Lobby"],
+        summary="Get room details",
+        description="Returns the lobby/room metadata for a room id.",
+    )
     async def get_room(room_id: str):
         room = manager.rooms.get(room_id)
         if not room:
             return JSONResponse({"error": "Room not found"}, status_code=404)
         return JSONResponse(room.to_dict())
 
-    @app.post("/api/rooms/join-by-code")
-    async def join_by_code(body: dict = {}):
-        code = body.get("code", "").strip().upper()
-        name = body.get("name", "Player")
+    @app.post(
+        "/api/rooms/join-by-code",
+        tags=["Lobby"],
+        summary="Join or rejoin by room code",
+        description=(
+            "Join a waiting room by its short room code. If the game is already "
+            "running, this also supports reconnecting by using the same player "
+            "name originally used in the room."
+        ),
+    )
+    async def join_by_code(body: JoinByCodeRequest):
+        code = body.code.strip().upper()
+        name = body.name
         room = manager.find_room_by_code(code)
         if not room:
             return JSONResponse({"error": "Invalid room code"}, status_code=404)
@@ -3264,55 +3371,105 @@ def create_app() -> FastAPI:
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
-    @app.post("/api/rooms/{room_id}/join")
-    async def join_room(room_id: str, body: dict = {}):
-        result = manager.join_room(room_id, body.get("name", "Player"))
+    @app.post(
+        "/api/rooms/{room_id}/join",
+        tags=["Lobby"],
+        summary="Join by room id",
+        description="Join a waiting room when the full room id is already known.",
+    )
+    async def join_room(room_id: str, body: JoinRoomRequest | None = None):
+        body = body or JoinRoomRequest()
+        result = manager.join_room(room_id, body.name)
         if not result:
             return JSONResponse({"error": "Cannot join room"}, status_code=400)
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
-    @app.post("/api/rooms/{room_id}/ai")
-    async def add_ai(room_id: str, body: dict = {}):
-        lp = manager.add_ai_player(room_id, body.get("name", "AI Player"))
+    @app.post(
+        "/api/rooms/{room_id}/ai",
+        tags=["Lobby"],
+        summary="Add built-in server AI",
+        description=(
+            "Adds a built-in deterministic server AI to a waiting room. This is "
+            "different from an external GPT/Perplexity client, which should "
+            "join as a normal player and connect to the WebSocket."
+        ),
+    )
+    async def add_ai(room_id: str, body: AddAIRequest | None = None):
+        body = body or AddAIRequest()
+        lp = manager.add_ai_player(room_id, body.name)
         if not lp:
             return JSONResponse({"error": "Cannot add AI player"}, status_code=400)
         return JSONResponse({"player_id": lp.player_id, "name": lp.name})
 
-    @app.post("/api/rooms/{room_id}/auction/start")
+    @app.post(
+        "/api/rooms/{room_id}/auction/start",
+        tags=["Game Flow"],
+        summary="Start the role auction",
+        description="Starts the timed role auction for a waiting room.",
+    )
     async def start_auction(room_id: str):
         ok = manager.start_auction(room_id)
         if not ok:
             return JSONResponse({"error": "Cannot start auction"}, status_code=400)
         return JSONResponse({"status": "auction"})
 
-    @app.post("/api/rooms/{room_id}/auction/bid")
-    async def place_bid(room_id: str, body: dict = {}):
+    @app.post(
+        "/api/rooms/{room_id}/auction/bid",
+        tags=["Game Flow"],
+        summary="Place an auction bid",
+        description=(
+            "Places or raises a lobby player's bid on a role during the auction. "
+            "WebSocket clients can also send `{type:'bid', role_name, amount}`."
+        ),
+    )
+    async def place_bid(room_id: str, body: AuctionBidRequest):
         result = manager.place_bid(
             room_id,
-            body.get("player_id", ""),
-            body.get("role_name", ""),
-            float(body.get("amount", 0)),
+            body.player_id,
+            body.role_name,
+            float(body.amount),
         )
         if "error" in result:
             return JSONResponse(result, status_code=400)
         return JSONResponse(result)
 
-    @app.post("/api/rooms/{room_id}/start")
+    @app.post(
+        "/api/rooms/{room_id}/start",
+        tags=["Game Flow"],
+        summary="Quick-start a room",
+        description=(
+            "Legacy quick-start: auto-assigns roles, fills missing roles with "
+            "server AI, and launches the game without the auction."
+        ),
+    )
     async def start_game_quick(room_id: str):
         ok = manager.start_game_quick(room_id)
         if not ok:
             return JSONResponse({"error": "Cannot start game"}, status_code=400)
         return JSONResponse({"status": "running"})
 
-    @app.get("/api/rooms/{room_id}/state")
+    @app.get(
+        "/api/rooms/{room_id}/state",
+        tags=["Game Flow"],
+        summary="Get current game state",
+        description=(
+            "Returns the current room/game state. Pass `player_id` to receive "
+            "the player-specific view used by the dashboard and terminal agents."
+        ),
+    )
     async def get_state(room_id: str, player_id: str = ""):
         state = manager.get_game_state(room_id, player_id)
         if not state:
             return JSONResponse({"error": "No game state"}, status_code=404)
         return JSONResponse(state)
 
-    @app.get("/api/rooms/{room_id}/log")
+    @app.get(
+        "/api/rooms/{room_id}/log",
+        tags=["Game Flow"],
+        summary="Download room log",
+        response_class=PlainTextResponse,
+    )
     async def get_log(room_id: str):
         """Download the full server-side game log as plain text.
 
@@ -3342,7 +3499,12 @@ def create_app() -> FastAPI:
             },
         )
 
-    @app.get("/api/roles")
+    @app.get(
+        "/api/roles",
+        tags=["Reference"],
+        summary="List playable roles",
+        description="Returns role names, display names, island names, production, needs, and UI colors.",
+    )
     async def list_roles():
         return JSONResponse([{**ROLE_INFO[r], "name": r} for r in ALL_ROLES])
 

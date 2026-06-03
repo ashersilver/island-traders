@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/integrate-codex-llm-swagger-2026-06-03
+
+Version bump: `0.1.0-dev.2026-06-03.1`
+
+Integrates two Codex branches onto pre-release (.12):
+
+**Terminal room client (`island_traders/cli/agent_client.py`)** — from
+`codex/llm-room-client-2026-06-02` (b4510cb). Provider-agnostic WebSocket
+client for LLM/GPT-style players. Joins or rejoins a room by code, bridges
+server prompts to stdin/stdout. Entrypoint: `island-traders-agent ROOMCODE
+--name "GPT Player" --server http://127.0.0.1:8001`. Commands: `/state`,
+`/bid`, `/withdraw`, `/respond`, `/invest`, `/ready`, `/quit`.
+Tests: `tests/test_cli/test_agent_client.py` (7).
+
+**OpenAPI/Swagger documentation** — from `codex/swagger-api-docs-2026-06-02`
+(1cf1340). Adds typed Pydantic request models (`CreateRoomRequest`,
+`JoinByCodeRequest`, `JoinRoomRequest`, `AddAIRequest`, `AuctionBidRequest`)
+and OpenAPI route tags (`Lobby`, `Game Flow`, `Reference`) with summaries and
+descriptions throughout `server/app.py`. Docs now live at `/docs`,
+`/openapi.json`, `/redoc`. Tests: `tests/test_server/test_openapi_schema.py` (3).
+
+622 green.
+
 ### claude/supply-chain-reachability-2026-06-02
 
 Version bump: `0.1.0-dev.2026-06-02.12`
