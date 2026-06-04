@@ -1299,17 +1299,71 @@ class TurnManager:
                 f"{transporter.name} must agree on their turn."
             )
 
+    def _training_worker_is_eligible(self, worker, req) -> bool:
+        """True when this active worker can fill the request's trainee seat."""
+        if worker.training_level >= 3:
+            return False
+        return (
+            worker.profession == Profession.UNSKILLED.value
+            or worker.profession == req.target_profession
+        )
+
     def _training_workers_ready(self, requester: Player, req) -> bool:
-        active_ids = {worker.worker_id for worker in requester.workforce.active_workers}
-        missing = [worker_id for worker_id in req.worker_ids if worker_id not in active_ids]
-        if missing:
-            ids = ", ".join(str(worker_id) for worker_id in missing)
+        needed = len(req.worker_ids)
+        if needed <= 0:
+            return True
+        original_ids = list(req.worker_ids)
+        original_id_set = set(original_ids)
+        reserved_by_other = (
+            self.training.reserved_worker_ids(requester.player_id) - original_id_set
+        )
+        eligible = [
+            worker
+            for worker in requester.workforce.active_workers
+            if worker.worker_id not in reserved_by_other
+            and self._training_worker_is_eligible(worker, req)
+        ]
+        eligible_by_id = {worker.worker_id: worker for worker in eligible}
+
+        selected_ids: list[int] = []
+        for worker_id in original_ids:
+            if worker_id in eligible_by_id:
+                selected_ids.append(worker_id)
+        for worker in sorted(
+            eligible,
+            key=lambda w: (
+                w.worker_id not in original_id_set,
+                w.profession != Profession.UNSKILLED.value,
+                -w.experience_seasons,
+                w.worker_id,
+            ),
+        ):
+            if len(selected_ids) >= needed:
+                break
+            if worker.worker_id not in selected_ids:
+                selected_ids.append(worker.worker_id)
+
+        if len(selected_ids) < needed:
+            active_ids = {worker.worker_id for worker in requester.workforce.active_workers}
+            missing = [worker_id for worker_id in original_ids if worker_id not in active_ids]
+            reason = (
+                f"worker(s) not active: {', '.join(str(i) for i in missing)}; "
+                if missing else ""
+            )
             self.io.print(
                 f"  [Training] Cannot dispatch request #{req.batch_id}: "
-                f"worker(s) not active on {requester.name}'s island: {ids}. "
-                "The request remains pending."
+                f"{reason}needs {needed} eligible active trainee(s) for "
+                f"{self._profession_label(req.target_profession)}, but only "
+                f"{len(selected_ids)} are available. The request remains pending."
             )
             return False
+
+        if selected_ids != original_ids:
+            req.worker_ids = selected_ids
+            self.io.print(
+                f"  [Training] Reassigned request #{req.batch_id} to active "
+                f"eligible worker id(s): {', '.join(str(i) for i in selected_ids)}."
+            )
         return True
 
     def _dispatch_training(self, requester, req, season_name: str, year: int) -> bool:
@@ -2325,13 +2379,19 @@ class TurnManager:
         if not valid_profs:
             self.io.print("  No alternative professions available for this island's roles.")
             return
-        prof_options = [
+        prof_options = []
+        if chosen_worker.profession != Profession.UNSKILLED.value:
+            prof_options.append({
+                "value": Profession.UNSKILLED.value,
+                "label": "Unskilled",
+            })
+        prof_options.extend([
             {
                 "value": p.value,
                 "label": PROFESSION_LABEL.get(p, p.value),
             }
             for p in sorted(set(valid_profs), key=lambda p: PROFESSION_LABEL.get(p, p.value))
-        ]
+        ])
         new_prof_value = self.io.choose_option(
             "Choose the new profession for this worker:",
             prof_options,

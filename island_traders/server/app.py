@@ -37,7 +37,7 @@ from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
-    SEASONS, CURRENCY_SYMBOL,
+    SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
     TOTAL_STARTING_POPULATION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -1778,6 +1778,114 @@ class GameManager:
                     "degradation_floor": round(degradation_floor, 3),
                 })
 
+        effective_capital = p.effective_capital_inventory()
+        kitchen_capacity = sum(
+            int(spec["food_per_season"]) * effective_capital.get(item_id, 0)
+            for item_id, spec in KITCHEN_SPECS.items()
+        )
+        if kitchen_capacity > 0 and ResourceType.FOOD.value not in seen:
+            chef_limited_capacity = 0
+            inputs_short: dict[str, float] = {}
+            grain_units = p.inventory.get(ResourceType.GRAIN)
+            produce_units = p.inventory.get(ResourceType.PRODUCE)
+            protein_units = (
+                p.inventory.get(ResourceType.FISH) + p.inventory.get(ResourceType.MEAT)
+            )
+            input_caps = []
+            owned_kitchens = []
+            for item_id, spec in KITCHEN_SPECS.items():
+                count = effective_capital.get(item_id, 0)
+                if count <= 0:
+                    continue
+                item = find_item(CAPITAL_CATALOGUE, item_id)
+                label = item.name if item else item_id
+                food_each = int(spec["food_per_season"])
+                owned_kitchens.append(f"{count} × {label}")
+                if spec.get("requires_chef", False):
+                    chef_limited_capacity += (
+                        min(count, p.workforce.count_profession(Profession.CHEF.value))
+                        * food_each
+                    )
+                else:
+                    chef_limited_capacity += count * food_each
+                recipe = spec.get("recipe", {})
+                for resource_name, per_food in recipe.items():
+                    if per_food <= 0:
+                        continue
+                    have = (
+                        protein_units if resource_name == "Protein"
+                        else p.inventory.get(ResourceType(resource_name))
+                    )
+                    input_caps.append(have / per_food)
+            input_cap = min(input_caps) if input_caps else float("inf")
+            max_producible = min(kitchen_capacity, chef_limited_capacity, input_cap)
+            target = min(kitchen_capacity, chef_limited_capacity)
+            if target > 0 and input_cap < target:
+                for resource_name, per_food in {
+                    "Grain": 1,
+                    "Produce": 1,
+                    "Protein": 1,
+                }.items():
+                    per_food_needed = max(
+                        (
+                            spec.get("recipe", {}).get(resource_name, 0)
+                            for item_id, spec in KITCHEN_SPECS.items()
+                            if effective_capital.get(item_id, 0) > 0
+                        ),
+                        default=0,
+                    )
+                    if per_food_needed <= 0:
+                        continue
+                    have = (
+                        protein_units if resource_name == "Protein"
+                        else p.inventory.get(ResourceType(resource_name))
+                    )
+                    short = per_food_needed * target - have
+                    if short > 0:
+                        inputs_short[resource_name] = round(short, 2)
+            workforce_short = {}
+            if chef_limited_capacity < kitchen_capacity:
+                chef_kitchens = sum(
+                    effective_capital.get(item_id, 0)
+                    for item_id, spec in KITCHEN_SPECS.items()
+                    if spec.get("requires_chef", False)
+                )
+                chef_short = max(
+                    0,
+                    chef_kitchens - p.workforce.count_profession(Profession.CHEF.value),
+                )
+                if chef_short:
+                    workforce_short["Chef"] = chef_short
+            caps = {
+                "equipment": kitchen_capacity,
+                "workforce": chef_limited_capacity,
+                "inputs": input_cap,
+            }
+            binding = min(caps, key=caps.get)
+            outputs.append({
+                "output": ResourceType.FOOD.value,
+                "role": "Kitchen",
+                "is_service_output": False,
+                "max_producible": round(max_producible, 2)
+                                  if max_producible != float("inf") else None,
+                "equipment_cap": round(kitchen_capacity, 2),
+                "workforce_cap": round(chef_limited_capacity, 2),
+                "input_cap": round(input_cap, 2)
+                              if input_cap != float("inf") else None,
+                "binding": binding,
+                "blockers": [
+                    name for name, value in caps.items()
+                    if value == caps[binding]
+                ],
+                "inputs_short": inputs_short,
+                "workforce_short": workforce_short,
+                "equipment_short": {},
+                "patents_active": 0,
+                "patent_input_mult": 1.0,
+                "degradation_floor": 1.0,
+                "enabled_by": owned_kitchens,
+            })
+
         # Render owned capital with display info (name, role, count)
         capital_owned = []
         for item_id, count in p.capital_inventory.items():
@@ -2939,22 +3047,24 @@ class GameManager:
         logger.info("Room %s resumed by host after %.1fs paused",
                     room.room_id, pause_duration)
 
-        # After resume, re-check the Ready quorum.  If everyone became Ready
-        # during the pause, close the phase now (grace period for action phase,
-        # immediate for pre-season).
+        # After resume, re-check the Ready quorum.  Pre-season readiness always
+        # closes the review window.  In action phase, only ready-only games
+        # (season_timer_end == 0) close on quorum; timed seasons stay open
+        # until the countdown expires so players can undo/resume trading.
         if (room.status == "running"
                 and room.season_active_humans
                 and room.season_ready_set >= room.season_active_humans):
             if room.season_phase == "action" and room.io_adapter:
-                if self._loop is not None:
-                    if room.all_ready_task is None:
-                        fut = asyncio.run_coroutine_threadsafe(
-                            self._delayed_interrupt(room.room_id), self._loop
-                        )
-                        room.all_ready_task = fut
-                else:
-                    # No event loop (e.g. unit-test environment): interrupt immediately.
-                    room.io_adapter.interrupt_all()
+                if room.season_timer_end <= 0:
+                    if self._loop is not None:
+                        if room.all_ready_task is None:
+                            fut = asyncio.run_coroutine_threadsafe(
+                                self._delayed_interrupt(room.room_id), self._loop
+                            )
+                            room.all_ready_task = fut
+                    else:
+                        # No event loop (e.g. unit-test environment): interrupt immediately.
+                        room.io_adapter.interrupt_all()
             elif room.season_phase == "pre_season":
                 room._pre_season_done.set()
 
@@ -3166,8 +3276,9 @@ class GameManager:
           sleeping through the pre-season window.
 
         Action phase: Ready means "I'm done trading this season."
-          When all active humans are ready, the season-timer is cancelled and
-          every pending IO prompt is interrupted (force-ending each turn).
+          In ready-only games, all-human readiness ends the season. In timed
+          games, readiness parks each player but the trading window remains
+          open until the timer expires, so players can resume while time remains.
         """
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
@@ -3211,13 +3322,14 @@ class GameManager:
         self._broadcast_ready_update(room)
 
         if ready:
-            # All active humans Ready → end the season after a brief grace
-            # period so the park loop can engage and the "Resume Trading"
-            # banner appears before the interrupt fires.  While paused,
-            # defer until resume (see _do_resume).
+            # All active humans Ready → end only ready-only seasons after a
+            # brief grace period so the park loop can engage and the "Resume
+            # Trading" banner appears before the interrupt fires.  Timed
+            # seasons stay open until the countdown expires.
             if (not room.paused
                     and room.season_active_humans
                     and room.season_ready_set >= room.season_active_humans
+                    and room.season_timer_end <= 0
                     and room.all_ready_task is None
                     and self._loop is not None):
                 fut = asyncio.run_coroutine_threadsafe(

@@ -121,6 +121,39 @@ def test_non_educator_review_training_shows_personal_pipeline():
     assert "Year 1, Autumn" in output
 
 
+def test_review_training_still_lists_request_with_absent_pinned_workers():
+    farmer = _player(0, "Farmer", "Farmer")
+    farmer.workforce.workers.clear()
+    farmer.workforce._next_id = 0
+    farmer.workforce.add_workers(3, profession="Unskilled")
+    educator = _player(1, "Educator", "Educator")
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[0],
+        educator_id=educator.player_id,
+        dollops_to_educator=40.0,
+        target_profession="FarmingTechnician",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    farmer.workforce.dispatch_for_training([0])
+
+    io = TrainingReviewIO(confirms=[None])
+    manager = _turn_manager([farmer, educator], training, io)
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    output = "\n".join(io.printed)
+    assert f"TrainingRequest #{req.batch_id}" in output
+    assert "No training requests awaiting your approval." not in output
+
+
 def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")

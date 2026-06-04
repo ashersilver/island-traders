@@ -221,6 +221,37 @@ def test_resume_calls_interrupt_all_if_action_quorum_during_pause():
     assert fake.interrupted is True
 
 
+def test_all_ready_does_not_end_timed_action_season_early():
+    mgr = GameManager()
+    room = _make_room(mgr, status="running")
+    room.season_phase = "action"
+    room.season_timer_end = time.time() + 180
+
+    class FakeIO:
+        def __init__(self):
+            self.interrupted = False
+            self.ready = set()
+        def begin_season(self): pass
+        def interrupt_all(self): self.interrupted = True
+        def mark_player_ready(self, pid): self.ready.add(pid)
+        def unmark_player_ready(self, pid): self.ready.discard(pid)
+
+    fake = FakeIO()
+    room.io_adapter = fake
+    room.season_active_humans = {"host", "p2"}
+    room.season_ready_set = set()
+    room.season_human_done = set()
+    room.lobby_to_engine_id = {"host": 0, "p2": 1}
+
+    assert mgr.submit_ready(room.room_id, "host", True).get("ok") is True
+    assert mgr.submit_ready(room.room_id, "p2", True).get("ok") is True
+
+    assert room.season_ready_set == {"host", "p2"}
+    assert fake.ready == {0, 1}
+    assert fake.interrupted is False
+    assert room.all_ready_task is None
+
+
 def test_pause_cancels_auction_timer_task():
     """The asyncio timer future stored on auction._timer_task must be cancelled."""
     mgr = GameManager()
