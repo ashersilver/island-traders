@@ -407,21 +407,21 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
         role="Farmer", output="Grain",
-        inputs={"Oil": 10 / 6},
+        inputs={"Oil": 5 / 6},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Farm equipment fuel",
+        description="Farm equipment fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 10 / 3},
+        inputs={"Oil": 5 / 3},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Fishing fleet fuel",
+        description="Fishing fleet fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Produce",
-        inputs={"Oil": 5.0},
+        inputs={"Oil": 2.5},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Field produce; Horticulturalists improve the line",
+        description="Field produce; Horticulturalists improve the line (oil halved 2026-06-04)",
     ),
     ProductionRecipe(
         role="Farmer", output="Meat",

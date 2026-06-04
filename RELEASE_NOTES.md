@@ -5,6 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/farming-oil-balance-2026-06-04
+
+Version bump: `0.1.0-dev.2026-06-04.1`
+
+**Farming oil consumption halved** (playtest balance, defect #3). Oil inputs on
+the three fuelled Farmer outputs in `PRODUCTION_RECIPES` were too high (a single
+Produce line needed 5 Oil/unit — ~25 Oil to unblock a typical batch). Halved:
+- Grain `10/6 → 5/6` Oil/unit
+- Fish `10/3 → 5/3` Oil/unit
+- Produce `5.0 → 2.5` Oil/unit
+
+Food (Grain+Produce+Fish) inherits the reduction via its inputs. 622 tests green.
+
 ### claude/integrate-codex-llm-swagger-2026-06-03
 
 Version bump: `0.1.0-dev.2026-06-03.1`
