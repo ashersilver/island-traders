@@ -5,6 +5,27 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/playtest-defects-2026-06-04 (integrated by Claude)
+
+Version bump: `0.1.0-dev.2026-06-04.2`. Codex engine fixes for the 06-04 playtest
+defects (`233f575`), integrated onto pre-release:
+
+- **#1 Training dispatch** rebinds a pending request to currently-active eligible
+  workers (Unskilled or matching the target profession, untrained), preferring
+  the originally-pinned ids and reserving across requests to avoid double-booking;
+  only fails when too few eligible active workers exist. Stops requests stalling
+  because the originally-chosen workers became absent (seasonal casualties).
+- **#2 Repurpose** can now return a trained worker to Unskilled (the relief-valve
+  direction). Educator review still surfaces requests whose pinned workers are
+  absent.
+- **#4 Cross-role kitchens** now appear in the capacity payload as kitchen-enabled
+  Food for any island that owns one.
+- **#5 Timed trading seasons** no longer end early when all humans click done —
+  the season stays open until the timer expires.
+
+#6 (market offer-book) intentionally not touched. Tests added across repurpose,
+training dispatch/review, investing, and pause-game. 627 green.
+
 ### claude/farming-oil-balance-2026-06-04
 
 Version bump: `0.1.0-dev.2026-06-04.1`

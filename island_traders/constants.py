@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-04.1"
+APP_VERSION: str = "0.1.0-dev.2026-06-04.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 

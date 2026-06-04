@@ -15,6 +15,10 @@ pytest.importorskip("fastapi")
 from island_traders.server.app import (
     AuctionState, GameManager, LobbyPlayer, RoleBid,
 )
+from island_traders.models.player import Player
+from island_traders.models.profession import Profession
+from island_traders.models.resource import ResourceType
+from island_traders.models.role import ROLES
 
 
 def _make_room(manager: GameManager, num_humans: int = 2) -> str:
@@ -100,6 +104,40 @@ def test_investing_phase_ai_auto_submits():
     mgr._start_investing(room_id, deductions={})
     assert "ai1" in room.investing.submitted        # AI auto-submitted
     assert "h1" not in room.investing.submitted     # Human still pending
+
+
+def test_player_capacity_surfaces_cross_role_kitchen_food_output():
+    transporter = Player(
+        0,
+        "Dockside",
+        [ROLES["Transporter"]],
+        100.0,
+        is_human=True,
+    )
+    transporter.add_capital("common.kitchen")
+    transporter.workforce.add_workers(
+        1,
+        training_level=1,
+        profession=Profession.CHEF.value,
+    )
+    transporter.receive_resources(ResourceType.GRAIN, 20)
+    transporter.receive_resources(ResourceType.PRODUCE, 10)
+    transporter.receive_resources(ResourceType.FISH, 10)
+
+    cap = GameManager()._player_capacity(transporter)
+
+    assert any(
+        item["item_id"] == "common.kitchen"
+        for item in cap["capital_owned"]
+    )
+    food = next(
+        output for output in cap["outputs"]
+        if output["output"] == ResourceType.FOOD.value
+        and output["role"] == "Kitchen"
+    )
+    assert food["max_producible"] == 10
+    assert food["equipment_cap"] == 10
+    assert food["workforce_cap"] == 10
 
 
 def test_ai_lobby_player_keeps_identity_when_winning_a_role():
