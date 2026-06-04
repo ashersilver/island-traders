@@ -4,7 +4,11 @@ Source: a full game played with the GPT LLM agent (room `pt-89064a2ee31b1238`).
 Triage owner: Claude. Engine bugs below are flagged for **Codex** (engine leaf
 work); Claude has taken the balance quick-win (#3) and the agent fix (#7).
 
-Status legend: ☐ open (for Codex) · ✅ done · ⏸ deferred.
+Status legend: ☐ open · ✅ done · ⏸ deferred.
+
+**Resolution:** engine bugs #1, #2, #4, #5 fixed by Codex on
+`codex/playtest-defects-2026-06-04` (`233f575`), integrated to pre-release as
+`0.1.0-dev.2026-06-04.2`. #3 + #7 done earlier (Claude). #6 deferred.
 
 ---
 
@@ -22,7 +26,7 @@ every prompt incl. dozens of repeat "ready?" gates. Fixed in the agents repo
 
 ---
 
-## ☐ #1 — Training dispatch: "worker(s) not active on island" despite an active pool
+## ✅ #1 — Training dispatch: "worker(s) not active on island" despite an active pool
 
 **Symptom (log):** every training request stalls with
 `[Training] Cannot dispatch request #N: worker(s) not active on <island>'s island: <ids>`
@@ -42,7 +46,7 @@ rather than requiring the originally-reserved ids. Only fail if fewer than
 `len(req.worker_ids)` eligible active workers exist. Keep the casualty model;
 just stop pinning to dead/absent ids.
 
-## ☐ #2 — Repurpose direction + Education approval-queue desync
+## ✅ #2 — Repurpose direction + Education approval-queue desync
 
 Two issues:
 1. **Repurpose semantics:** `repurpose_worker` is meant to let a player *un-skill*
@@ -60,7 +64,7 @@ Two issues:
    state; verify the review list reflects all `awaiting_educator` requests
    regardless of current worker availability.
 
-## ☐ #4 — Kitchen on a non-Farmer island: not shown, no food capability
+## ✅ #4 — Kitchen on a non-Farmer island: not shown, no food capability
 
 **Symptom:** the Transporter bought a Kitchen and held 3 Chefs + Grain/Produce/
 Fish, but (a) the Kitchen never appeared in its equipment list and (b) no
@@ -78,7 +82,7 @@ separate from role production"). So the engine intends cross-role kitchens, but:
 role, and include kitchen-enabled Food in the capacity/decision payload so the
 player (human or agent) sees and can run it.
 
-## ☐ #5 — Trading stops before the season ends
+## ✅ #5 — Trading stops before the season ends
 
 **Symptom:** trading became unavailable in Spring of Year 2 with ~180s left on
 the season timer (the long-standing "trading finishes before end of season"
