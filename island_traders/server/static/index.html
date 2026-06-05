@@ -1290,15 +1290,19 @@ function quickSeatHash(name) {
 
 function parseQuickSeat() {
   const p = new URLSearchParams(window.location.search);
+  const code = (p.get('code') || '').trim().toUpperCase() || null;
   const isCreate = p.get('create') === '1' || p.has('room');
-  const isJoin = p.has('join');
+  // A `code=` joins a room created any way (e.g. via the Create Game button),
+  // not just one made with a matching ?room= quick-seat URL.
+  const isJoin = p.has('join') || (!!code && !isCreate);
   if (!isCreate && !isJoin) return null;
-  const roomName = p.get('room') || p.get('join') || '';
+  const roomName = p.get('room') || p.get('join') || code || '';
   if (!roomName) return null;
   return {
     mode: isCreate ? 'create' : 'join',
     roomName,
     roomId: quickSeatHash(roomName),
+    code,  // when set, join by code instead of the name-hash room id
     name: p.get('player') || 'Player',
     role: p.get('role') || null,
     bid: parseFloat(p.get('bid') || '0') || 0,
@@ -1378,14 +1382,20 @@ async function quickSeatJoinWithRetry(maxMs = 60000) {
   let lastErr = null;
   while (Date.now() - start < maxMs) {
     try {
-      const data = await apiFetch(`/api/rooms/${quickSeat.roomId}/join`, 'POST',
-        { name: quickSeat.name });
+      // With a code, join the room the host actually created (any room),
+      // via join-by-code — which also reconnects if the game has started.
+      // Otherwise fall back to the name-hash room id (paired ?room=/?join= URLs).
+      const data = quickSeat.code
+        ? await apiFetch('/api/rooms/join-by-code', 'POST',
+            { code: quickSeat.code, name: quickSeat.name })
+        : await apiFetch(`/api/rooms/${quickSeat.roomId}/join`, 'POST',
+            { name: quickSeat.name });
       myPlayerId = data.player_id;
       rememberIdentity(quickSeat.name, data.room);
       return data.room;
     } catch (e) {
       lastErr = e;
-      quickSeatBanner(`Waiting for room "${quickSeat.roomName}" to be created…`);
+      quickSeatBanner(`Waiting for room "${quickSeat.code || quickSeat.roomName}" to be created…`);
       await new Promise(r => setTimeout(r, 1500));
     }
   }
