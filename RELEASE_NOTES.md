@@ -5,6 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/quickseat-join-by-code-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.3`
+
+**Quick-seat URLs can now join by room code.** The `?join=NAME` URL found the
+room by hashing NAME into a `pt-` id, which only matched a room created with the
+paired `?room=NAME` quick-seat URL — so it could not join a game started with the
+normal "Create Game" button (random id + share code). The quick-seat parser now
+accepts `&code=ABC123`; when present, it joins via `join-by-code` (the room the
+host actually created, and reconnects if the game has already started) instead of
+the name hash. `?code=ABC123&player=…&role=…` works without a `join=` name too.
+Frontend only (served fresh). Verified with `node --check`.
+
 ### claude/leave-waiting-room-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.2`
