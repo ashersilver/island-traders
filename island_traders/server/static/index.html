@@ -810,6 +810,7 @@ button:active{transform:scale(.97)}
       <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
         <button id="btn-add-ai" class="btn-ghost btn-sm" onclick="addAI()">+ Add AI Player</button>
         <button id="btn-start-auction" class="btn-gold" onclick="startAuction()">Start Role Auction →</button>
+        <button id="btn-leave-room" class="btn-ghost btn-sm" onclick="leaveRoom()" style="margin-left:auto">← Leave Game</button>
       </div>
     </div>
     <div id="wr-require-notice" class="hidden" style="color:var(--dim);font-size:.8rem;padding:.4rem .6rem;background:var(--panel2);border-radius:var(--radius)">
@@ -1600,6 +1601,25 @@ async function startAuction() {
   } catch(e) {
     alert('Cannot start auction: ' + e.message);
   }
+}
+
+async function leaveRoom() {
+  if (!confirm('Leave this game? You will be removed from the room.')) return;
+  const roomId = currentRoomId, playerId = myPlayerId;
+  try {
+    if (roomId && playerId) {
+      await apiFetch(`/api/rooms/${roomId}/leave`, 'POST', {player_id: playerId});
+    }
+  } catch(e) {
+    alert('Could not leave the room: ' + e.message);
+    return;
+  }
+  // Tear down the socket without triggering the auto-reconnect, reset identity,
+  // and return to the landing screen.
+  if (ws) { ws.onclose = null; try { ws.close(); } catch(_) {} ws = null; }
+  currentRoomId = null; currentRoom = null; myPlayerId = null; myPlayerIdx = null;
+  showScreen('landing');
+  refreshPublicRooms();
 }
 
 // ==================== AUCTION ====================

@@ -5,6 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/leave-waiting-room-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.1`
+
+**Leave a waiting room** (deregister after joining the wrong game). New
+`GameManager.leave_room` + `POST /api/rooms/{room_id}/leave` remove a lobby
+player before the game starts; host duties pass to the next human, and the room
+is closed if no humans remain. The waiting-room screen gets a "← Leave Game"
+button (visible to every seated player) that calls the endpoint, drops the
+WebSocket without auto-reconnecting, and returns to the landing screen. Only
+allowed in `waiting` status. Tests: `test_server/test_leave_room.py` (5). 632 green.
+
 ### codex/playtest-defects-2026-06-04 (integrated by Claude)
 
 Version bump: `0.1.0-dev.2026-06-04.2`. Codex engine fixes for the 06-04 playtest
