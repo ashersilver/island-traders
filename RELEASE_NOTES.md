@@ -5,6 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/quickseat-rejoin-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.1`
+
+**Fix: quick-seat `?join=` URLs stopped working once the game was established.**
+`POST /api/rooms/{room_id}/join` (used by the quick-seat join URLs) only ever
+called `join_room`, which refuses any room not in `waiting` status — so once the
+auction/game started, re-opening a join URL 400'd ("Cannot join room") even
+though the player's seat still existed. The endpoint now falls back to
+`rejoin_room_by_name` for a running room (mirroring join-by-code), reconnecting
+the player to their existing seat by name. Tests:
+`test_server/test_join_rejoin.py` (2). 629 green.
+
 ### codex/playtest-defects-2026-06-04 (integrated by Claude)
 
 Version bump: `0.1.0-dev.2026-06-04.2`. Codex engine fixes for the 06-04 playtest
