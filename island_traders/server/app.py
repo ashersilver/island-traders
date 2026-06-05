@@ -133,8 +133,13 @@ if BaseModel is not None:
         player_id: str = Field(..., description="Lobby player id placing the bid.")
         role_name: str = Field(..., description="Role/island being bid on, e.g. Farmer.")
         amount: float = Field(..., ge=0, description="Bid amount in Dollops.")
+
+
+    class LeaveRoomRequest(BaseModel):
+        player_id: str = Field(..., description="Lobby player id leaving the room.")
 else:
     CreateRoomRequest = JoinByCodeRequest = JoinRoomRequest = AddAIRequest = AuctionBidRequest = dict
+    LeaveRoomRequest = dict
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
@@ -537,6 +542,43 @@ class GameManager:
             "type": "room_update",
             "room": room.to_dict(),
         })
+
+    def _delete_room(self, room: GameRoom) -> None:
+        """Remove a room and its indexes (used when the last human leaves)."""
+        self.rooms.pop(room.room_id, None)
+        if room.join_code:
+            self._code_index.pop(room.join_code, None)
+        with self._ws_lock:
+            self._ws_connections.pop(room.room_id, None)
+
+    def leave_room(self, room_id: str, player_id: str) -> dict:
+        """Deregister a lobby player from a waiting room.
+
+        Only allowed before the game starts (status == "waiting"). If the host
+        leaves, host duties pass to the next human. If no humans remain, the room
+        is torn down (an AI-only lobby can never start).
+        """
+        room = self.rooms.get(room_id)
+        if not room:
+            return {"error": "Room not found"}
+        if room.status != "waiting":
+            return {"error": "You can only leave before the game starts."}
+        lp = next((p for p in room.players if p.player_id == player_id), None)
+        if lp is None:
+            return {"error": "You are not registered in this room."}
+
+        room.players.remove(lp)
+
+        if room.creator_id == player_id:
+            new_host = next((p for p in room.players if p.is_human), None)
+            room.creator_id = new_host.player_id if new_host else ""
+
+        if not any(p.is_human for p in room.players):
+            self._delete_room(room)
+            return {"left": True, "room_closed": True}
+
+        self._broadcast_room_update(room)
+        return {"left": True, "room_closed": False}
 
     # ---- Auction ----
 
@@ -3507,6 +3549,23 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Cannot join room"}, status_code=400)
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
+
+    @app.post(
+        "/api/rooms/{room_id}/leave",
+        tags=["Lobby"],
+        summary="Leave a waiting room",
+        description=(
+            "Deregisters a lobby player from a room before the game starts "
+            "(e.g. you joined the wrong game). Host duties pass to the next "
+            "human; if no humans remain, the room is closed."
+        ),
+    )
+    async def leave_room(room_id: str, body: LeaveRoomRequest):
+        result = manager.leave_room(room_id, body.player_id)
+        if "error" in result:
+            status = 404 if result["error"] == "Room not found" else 400
+            return JSONResponse(result, status_code=status)
+        return JSONResponse(result)
 
     @app.post(
         "/api/rooms/{room_id}/ai",
