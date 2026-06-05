@@ -3528,12 +3528,23 @@ def create_app() -> FastAPI:
     @app.post(
         "/api/rooms/{room_id}/join",
         tags=["Lobby"],
-        summary="Join by room id",
-        description="Join a waiting room when the full room id is already known.",
+        summary="Join (or rejoin) by room id",
+        description=(
+            "Join a waiting room when the full room id is already known. If the "
+            "game has already started, reconnects you to your existing seat when "
+            "the same player name is supplied (mirroring join-by-code). This is "
+            "what the quick-seat ?join= URLs rely on to rejoin an established game."
+        ),
     )
     async def join_room(room_id: str, body: JoinRoomRequest | None = None):
         body = body or JoinRoomRequest()
         result = manager.join_room(room_id, body.name)
+        if not result:
+            # Game already running: reconnect to the existing seat by name,
+            # mirroring the join-by-code rejoin path.
+            room = manager.rooms.get(room_id)
+            if room and room.status != "waiting":
+                result = manager.rejoin_room_by_name(room_id, body.name)
         if not result:
             return JSONResponse({"error": "Cannot join room"}, status_code=400)
         room, lp = result

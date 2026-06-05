@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### claude/leave-waiting-room-2026-06-05
 
-Version bump: `0.1.0-dev.2026-06-05.1`
+Version bump: `0.1.0-dev.2026-06-05.2`
 
 **Leave a waiting room** (deregister after joining the wrong game). New
 `GameManager.leave_room` + `POST /api/rooms/{room_id}/leave` remove a lobby
@@ -15,7 +15,20 @@ player before the game starts; host duties pass to the next human, and the room
 is closed if no humans remain. The waiting-room screen gets a "← Leave Game"
 button (visible to every seated player) that calls the endpoint, drops the
 WebSocket without auto-reconnecting, and returns to the landing screen. Only
-allowed in `waiting` status. Tests: `test_server/test_leave_room.py` (5). 632 green.
+allowed in `waiting` status. Tests: `test_server/test_leave_room.py` (5).
+
+### claude/quickseat-rejoin-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.1`
+
+**Fix: quick-seat `?join=` URLs stopped working once the game was established.**
+`POST /api/rooms/{room_id}/join` (used by the quick-seat join URLs) only ever
+called `join_room`, which refuses any room not in `waiting` status — so once the
+auction/game started, re-opening a join URL 400'd ("Cannot join room") even
+though the player's seat still existed. The endpoint now falls back to
+`rejoin_room_by_name` for a running room (mirroring join-by-code), reconnecting
+the player to their existing seat by name. Tests:
+`test_server/test_join_rejoin.py` (2). 629 green.
 
 ### codex/playtest-defects-2026-06-04 (integrated by Claude)
 
