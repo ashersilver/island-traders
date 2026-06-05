@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/spectator-view-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.5`
+
+**Read-only spectator view** (`static/spectator.html`). A standalone page that
+polls `GET /api/rooms/{room_id}/state?player_id=…` and renders one island's
+dashboard — net worth, treasury/personal cash, workforce, inventory, what's
+blocking production, the market order book, other islands' needs, and recent
+activity. It never opens a WebSocket and never sends actions, so it can watch a
+seat held by a human or an AI agent without disturbing it (the server keeps only
+one control socket per player, so co-occupying the live seat would otherwise
+hijack it). Accepts `?room=…&player=…` where `player` is a lobby player id *or*
+name (resolved to the id). Served from the existing `/static` mount, so it needs
+no server restart. Frontend only; `node --check` clean.
+
 ### claude/quickseat-join-by-code-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.3`
