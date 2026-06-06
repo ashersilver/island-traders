@@ -1118,6 +1118,12 @@ let timerInterval = null;
 let auctionTimerEnd = 0;
 // Pause state (Issue #1)
 let isPaused = false;
+// Date.now() ms captured when the game is paused; while set, countdowns freeze
+// here instead of advancing with the wall clock.
+let pausedAtMs = 0;
+// Reference "now" for countdowns: frozen at the pause instant while paused, so
+// the displayed timer holds steady and doesn't tick down during a pause.
+function effectiveNowMs() { return (isPaused && pausedAtMs) ? pausedAtMs : Date.now(); }
 // Cached most-recent action-prompt payload so we can re-render it via the
 // "📋 Menu" recovery button when the action menu disappears mid-turn (e.g.
 // after cancelling a hint-driven modal or any other intermittent UI loss).
@@ -1720,13 +1726,13 @@ function updateBudgetDisplay() {
 function startAuctionTimer() {
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
-    const remaining = Math.max(0, auctionTimerEnd - Date.now() / 1000);
+    const remaining = Math.max(0, auctionTimerEnd - effectiveNowMs() / 1000);
     const el = document.getElementById('timer-val');
     if (el) {
       el.textContent = Math.ceil(remaining);
       el.style.color = remaining < 10 ? 'var(--red)' : 'var(--gold)';
     }
-    if (remaining <= 0) clearInterval(timerInterval);
+    if (remaining <= 0 && !isPaused) clearInterval(timerInterval);
   }, 500);
 }
 
@@ -4135,11 +4141,11 @@ function stopSeasonTimer() {
   if (seasonTimerInterval) { clearInterval(seasonTimerInterval); seasonTimerInterval = null; }
 }
 function updateSeasonTimerUI() {
-  const remain = Math.max(0, Math.round((seasonTimerEnd - Date.now()) / 1000));
+  const remain = Math.max(0, Math.round((seasonTimerEnd - effectiveNowMs()) / 1000));
   document.getElementById('season-timer-val').textContent = remain + 's';
   const box = document.getElementById('season-timer-box');
   box.classList.toggle('flash', remain > 0 && remain <= 60);
-  if (remain <= 0) stopSeasonTimer();
+  if (remain <= 0 && !isPaused) stopSeasonTimer();
 }
 
 function startPreSeasonTimer() {
@@ -4151,11 +4157,11 @@ function stopPreSeasonTimer() {
   if (preSeasonTimerInterval) { clearInterval(preSeasonTimerInterval); preSeasonTimerInterval = null; }
 }
 function updatePreSeasonTimerUI() {
-  const remain = Math.max(0, Math.round((preSeasonTimerEnd - Date.now()) / 1000));
+  const remain = Math.max(0, Math.round((preSeasonTimerEnd - effectiveNowMs()) / 1000));
   const el = document.getElementById('psb-timer');
   el.textContent = remain + 's';
   el.classList.toggle('flash', remain > 0 && remain <= 15);
-  if (remain <= 0) stopPreSeasonTimer();
+  if (remain <= 0 && !isPaused) stopPreSeasonTimer();
 }
 
 function toggleReady() {
@@ -4202,6 +4208,7 @@ function togglePause() {
 
 function onGamePaused(msg) {
   isPaused = true;
+  pausedAtMs = Date.now();   // freeze all countdowns at this instant
   if (currentRoom) currentRoom.paused = true;
   const overlay = document.getElementById('pause-overlay');
   overlay.classList.remove('hidden');
@@ -4219,6 +4226,15 @@ function onGamePaused(msg) {
 }
 
 function onGameResumed(msg) {
+  // Push every countdown's end-epoch forward by however long we were paused, so
+  // it continues from where it froze (mirrors the server bumping its timers).
+  if (pausedAtMs) {
+    const delta = Date.now() - pausedAtMs;            // ms paused
+    if (seasonTimerEnd)    seasonTimerEnd    += delta;       // ms epoch
+    if (preSeasonTimerEnd) preSeasonTimerEnd += delta;       // ms epoch
+    if (auctionTimerEnd)   auctionTimerEnd   += delta / 1000; // seconds epoch
+    pausedAtMs = 0;
+  }
   isPaused = false;
   if (currentRoom) currentRoom.paused = false;
   document.getElementById('pause-overlay').classList.add('hidden');
