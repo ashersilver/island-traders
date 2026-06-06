@@ -5,6 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/market-event-push-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.6`
+
+**Push discrete market events over the WebSocket (#4).** Previously clients only
+learned of market changes on the next full game-state broadcast, so an AI agent
+(or dashboard) couldn't react to, e.g., a needed input becoming buyable. The
+`Market` now records a `market_event` for each posted ask/bid and each fill
+(`{resource, side, action, price, quantity, actor}`); the server drains and
+broadcasts them after every action alongside the full state. The
+`island-traders-agents` loop already consumes these (buffers them into the next
+decision). Tests: `test_market.py` event emit/drain + fill. 636 green.
+
 ### claude/spectator-view-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.5`

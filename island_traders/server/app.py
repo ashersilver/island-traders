@@ -1531,6 +1531,14 @@ class GameManager:
             state = self.get_game_state(room_id)
             if state:
                 self._thread_safe_broadcast(room_id, state)
+            # Push discrete market events (Issue #4) so clients (dashboards and AI
+            # agents) can react to new bids/asks/fills between full-state snapshots.
+            room = self.rooms.get(room_id)
+            game = getattr(room, "game", None)
+            market = getattr(game, "market", None)
+            if market is not None:
+                for ev in market.drain_events():
+                    self._thread_safe_broadcast(room_id, {"type": "market_event", **ev})
 
         io.on_action_complete = _broadcast_state
 

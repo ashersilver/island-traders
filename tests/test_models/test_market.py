@@ -382,3 +382,35 @@ def test_supply_and_demand_counters_decrement_on_cancelled_orders():
     m.post_bid(buyer, ResourceType.FOOD, 8.0, 1)       # cancels first 3
     assert m.supply[ResourceType.FOOD] == 2
     assert m.demand[ResourceType.FOOD] == 1
+
+
+def test_market_emits_and_drains_events():
+    m = Market()
+    seller = make_player(1, "Miner", dollops=200.0)
+    buyer = make_player(2, "Manufacturer", dollops=500.0)
+    seller.receive_resources(ResourceType.ORE, 10)
+
+    m.post_offer(seller, ResourceType.ORE, price_per_unit=20.0, qty=5)
+    m.post_bid(buyer, ResourceType.ORE, price_per_unit=18.0, qty=2)
+
+    events = m.drain_events()
+    kinds = [(e["resource"], e["side"], e["action"], e["actor"]) for e in events]
+    assert ("Ore", "ask", "posted", seller.name) in kinds
+    assert ("Ore", "bid", "posted", buyer.name) in kinds
+    # draining clears the buffer
+    assert m.drain_events() == []
+
+
+def test_market_emits_fill_event_on_buy():
+    m = Market()
+    seller = make_player(1, "Miner", dollops=200.0)
+    buyer = make_player(2, "Manufacturer", dollops=500.0)
+    seller.receive_resources(ResourceType.ORE, 10)
+    m.post_offer(seller, ResourceType.ORE, price_per_unit=20.0, qty=5)
+    m.drain_events()  # clear the 'posted' event
+
+    m.buy_from_offers(buyer, ResourceType.ORE, qty=3)
+    fills = [e for e in m.drain_events() if e["action"] == "filled"]
+    assert fills and fills[0]["resource"] == "Ore"
+    assert fills[0]["side"] == "ask" and fills[0]["quantity"] == 3
+    assert fills[0]["actor"] == buyer.name
