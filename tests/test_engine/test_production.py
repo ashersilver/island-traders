@@ -195,6 +195,7 @@ def test_production_options_show_per_product_current_max(normal_event):
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
     farmer.receive_resources(ResourceType.OIL, 10)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
 
     options = ProductionEngine().production_options(farmer, normal_event, season_name="Spring")
     by_output = {option["output"]: option for option in options}

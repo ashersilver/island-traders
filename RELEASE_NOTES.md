@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/engine-bugs-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.7`
+
+**Fix 06-05 playtest engine/server regressions.** Parked Done-Trading prompts
+can now be replayed live and the browser no longer resurrects stale cached
+menus while the player is still parked. Farmer raw output capacity/input hints
+now use the seasonal conversion table instead of the separate recipe oil model.
+Lecture Halls provide Course capacity again, so Educators with Expertise can
+produce Course slots. Workforce profession summaries exclude staff away on
+contracts, keeping active counts consistent with production. Game state also
+surfaces training-capacity rows with unavailable reasons when a profession cap
+is exhausted.
+
 ### claude/market-event-push-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.6`

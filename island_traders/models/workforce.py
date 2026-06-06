@@ -201,7 +201,7 @@ class Workforce:
             key = w.profession
             if w.in_training:
                 training[key] = training.get(key, 0) + 1
-            else:
+            elif not w.on_contract:
                 active[key] = active.get(key, 0) + 1
         all_profs = set(active) | set(training)
         result = {}

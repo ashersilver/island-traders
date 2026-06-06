@@ -364,6 +364,7 @@ def test_player_capacity_returns_per_output_data():
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
     # Inputs: enough Oil for raw lines and balanced ingredients for packaged Food
     p.receive_resources(ResourceType.OIL, 30)
+    p.receive_resources(ResourceType.FARM_MACHINERY, 1)
     p.receive_resources(ResourceType.FISH, 5)
     p.receive_resources(ResourceType.GRAIN, 5)
     p.receive_resources(ResourceType.PRODUCE, 5)
@@ -400,6 +401,26 @@ def test_player_capacity_returns_per_output_data():
     fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
     assert fish["binding"] == "workforce"
     assert fish["inputs_short"] == {}
+
+
+def test_farmer_capacity_uses_seasonal_inputs_for_raw_lines():
+    p = Player(
+        player_id=0, name="Underfuelled Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0,
+    )
+    p.add_capital("farmer.tractor", 1)
+    p.add_capital("farmer.fishing_boat", 1)
+    p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
+    p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    p.receive_resources(ResourceType.FARM_MACHINERY, 1)
+
+    cap = GameManager()._player_capacity(p, season_name="Spring")
+    grain = next(o for o in cap["outputs"] if o["output"] == "Grain")
+    fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
+
+    assert grain["inputs_short"] == {"Oil": 1}
+    assert fish["inputs_short"] == {"Oil": 1}
 
 
 def test_player_capacity_surfaces_equipment_shortfall_options():

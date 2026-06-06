@@ -57,3 +57,13 @@ def test_smaller_population_shrinks_the_cap_proportionally():
     assert p.available_unskilled == 24
     p.workforce.add_workers(20, profession=Profession.UNSKILLED.value)
     assert p.available_unskilled == 4
+
+
+def test_profession_summary_excludes_workers_on_contract_from_active_counts():
+    p = _farmer(population=100)
+    workers = p.workforce.add_workers(2, profession=Profession.FARMER.value)
+    workers[0].on_contract = True
+
+    summary = p.workforce.profession_summary()
+
+    assert summary[Profession.FARMER.value]["active"] == 1

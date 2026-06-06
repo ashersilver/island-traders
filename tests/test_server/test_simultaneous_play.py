@@ -78,7 +78,21 @@ def test_pending_prompt_can_be_replayed_after_reconnect():
     io.receive_response(0, "end_turn")
     t.join(timeout=1)
     assert result["value"] == "end_turn"
-    assert io.replay_pending_prompt(0) is False
+
+
+def test_parked_prompt_can_be_replayed_after_reconnect_or_menu_recovery():
+    sent: list[tuple[int, dict]] = []
+    io = WebSocketIOAdapter(
+        "g1c",
+        broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sent.append((0, m))},
+    )
+    io.begin_season()
+    io.mark_player_ready(0)
+
+    assert io.replay_pending_prompt(0) is True
+    assert sent[-1][1]["type"] == "choose_action_parked"
+    assert sent[-1][1]["replayed"] is True
 
 
 def test_interrupt_all_unblocks_every_pending_prompt():

@@ -305,7 +305,13 @@ class WebSocketIOAdapter(IOAdapter):
         with self._player_locks[player_id]:
             msg = self._player_pending_msgs.get(player_id)
             if not msg:
-                return False
+                if player_id in self._player_ready_flags:
+                    msg = {
+                        "type": "choose_action_parked",
+                        "player_id": player_id,
+                    }
+                else:
+                    return False
             replay = dict(msg)
             replay["replayed"] = True
         self._send_to(player_id, replay)
