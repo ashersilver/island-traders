@@ -20,6 +20,26 @@ hijack it). Accepts `?room=…&player=…` where `player` is a lobby player id *
 name (resolved to the id). Served from the existing `/static` mount, so it needs
 no server restart. Frontend only; `node --check` clean.
 
+### claude/pause-timer-and-playtest-spec-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.4`
+
+**Fix: countdown kept ticking while the game was paused (#1).** The server froze
+its timers on pause, but the browser countdowns (`updateSeasonTimerUI`,
+`updatePreSeasonTimerUI`, the auction interval) read `Date.now()` directly and
+`onGamePaused`/`onGameResumed` never froze or re-anchored them. They now use
+`effectiveNowMs()` — frozen at the pause instant — and the end-epochs are bumped
+forward by the pause duration on resume, so the display holds steady while paused
+and continues correctly after. Frontend only; `node --check` clean.
+
+Also logs the rest of the 06-05 playtest (game PNU61D) for Codex in
+`requirements/playtest-defects-2026-06-05.md`: #2 Done-Trading/parked state gets
+stuck (player can't resume trading with time left — distinct from the season-end
+fix), #3 Farmer "Oil needed" display uses `PRODUCTION_RECIPES` while actual
+production uses `FARMER_SEASONAL_CONVERSION` (the two disagree; the 06-04 halving
+only moved the displayed number), #4 FarmingTechnician drops out of training
+options mid-game.
+
 ### claude/quickseat-join-by-code-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.3`
