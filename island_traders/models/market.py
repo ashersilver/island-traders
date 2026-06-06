@@ -74,6 +74,28 @@ class Market:
     _next_offer_id: int = 0
     _next_bid_id: int = 0
     _current_season_key: tuple[int, int] = (0, 0)
+    # Discrete market events (posted asks/bids, fills) since the last drain.
+    # The server drains these and pushes them to clients so they can react
+    # between full-state broadcasts (Issue #4).
+    _event_log: list[dict] = field(default_factory=list)
+
+    def _emit_market_event(self, rtype: ResourceType, side: str, action: str,
+                           price: float, quantity: int, actor: str) -> None:
+        if quantity <= 0:
+            return
+        self._event_log.append({
+            "resource": rtype.value,
+            "side": side,          # "ask" (sell offer) | "bid" (buy order)
+            "action": action,      # "posted" | "filled"
+            "price": round(price, 2),
+            "quantity": int(quantity),
+            "actor": actor,
+        })
+
+    def drain_events(self) -> list[dict]:
+        """Return and clear the buffered market events."""
+        events, self._event_log = self._event_log, []
+        return events
 
     def current_price(self, rtype: ResourceType) -> float:
         s = self.supply.get(rtype, 0)
@@ -191,6 +213,7 @@ class Market:
         self._offers.append(offer)
         self._next_offer_id += 1
         self.post_supply(rtype, qty)
+        self._emit_market_event(rtype, "ask", "posted", price, qty, seller.name)
         self._auto_match_offer(offer)
         self._check_tight_spread(rtype)
         return offer
@@ -225,6 +248,7 @@ class Market:
         self._bids.append(bid)
         self._next_bid_id += 1
         self.post_demand(rtype, qty)
+        self._emit_market_event(rtype, "bid", "posted", price, qty, buyer.name)
         self._auto_match_bid(bid)
         self._check_tight_spread(rtype)
         return bid
@@ -403,6 +427,9 @@ class Market:
                 offer._seller.receive_dollops(cost)
         buyer.receive_resources(rtype, bought)
         self.post_demand(rtype, bought)
+        if bought > 0:
+            avg = total_cost / bought
+            self._emit_market_event(rtype, "ask", "filled", avg, bought, buyer.name)
         return total_cost, bought
 
     def sell_to_bids(self, seller: Player, rtype: ResourceType,
@@ -444,6 +471,9 @@ class Market:
             bid.remaining -= take
             total_paid += cost
             sold += take
+        if sold > 0:
+            avg = total_paid / sold
+            self._emit_market_event(rtype, "bid", "filled", avg, sold, seller.name)
         return total_paid, sold
 
     def market_summary(self) -> dict[str, dict]:
