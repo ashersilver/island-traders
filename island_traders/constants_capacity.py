@@ -211,8 +211,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Expertise": 4}, "education_slots": 2},
-        description="+4 Expertise, +2 Education slots",
+        effects={"capacity": {"Expertise": 4, "Courses": 4}, "education_slots": 2},
+        description="+4 Expertise, +4 Courses, +2 Education slots",
     ),
     CapitalItem(
         item_id="educator.library",

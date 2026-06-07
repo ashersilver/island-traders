@@ -505,7 +505,13 @@ class ProductionEngine:
             result["freight_surcharge"] = freight_surcharge
         return result
 
-    def _capacity_limit(self, player: Player, role_name: str, output: ResourceType) -> int | None:
+    def _capacity_limit(
+        self,
+        player: Player,
+        role_name: str,
+        output: ResourceType,
+        season_name: str = "Spring",
+    ) -> int | None:
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if not recipe:
             return None
@@ -525,6 +531,18 @@ class ProductionEngine:
             WorkerBand.WORKER: bands.get("Worker", 0),
         }
         on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
+        if (
+            role_name == "Farmer"
+            and output.value in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+            and output not in (ResourceType.FOOD, ResourceType.MEAT)
+        ):
+            enough_for_seasonal_run = all(
+                player.inventory.get(ResourceType(resource)) >= amount
+                for resource, amount in FARMER_SEASONAL_CONVERSION[season_name]["inputs"].items()
+            )
+            on_hand = dict(on_hand)
+            for resource in recipe.inputs:
+                on_hand[resource] = float("inf") if enough_for_seasonal_run else 0
         if role_name == "Farmer" and output == ResourceType.FOOD:
             # Packaged Food accepts either Fish or Meat as its protein.
             on_hand[ResourceType.FISH.value] = (
@@ -571,7 +589,9 @@ class ProductionEngine:
                         continue
                     if role.name == "Miner" and output == ResourceType.METAL:
                         preview_qty = int(preview_qty * self._metal_recipe_multiplier(player))
-                    capacity_limit = self._capacity_limit(player, role.name, output)
+                    capacity_limit = self._capacity_limit(
+                        player, role.name, output, season_name
+                    )
                     max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
                     options.append({
                         "role": role.name,
@@ -585,7 +605,9 @@ class ProductionEngine:
             if role.name == "Farmer":
                 # Meat is a deliberate livestock line: 4 Grain feedstock per
                 # Meat, with Veterinarian depth protecting late-season output.
-                meat_capacity = self._capacity_limit(player, role.name, ResourceType.MEAT)
+                meat_capacity = self._capacity_limit(
+                    player, role.name, ResourceType.MEAT, season_name
+                )
                 if meat_capacity and meat_capacity > 0:
                     meat_max = int(
                         meat_capacity
@@ -614,7 +636,9 @@ class ProductionEngine:
                     player.inventory.get(ResourceType.FISH)
                     + player.inventory.get(ResourceType.MEAT),
                 )
-                capacity_limit = self._capacity_limit(player, role.name, ResourceType.FOOD)
+                capacity_limit = self._capacity_limit(
+                    player, role.name, ResourceType.FOOD, season_name
+                )
                 max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
                 if max_qty > 0:
                     options.append({
@@ -640,6 +664,23 @@ class ProductionEngine:
         season_name: str,
         product_line: str | None,
     ) -> dict[ResourceType, int]:
+        if (
+            role_name == "Farmer"
+            and output.value in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+            and output not in (ResourceType.FOOD, ResourceType.MEAT)
+        ):
+            role = next(r for r in player.roles if r.name == role_name)
+            role_player = self._role_player(player, role)
+            base_inputs = self._all_inputs(role_player, season_name, product_line)
+            if preview_qty <= 0 or qty <= 0:
+                return {}
+            ratio = min(1.0, qty / preview_qty)
+            return {
+                r: ceil(amount * ratio)
+                for r, amount in base_inputs.items()
+                if ceil(amount * ratio) > 0
+            }
+
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if recipe:
             if role_name == "Farmer" and output == ResourceType.FOOD:

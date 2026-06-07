@@ -1625,13 +1625,16 @@ class GameManager:
 
         return self._launch_game(room_id)
 
-    def _player_capacity(self, p, current_tick: int | None = None) -> dict:
+    def _player_capacity(
+        self, p, current_tick: int | None = None, season_name: str = "Spring"
+    ) -> dict:
         """Compute per-output max-producible + binding constraint for a player.
 
         Returns a dict shaped for direct UI consumption — the frontend renders
         the Production Capacity panel and Constraint Popup straight from this.
         """
         from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
+        from ..constants import FARMER_SEASONAL_CONVERSION
         from ..models.capacity import (
             recipes_for_role, compute_capacity, find_item,
         )
@@ -1691,12 +1694,34 @@ class GameManager:
                         p.inventory.get(ResourceType.FISH)
                         + p.inventory.get(ResourceType.MEAT)
                     )
+                farmer_raw_output = (
+                    recipe.role == "Farmer"
+                    and recipe.output in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+                    and recipe.output not in (
+                        ResourceType.FOOD.value,
+                        ResourceType.MEAT.value,
+                    )
+                )
+                if farmer_raw_output:
+                    seasonal_inputs = FARMER_SEASONAL_CONVERSION[season_name]["inputs"]
+                    enough_for_seasonal_run = all(
+                        p.inventory.get(ResourceType(resource)) >= amount
+                        for resource, amount in seasonal_inputs.items()
+                    )
+                    boosted = recipe
+                    on_hand_for_cap = dict(on_hand)
+                    for resource in recipe.inputs:
+                        on_hand_for_cap[resource] = (
+                            float("inf") if enough_for_seasonal_run else 0
+                        )
+                else:
+                    on_hand_for_cap = on_hand
                 cap = compute_capacity(
                     recipe=boosted,
                     catalogue=CAPITAL_CATALOGUE,
                     owned=p.capital_inventory,
                     workforce=wf_by_band,
-                    on_hand=on_hand,
+                    on_hand=on_hand_for_cap,
                 )
                 # Per-input shortfall (units needed to lift the input cap to
                 # the next bottleneck). Useful for the constraint popup
@@ -1710,7 +1735,14 @@ class GameManager:
                 if input_target == float("inf") or input_target <= 0:
                     input_target = 1 if boosted.inputs else 0
                 inputs_short: dict[str, float] = {}
-                if input_cap < input_target:
+                if farmer_raw_output:
+                    seasonal_inputs = FARMER_SEASONAL_CONVERSION[season_name]["inputs"]
+                    for resource, need_total in seasonal_inputs.items():
+                        have = p.inventory.get(ResourceType(resource))
+                        short = need_total - have
+                        if short > 0:
+                            inputs_short[resource] = round(short, 2)
+                elif input_cap < input_target:
                     for resource, per_unit in boosted.inputs.items():
                         if per_unit <= 0:
                             continue
@@ -2224,6 +2256,47 @@ class GameManager:
             })
         return decisions
 
+    def _training_capacity_for_player(
+        self,
+        game: Game,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        rows: list[dict] = []
+        for profession, info in training.capacity_summary(
+            current_year_idx, current_season_idx
+        ).items():
+            remaining = info.get("remaining", 0)
+            trained = info.get("trained", 0)
+            annual_cap = info.get("annual_cap", 0)
+            seasonal_cap = info.get("seasonal_cap")
+            unavailable_reason = ""
+            if remaining <= 0:
+                if seasonal_cap is not None and trained < annual_cap:
+                    unavailable_reason = (
+                        f"Seasonal cap reached ({seasonal_cap}/season); "
+                        "try again next season."
+                    )
+                else:
+                    unavailable_reason = (
+                        f"Annual cap reached ({trained}/{annual_cap}); "
+                        "try again next year."
+                    )
+            rows.append({
+                "profession": profession,
+                "label": self._profession_label(profession),
+                "available": remaining > 0,
+                "remaining": remaining,
+                "annual_cap": annual_cap,
+                "trained": trained,
+                "seasonal_cap": seasonal_cap,
+                "unavailable_reason": unavailable_reason,
+            })
+        return rows
+
     async def _handle_training_counter_response(
         self,
         room_id: str,
@@ -2646,6 +2719,11 @@ class GameManager:
                     current_year_idx,
                     current_season_idx,
                 ),
+                "training_capacity": self._training_capacity_for_player(
+                    game,
+                    current_year_idx,
+                    current_season_idx,
+                ),
                 "staffing_contracts": self._staffing_contracts_for_player(
                     game, p.player_id, player_names, current_year_idx, current_season_idx,
                 ),
@@ -2697,7 +2775,11 @@ class GameManager:
                     for r in ResourceType if p.inventory.get(r) > 0
                 }
             # Production capacity panel + constraint data
-            pd["capacity"] = self._player_capacity(p, current_tick=current_tick)
+            pd["capacity"] = self._player_capacity(
+                p,
+                current_tick=current_tick,
+                season_name=getattr(game, "season", SEASONS[current_season_idx]),
+            )
             pd["decision_hints"] = self._decision_hints_for_player(pd)
             players_data.append(pd)
 

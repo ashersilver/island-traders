@@ -4293,10 +4293,11 @@ function _renderActionButton(o) {
 // 2026-05-27 done-trading-undo brief.
 function showParkedBanner(msg) {
   _activePromptType = 'parked';
+  lastActionPromptMsg = null;
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent =
-      `${msg.player_name} — Done Trading ✓`;
+      `${msg.player_name || 'You'} — Done Trading ✓`;
   _renderParkedBannerBody();
   document.getElementById('prompt-input').innerHTML = '';
 }
@@ -4827,6 +4828,11 @@ function showAboutDialog() {
 // will overwrite it.  If there's no cached prompt at all we still get
 // the server replay path.
 function restoreActionMenu() {
+  if (imReady) {
+    resumeTradingFromParked();
+    requestState();
+    return;
+  }
   if (lastActionPromptMsg) {
     showActionPrompt(lastActionPromptMsg);
   }
