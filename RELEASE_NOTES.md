@@ -5,6 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/spectator-by-code-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.8`
+
+**Spectator can be addressed by share code, with clearer status.** Watching a
+game 404'd when the watcher pasted the 6-char join code (the state endpoint needs
+the internal room id) or watched before the game started. New read-only
+`GET /api/rooms/by-code/{code}` resolves a code → room metadata without joining;
+`static/spectator.html` now accepts a room id **or** a code (resolved via that
+endpoint), reports "waiting for the game to start…" on a pre-start 404, and lists
+the players present when a name doesn't match. 641 green; `node --check` clean.
+
 ### codex/engine-bugs-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.7`

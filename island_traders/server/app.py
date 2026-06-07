@@ -3587,6 +3587,27 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Room not found"}, status_code=404)
         return JSONResponse(room.to_dict())
 
+    @app.get(
+        "/api/rooms/by-code/{code}",
+        tags=["Lobby"],
+        summary="Resolve a room by its join code (read-only)",
+        description=(
+            "Returns room metadata (room_id, name, status) for a join code "
+            "WITHOUT joining or taking a seat. Used by the spectator view so a "
+            "watcher can supply the share code instead of the internal room id."
+        ),
+    )
+    async def room_by_code(code: str):
+        room = manager.find_room_by_code(code.strip().upper())
+        if not room:
+            return JSONResponse({"error": "Invalid room code"}, status_code=404)
+        return JSONResponse({
+            "room_id": room.room_id,
+            "name": room.name,
+            "status": room.status,
+            "join_code": room.join_code,
+        })
+
     @app.post(
         "/api/rooms/join-by-code",
         tags=["Lobby"],
