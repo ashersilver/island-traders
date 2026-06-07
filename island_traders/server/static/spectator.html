@@ -58,7 +58,7 @@
 <body>
 <header>
   <h1>🏝️ Spectator <span class="tag" id="hdr-phase"></span></h1>
-  <input id="in-room" placeholder="room id" />
+  <input id="in-room" placeholder="room id or code" />
   <input id="in-player" placeholder="player id or name" />
   <input id="in-interval" type="number" min="1" value="3" style="width:60px" title="poll seconds" />
   <button id="btn-watch" class="primary">Watch</button>
@@ -87,11 +87,18 @@ async function fetchState(room, pid) {
   return r.json();
 }
 
+// `roles` from the server is a comma-joined STRING (role_names() ), while
+// `role_names` is the list of short names — handle either shape.
+function rolesText(roles){ return Array.isArray(roles) ? roles.join(', ') : (roles==null ? '' : String(roles)); }
+
 function findMe(state, want) {
   const players = state.players || [];
-  // match by lobby_player_id, then by (case-insensitive) name
+  const w = String(want||'').toLowerCase();
+  // match by lobby_player_id, then name, then role (short name or display text)
   return players.find(p => String(p.lobby_player_id) === String(want))
-      || players.find(p => (p.name||'').toLowerCase() === String(want||'').toLowerCase())
+      || players.find(p => (p.name||'').toLowerCase() === w)
+      || players.find(p => Array.isArray(p.role_names) && p.role_names.some(r => String(r).toLowerCase() === w))
+      || players.find(p => rolesText(p.roles).toLowerCase().includes(w))
       || null;
 }
 
@@ -117,7 +124,7 @@ function renderNeeds(barter, meName) {
   const needs = (barter && barter.needs || []).filter(n => n.player !== meName && (n.needs||[]).length);
   if (!needs.length) return '<div class="muted">No outstanding needs.</div>';
   return '<ul class="feed">' + needs.map(n =>
-    `<li><b>${esc(n.player)}</b> <span class="muted">[${esc((n.roles||[]).join(', '))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
+    `<li><b>${esc(n.player)}</b> <span class="muted">[${esc(rolesText(n.roles))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
 }
 
 function render(state, me) {
@@ -130,7 +137,7 @@ function render(state, me) {
   $('view').innerHTML = `
   <div class="grid">
     <div class="card">
-      <h2>${esc(me.name)} — ${esc((me.roles||[]).join(', ')||'no role')}</h2>
+      <h2>${esc(me.name)} — ${esc(rolesText(me.roles)||'no role')}</h2>
       <div class="stat-row"><span>Net worth</span><span class="v big">${me.net_worth ?? '—'} Dp</span></div>
       <div class="stat-row"><span>Treasury (island cash)</span><span class="v">${me.treasury ?? me.dollops ?? '—'} Dp</span></div>
       <div class="stat-row"><span>Personal cash</span><span class="v">${me.personal_cash ?? '—'} Dp</span></div>
@@ -159,22 +166,46 @@ function render(state, me) {
   </div>`;
 }
 
-async function tick(room) {
+let roomId = null;  // resolved internal room id (from a code or used as-is)
+
+async function resolveRoomId(input) {
+  // Accept either an internal room id or a share code. Try the read-only
+  // by-code lookup first; if that 404s, the input is already a room id.
   try {
-    let state = await fetchState(room, playerId);
+    const r = await fetch(
+      `${ORIGIN}/api/rooms/by-code/${encodeURIComponent(input.toUpperCase())}`,
+      { cache: 'no-store' });
+    if (r.ok) { return (await r.json()).room_id; }
+  } catch (_) {}
+  return input;
+}
+
+async function tick() {
+  if (!roomId) { roomId = await resolveRoomId($('in-room').value.trim()); }
+  try {
+    let state = await fetchState(roomId, playerId);
     let me = findMe(state, playerId || playerWant);
     // Resolve a name (or unknown id) to the real lobby_player_id, then refetch
     // with it so the server includes that island's private inventory.
     if (me && String(me.lobby_player_id) !== String(playerId)) {
       playerId = me.lobby_player_id;
-      state = await fetchState(room, playerId);
+      state = await fetchState(roomId, playerId);
       me = findMe(state, playerId);
     }
-    if (!me) { setStatus(`player "${playerWant}" not found in room`, 'err'); return; }
+    if (!me) {
+      const names = (state.players || []).map(p => p.name).join(', ');
+      setStatus(`player "${playerWant}" not found. In room: ${names || '(none)'}`, 'err');
+      return;
+    }
     render(state, me);
     setStatus(`updated ${new Date().toLocaleTimeString()}`, 'ok');
   } catch (e) {
-    setStatus(`waiting… (${e.message})`, 'err');
+    // 404 here means the room exists but has no game state yet (not started),
+    // or the room/code is wrong (resolveRoomId returned the raw input).
+    const msg = String(e.message).includes('404')
+      ? 'waiting for the game to start, or check the room id/code…'
+      : `waiting… (${e.message})`;
+    setStatus(msg, 'err');
   }
 }
 
@@ -183,14 +214,15 @@ function start() {
   const room = $('in-room').value.trim();
   playerWant = $('in-player').value.trim();
   playerId = null;
-  if (!room || !playerWant) { setStatus('enter room id and player', 'err'); return; }
+  roomId = null;
+  if (!room || !playerWant) { setStatus('enter a room id or code, and a player', 'err'); return; }
   const secs = Math.max(1, parseInt($('in-interval').value, 10) || 3);
   const url = new URL(window.location);
   url.searchParams.set('room', room); url.searchParams.set('player', playerWant);
   url.searchParams.set('interval', secs); history.replaceState(null,'',url);
   setStatus('connecting…');
-  tick(room);
-  timer = setInterval(() => tick(room), secs*1000);
+  tick();
+  timer = setInterval(tick, secs*1000);
 }
 function stop(){ if (timer){ clearInterval(timer); timer=null; } setStatus('stopped'); }
 
