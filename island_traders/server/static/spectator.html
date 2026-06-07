@@ -87,11 +87,18 @@ async function fetchState(room, pid) {
   return r.json();
 }
 
+// `roles` from the server is a comma-joined STRING (role_names() ), while
+// `role_names` is the list of short names — handle either shape.
+function rolesText(roles){ return Array.isArray(roles) ? roles.join(', ') : (roles==null ? '' : String(roles)); }
+
 function findMe(state, want) {
   const players = state.players || [];
-  // match by lobby_player_id, then by (case-insensitive) name
+  const w = String(want||'').toLowerCase();
+  // match by lobby_player_id, then name, then role (short name or display text)
   return players.find(p => String(p.lobby_player_id) === String(want))
-      || players.find(p => (p.name||'').toLowerCase() === String(want||'').toLowerCase())
+      || players.find(p => (p.name||'').toLowerCase() === w)
+      || players.find(p => Array.isArray(p.role_names) && p.role_names.some(r => String(r).toLowerCase() === w))
+      || players.find(p => rolesText(p.roles).toLowerCase().includes(w))
       || null;
 }
 
@@ -117,7 +124,7 @@ function renderNeeds(barter, meName) {
   const needs = (barter && barter.needs || []).filter(n => n.player !== meName && (n.needs||[]).length);
   if (!needs.length) return '<div class="muted">No outstanding needs.</div>';
   return '<ul class="feed">' + needs.map(n =>
-    `<li><b>${esc(n.player)}</b> <span class="muted">[${esc((n.roles||[]).join(', '))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
+    `<li><b>${esc(n.player)}</b> <span class="muted">[${esc(rolesText(n.roles))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
 }
 
 function render(state, me) {
@@ -130,7 +137,7 @@ function render(state, me) {
   $('view').innerHTML = `
   <div class="grid">
     <div class="card">
-      <h2>${esc(me.name)} — ${esc((me.roles||[]).join(', ')||'no role')}</h2>
+      <h2>${esc(me.name)} — ${esc(rolesText(me.roles)||'no role')}</h2>
       <div class="stat-row"><span>Net worth</span><span class="v big">${me.net_worth ?? '—'} Dp</span></div>
       <div class="stat-row"><span>Treasury (island cash)</span><span class="v">${me.treasury ?? me.dollops ?? '—'} Dp</span></div>
       <div class="stat-row"><span>Personal cash</span><span class="v">${me.personal_cash ?? '—'} Dp</span></div>
