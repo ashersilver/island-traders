@@ -11,6 +11,11 @@ folder on this computer when working alongside Codex.
 - Release notes must be updated before a feature/fix branch is merged into
   `pre-release`; see `RELEASE_NOTES.md` and
   `requirements/release-process.md`.
+- **Every PR must link the issue it addresses.** Requirements live in the
+  GitHub issue tracker; PRs reference them with `Closes #N` (or `Refs #N` for
+  partial progress) so the backlog self-reconciles on merge. If no issue
+  exists yet, open one first to capture the requirement. The
+  `.github/pull_request_template.md` makes this prompt automatic.
 
 ## What this project is
 
