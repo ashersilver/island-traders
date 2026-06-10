@@ -16,6 +16,13 @@ from ..constants import (
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, find_item, recipe_for
 from ..models.profession import Profession, WorkerBand, band_of, PROFESSION_BAND
+from .engineering import (
+    active_engineer_specialty_counts,
+    adjusted_capacity_for_engineers,
+    adjusted_recipe_for_engineers,
+    adjusted_workforce_for_engineers,
+    electrical_efficiency_bonus,
+)
 
 
 def _band_of_profession_str(profession: str) -> WorkerBand | None:
@@ -219,6 +226,7 @@ class ProductionEngine:
         natural = player.workforce.labour_productivity_factor(
             total_skilled, total_unskilled, list(all_skilled_profs)
         )
+        natural = min(1.0, natural + electrical_efficiency_bonus(player))
         if not EXPERTISE_DEGRADATION_ENABLED:
             return natural
         floor = self.expertise_degradation_floor(player)
@@ -507,6 +515,7 @@ class ProductionEngine:
         workforce_factor = player.workforce.labour_productivity_factor(
             total_skilled_req, total_unskilled_req, skilled_profs_list
         )
+        workforce_factor = min(1.0, workforce_factor + electrical_efficiency_bonus(player))
         effective_factor = max(player.production_capacity, workforce_factor)
         fill_pct = round(player.workforce.workforce_fill_rate(
             self._seasonal_workforce_required(player, season_name)
@@ -580,6 +589,8 @@ class ProductionEngine:
         if not recipe:
             return None
         recipe = self._adjust_recipe_for_player(recipe, player)
+        engineer_counts = active_engineer_specialty_counts(player)
+        recipe = adjusted_recipe_for_engineers(recipe, engineer_counts)
 
         mult = player.patent_input_multiplier(recipe.output)
         if mult < 1.0:
@@ -594,6 +605,7 @@ class ProductionEngine:
             WorkerBand.TECHNICIAN: bands.get("Technician", 0),
             WorkerBand.WORKER: bands.get("Worker", 0),
         }
+        wf_by_band = adjusted_workforce_for_engineers(wf_by_band, engineer_counts)
         on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
         if (
             role_name == "Farmer"
@@ -620,6 +632,7 @@ class ProductionEngine:
             workforce=wf_by_band,
             on_hand=on_hand,
         )
+        cap = adjusted_capacity_for_engineers(cap, engineer_counts, recipe.output)
         if cap.max_producible == float("inf"):
             return None
         return max(0, floor(cap.max_producible))
@@ -760,6 +773,9 @@ class ProductionEngine:
                     inputs[ResourceType.MEAT] = meat_used
                 return inputs
             recipe = self._adjust_recipe_for_player(recipe, player)
+            recipe = adjusted_recipe_for_engineers(
+                recipe, active_engineer_specialty_counts(player)
+            )
             mult = player.patent_input_multiplier(recipe.output)
             return {
                 ResourceType(resource): ceil(amount * mult * qty)

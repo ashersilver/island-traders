@@ -19,6 +19,7 @@ from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.turn import TurnManager
+from ..engine.engineering import effective_capital_service_life
 from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
@@ -34,7 +35,7 @@ from ..constants import (
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 
-SAVE_VERSION = 5
+SAVE_VERSION = 6
 
 # Renamed resources: old save inventory key -> current key (2026-06-02).
 LEGACY_RESOURCE_IDS: dict[str, str] = {
@@ -316,10 +317,10 @@ class Game:
                 if not item or item.service_life_seasons <= 0:
                     continue
                 ticks = player.capital_acquired_ticks.get(item_id, [])
-                expired = sum(
-                    1 for t in ticks
-                    if current_tick - t >= item.service_life_seasons
+                service_life = effective_capital_service_life(
+                    player, item.service_life_seasons
                 )
+                expired = sum(1 for t in ticks if current_tick - t >= service_life)
                 if expired > 0:
                     player.remove_capital(item_id, expired)
                     self.io.print(
@@ -393,7 +394,7 @@ class Game:
                 f"as {batch.target_profession}."
             )
             returned = player.workforce.return_from_training(
-                batch.worker_ids, batch.target_profession
+                batch.worker_ids, batch.target_profession, batch.engineer_specialty
             )
             if returned:
                 self.io.print(
@@ -554,6 +555,7 @@ class Game:
                         "age_seasons": w.age_seasons,
                         "has_mba": w.has_mba,
                         "profession": w.profession,
+                        "engineer_specialty": w.engineer_specialty,
                     }
                     for w in p.workforce.workers
                 ],
@@ -588,6 +590,8 @@ class Game:
                     "dollops_to_educator": r.dollops_to_educator,
                     "dollops_to_transporter": r.dollops_to_transporter,
                     "target_profession": r.target_profession,
+                    "engineer_specialty": r.engineer_specialty,
+                    "duration_seasons": r.duration_seasons,
                     "proposed_year": r.proposed_year,
                     "proposed_season": r.proposed_season,
                     "status": r.status.value,
@@ -760,6 +764,7 @@ class Game:
                     age_seasons=w.get("age_seasons", 0),
                     has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
+                    engineer_specialty=w.get("engineer_specialty", ""),
                 )
                 for w in wf_data.get("workers", [])
             ]
@@ -845,6 +850,8 @@ class Game:
                 dollops_to_educator=rd.get("dollops_to_educator", 0),
                 dollops_to_transporter=rd.get("dollops_to_transporter", 0),
                 target_profession=rd.get("target_profession", Profession.UNSKILLED.value),
+                engineer_specialty=rd.get("engineer_specialty", ""),
+                duration_seasons=rd.get("duration_seasons", 0),
                 proposed_year=rd.get("proposed_year", 0),
                 proposed_season=rd.get("proposed_season", 0),
                 status=TrainingStatus(rd["status"]),

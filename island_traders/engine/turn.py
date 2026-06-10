@@ -6,6 +6,7 @@ from ..models.market import Market
 from ..models.resource import ResourceType
 from ..models.training import (
     TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
+    engineer_training_duration,
 )
 from ..models.staffing import StaffingRegistry, StaffingStatus
 from ..engine.events import EventResult
@@ -17,7 +18,7 @@ from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_fund
 from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
 from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
-    WorkerBand, band_of,
+    WorkerBand, EngineerSpecialty, band_of,
 )
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
@@ -937,12 +938,28 @@ class TurnManager:
                     f"{len(trainable_ids)} eligible worker(s) are available now."
                 )
         else:
+            engineer_specialty = ""
+            if target_profession == Profession.ENGINEER.value:
+                engineer_specialty = self._choose_engineer_specialty()
+                if engineer_specialty:
+                    engineer_ids = [
+                        w.worker_id
+                        for w in player.workforce.active_workers
+                        if w.profession == Profession.ENGINEER.value
+                        and w.worker_id not in reserved_worker_ids
+                    ]
+                    trainable_ids = engineer_ids + [
+                        wid for wid in trainable_ids if wid not in engineer_ids
+                    ]
             remaining_capacity = capacity_map[target_profession]["remaining"]
             max_send = min(len(trainable_ids), remaining_capacity)
             count = self.io.choose_quantity(
                 f"How many workers to train as {target_profession}? (max {max_send})", 1, max_send
             )
             training_plan = {target_profession: count}
+            engineer_specialty_by_profession = {target_profession: engineer_specialty}
+        if target_profession == bundle_option:
+            engineer_specialty_by_profession = {}
         worker_ids = trainable_ids[:count]
 
         # Self-training: if THIS player is the Educator, they're training their
@@ -990,17 +1007,34 @@ class TurnManager:
                     min(count, requester_ticket_pool),
                 )
             ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
-            course_duration = away_seasons(target_profession)
-            is_manager = band_of(target_profession) == WorkerBand.MANAGER
-            # Expertise is burned per Course per season — Manager-tier only;
-            # apprenticeships (Technician) are not Course/Expertise gated.
-            courses = self.courses_needed(count) if is_manager else 0
             expertise_price = self.market.current_price(ResourceType.EXPERTISE)
             base_fee = 20.0 * count
-            food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * count * course_duration
+            course_duration = 0
+            courses = 0
+            food_accom = 0.0
+            expertise_cost = 0.0
+            fee_worker_offset = 0
+            for profession, profession_count in training_plan.items():
+                batch_worker_ids = worker_ids[
+                    fee_worker_offset:fee_worker_offset + profession_count
+                ]
+                fee_worker_offset += profession_count
+                duration = self._training_duration_for_selection(
+                    profession,
+                    batch_worker_ids,
+                    player,
+                    engineer_specialty_by_profession.get(profession, ""),
+                )
+                course_duration = max(course_duration, duration)
+                food_accom += (
+                    TRAINEE_FOOD_ACCOM_PER_SEASON * profession_count * duration
+                )
+                if band_of(profession) == WorkerBand.MANAGER:
+                    profession_courses = self.courses_needed(profession_count)
+                    courses += profession_courses
+                    expertise_cost += expertise_price * profession_courses * duration
             educator_ticket_count = count - tickets_supplied_by_requester
             tickets = ticket_price * educator_ticket_count
-            expertise_cost = expertise_price * courses * course_duration
             suggested_total = base_fee + food_accom + tickets + expertise_cost
             self.io.print(
                 f"  Fee components — base {base_fee:.0f}, food/accom "
@@ -1045,6 +1079,10 @@ class TurnManager:
                 if count else 0.0
             )
             try:
+                specialty = engineer_specialty_by_profession.get(profession, "")
+                duration = self._training_duration_for_selection(
+                    profession, batch_worker_ids, player, specialty
+                )
                 req = self.training.propose(
                     requester_id=player.player_id,
                     worker_ids=batch_worker_ids,
@@ -1056,6 +1094,8 @@ class TurnManager:
                     season=season_index,
                     transport_mode=transport_mode,
                     tickets_supplied_by_requester=batch_requester_tickets,
+                    engineer_specialty=specialty,
+                    duration_seasons=duration,
                 )
             except TrainingCapacityError as e:
                 self.io.print(f"  {e}")
@@ -1273,6 +1313,44 @@ class TurnManager:
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * educator_tickets
         return fair_rate + ticket_cost
 
+    def _choose_engineer_specialty(self) -> str:
+        options = [{"label": "No specialty", "value": ""}]
+        options.extend(
+            {"label": f"{specialty.value} specialty", "value": specialty.value}
+            for specialty in EngineerSpecialty
+        )
+        choice = self.io.choose_option(
+            "Engineer specialty course?",
+            options,
+            request_summary={
+                "kind": "engineer_specialty",
+                "note": "Optional fourth season, or one-season return course for existing Engineers.",
+            },
+        )
+        return choice or ""
+
+    def _training_duration_for_selection(
+        self,
+        profession: str,
+        worker_ids: list[int],
+        player: Player,
+        engineer_specialty: str = "",
+    ) -> int:
+        if profession != Profession.ENGINEER.value:
+            return away_seasons(profession)
+        if not engineer_specialty:
+            return away_seasons(profession)
+        workers = {
+            worker.worker_id: worker
+            for worker in player.workforce.workers
+            if worker.worker_id in set(worker_ids)
+        }
+        returning_engineer = bool(workers) and all(
+            worker.profession == Profession.ENGINEER.value
+            for worker in workers.values()
+        )
+        return engineer_training_duration(engineer_specialty, returning_engineer)
+
     def _auto_arrange_transport(self, requester, req, season_name: str, year: int) -> None:
         """Find an AI Transporter to handle the logistics, or flag for human turn."""
         transporters = [
@@ -1305,6 +1383,12 @@ class TurnManager:
 
     def _training_worker_is_eligible(self, worker, req) -> bool:
         """True when this active worker can fill the request's trainee seat."""
+        if (
+            req.target_profession == Profession.ENGINEER.value
+            and req.engineer_specialty
+            and worker.profession == Profession.ENGINEER.value
+        ):
+            return True
         if worker.training_level >= 3:
             return False
         return (
@@ -1519,6 +1603,7 @@ class TurnManager:
             cohort_year,
             cohort_season,
             exclude_batch_id=req.batch_id,
+            engineer_specialty=req.engineer_specialty,
         )
         return self.courses_needed(existing + len(req.worker_ids)) - self.courses_needed(
             existing
@@ -1540,7 +1625,7 @@ class TurnManager:
         """
         band = band_of(req.target_profession)
         need_courses = self._incremental_courses_for_request(req, year, season)
-        reagents_needed = self._training_reagents_needed(req.target_profession, need_courses)
+        reagents_needed = self._training_reagents_needed(req, need_courses)
         if band == WorkerBand.MANAGER:
             prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
             lect = educator.workforce.count_profession(Profession.LECTURER.value)
@@ -1612,14 +1697,17 @@ class TurnManager:
         return True, ""
 
     @staticmethod
-    def _training_reagents_needed(target_profession: str, need_courses: int) -> int:
+    def _training_reagents_needed(req, need_courses: int) -> int:
         if need_courses <= 0:
             return 0
         try:
-            profession = Profession(target_profession)
+            profession = Profession(req.target_profession)
         except ValueError:
             return 0
-        return need_courses if profession in SCIENCE_TRAINING_PROFESSIONS else 0
+        if profession not in SCIENCE_TRAINING_PROFESSIONS:
+            return 0
+        duration = req.duration_seasons or away_seasons(req.target_profession)
+        return need_courses * duration
 
     def _manager_course_capacity(self, educator: Player) -> int:
         prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
@@ -1647,7 +1735,7 @@ class TurnManager:
         """
         band = band_of(req.target_profession)
         need_courses = self._incremental_courses_for_request(req, year, season)
-        reagents_needed = self._training_reagents_needed(req.target_profession, need_courses)
+        reagents_needed = self._training_reagents_needed(req, need_courses)
         if need_courses > 0:
             educator.give_resources(ResourceType.COURSES, need_courses)
         if reagents_needed > 0:
@@ -1697,8 +1785,11 @@ class TurnManager:
         self.io.print("  Current training pipeline:")
         grouped: dict[tuple[str, str, TrainingStatus], int] = {}
         for req in active:
+            label = self._profession_label(req.target_profession)
+            if req.engineer_specialty:
+                label = f"{label} ({req.engineer_specialty})"
             key = (
-                self._profession_label(req.target_profession),
+                label,
                 self._format_training_return(req),
                 req.status,
             )

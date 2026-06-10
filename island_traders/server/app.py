@@ -1639,6 +1639,13 @@ class GameManager:
             recipes_for_role, compute_capacity, find_item,
         )
         from ..models.profession import WorkerBand, primary_title
+        from ..engine.engineering import (
+            active_engineer_specialty_counts,
+            adjusted_capacity_for_engineers,
+            adjusted_recipe_for_engineers,
+            adjusted_workforce_for_engineers,
+            specialty_payload,
+        )
 
         # Build workforce by band (active workers only)
         band_counts = p.workforce.band_summary()
@@ -1647,6 +1654,10 @@ class GameManager:
             WorkerBand.TECHNICIAN: band_counts.get("Technician", 0),
             WorkerBand.WORKER:     band_counts.get("Worker", 0),
         }
+        engineer_counts = active_engineer_specialty_counts(p)
+        effective_wf_by_band = adjusted_workforce_for_engineers(
+            wf_by_band, engineer_counts
+        )
 
         on_hand = {r.value: p.inventory.get(r) for r in p.inventory.amounts}
 
@@ -1681,6 +1692,7 @@ class GameManager:
                         },
                     )
                 # Apply patent boost to this output's input requirements
+                recipe = adjusted_recipe_for_engineers(recipe, engineer_counts)
                 mult = p.patent_input_multiplier(recipe.output)
                 if mult < 1.0:
                     boosted_inputs = {k: v * mult for k, v in recipe.inputs.items()}
@@ -1720,9 +1732,10 @@ class GameManager:
                     recipe=boosted,
                     catalogue=CAPITAL_CATALOGUE,
                     owned=p.capital_inventory,
-                    workforce=wf_by_band,
+                    workforce=effective_wf_by_band,
                     on_hand=on_hand_for_cap,
                 )
+                cap = adjusted_capacity_for_engineers(cap, engineer_counts, recipe.output)
                 # Per-input shortfall (units needed to lift the input cap to
                 # the next bottleneck). Useful for the constraint popup
                 # ("buy 4 more Oil").
@@ -1768,7 +1781,7 @@ class GameManager:
                         if per_unit <= 0:
                             continue
                         need = per_unit * workforce_target
-                        have = wf_by_band.get(band, 0)
+                        have = effective_wf_by_band.get(band, 0)
                         short = need - have
                         if short > 0:
                             # Name the missing workers by their specific
@@ -1858,6 +1871,7 @@ class GameManager:
                     # floor" chip so the player can see why output is
                     # reduced (or about to be).  1.0 = no floor applies.
                     "degradation_floor": round(degradation_floor, 3),
+                    "engineer_specialties": specialty_payload(p),
                 })
 
         effective_capital = p.effective_capital_inventory()
@@ -2002,6 +2016,7 @@ class GameManager:
             "capital_owned":   capital_owned,
             "capital_in_transit": in_transit,
             "band_counts":     band_counts,
+            "engineer_specialties": specialty_payload(p),
         }
 
     @staticmethod
@@ -2106,10 +2121,15 @@ class GameManager:
                                 shortfall > 0 and have_at_requester >= shortfall
                             )
 
+            target_label = self._profession_label(req.target_profession)
+            if req.engineer_specialty:
+                target_label = f"{target_label} ({req.engineer_specialty})"
             pipeline.append({
                 "batch_id": req.batch_id,
                 "worker_count": len(req.worker_ids),
-                "target_profession": self._profession_label(req.target_profession),
+                "target_profession": target_label,
+                "engineer_specialty": req.engineer_specialty or None,
+                "duration_seasons": req.duration_seasons or None,
                 # Status is the canonical TrainingStatus enum value.
                 "status": req.status.value,
                 "educator_player_id": req.educator_id,

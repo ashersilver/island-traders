@@ -590,12 +590,17 @@ class Player:
         if not capital_catalogue:
             return 0.0
         items = {item.item_id: item for item in capital_catalogue}
-        depreciation_ticks = 5 * 4
         total = 0.0
+        from ..engine.engineering import effective_capital_service_life
         for item_id, count in self.capital_inventory.items():
             item = items.get(item_id)
             if not item:
                 continue
+            depreciation_ticks = effective_capital_service_life(
+                self, item.service_life_seasons
+            )
+            if depreciation_ticks <= 0:
+                depreciation_ticks = 5 * 4
             ticks = list(self.capital_acquired_ticks.get(item_id, []))
             if len(ticks) < count:
                 ticks.extend([0] * (count - len(ticks)))

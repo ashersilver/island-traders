@@ -17,6 +17,7 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.profession import Profession
+from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 from island_traders.models.training import TrainingRegistry
 
@@ -54,6 +55,7 @@ def _game(educator_human: bool) -> Game:
 def test_request_does_not_dispatch_workers_with_ai_educator():
     g = _game(educator_human=False)
     farmer, educator = g.players
+    educator.receive_resources(ResourceType.REAGENTS, 2)
     res = TurnResult(player_id=farmer.player_id, season="Spring", year=0)
 
     g.turn_manager._action_request_training(farmer, res, "Spring", 0)
@@ -68,6 +70,7 @@ def test_request_does_not_dispatch_workers_with_ai_educator():
 def test_ai_educator_approves_and_dispatches_on_its_own_turn():
     g = _game(educator_human=False)
     farmer, educator = g.players
+    educator.receive_resources(ResourceType.REAGENTS, 2)
     res = TurnResult(player_id=farmer.player_id, season="Spring", year=0)
     g.turn_manager._action_request_training(farmer, res, "Spring", 0)
     assert farmer.workforce.training_count == 0
