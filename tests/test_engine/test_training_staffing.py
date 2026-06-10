@@ -57,9 +57,12 @@ def _staff(educator: Player, profession: Profession, count: int) -> None:
     )
 
 
-def _fund_training(educator: Player, courses: int = 20, expertise: int = 20) -> None:
+def _fund_training(
+    educator: Player, courses: int = 20, expertise: int = 20, reagents: int = 20
+) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, reagents)
 
 
 def test_manager_capacity_min_of_2x_professor_and_lecturer():

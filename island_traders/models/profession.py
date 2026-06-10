@@ -38,6 +38,7 @@ class Profession(str, Enum):
     OIL_EXTRACTION       = "OilExtractionWorker"
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
+    ACTUARY              = "Actuary"
     PROFESSOR            = "Professor"
     TECHNICAL_DIRECTOR   = "TechnicalDirector"
     MECHANIC             = "Mechanic"          # Technician band, multi-island
@@ -52,8 +53,12 @@ class Profession(str, Enum):
     # Banker — technician-tier clerical staff
     BANKING_ANALYST      = "BankingAnalyst"    # Technician (Banker)
     BANKING_CLERK        = "BankingClerk"      # Technician (Banker)
+    # Manufacturer — skilled trades
+    TRADESMAN            = "Tradesman"         # Technician (Manufacturer)
     # Doctor — technician-tier medical support
     MEDICAL_ORDERLY      = "MedicalOrderly"    # Technician (Doctor)
+    MEDICAL_RESEARCHER   = "MedicalResearcher" # Manager (Doctor)
+    MEDICAL_TECHNICIAN   = "MedicalTechnician" # Technician (Doctor)
     # Cross-island sustenance support
     CHEF                 = "Chef"              # Technician (all islands)
 
@@ -84,6 +89,7 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.OIL_EXTRACTION:      WorkerBand.TECHNICIAN,
     Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
     Profession.BANKER:              WorkerBand.MANAGER,
+    Profession.ACTUARY:             WorkerBand.TECHNICIAN,
     Profession.PROFESSOR:           WorkerBand.MANAGER,
     Profession.TECHNICAL_DIRECTOR:  WorkerBand.MANAGER,
     Profession.MECHANIC:            WorkerBand.TECHNICIAN,
@@ -98,8 +104,12 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     # Banker
     Profession.BANKING_ANALYST:     WorkerBand.TECHNICIAN,
     Profession.BANKING_CLERK:       WorkerBand.TECHNICIAN,
+    # Manufacturer
+    Profession.TRADESMAN:           WorkerBand.TECHNICIAN,
     # Doctor
     Profession.MEDICAL_ORDERLY:     WorkerBand.TECHNICIAN,
+    Profession.MEDICAL_RESEARCHER:  WorkerBand.MANAGER,
+    Profession.MEDICAL_TECHNICIAN:  WorkerBand.TECHNICIAN,
     # Cross-island
     Profession.CHEF:                WorkerBand.TECHNICIAN,
 }
@@ -141,17 +151,17 @@ BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     },
     "Banker": {
         WorkerBand.MANAGER:    ["Banker"],
-        WorkerBand.TECHNICIAN: ["Banking Analyst", "Banking Clerk", "Chef"],
+        WorkerBand.TECHNICIAN: ["Banking Analyst", "Actuary", "Banking Clerk", "Chef"],
         WorkerBand.WORKER:     ["Receptionist"],
     },
     "Manufacturer": {
         WorkerBand.MANAGER:    ["Engineer"],
-        WorkerBand.TECHNICIAN: ["Factory Foreman", "Assembly Tech", "Mechanic", "Chef"],
+        WorkerBand.TECHNICIAN: ["Factory Foreman", "Tradesman", "Assembly Tech", "Mechanic", "Chef"],
         WorkerBand.WORKER:     ["Assembler"],
     },
     "Doctor": {
-        WorkerBand.MANAGER:    ["Doctor", "Nurse"],
-        WorkerBand.TECHNICIAN: ["Medical Orderly", "Chef"],
+        WorkerBand.MANAGER:    ["Doctor", "Nurse", "Medical Researcher"],
+        WorkerBand.TECHNICIAN: ["Medical Technician", "Medical Orderly", "Chef"],
         WorkerBand.WORKER:     ["Aide"],
     },
 }
@@ -174,6 +184,7 @@ EDUCATION_SEASONS: dict[Profession, int] = {
     Profession.FARMER:             2,
     Profession.MINER:              2,
     Profession.BANKER:             2,
+    Profession.MEDICAL_RESEARCHER: 2,
     Profession.PROFESSOR:          2,
     Profession.TECHNICAL_DIRECTOR: 2,
     Profession.LOGISTICS_MANAGER:  2,
@@ -206,8 +217,11 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     # Banker technicians
     Profession.BANKING_ANALYST:     1,
     Profession.BANKING_CLERK:       1,
+    Profession.ACTUARY:             1,
+    Profession.TRADESMAN:           1,
     # Doctor technicians
     Profession.MEDICAL_ORDERLY:     1,
+    Profession.MEDICAL_TECHNICIAN:  1,
     # Cross-island technicians
     Profession.CHEF:                1,
 }
@@ -245,15 +259,38 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
         Profession.INSTRUCTOR,
         Profession.CHEF,
     ],
-    "Banker":        [Profession.BANKER, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF],
+    "Banker":        [Profession.BANKER, Profession.ACTUARY, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF],
     "Manufacturer":  [
         Profession.FACTORY_FOREMAN,
+        Profession.TRADESMAN,
         Profession.ASSEMBLY_WORKER,
         Profession.ENGINEER,
         Profession.MECHANIC,
         Profession.CHEF,
     ],
-    "Doctor":        [Profession.DOCTOR, Profession.NURSE, Profession.MEDICAL_ORDERLY, Profession.CHEF],
+    "Doctor":        [
+        Profession.DOCTOR,
+        Profession.NURSE,
+        Profession.MEDICAL_RESEARCHER,
+        Profession.MEDICAL_TECHNICIAN,
+        Profession.MEDICAL_ORDERLY,
+        Profession.CHEF,
+    ],
+}
+
+# Training that uses lab Reagents in addition to normal Expertise/Course slots.
+SCIENCE_TRAINING_PROFESSIONS: set[Profession] = {
+    Profession.FARMER,
+    Profession.HORTICULTURALIST,
+    Profession.VETERINARIAN,
+    Profession.MINER,
+    Profession.REFINERY_SPECIALIST,
+    Profession.PROFESSOR,
+    Profession.DOCTOR,
+    Profession.NURSE,
+    Profession.MEDICAL_RESEARCHER,
+    Profession.MEDICAL_TECHNICIAN,
+    Profession.ENGINEER,
 }
 
 # Human-readable label for display
@@ -274,6 +311,7 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.OIL_EXTRACTION:      "Oil Extraction Worker",
     Profession.REFINERY_SPECIALIST: "Refiner",
     Profession.BANKER:              "Banker (specialist)",
+    Profession.ACTUARY:             "Actuary",
     Profession.PROFESSOR:           "Professor",
     Profession.TECHNICAL_DIRECTOR:  "Technical Director",
     Profession.MECHANIC:            "Mechanic",
@@ -288,8 +326,12 @@ PROFESSION_LABEL: dict[Profession, str] = {
     # Banker
     Profession.BANKING_ANALYST:     "Banking Analyst",
     Profession.BANKING_CLERK:       "Banking Clerk",
+    # Manufacturer
+    Profession.TRADESMAN:           "Tradesman",
     # Doctor
     Profession.MEDICAL_ORDERLY:     "Medical Orderly",
+    Profession.MEDICAL_RESEARCHER:  "Medical Researcher",
+    Profession.MEDICAL_TECHNICIAN:  "Medical Technician",
     # Cross-island
     Profession.CHEF:                "Chef",
 }

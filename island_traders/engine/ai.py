@@ -14,7 +14,7 @@ from ..constants import (
     PRODUCTION_INPUTS,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
-    MBA_QUALIFIED_THRESHOLD,
+    MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role
@@ -320,6 +320,8 @@ class AIStrategy:
     ) -> list[str]:
         """Banker AI proactively sells base-premium policies to uninsured AI players."""
         actions: list[str] = []
+        if banker.workforce.count_profession(Profession.ACTUARY.value) <= 0:
+            return actions
         purchased_tick = year * 4 + season_index
         expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
         for target in other_players:
@@ -333,10 +335,11 @@ class AIStrategy:
                     if target.has_active_insurance(policy_type, year, season_index):
                         continue
                     premium = INSURANCE_BASE_PREMIUM[policy_type]
-                    if target.dollops < premium or banker.dollops < 0:
+                    if target.dollops < premium or banker.dollops < ACTUARIAL_EVALUATION_COST:
                         continue
                     target.spend_dollops(premium)
                     banker.receive_dollops(premium)
+                    banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
                     policy = InsurancePolicy(
                         policy_id=len(target.insurance_policies) + 1,
                         policy_type=policy_type,

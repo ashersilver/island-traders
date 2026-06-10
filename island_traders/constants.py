@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-05.9"
+APP_VERSION: str = "0.1.0-dev.2026-06-10.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -134,12 +134,12 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # could never make more, hard-stalling all training (playtest 2026-06).
     # Not multiplied by PRODUCER_PRODUCTIVITY_MULTIPLIER: a course is one
     # classroom (up to MAX_CLASS_SIZE_PER_COURSE trainees), not a bulk crate.
-    # Rebalance 2026-06-02: reduce Patent production rate (was 0.75×M = 7.5/s
-    # at 47.5 Dp → 356 Dp/s of pure compounding value).  New rate 0.35×M ≈ 3.5/s
-    # at 32 Dp (price also cut) → ~112 Dp/s — significant but no longer dominant.
-    "Educator":      {"Expertise": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    # Rebalance 2026-06-10: Reagents no longer blanket-gate Education output,
+    # so Expertise/Patents are trimmed while Courses stay at 4 to preserve
+    # training throughput.
+    "Educator":      {"Expertise": 1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Courses": 4,
-                      "Patents": 0.35 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Patents": 0.10 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Banker rebalance 2026-06-02: small Finance production so the Banker has
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
@@ -159,7 +159,7 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
     "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"Reagents": 1},
+    "Educator":      {},
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
     # finance, insurance underwriting).  Expertise is still useful but is
@@ -169,6 +169,15 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     # Medical Sciences makes its own Reagents in-house from Oil + Ore (rather
     # than buying them), plus Expertise for clinical work (2026-06-02).
     "Doctor":        {"Expertise": 1, "Oil": 1, "Ore": 1},
+}
+
+# Inputs that gate only a specific output rather than the whole role's
+# production run.  This keeps generic Education output classroom-based while
+# preserving Reagents as the research input for Patents.
+OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
+    "Educator": {
+        "Patents": {"Reagents": 1},
+    },
 }
 
 # Per-season input→output table for the Farmer island.
@@ -357,9 +366,9 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
+        ("Actuary", 1),              # Technician — insurance underwriting
         ("BankingAnalyst", 1),       # Technician
         ("BankingClerk", 1),         # Technician
-        # +1 Unskilled remainder (Receptionist)
     ],
     "Manufacturer":  [("Engineer", 1), ("AssemblyWorker", 1), ("Mechanic", 1)],
     "Doctor":        [
@@ -467,9 +476,9 @@ SKILLED_PROFESSIONS: dict[str, list[str]] = {
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
     ],
     "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
-    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk", "Chef"],
-    "Manufacturer": ["FactoryForeman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly", "Chef"],
+    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef"],
+    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef"],
 }
 
 # ---------------------------------------------------------------------------
@@ -576,6 +585,8 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Healthcare
     "Doctor":               2,
     "Nurse":               10,
+    "MedicalResearcher":     2,
+    "MedicalTechnician":     8,
     "MedicalOrderly":       8,    # apprenticeship-tier healthcare support
     # Engineering / cross-island
     "Engineer":             2,
@@ -587,6 +598,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Veterinarian":         1,
     # Manufacturing
     "FactoryForeman":      4,
+    "Tradesman":           10,
     "AssemblyWorker":      10,
     # Mining
     "Miner":                2,
@@ -596,6 +608,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "RefinerySpecialist":   2,
     # Banking
     "Banker":               2,
+    "Actuary":              4,
     "BankingAnalyst":       4,
     "BankingClerk":         6,
     # Education
@@ -724,6 +737,10 @@ INSURANCE_BASE_PREMIUM: dict[str, float] = {
 # both when the Banker sells a sized policy and when the Education island
 # auto-provisions cover for incoming students.  Tunable in calibration.
 MEDICAL_PREMIUM_PER_HEAD: float = 8.0  # Dp per covered head for the full term
+
+# Internal underwriting cost paid by the Banker when issuing an insurance
+# policy. Requires an Actuary on staff.
+ACTUARIAL_EVALUATION_COST: float = 5.0
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
 # Doubled 2026-05-27 from 60 to 120 to offset the Banker calibration

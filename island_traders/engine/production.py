@@ -7,6 +7,7 @@ from ..engine.events import EventResult
 from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
+    OUTPUT_PRODUCTION_INPUTS,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     KITCHEN_SPECS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
@@ -324,6 +325,11 @@ class ProductionEngine:
             raw = BASE_PRODUCTION.get(role_name, {})
         return {ResourceType(k): v for k, v in raw.items()}
 
+    def _output_inputs(self, role_name: str, output: ResourceType) -> dict[ResourceType, int]:
+        """Return inputs consumed only when a specific output is produced."""
+        raw = OUTPUT_PRODUCTION_INPUTS.get(role_name, {}).get(output.value, {})
+        return {ResourceType(k): v for k, v in raw.items()}
+
     def _seasonal_yield(self, role_name: str, season_name: str) -> float:
         """Seasonal base-yield multiplier (1.0 for Farmer — table already encodes it)."""
         if role_name == "Farmer":
@@ -353,6 +359,40 @@ class ProductionEngine:
                 totals = {r: max(0, int(round(qty * avg_mult)))
                           for r, qty in totals.items()}
         return totals
+
+    def _affordable_output_inputs(
+        self,
+        player: Player,
+        role_name: str,
+        outputs: dict[ResourceType, int],
+    ) -> tuple[dict[ResourceType, int], set[ResourceType]]:
+        """Return output-specific inputs that can be paid, plus skipped outputs.
+
+        Output-specific gates are intentionally non-atomic: if an Educator lacks
+        Reagents for Patents, Expertise/Courses still run.
+        """
+        inventory_after_inputs = {
+            resource: player.inventory.get(resource)
+            for resource in ResourceType
+        }
+        consumed: dict[ResourceType, int] = {}
+        skipped: set[ResourceType] = set()
+        for output, qty in outputs.items():
+            if qty <= 0:
+                continue
+            needs = self._output_inputs(role_name, output)
+            missing = [
+                resource
+                for resource, amount in needs.items()
+                if inventory_after_inputs.get(resource, 0) < amount
+            ]
+            if missing:
+                skipped.add(output)
+                continue
+            for resource, amount in needs.items():
+                inventory_after_inputs[resource] = inventory_after_inputs.get(resource, 0) - amount
+                consumed[resource] = consumed.get(resource, 0) + amount
+        return consumed, skipped
 
     def _freight_surcharge(self, product_line: str | None, qty: int) -> int:
         """Return Freight units consumed to ship produced goods (Manufacturer only)."""
@@ -411,7 +451,15 @@ class ProductionEngine:
         produced: dict[ResourceType, int] = {}
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
-            for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
+            role_outputs = self._role_outputs(role.name, season_name, product_line)
+            output_inputs, skipped_outputs = self._affordable_output_inputs(
+                player, role.name, role_outputs
+            )
+            for r, qty in output_inputs.items():
+                player.give_resources(r, qty)
+            for r, base_qty in role_outputs.items():
+                if r in skipped_outputs:
+                    continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
                     qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
@@ -467,9 +515,23 @@ class ProductionEngine:
 
         outputs: dict[ResourceType, int] = {}
         freight_surcharge = 0
+        output_specific_inputs: dict[ResourceType, int] = {}
+        skipped_outputs: dict[str, list[ResourceType]] = {}
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
-            for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
+            role_outputs = self._role_outputs(role.name, season_name, product_line)
+            role_specific_inputs, role_skipped = self._affordable_output_inputs(
+                player, role.name, role_outputs
+            )
+            if role_skipped:
+                skipped_outputs[role.name] = sorted(role_skipped, key=lambda r: r.value)
+            for resource, qty_needed in role_specific_inputs.items():
+                output_specific_inputs[resource] = (
+                    output_specific_inputs.get(resource, 0) + qty_needed
+                )
+            for r, base_qty in role_outputs.items():
+                if r in role_skipped:
+                    continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
                     qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
@@ -483,6 +545,8 @@ class ProductionEngine:
             "can_produce": can,
             "missing_inputs": missing,
             "inputs_consumed": inputs,
+            "output_specific_inputs": output_specific_inputs,
+            "skipped_outputs": skipped_outputs,
             "outputs": outputs,
             "event": event_result.event_name,
             "yield_modifier": event_result.yield_modifier,

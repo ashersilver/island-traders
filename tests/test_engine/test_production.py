@@ -56,18 +56,17 @@ def test_banker_produces_finance_commodity(banker, normal_event):
     assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_needs_reagents_and_finance(normal_event):
-    """2026-06-02 rebalance: Educator consumes both Reagents and Finance
-    as production inputs (Finance creates demand for Banker output)."""
+def test_educator_expertise_runs_without_reagents(normal_event):
+    """Generic Education output is classroom-based; Reagents gate Patents and
+    science-track training, not all Expertise/Courses production."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
-    educator.receive_resources(ResourceType.REAGENTS, 1)
-    educator.receive_resources(ResourceType.FINANCE, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
+    assert ResourceType.PATENTS not in produced
 
 
 def test_doctor_produces_reagents_from_oil_and_ore(normal_event):

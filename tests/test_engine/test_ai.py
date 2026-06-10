@@ -6,6 +6,7 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 
@@ -23,6 +24,7 @@ def make_player(pid, name, role_names, dollops=300.0, is_human=False):
 def test_banker_ai_does_not_auto_charge_humans_or_itself_for_insurance():
     ai = AIStrategy()
     banker = make_player(1, "Banker AI", ["Banker", "Manufacturer"])
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.ACTUARY.value)
     human = make_player(2, "Human", ["Farmer"], is_human=True)
     miner_ai = make_player(3, "Miner AI", ["Miner"])
 

@@ -30,6 +30,7 @@ def _educator(num_workers: int = 4, courses: int = 5) -> Player:
     p.workforce.add_workers(1, training_level=1, profession="Professor")
     p.workforce.add_workers(1, training_level=1, profession="Lecturer")
     p.receive_resources(ResourceType.EXPERTISE, 20)
+    p.receive_resources(ResourceType.REAGENTS, 20)
     if courses:
         p.receive_resources(ResourceType.COURSES, courses)
     return p

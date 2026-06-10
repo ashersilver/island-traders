@@ -5,6 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex-science-reagents-gating-75-76
+
+Version bump: `0.1.0-dev.2026-06-10.1`
+
+**Science profession set + Reagents gating (#75, #76, #24).** Adds Actuary
+(Banking), Tradesman (Manufacturing), Medical Researcher, and Medical Technician
+(Healthcare) across profession enum/bands/display labels, role training lists,
+skilled-workforce maps, university capacities, and course durations. Banking
+insurance now requires at least one Actuary on staff, Banking starts with one
+Actuary so insurance is live from game start, and each issued policy charges
+the Banker the 5 Dp actuarial evaluation cost. Reagents no longer
+blanket-gate Educator production: Expertise and generic Courses can run without
+Reagents, Patents still consume Reagents as research output, and only the
+confirmed science-track professions consume Reagents during training.
+
+**Calibration sanity.** Removing the blanket Educator input made Educator spike
+to 44.5% wins on `--games 1000 --seed 42`; trimming Educator Expertise and
+Patent output while keeping Course slots at 4 brought the same sanity check to:
+Farmer 3.8%, Miner 20.1%, Transporter 25.0%, Educator 19.6%, Banker 6.0%,
+Manufacturer 5.9%, Doctor 19.6%. This fixes the #76-specific Educator spike;
+broader role balance remains a separate calibration pass.
+
 ### claude/pr-template-closes-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.9`

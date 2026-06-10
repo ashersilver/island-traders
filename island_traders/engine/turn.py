@@ -15,7 +15,10 @@ from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
-from ..models.profession import Profession, PROFESSION_LABEL, WorkerBand, band_of
+from ..models.profession import (
+    Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
+    WorkerBand, band_of,
+)
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
@@ -24,7 +27,8 @@ from ..constants import (
     TRAINEE_FOOD_ACCOM_PER_SEASON,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
-    MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD, WORKPLACE_RISK,
+    MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD,
+    ACTUARIAL_EVALUATION_COST, WORKPLACE_RISK,
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
     REPURPOSE_WORKER_COST,
 )
@@ -1536,6 +1540,7 @@ class TurnManager:
         """
         band = band_of(req.target_profession)
         need_courses = self._incremental_courses_for_request(req, year, season)
+        reagents_needed = self._training_reagents_needed(req.target_profession, need_courses)
         if band == WorkerBand.MANAGER:
             prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
             lect = educator.workforce.count_profession(Profession.LECTURER.value)
@@ -1551,6 +1556,8 @@ class TurnManager:
                 )
             if educator.inventory.get(ResourceType.EXPERTISE) < 2 * need_courses:
                 return False, f"needs {2 * need_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
+                return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1593,6 +1600,8 @@ class TurnManager:
                 )
             if educator.inventory.get(ResourceType.EXPERTISE) < need_courses:
                 return False, f"needs {need_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
+                return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1601,6 +1610,16 @@ class TurnManager:
                 )
             return True, ""
         return True, ""
+
+    @staticmethod
+    def _training_reagents_needed(target_profession: str, need_courses: int) -> int:
+        if need_courses <= 0:
+            return 0
+        try:
+            profession = Profession(target_profession)
+        except ValueError:
+            return 0
+        return need_courses if profession in SCIENCE_TRAINING_PROFESSIONS else 0
 
     def _manager_course_capacity(self, educator: Player) -> int:
         prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
@@ -1628,21 +1647,26 @@ class TurnManager:
         """
         band = band_of(req.target_profession)
         need_courses = self._incremental_courses_for_request(req, year, season)
+        reagents_needed = self._training_reagents_needed(req.target_profession, need_courses)
         if need_courses > 0:
             educator.give_resources(ResourceType.COURSES, need_courses)
+        if reagents_needed > 0:
+            educator.give_resources(ResourceType.REAGENTS, reagents_needed)
         if band == WorkerBand.MANAGER:
             expertise = 2 * need_courses
             if expertise > 0:
                 educator.give_resources(ResourceType.EXPERTISE, expertise)
             return (
-                f"{need_courses} Course slot(s) + {expertise} Expertise "
+                f"{need_courses} Course slot(s) + {expertise} Expertise"
+                f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the Manager-tier course"
             )
         if band == WorkerBand.TECHNICIAN:
             if need_courses > 0:
                 educator.give_resources(ResourceType.EXPERTISE, need_courses)
             return (
-                f"{need_courses} Course slot(s) + {need_courses} Expertise "
+                f"{need_courses} Course slot(s) + {need_courses} Expertise"
+                f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the technical course"
             )
         return f"{need_courses} Course slot(s)"
@@ -2424,6 +2448,15 @@ class TurnManager:
         if not any(r.name == "Banker" for r in player.roles):
             self.io.print("  Only the Banker can sell insurance policies.")
             return
+        if not self._banker_can_underwrite_insurance(player):
+            self.io.print("  Cannot issue policy: no Actuary on staff.")
+            return
+        if player.dollops < ACTUARIAL_EVALUATION_COST:
+            self.io.print(
+                f"  Cannot issue policy: needs {ACTUARIAL_EVALUATION_COST:.0f} "
+                f"{CURRENCY_SYMBOL} for actuarial evaluation."
+            )
+            return
         sym = CURRENCY_SYMBOL
         eligible = [p for p in self.players if p.player_id != player.player_id]
         if not eligible:
@@ -2505,6 +2538,7 @@ class TurnManager:
 
         buyer.spend_dollops(premium)
         player.receive_dollops(premium)
+        player.spend_dollops(ACTUARIAL_EVALUATION_COST)
         policy_id = len(buyer.insurance_policies) + 1
         purchased_tick = year * 4 + season_index
         policy = InsurancePolicy(
@@ -2520,9 +2554,14 @@ class TurnManager:
         buyer.add_insurance_policy(policy)
         self.io.print(
             f"  Policy issued: {policy.describe()}  "
-            f"— {buyer.name} paid {premium:.0f} {sym}"
+            f"— {buyer.name} paid {premium:.0f} {sym}; "
+            f"actuarial evaluation cost {ACTUARIAL_EVALUATION_COST:.0f} {sym}"
         )
         result.actions_taken.append(f"sell_insurance:{policy_type}:{buyer.name}")
+
+    @staticmethod
+    def _banker_can_underwrite_insurance(banker: Player) -> bool:
+        return banker.workforce.count_profession(Profession.ACTUARY.value) > 0
 
     def _action_buy_insurance(
         self, player: Player, result: TurnResult, year: int, season_index: int
@@ -2547,6 +2586,15 @@ class TurnManager:
             self.io.print("  No Banker player in this game.")
             return
         banker = self.io.choose_player("Buy from which Banker?", bankers)
+        if not self._banker_can_underwrite_insurance(banker):
+            self.io.print("  Cannot issue policy: no Actuary on staff.")
+            return
+        if banker.dollops < ACTUARIAL_EVALUATION_COST:
+            self.io.print(
+                f"  Cannot issue policy: {banker.name} needs "
+                f"{ACTUARIAL_EVALUATION_COST:.0f} {sym} for actuarial evaluation."
+            )
+            return
 
         self.io.print("\n  Available policies:")
         self.io.print(
@@ -2593,6 +2641,7 @@ class TurnManager:
 
         player.spend_dollops(premium)
         banker.receive_dollops(premium)
+        banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
         policy_id = len(player.insurance_policies) + 1
         purchased_tick = year * 4 + season_index
         policy = InsurancePolicy(
