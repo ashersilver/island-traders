@@ -90,12 +90,28 @@ from the market or another island costs no transport. The Transporter
 therefore sells an ingredient, not a service, and distance/logistics play no
 strategic role.
 
-### D5. Price-signal asymmetry
-`reset_period_signals` clears **demand** each season but not **supply**, so
-gluts depress the formula price persistently while scarcity signals evaporate.
-(If intended — supply as standing inventory, demand as flow — document it;
-otherwise decay both.) With the ×10 production multiplier, a single bulk sale
-can swing the factor across much of its clamp range in one step.
+### D5. Price-signal asymmetry — and a muted signal overall
+`reset_period_signals` clears **demand** each season but not **supply**:
+supply is a never-expiring stock (the market-maker's standing inventory),
+demand a one-season flow. Gluts therefore depress the formula price
+persistently (a one-time bulk dump suppresses the price until the pile is
+physically bought out) while scarcity signals — including a starving
+population's posted shortfall demand — evaporate at season end even when the
+underlying need persists. Prices ratchet downward over a game.
+
+**Additionally, the formula's response is far narrower than designed:**
+`(d−s)/(s+d+1)` is bounded in (−1, 1), so with `PRICE_ELASTICITY = 0.3` the
+factor can only reach **0.70–1.30**. The configured clamps of **0.2×–5.0×**
+are unreachable via supply/demand alone (only disaster shocks can hit them) —
+no famine can raise a price more than +30%, no glut lower it more than −30%.
+Prices carry little information and speculation can't pay.
+
+*Fix options (compose well, pair with P1):* (1) decay both counters 50%/season
+instead of wiping one; (2) spoilage on perishable market stock
+(Food/Fish/Produce −25%/season); (3) raise elasticity (~0.8) or use a
+nonlinear curve so the existing clamps come back into play; (4) carry unfilled
+sustenance shortfall over as backlog demand. If the stock-vs-flow split is
+intentional inventory pricing, it still needs (2) and (4) to be coherent.
 
 ### D6. Interest rates float free of the economy
 `posted_funding_rates` vary by term and date but link to nothing — no
