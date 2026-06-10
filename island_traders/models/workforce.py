@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from .profession import (
-    Profession, WorkerBand, band_of,
+    Profession, WorkerBand, EngineerSpecialty, band_of,
     APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
 )
 
@@ -34,6 +34,9 @@ class Worker:
     # Set True while the worker is on a staffing contract at another island.
     # Excludes them from the home island's active workforce during the contract.
     on_contract: bool = False
+    # Optional Engineer specialization earned by a fourth consecutive season
+    # or a later one-season return course.
+    engineer_specialty: str = ""
 
     @property
     def plateau(self) -> float:
@@ -53,6 +56,9 @@ class Worker:
             return "At College"
         if self.profession == Profession.UNSKILLED.value:
             return "Unskilled"
+        if self.profession == Profession.ENGINEER.value and self.engineer_specialty:
+            suffix = " — settling" if self.settling_seasons > 0 else ""
+            return f"Engineer ({self.engineer_specialty}){suffix}"
         levels = ["", "Basic", "Skilled", "Expert"]
         level_str = levels[min(self.training_level, 3)]
         suffix = " — settling" if self.settling_seasons > 0 else ""
@@ -79,9 +85,18 @@ class Worker:
     def depart_for_training(self) -> None:
         self.in_training = True
 
-    def return_from_training(self, target_profession: str | None = None) -> None:
+    def return_from_training(
+        self,
+        target_profession: str | None = None,
+        engineer_specialty: str = "",
+    ) -> None:
         self.in_training = False
         self.train(target_profession)
+        if self.profession == Profession.ENGINEER.value and engineer_specialty:
+            try:
+                self.engineer_specialty = EngineerSpecialty(engineer_specialty).value
+            except ValueError:
+                self.engineer_specialty = ""
         # Apprenticeship (Technician band) graduates work a reduced-output
         # settling season on the home island; university graduates do not.
         if band_of(self.profession) == WorkerBand.TECHNICIAN:
@@ -99,6 +114,7 @@ class Workforce:
         training_level: int = 0,
         profession: str = Profession.UNSKILLED.value,
         age_seasons: int = 0,
+        engineer_specialty: str = "",
     ) -> list[Worker]:
         new: list[Worker] = []
         for _ in range(count):
@@ -107,6 +123,7 @@ class Workforce:
                 training_level=training_level,
                 profession=profession,
                 age_seasons=age_seasons,
+                engineer_specialty=engineer_specialty,
             )
             self._next_id += 1
             self.workers.append(w)
@@ -245,6 +262,16 @@ class Workforce:
     def mechanic_count(self) -> int:
         return self.count_profession(Profession.MECHANIC.value)
 
+    def engineer_specialty_counts(self) -> dict[str, int]:
+        counts = {specialty.value: 0 for specialty in EngineerSpecialty}
+        for worker in self.active_workers:
+            if (
+                worker.profession == Profession.ENGINEER.value
+                and worker.engineer_specialty in counts
+            ):
+                counts[worker.engineer_specialty] += 1
+        return counts
+
     def workforce_fill_rate(self, required: int) -> float:
         if required <= 0:
             return 1.0
@@ -275,12 +302,15 @@ class Workforce:
         return removed
 
     def return_from_training(
-        self, worker_ids: list[int], target_profession: str | None = None
+        self,
+        worker_ids: list[int],
+        target_profession: str | None = None,
+        engineer_specialty: str = "",
     ) -> list[Worker]:
         returned = []
         for w in self.workers:
             if w.worker_id in worker_ids and w.in_training:
-                w.return_from_training(target_profession)
+                w.return_from_training(target_profession, engineer_specialty)
                 returned.append(w)
         return returned
 

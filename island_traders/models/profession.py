@@ -70,6 +70,17 @@ class WorkerBand(str, Enum):
     WORKER     = "Worker"       # untrained / hired from population
 
 
+class EngineerSpecialty(str, Enum):
+    """Optional fourth-season/return-course specialization for Engineers."""
+    INDUSTRIAL = "Industrial"
+    MECHANICAL = "Mechanical"
+    ELECTRICAL = "Electrical"
+    CHEMICAL = "Chemical"
+
+
+ENGINEER_SPECIALTY_STACK_CAP = 2
+
+
 # Each profession's band classification.
 # Update here if a profession is added or its tier changes.
 PROFESSION_BAND: dict[Profession, WorkerBand] = {
@@ -176,11 +187,12 @@ def primary_title(role_name: str, band: WorkerBand) -> str:
 
 # Education pipeline duration in seasons (per Manager profession).
 # Canonical (education-model.md, ruled 2026-05-17): Doctor 3, Nurse 1,
-# all other Managers 2.
+# all other Managers 2, except Engineer now takes 3 seasons before an
+# optional 4th specialty season.
 EDUCATION_SEASONS: dict[Profession, int] = {
     Profession.DOCTOR:            3,
     Profession.NURSE:             1,
-    Profession.ENGINEER:          2,
+    Profession.ENGINEER:          3,
     Profession.FARMER:             2,
     Profession.MINER:              2,
     Profession.BANKER:             2,

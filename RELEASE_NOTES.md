@@ -5,6 +5,33 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex-engineer-specialisation-75-76-78
+
+Version bump: `0.1.0-dev.2026-06-10.4`
+
+**Engineer specialization + combined science training bundle (#75, #76, #78,
+#24).** Extends the science/Reagents branch with #78: Engineer base training is
+now 3 seasons, and players can add a fourth consecutive specialty season or
+send an existing Engineer back for a 1-season return course. Engineer
+specialties are stored on workers and preserved through save/load; each Engineer
+holds at most one specialty, with retraining replacing it.
+
+**Specialty effects.** Active Industrial Engineers add +2 capacity to every
+product line; Mechanical Engineers extend capital service life by 25% and count
+as one Technician of labour relief; Electrical Engineers add +5 percentage
+points of workforce efficiency; Chemical Engineers reduce Oil inputs by 20% and
+add +2 Reagents capacity to Reagents producers. Specialty effects only count
+while the Engineer is active, and each island stacks each specialty at most
+twice.
+
+**Training and balance sanity.** Science-track training now consumes Reagents
+per course-season, so a base Engineer costs 3 Reagents per course, a first-time
+specialized Engineer costs 4, and a return specialty course costs 1. Full suite:
+655 passed. Calibration sanity (`--games 1000 --seed 42`): Farmer 3.7%, Miner
+19.8%, Transporter 24.9%, Educator 20.0%, Banker 6.2%, Manufacturer 5.9%,
+Doctor 19.5%. Educator did not need another #76-specific output trim; broader
+economy balance remains a separate measurement-first pass.
+
 ### codex/meat-orphan-74
 
 Version bump: `0.1.0-dev.2026-06-10.3`

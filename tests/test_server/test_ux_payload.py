@@ -123,6 +123,8 @@ def test_training_pipeline_shape():
         "batch_id",
         "worker_count",
         "target_profession",
+        "engineer_specialty",
+        "duration_seasons",
         "status",
         "educator_player_id",
         "educator_name",
