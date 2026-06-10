@@ -469,13 +469,13 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
         role="Educator", output="Expertise",
-        inputs={"Reagents": 0.25},
+        inputs={},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
         description="1 Professor required per unit of Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Courses",
-        inputs={"Reagents": 0.1, "Expertise": 1.0},
+        inputs={"Expertise": 1.0},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.0,
         description="1 Instructor + 0.5 Professor per Course; consumes 1 Expertise",
     ),

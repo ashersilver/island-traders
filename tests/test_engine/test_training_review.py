@@ -29,6 +29,7 @@ def _turn_manager(players, training, io):
 def _manager_training_ready(educator: Player, courses: int = 1, expertise: int = 3) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, 20)
     educator.workforce.add_workers(1, training_level=1, profession="Professor")
     educator.workforce.add_workers(1, training_level=1, profession="Lecturer")
 

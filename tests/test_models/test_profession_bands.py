@@ -111,9 +111,13 @@ def test_new_transporter_professions_have_correct_bands():
 def test_new_technician_professions_for_educator_banker_doctor():
     assert band_of(Profession.LECTURER)        == WorkerBand.MANAGER
     assert band_of(Profession.INSTRUCTOR)      == WorkerBand.TECHNICIAN
+    assert band_of(Profession.ACTUARY)         == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_ANALYST) == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_CLERK)   == WorkerBand.TECHNICIAN
+    assert band_of(Profession.TRADESMAN)       == WorkerBand.TECHNICIAN
     assert band_of(Profession.MEDICAL_ORDERLY) == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MEDICAL_RESEARCHER) == WorkerBand.MANAGER
+    assert band_of(Profession.MEDICAL_TECHNICIAN) == WorkerBand.TECHNICIAN
 
 
 def test_transporter_band_titles_use_new_profession_names():
@@ -172,8 +176,10 @@ def test_playtest_phantom_titles_are_resolved():
         for profession in ROLE_PROFESSIONS["Manufacturer"]
     }
     assert "Factory Foreman" in manufacturer_labels
+    assert "Tradesman" in manufacturer_labels
     assert "Assembly Tech" in manufacturer_labels
     assert "Factory Foreman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+    assert "Tradesman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
     assert "Assembly Tech" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
 
     miner_labels = {

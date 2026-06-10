@@ -76,9 +76,13 @@ def action_option_payload(action: TurnAction, player) -> dict:
     if action == TurnAction.OFFER_LOAN and not _player_has_role(player, "Banker"):
         enabled = False
         disabled_reason = "Only Banking can offer loans."
-    elif action == TurnAction.SELL_INSURANCE and not _player_has_role(player, "Banker"):
-        enabled = False
-        disabled_reason = "Only Banking can sell insurance."
+    elif action == TurnAction.SELL_INSURANCE:
+        if not _player_has_role(player, "Banker"):
+            enabled = False
+            disabled_reason = "Only Banking can sell insurance."
+        elif player.workforce.count_profession(Profession.ACTUARY.value) <= 0:
+            enabled = False
+            disabled_reason = "Banking needs an Actuary to sell insurance."
     elif action == TurnAction.ARRANGE_TRANSPORT and not _player_has_role(player, "Transporter"):
         enabled = False
         disabled_reason = "Only Transportation can arrange training transport."
