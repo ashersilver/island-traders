@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/banker-ai-lending-72
+
+Version bump: `0.1.0-dev.2026-06-10.5`
+
+**Banker AI originates loans (#72).** Banker AI now offers small working-capital
+loans to AI borrowers with healthy debt capacity, instead of waiting until a
+borrower is nearly broke. Principal is sized from borrower wealth and operating
+needs, rates still come from the existing posted-funding / borrower-risk quote,
+and the existing `2 × Banker` active customer-loan cap remains the hard stop.
+
+**Verification.** Added AI tests for normal all-AI loan origination, issue-time
+rate/bookkeeping, and cap behavior. A 5-game smoke that previously produced
+zero customer loans now produces 6 customer loans per 3-year game, with 2 active
+at the end under the one-Banker cap.
+
 ### codex-engineer-specialisation-75-76-78
 
 Version bump: `0.1.0-dev.2026-06-10.4`

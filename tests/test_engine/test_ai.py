@@ -9,6 +9,9 @@ from island_traders.models.player import Player
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
+from island_traders.engine.game import Game, GameConfig, PlayerSpec
+from island_traders.simulation.runner import _SilentIO
+from island_traders.constants import STARTING_DOLLOPS
 
 
 def make_player(pid, name, role_names, dollops=300.0, is_human=False):
@@ -208,6 +211,69 @@ def test_ai_banker_offers_loan_to_capital_short_ai_borrower():
     ]
     assert farmer_loans
     assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_banker_originates_working_capital_loan_to_healthy_ai_borrower():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=100.0)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=300.0)
+
+    actions = ai.take_turn(
+        banker,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert len(farmer_loans) == 1
+    loan = farmer_loans[0]
+    assert loan.principal >= 50.0
+    assert loan.interest_rate == round(loan.posted_at_issue + 0.02, 4)
+    assert loan.own_committed > 0
+    assert loan.external_funded > 0
+    assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_banker_originates_loans_in_normal_all_ai_game():
+    specs = [
+        PlayerSpec(
+            name=role_name,
+            role_names=[role_name],
+            is_human=False,
+            starting_dollops=STARTING_DOLLOPS,
+        )
+        for role_name in ROLES
+    ]
+    game = Game(
+        GameConfig(player_specs=specs, num_years=1, starting_dollops=STARTING_DOLLOPS),
+        _SilentIO(),
+    )
+    game.setup()
+    summary = game.run()
+
+    customer_loans = [
+        loan for loan in game.loan_ledger.all_loans()
+        if loan.lender_id >= 0 and loan.borrower_id != loan.lender_id
+    ]
+    assert summary.winner is not None
+    assert customer_loans
+    assert len([
+        loan for loan in customer_loans
+        if loan.status == LoanStatus.ACTIVE
+    ]) <= 2
 
 
 def test_ai_banker_does_not_offer_loan_when_reserve_short():

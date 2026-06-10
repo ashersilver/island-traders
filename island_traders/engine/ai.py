@@ -24,6 +24,9 @@ AI_OFFER_MARKUP = 1.0
 AI_ARBITRAGE_MIN_MARGIN = 0.05
 AI_MIN_LOAN_PRINCIPAL = 50.0
 AI_DEBT_CEILING_MULTIPLIER = 2.0
+AI_WORKING_CAPITAL_LOAN_FRACTION = 0.12
+AI_DEBT_CEILING_WEALTH_FRACTION = 0.35
+AI_MAX_WORKING_CAPITAL_LOAN = 250.0
 AI_EQUIPMENT_INPUT_RUNS = 5
 AI_EQUIPMENT_INPUTS = {
     ResourceType.FARM_MACHINERY,
@@ -103,6 +106,41 @@ class AIStrategy:
         product_line: str | None = None,
     ) -> float:
         return self._one_season_input_cost(player, market, season_name, product_line)
+
+    def _borrower_wealth(self, borrower: Player, market: Market) -> float:
+        return max(
+            borrower.dollops,
+            borrower.total_wealth(market.current_prices(), capital_catalogue=CAPITAL_CATALOGUE),
+        )
+
+    def _borrower_debt_ceiling(
+        self, borrower: Player, market: Market, loan_ledger: LoanLedger
+    ) -> float:
+        wealth = self._borrower_wealth(borrower, market)
+        return max(
+            AI_MIN_LOAN_PRINCIPAL,
+            round(wealth * AI_DEBT_CEILING_WEALTH_FRACTION, 1),
+        )
+
+    def _ai_working_capital_principal(
+        self,
+        borrower: Player,
+        market: Market,
+        loan_ledger: LoanLedger,
+        season_name: str,
+        product_line: str | None = None,
+    ) -> float:
+        wealth = self._borrower_wealth(borrower, market)
+        target_line = max(
+            self._capital_short_threshold(borrower, market, season_name, product_line),
+            min(AI_MAX_WORKING_CAPITAL_LOAN, wealth * AI_WORKING_CAPITAL_LOAN_FRACTION),
+        )
+        debt = loan_ledger.outstanding_debt(borrower.player_id)
+        capacity = self._borrower_debt_ceiling(borrower, market, loan_ledger) - debt
+        principal = min(target_line, capacity)
+        if principal < AI_MIN_LOAN_PRINCIPAL:
+            return 0.0
+        return round(principal, 1)
 
     def _find_ai_banker(
         self,
@@ -199,14 +237,14 @@ class AIStrategy:
                 for loan in loan_ledger.active_loans_for(borrower.player_id)
             ):
                 continue
-            threshold = self._capital_short_threshold(borrower, market, season_name)
-            if borrower.dollops >= threshold:
+            debt_ceiling = self._borrower_debt_ceiling(borrower, market, loan_ledger)
+            if loan_ledger.outstanding_debt(borrower.player_id) >= debt_ceiling:
                 continue
-            if loan_ledger.outstanding_debt(borrower.player_id) > (
-                threshold * AI_DEBT_CEILING_MULTIPLIER
-            ):
+            principal = self._ai_working_capital_principal(
+                borrower, market, loan_ledger, season_name
+            )
+            if principal <= 0:
                 continue
-            principal = round(threshold - borrower.dollops, 1)
             action = self._ai_issue_loan(
                 banker, borrower, principal, loan_ledger, year, season_index
             )
