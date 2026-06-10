@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex-engineer-specialisation-75-76-78
 
-Version bump: `0.1.0-dev.2026-06-10.2`
+Version bump: `0.1.0-dev.2026-06-10.4`
 
 **Engineer specialization + combined science training bundle (#75, #76, #78,
 #24).** Extends the science/Reagents branch with #78: Engineer base training is
@@ -31,6 +31,16 @@ specialized Engineer costs 4, and a return specialty course costs 1. Full suite:
 19.8%, Transporter 24.9%, Educator 20.0%, Banker 6.2%, Manufacturer 5.9%,
 Doctor 19.5%. Educator did not need another #76-specific output trim; broader
 economy balance remains a separate measurement-first pass.
+
+### codex/meat-orphan-74
+
+Version bump: `0.1.0-dev.2026-06-10.3`
+
+**Meat orphan resolved (#74).** Confirms Option A: Farmer already has a real
+Livestock Barn Meat line that converts Grain feedstock into Meat, so the stale
+B3 supply-chain allowlist entry is removed. Static reachability now treats Meat
+as an active Farmer output instead of a known exception, so future regressions
+will fail the supply-chain tests instead of hiding behind the old orphan note.
 
 ### codex-science-reagents-gating-75-76
 
