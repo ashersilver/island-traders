@@ -5,6 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/pr-template-closes-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.9`
+
+**Process: every PR links the issue it addresses.** Adds
+`.github/pull_request_template.md` (so GitHub auto-prompts for
+`Closes #N` / `Refs #N`), and reinforces the rule in `CLAUDE.md` and
+`requirements/release-process.md`. Requirements live in GitHub issues; PRs
+reference them so the backlog self-reconciles on merge. Docs-only; no behavior
+change.
+
 ### claude/spectator-by-code-2026-06-05
 
 Version bump: `0.1.0-dev.2026-06-05.8`

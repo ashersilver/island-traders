@@ -8,7 +8,12 @@ Release notes are part of the merge gate for `pre-release`.
 2. Update `RELEASE_NOTES.md` with the player-facing changes, rules/balance
    changes, fixes, known issues, and verification performed.
 3. Confirm the test suite result and any manual browser testing notes.
-4. Only then merge the branch into `pre-release`.
+4. **Link the PR to the issue(s) it addresses.** Use `Closes #N` for issues this
+   PR resolves; `Refs #N` for partial progress or related context. Requirements
+   live in the GitHub issue tracker — if no issue exists yet, open one first so
+   the requirement is captured. The PR template
+   (`.github/pull_request_template.md`) prompts for this automatically.
+5. Only then merge the branch into `pre-release`.
 
 ## Multi-Agent Worktrees
 
