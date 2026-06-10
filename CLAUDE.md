@@ -31,7 +31,10 @@ folder on this computer when working alongside Codex.
   against the spec; (3) add `APP_VERSION` bump + release notes if the branch
   lacks them; (4) PR into `pre-release` with `Closes #N`/`Refs #N`;
   (5) **merge → confirm the PR state is MERGED → only then delete the
-  branch** (deleting first auto-closes the PR); (6) restart the server only
+  branch** (deleting first auto-closes the PR); (6) **manually `gh issue close`
+  every issue the PR resolved** — `Closes #N` only auto-closes on merge to the
+  default branch (`master`), and we integrate via `pre-release`, so closing is
+  manual with a comment naming the PR + version; (7) restart the server only
   when the user asks.
 - If two parallel branches touch the same seam, the **second to merge wires
   the integration call**; the first leaves a stub.
