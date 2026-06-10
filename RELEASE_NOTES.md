@@ -5,6 +5,16 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/meat-orphan-74
+
+Version bump: `0.1.0-dev.2026-06-10.3`
+
+**Meat orphan resolved (#74).** Confirms Option A: Farmer already has a real
+Livestock Barn Meat line that converts Grain feedstock into Meat, so the stale
+B3 supply-chain allowlist entry is removed. Static reachability now treats Meat
+as an active Farmer output instead of a known exception, so future regressions
+will fail the supply-chain tests instead of hiding behind the old orphan note.
+
 ### codex-science-reagents-gating-75-76
 
 Version bump: `0.1.0-dev.2026-06-10.1`
