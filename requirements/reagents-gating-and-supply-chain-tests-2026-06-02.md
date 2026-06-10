@@ -1,7 +1,8 @@
 # Requirement — Decouple reagents from generic training + add supply-chain liveness tests (2026-06-02)
 
-**Status:** Spec for review. Not built. From the 2026-06-02 "why didn't the
-bottleneck fail a test?" discussion.
+**Status (2026-06-10):** B3 built (static reachability tests). **A is unblocked —
+the science taxonomy is confirmed below** (was the [CONFIRM] item); ready for
+Codex. B1/B2 tracked in issue #73.
 
 ## A. Reagents should gate science/research only — not all teaching
 
@@ -23,10 +24,33 @@ To make reagents gate only *some* outputs, we need per-output input granularity
   and generic Courses produce without lab reagents.
 - Keep reagents as the input for **Patents** (research) — and, when a
   science-course track is modelled, for science-tier course/training only.
-- Define a small **science-profession set** (e.g. Doctor, Nurse, lab/medical and
-  hard-engineering professions) whose *training* consumes reagents; generic
-  professions (Banker, Actuary, Mechanic, Flight Crew, Clerk…) do not.
-- **[CONFIRM]** the science/non-science taxonomy with the user before building.
+- Define a **science-profession set** whose *training* consumes reagents;
+  generic professions do not.
+
+**Science taxonomy — CONFIRMED by the user, 2026-06-10.** Training for these
+courses consumes Reagents:
+
+| Island | Science-track courses |
+|---|---|
+| Agriculture | Farmer (specialist), Horticulturalist, Veterinarian |
+| Mining | Miner (specialist — geology), Refiner |
+| Education | Professor |
+| Healthcare | Doctor, Nurse, **Medical Researcher** (new), **Medical Technician** (new) |
+| Shared | Engineer |
+
+All other courses are classroom-only (no Reagents): Farming Technician, Mining
+Technician, Mining Foreman, Oil Extraction Worker, Logistics Manager, Flight
+Crew, Seaman, Warehouse Manager, Lecturer, Technical Director, Instructor,
+Banker (specialist), Banking Analyst, Banking Clerk, **Actuary** (new),
+Factory Foreman, Assembly Tech, **Tradesman** (new), Medical Orderly, Mechanic,
+Chef.
+
+**New professions to add alongside this work** (issue #75; Actuary also
+tracked by #24):
+- **Actuary** → Banking (non-science)
+- **Tradesman** → Manufacturing (non-science)
+- **Medical Researcher** → Healthcare (science)
+- **Medical Technician** → Healthcare (science)
 
 **Balance note.** Removing the Educator's only hard input makes it more
 self-sufficient (it was already a calibration outlier). Pair this with a
