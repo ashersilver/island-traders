@@ -5,6 +5,27 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-tiled-log-disasters
+
+Version bump: `0.1.0-dev.2026-06-11.3`
+
+**Modular layout, log filtering, and disaster pop-ups.** The dashboard is now
+customisable without a full re-tiling:
+
+- **Hide/collapse panels + presets.** A new **▦ Layout** header menu hides the
+  left sidebar, right info column, and/or the game log, with four presets (Full,
+  Hide log, Trader, Focus). The chosen layout persists per browser
+  (`localStorage`).
+- **Game log: hideable + filterable.** The log can be hidden entirely, and a
+  filter bar (All / My island / Trades / Events / Training) shows only the lines
+  in a category. Categories are derived per line; "My island" reuses the
+  existing relevance highlight. Filter choice persists.
+- **Disaster pop-ups.** Droughts, floods, outages, and other disruptive events
+  now raise a modal describing the **problem** (event name), the **impact**
+  (yield %, outage, any price shock), and the **duration** (damage seasons), with
+  a "don't pop these up" opt-out. The `season_events` payload now carries
+  `damage_seasons`, `price_shock_resource/multiplier`, and a `disruptive` flag.
+
 ### claude/p7-net-worth-panel-86
 
 Version bump: `0.1.0-dev.2026-06-11.2`

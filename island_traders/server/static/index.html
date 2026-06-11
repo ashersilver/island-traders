@@ -343,6 +343,67 @@ button:active{transform:scale(.97)}
 .g-log .err{color:var(--red)}
 .g-log .info{color:var(--accent)}
 
+/* --- Modular layout: hide/collapse tiles + presets (persisted) --- */
+.game-grid.hide-side{grid-template-columns:0 1fr 360px}
+.game-grid.hide-info{grid-template-columns:280px 1fr 0}
+.game-grid.hide-side.hide-info{grid-template-columns:0 1fr 0}
+.game-grid.hide-log{grid-template-rows:48px 1fr 0}
+.game-grid.hide-side .g-side{display:none}
+.game-grid.hide-info .g-info{display:none}
+.game-grid.hide-log  .g-log{display:none}
+@media(min-width:3000px){
+  .game-grid.hide-side{grid-template-columns:0 1fr 480px}
+  .game-grid.hide-info{grid-template-columns:380px 1fr 0}
+  .game-grid.hide-side.hide-info{grid-template-columns:0 1fr 0}
+}
+/* On narrow single-column layouts the element-level display:none still hides. */
+.layout-menu{position:relative}
+.layout-pop{
+  position:absolute;right:0;top:110%;z-index:60;min-width:170px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:.4rem;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none
+}
+.layout-pop.open{display:block}
+.layout-pop .lp-row{display:flex;align-items:center;gap:.5rem;padding:.28rem .35rem;font-size:.8rem;color:var(--text);cursor:pointer;border-radius:4px}
+.layout-pop .lp-row:hover{background:var(--bg)}
+.layout-pop .lp-sep{height:1px;background:var(--border);margin:.35rem 0}
+.layout-pop .lp-head{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:.2rem .35rem}
+
+/* --- Log filter bar --- */
+.g-log{position:relative}
+.log-filter-bar{
+  position:sticky;top:-.5rem;z-index:5;display:flex;gap:.3rem;flex-wrap:wrap;
+  background:#04090f;padding:.3rem 0 .35rem;margin:-.5rem 0 .3rem;border-bottom:1px solid var(--border)
+}
+.log-filter-bar .lf-btn{
+  font-family:inherit;font-size:.68rem;padding:.18rem .55rem;border-radius:10px;cursor:pointer;
+  background:var(--bg);color:var(--dim);border:1px solid var(--border)
+}
+.log-filter-bar .lf-btn.active{background:var(--accent);color:#04090f;border-color:var(--accent);font-weight:700}
+.g-log[data-filter="mine"]    .g-log-line:not(.log-mine){display:none}
+.g-log[data-filter="trades"]  .g-log-line:not([data-cat="trade"]){display:none}
+.g-log[data-filter="events"]  .g-log-line:not([data-cat="event"]){display:none}
+.g-log[data-filter="training"] .g-log-line:not([data-cat="training"]){display:none}
+
+/* --- Disaster modal --- */
+.disaster-overlay{
+  position:fixed;inset:0;z-index:200;background:rgba(2,6,12,.72);
+  display:none;align-items:center;justify-content:center;padding:1rem
+}
+.disaster-overlay.open{display:flex}
+.disaster-card{
+  background:var(--panel);border:1px solid rgba(220,50,50,.5);border-radius:10px;
+  max-width:440px;width:100%;padding:1.1rem 1.2rem;box-shadow:0 10px 40px rgba(0,0,0,.6)
+}
+.disaster-card h3{margin:0 0 .2rem;color:#f87171;font-size:1.15rem;display:flex;align-items:center;gap:.5rem}
+.disaster-card .dc-sub{color:var(--dim);font-size:.8rem;margin-bottom:.7rem}
+.disaster-card .dc-impact{display:flex;flex-direction:column;gap:.35rem;margin:.5rem 0 .9rem}
+.disaster-card .dc-row{display:flex;justify-content:space-between;font-size:.85rem;border-bottom:1px solid var(--border);padding-bottom:.3rem}
+.disaster-card .dc-row .dc-lbl{color:var(--dim)}
+.disaster-card .dc-row .dc-val{color:var(--heading);font-weight:700}
+.disaster-card .dc-actions{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-top:.4rem}
+.disaster-card .dc-mute{font-size:.72rem;color:var(--dim);display:flex;align-items:center;gap:.35rem;cursor:pointer}
+
 .section{margin-bottom:.9rem}
 .section h3{
   font-size:.75rem;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;
@@ -957,8 +1018,37 @@ button:active{transform:scale(.97)}
                 title="Re-open the action menu if it was hidden mid-turn">📋 Menu</button>
         <button class="btn-ghost btn-sm" id="download-log-btn" onclick="downloadGameLog()"
                 title="Download the full server-side game log as a .txt file for debugging">⬇ Log</button>
+        <div class="layout-menu">
+          <button class="btn-ghost btn-sm" id="layout-btn" onclick="toggleLayoutMenu(event)"
+                  title="Show/hide panels and switch layout presets">▦ Layout</button>
+          <div class="layout-pop" id="layout-pop">
+            <div class="lp-head">Presets</div>
+            <div class="lp-row" onclick="applyLayoutPreset('full')">▦ Full</div>
+            <div class="lp-row" onclick="applyLayoutPreset('no-log')">▤ Hide log</div>
+            <div class="lp-row" onclick="applyLayoutPreset('trader')">▥ Trader (market focus)</div>
+            <div class="lp-row" onclick="applyLayoutPreset('focus')">□ Focus (main only)</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Panels</div>
+            <div class="lp-row" onclick="togglePanel('side')"><input type="checkbox" id="lp-side" onclick="event.stopPropagation()"> Left sidebar</div>
+            <div class="lp-row" onclick="togglePanel('info')"><input type="checkbox" id="lp-info" onclick="event.stopPropagation()"> Right info</div>
+            <div class="lp-row" onclick="togglePanel('log')"><input type="checkbox" id="lp-log" onclick="event.stopPropagation()"> Game log</div>
+          </div>
+        </div>
         <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
               onclick="showAboutDialog()" title="About / version info">v<span id="app-version-game">…</span></span>
+      </div>
+    </div>
+
+    <!-- Disaster pop-up — problem, impact, duration -->
+    <div class="disaster-overlay" id="disaster-overlay" onclick="if(event.target===this)dismissDisaster()">
+      <div class="disaster-card">
+        <h3 id="disaster-title">⛈ <span id="disaster-name">Event</span></h3>
+        <div class="dc-sub" id="disaster-sub">affecting your island</div>
+        <div class="dc-impact" id="disaster-impact"></div>
+        <div class="dc-actions">
+          <label class="dc-mute"><input type="checkbox" id="disaster-mute"> Don't pop these up</label>
+          <button class="btn-gold btn-sm" onclick="dismissDisaster()">Got it</button>
+        </div>
       </div>
     </div>
 
@@ -1094,7 +1184,15 @@ button:active{transform:scale(.97)}
       </div>
     </div>
 
-    <div class="g-log" id="event-log"></div>
+    <div class="g-log" id="event-log" data-filter="all">
+      <div class="log-filter-bar" id="log-filter-bar">
+        <button class="lf-btn active" data-f="all"      onclick="setLogFilter('all')">All</button>
+        <button class="lf-btn"        data-f="mine"     onclick="setLogFilter('mine')">My island</button>
+        <button class="lf-btn"        data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
+        <button class="lf-btn"        data-f="events"   onclick="setLogFilter('events')">Events</button>
+        <button class="lf-btn"        data-f="training" onclick="setLogFilter('training')">Training</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1477,6 +1575,7 @@ function showScreen(name) {
     builtTabsForRoles = null;
     activeTabRole = null;
     document.getElementById('island-tabs').innerHTML = '';
+    restoreLayoutPrefs();
   }
 }
 
@@ -3181,6 +3280,7 @@ function handleMessage(msg) {
       break;
     case 'season_events':
       renderConditionsPanel(msg);
+      maybeShowDisasterModal(msg);
       break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
@@ -4135,6 +4235,51 @@ function _renderPreSeasonDots(active, ready) {
   }).join('');
 }
 
+function maybeShowDisasterModal(msg) {
+  if (localStorage.getItem('it_disaster_mute') === '1') return;
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const ev = (msg.events || {})[String(me.player_id)];
+  if (!ev || !ev.disruptive) return;
+
+  document.getElementById('disaster-name').textContent = ev.event_name || 'Event';
+  const isDisaster = ev.natural_disaster;
+  document.getElementById('disaster-title').firstChild.textContent =
+    (isDisaster ? '⛈ ' : (ev.outage ? '✖ ' : '⚠ '));
+  document.getElementById('disaster-sub').textContent =
+    `${msg.season || ''} ${msg.year ? 'Year ' + msg.year : ''} — affecting ${ev.player_name || 'your island'}`.trim();
+
+  // Impact rows: what it does + how long.
+  const rows = [];
+  if (ev.outage) {
+    rows.push(['Production', 'Halted this season (no output)']);
+  } else if (ev.yield_modifier != null && ev.yield_modifier !== 1.0) {
+    rows.push(['Yield', Math.round(ev.yield_modifier * 100) + '% of normal']);
+  }
+  if (ev.price_shock_resource && ev.price_shock_multiplier && ev.price_shock_multiplier !== 1.0) {
+    const dir = ev.price_shock_multiplier > 1 ? '↑' : '↓';
+    rows.push([ev.price_shock_resource + ' price',
+      dir + ' ×' + ev.price_shock_multiplier]);
+  }
+  const dur = ev.damage_seasons || 0;
+  rows.push(['Duration', dur > 0 ? (dur + ' season' + (dur === 1 ? '' : 's'))
+                                 : 'This season only']);
+
+  document.getElementById('disaster-impact').innerHTML = rows.map(([l, v]) =>
+    `<div class="dc-row"><span class="dc-lbl">${esc(l)}</span><span class="dc-val">${esc(v)}</span></div>`
+  ).join('');
+  document.getElementById('disaster-overlay').classList.add('open');
+}
+
+function dismissDisaster() {
+  const mute = document.getElementById('disaster-mute');
+  if (mute && mute.checked) {
+    try { localStorage.setItem('it_disaster_mute', '1'); } catch (e) {}
+  }
+  document.getElementById('disaster-overlay').classList.remove('open');
+}
+
 function renderConditionsPanel(msg) {
   const el = document.getElementById('conditions-panel');
   if (!el) return;
@@ -4777,6 +4922,16 @@ function _isPlayerRelevant(text) {
   return targets.some(t => text.includes(t));
 }
 
+function _logCategory(text) {
+  if (/\[EVENT\]|\[WORKPLACE\]|Drought|Flood|Disaster|Outage|Collapse|Spill|Pandemic|Storm|⛈/i.test(text))
+    return 'event';
+  if (/\[TRADE\]|\bsold\b|\bbought\b|\boffer\b|\bbid\b|\bdeal\b|accepted|counter-?offer/i.test(text))
+    return 'trade';
+  if (/train|course|graduat|apprentic|university|faculty|tuition|enrol/i.test(text))
+    return 'training';
+  return 'other';
+}
+
 function addLog(text, cls = '') {
   const log = document.getElementById('event-log');
   const div = document.createElement('div');
@@ -4785,6 +4940,8 @@ function addLog(text, cls = '') {
   } else if (/\[EVENT\]|\[WORKPLACE\]/.test(text)) {
     div.className = 'ev';
   }
+  div.classList.add('g-log-line');
+  div.dataset.cat = _logCategory(text);
   // Secondary highlight if the line directly concerns this player.
   if (!cls && _isPlayerRelevant(text)) {
     div.classList.add('log-mine');
@@ -4792,6 +4949,70 @@ function addLog(text, cls = '') {
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
+}
+
+// --- Log filter ---
+function setLogFilter(f) {
+  const log = document.getElementById('event-log');
+  if (log) log.dataset.filter = f;
+  document.querySelectorAll('#log-filter-bar .lf-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.f === f));
+  try { localStorage.setItem('it_log_filter', f); } catch (e) {}
+}
+
+// --- Modular layout: hide/collapse panels + presets ---
+const LAYOUT_PRESETS = {
+  'full':   [],
+  'no-log': ['log'],
+  'trader': ['side'],
+  'focus':  ['side', 'info', 'log'],
+};
+function _grid() { return document.querySelector('.game-grid'); }
+function applyLayoutState(hidden) {
+  const g = _grid();
+  if (!g) return;
+  ['side', 'info', 'log'].forEach(p => {
+    g.classList.toggle('hide-' + p, hidden.includes(p));
+    const cb = document.getElementById('lp-' + p);
+    if (cb) cb.checked = !hidden.includes(p);
+  });
+  try { localStorage.setItem('it_layout_hidden', JSON.stringify(hidden)); } catch (e) {}
+}
+function _currentHidden() {
+  const g = _grid();
+  if (!g) return [];
+  return ['side', 'info', 'log'].filter(p => g.classList.contains('hide-' + p));
+}
+function togglePanel(p) {
+  const hidden = _currentHidden();
+  const i = hidden.indexOf(p);
+  if (i >= 0) hidden.splice(i, 1); else hidden.push(p);
+  applyLayoutState(hidden);
+}
+function applyLayoutPreset(name) {
+  applyLayoutState((LAYOUT_PRESETS[name] || []).slice());
+  closeLayoutMenu();
+}
+function toggleLayoutMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const pop = document.getElementById('layout-pop');
+  if (pop) pop.classList.toggle('open');
+}
+function closeLayoutMenu() {
+  const pop = document.getElementById('layout-pop');
+  if (pop) pop.classList.remove('open');
+}
+document.addEventListener('click', (e) => {
+  const menu = document.querySelector('.layout-menu');
+  if (menu && !menu.contains(e.target)) closeLayoutMenu();
+});
+function restoreLayoutPrefs() {
+  try {
+    const f = localStorage.getItem('it_log_filter');
+    if (f) setLogFilter(f);
+    const hidden = JSON.parse(localStorage.getItem('it_layout_hidden') || '[]');
+    if (Array.isArray(hidden)) applyLayoutState(hidden);
+  } catch (e) {}
 }
 
 function syncServerLog(msg) {
