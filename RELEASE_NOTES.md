@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/p7-net-worth-panel-86
+
+Version bump: `0.1.0-dev.2026-06-11.2`
+
+**Net-worth breakdown panel (P7 / #86).** New `Player.wealth_breakdown()`
+decomposes the win-condition score into signed drivers — treasury, inventory,
+equipment (capital book value), loans receivable, bank debt, shareholder loans
+— that sum to exactly `total_wealth()` (now implemented in terms of it, so the
+panel and the score can never disagree). Surfaced three ways: a `wealth_breakdown`
+object in the server player payload; a click-to-expand breakdown under "Island
+Value" in the dashboard (`static/index.html`); and a decomposed "Net Wealth"
+block in the CLI player summary. Reporting only — no scoring changes — so it is
+independent of the P1/P2/P3 economy rebalance.
+
 ### codex/farmer-manufacturer-ai-29
 
 Version bump: `0.1.0-dev.2026-06-11.1`
