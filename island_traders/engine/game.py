@@ -18,6 +18,7 @@ from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.telemetry import ResourceFlowTelemetry
 from ..engine.turn import TurnManager
 from ..engine.engineering import effective_capital_service_life
 from ..constants import (
@@ -99,6 +100,15 @@ class GameSummary:
     final_rankings: list[tuple[Player, float]]
     deal_count: int
     price_history: list
+    # Total Dollops in circulation, snapshotted once per season (index 0 is the
+    # opening balance before any season runs).  Surfaced so calibration can see
+    # whether the economy inflates or starves as faucets/sinks change — the
+    # formula market mints/burns cash, so the money supply is otherwise
+    # unanchored.  See requirements/economics-review-2026-06-10.md (P5 / #73).
+    money_supply: list[float] = field(default_factory=list)
+    # Dynamic supply-chain liveness (B1/B2, #73): a ResourceFlowTelemetry with
+    # per-resource produced/consumed/traded volumes and input-starvation counts.
+    resource_flow: "ResourceFlowTelemetry | None" = None
 
 
 class Game:
@@ -116,6 +126,11 @@ class Game:
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
+        # Per-season total Dollops in circulation; see GameSummary.money_supply.
+        self._money_supply_history: list[float] = []
+        # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
+        # market + production engine in setup().
+        self.resource_flow = ResourceFlowTelemetry()
 
     def setup(self) -> None:
         self.market = Market()
@@ -222,12 +237,27 @@ class Game:
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
         trading = TradingEngine(self.market, self.ledger)
+        # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
+        # market + production engine so the simulation runner can read it.
+        self.market.telemetry = self.resource_flow
+        production.telemetry = self.resource_flow
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
+    def _total_money_supply(self) -> float:
+        """Total liquid Dollops in circulation: every island's operating
+        treasury plus every investor's personal cash.  Loans and trades only
+        move Dollops between these balances, so this is conserved except where
+        the formula market mints (sell) or burns (buy) cash."""
+        return sum(p.dollops + p.personal_cash for p in self.players)
+
     def run(self) -> GameSummary:
+        # Opening balance, before any season runs (resumed games append from
+        # wherever they left off — the series stays monotonic in season order).
+        if not self._money_supply_history:
+            self._money_supply_history.append(round(self._total_money_supply(), 2))
         for year in range(self._resume_year, self.config.num_years):
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
@@ -260,6 +290,9 @@ class Game:
                     except Exception:
                         pass
                 self._auto_save(year, season_index + 1)
+                self._money_supply_history.append(
+                    round(self._total_money_supply(), 2)
+                )
 
             prices = self.market.current_prices()
             year_end_tick = year * len(SEASONS) + (len(SEASONS) - 1)
@@ -457,6 +490,8 @@ class Game:
             final_rankings=rankings,
             deal_count=len(self.ledger.deals),
             price_history=self.market.price_history,
+            money_supply=list(self._money_supply_history),
+            resource_flow=self.resource_flow,
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],

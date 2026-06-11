@@ -104,5 +104,12 @@ class TradingEngine:
 
         self.ledger.accept(deal.deal_id)
 
+        telemetry = getattr(self.market, "telemetry", None)
+        if telemetry is not None:
+            if deal.offer_resource and deal.offer_qty > 0:
+                telemetry.record_traded(deal.offer_resource, deal.offer_qty)
+            if deal.request_resource and deal.request_qty > 0:
+                telemetry.record_traded(deal.request_resource, deal.request_qty)
+
     def reject_deal(self, deal: DealProposal) -> None:
         self.ledger.reject(deal.deal_id)
