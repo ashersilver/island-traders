@@ -6,6 +6,7 @@ from ..models.deal import DealProposal, DealStatus
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
@@ -400,6 +401,7 @@ class AIStrategy:
         market: Market,
         demand_players: list[Player] | None = None,
         training_registry=None,
+        season_name: str = "Spring",
     ) -> str:
         """Pick the Manufacturer product line with the strongest unmet demand."""
         has_human_demand = False
@@ -415,29 +417,40 @@ class AIStrategy:
         current_line = getattr(
             player, "ai_product_line", next(iter(MANUFACTURER_PRODUCT_LINES))
         )
-        scores = {
-            line_key: self._manufacturer_demand_score(player, market, line_key)
-            for line_key in MANUFACTURER_PRODUCT_LINES
-        }
+        if demand_players is not None and not has_human_demand and has_visible_bid:
+            return self._choose_product_line_profit(player, market)
+        structural_opportunity_scores = False
+        if demand_players is not None:
+            opportunities = revenue_opportunities(
+                player, market, demand_players, season_name
+            )
+            scores = {
+                opp["product_line"]: opp["score"]
+                for opp in opportunities
+                if opp.get("product_line") in MANUFACTURER_PRODUCT_LINES
+            }
+            structural_opportunity_scores = bool(scores)
+        else:
+            scores = {}
+        if not scores:
+            scores = {
+                line_key: self._manufacturer_demand_score(player, market, line_key)
+                for line_key in MANUFACTURER_PRODUCT_LINES
+            }
         feasible = [
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
-        if (
-            demand_players is not None
-            and not has_human_demand
-        ):
-            player.ai_product_line_human_demand = False
-            return self._choose_product_line_profit(player, market)
         if not feasible:
             chosen = max(scores, key=lambda line_key: scores[line_key])
             player.ai_product_line = chosen
             player.ai_product_line_human_demand = has_human_demand
             return chosen
         top_line = max(feasible, key=lambda line_key: scores[line_key])
+        sticky_margin = 1.15 if structural_opportunity_scores else 1.10
         if (
             current_line in feasible
-            and scores[top_line] <= scores[current_line] * 1.10
+            and scores[top_line] <= scores[current_line] * sticky_margin
         ):
             chosen = current_line
         else:
@@ -756,7 +769,9 @@ class AIStrategy:
         chosen_line: str | None = None
         if is_manufacturer:
             chosen_line = self._choose_product_line(
-                player, market, other_players, training_registry=training_registry
+                player, market, other_players,
+                training_registry=training_registry,
+                season_name=season_name,
             )
 
         actions.extend(

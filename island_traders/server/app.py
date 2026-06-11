@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
+from ..engine.revenue import revenue_opportunities
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
@@ -2692,6 +2693,12 @@ class GameManager:
                         prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick
                     )["components"].items()
                 },
+                "revenue_opportunities": revenue_opportunities(
+                    p,
+                    game.market,
+                    game.players,
+                    getattr(game, "season", SEASONS[current_season_idx]),
+                ),
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
