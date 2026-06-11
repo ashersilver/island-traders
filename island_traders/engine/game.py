@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from ..models.player import Player
+from ..models.equity import CapTable, AUCTIONED_SHARES
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
@@ -17,7 +18,9 @@ from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.telemetry import ResourceFlowTelemetry
 from ..engine.turn import TurnManager
+from ..engine.engineering import effective_capital_service_life
 from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
@@ -30,10 +33,16 @@ from ..constants import (
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
+    PAYROLL_WAGE_BY_BAND,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 
-SAVE_VERSION = 5
+SAVE_VERSION = 6
+
+# Renamed resources: old save inventory key -> current key (2026-06-02).
+LEGACY_RESOURCE_IDS: dict[str, str] = {
+    "LaboratoryEquipment": "Reagents",
+}
 
 LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {
     "educator.apprenticeship_programme": "educator.technical_workshop",
@@ -92,6 +101,15 @@ class GameSummary:
     final_rankings: list[tuple[Player, float]]
     deal_count: int
     price_history: list
+    # Total Dollops in circulation, snapshotted once per season (index 0 is the
+    # opening balance before any season runs).  Surfaced so calibration can see
+    # whether the economy inflates or starves as faucets/sinks change — the
+    # formula market mints/burns cash, so the money supply is otherwise
+    # unanchored.  See requirements/economics-review-2026-06-10.md (P5 / #73).
+    money_supply: list[float] = field(default_factory=list)
+    # Dynamic supply-chain liveness (B1/B2, #73): a ResourceFlowTelemetry with
+    # per-resource produced/consumed/traded volumes and input-starvation counts.
+    resource_flow: "ResourceFlowTelemetry | None" = None
 
 
 class Game:
@@ -109,6 +127,11 @@ class Game:
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
+        # Per-season total Dollops in circulation; see GameSummary.money_supply.
+        self._money_supply_history: list[float] = []
+        # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
+        # market + production engine in setup().
+        self.resource_flow = ResourceFlowTelemetry()
 
     def setup(self) -> None:
         self.market = Market()
@@ -120,8 +143,17 @@ class Game:
 
         num_players = len(self.config.player_specs)
         default_dollops = TOTAL_STARTING_DOLLOPS / num_players
-        default_population = TOTAL_STARTING_POPULATION // num_players
-        workforce_scale = 7 / num_players
+        # Each island starts with STARTING_POPULATION residents (50) — a fixed
+        # per-island figure, NOT a share of a global total.  (Previously this
+        # used TOTAL_STARTING_POPULATION // num_players = 20, which silently
+        # overrode the intended 50 and left population < the 50-worker
+        # workforce.  2026-06-02.)
+        default_population = STARTING_POPULATION
+        # Each island starts with a fixed STARTING_WORKFORCE (50) regardless of
+        # player count — "each island starts with 50 workers" (2026-06-02).
+        # Previously scaled by 7/num_players, which (with a fixed 50-resident
+        # population) would inflate small-game islands past their populace.
+        workforce_scale = 1.0
 
         for idx, spec in enumerate(self.config.player_specs):
             roles = []
@@ -140,6 +172,14 @@ class Game:
                 is_human=spec.is_human,
                 population=default_population,
             )
+
+            # Equity scaffolding (Phase 1/2b): every player owns a 60% majority
+            # of their own island (player_id == island id); 40% public float.
+            # Additive — the pure engine keeps its single-pool economy and
+            # total_wealth scoring; the web path (app.py) applies the full flip
+            # (treasury reseed, bid->personal cash, shareholder loans).
+            player.cap_table = CapTable.new_with_majority(str(idx))
+            player.holdings = {str(idx): AUCTIONED_SHARES}
 
             # Production capacity = max of all assigned roles
             combined_capacity = max(
@@ -198,12 +238,64 @@ class Game:
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
         trading = TradingEngine(self.market, self.ledger)
+        # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
+        # market + production engine so the simulation runner can read it.
+        self.market.telemetry = self.resource_flow
+        production.telemetry = self.resource_flow
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
+    def _total_money_supply(self) -> float:
+        """Total liquid Dollops in circulation: every island's operating
+        treasury plus every investor's personal cash.  Loans and trades only
+        move Dollops between these balances, so this is conserved except where
+        the formula market mints (sell) or burns (buy) cash."""
+        return sum(p.dollops + p.personal_cash for p in self.players)
+
+    def _seasonal_payroll_due(self, player: Player) -> float:
+        return round(
+            sum(
+                PAYROLL_WAGE_BY_BAND.get(band_of(worker.profession).value, 0.0)
+                for worker in player.workforce.active_workers
+            ),
+            2,
+        )
+
+    def _process_payroll(self, year: int, season: int) -> None:
+        """Charge per-season wages for active home workers.
+
+        Payroll is a pure Dollops sink: active staff must be paid each season,
+        while trainees and contracted-away staff are excluded because they are
+        not available to the home island. Shortfalls are logged but do not add a
+        layoff/morale rule in this pass.
+        """
+        _ = (year, season)  # kept for log-hook symmetry with other processors
+        for player in self.players:
+            due = self._seasonal_payroll_due(player)
+            if due <= 0:
+                continue
+            paid = min(player.dollops, due)
+            player.dollops = round(player.dollops - paid, 2)
+            if paid >= due:
+                self.io.print(
+                    f"[PAYROLL] {player.name}: paid {CURRENCY_SYMBOL}{paid:.2f} "
+                    f"for active workforce wages."
+                )
+            else:
+                shortfall = round(due - paid, 2)
+                self.io.print(
+                    f"[PAYROLL SHORTFALL] {player.name}: paid "
+                    f"{CURRENCY_SYMBOL}{paid:.2f} of {CURRENCY_SYMBOL}{due:.2f}; "
+                    f"{CURRENCY_SYMBOL}{shortfall:.2f} unpaid."
+                )
+
     def run(self) -> GameSummary:
+        # Opening balance, before any season runs (resumed games append from
+        # wherever they left off — the series stays monotonic in season order).
+        if not self._money_supply_history:
+            self._money_supply_history.append(round(self._total_money_supply(), 2))
         for year in range(self._resume_year, self.config.num_years):
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
@@ -211,6 +303,7 @@ class Game:
                 self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
+                self._process_payroll(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
                 )
@@ -236,6 +329,9 @@ class Game:
                     except Exception:
                         pass
                 self._auto_save(year, season_index + 1)
+                self._money_supply_history.append(
+                    round(self._total_money_supply(), 2)
+                )
 
             prices = self.market.current_prices()
             year_end_tick = year * len(SEASONS) + (len(SEASONS) - 1)
@@ -293,10 +389,10 @@ class Game:
                 if not item or item.service_life_seasons <= 0:
                     continue
                 ticks = player.capital_acquired_ticks.get(item_id, [])
-                expired = sum(
-                    1 for t in ticks
-                    if current_tick - t >= item.service_life_seasons
+                service_life = effective_capital_service_life(
+                    player, item.service_life_seasons
                 )
+                expired = sum(1 for t in ticks if current_tick - t >= service_life)
                 if expired > 0:
                     player.remove_capital(item_id, expired)
                     self.io.print(
@@ -370,7 +466,7 @@ class Game:
                 f"as {batch.target_profession}."
             )
             returned = player.workforce.return_from_training(
-                batch.worker_ids, batch.target_profession
+                batch.worker_ids, batch.target_profession, batch.engineer_specialty
             )
             if returned:
                 self.io.print(
@@ -433,6 +529,8 @@ class Game:
             final_rankings=rankings,
             deal_count=len(self.ledger.deals),
             price_history=self.market.price_history,
+            money_supply=list(self._money_supply_history),
+            resource_flow=self.resource_flow,
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],
@@ -514,6 +612,10 @@ class Game:
             },
             "capital_in_transit": list(p.capital_in_transit),
             "active_patents": {k: list(v) for k, v in p.active_patents.items()},
+            "personal_cash": p.personal_cash,
+            "holdings": dict(p.holdings),
+            "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
+            "shareholder_loans": dict(p.shareholder_loans),
             "workforce": {
                 "next_id": p.workforce._next_id,
                 "workers": [
@@ -527,6 +629,7 @@ class Game:
                         "age_seasons": w.age_seasons,
                         "has_mba": w.has_mba,
                         "profession": w.profession,
+                        "engineer_specialty": w.engineer_specialty,
                     }
                     for w in p.workforce.workers
                 ],
@@ -561,6 +664,8 @@ class Game:
                     "dollops_to_educator": r.dollops_to_educator,
                     "dollops_to_transporter": r.dollops_to_transporter,
                     "target_profession": r.target_profession,
+                    "engineer_specialty": r.engineer_specialty,
+                    "duration_seasons": r.duration_seasons,
                     "proposed_year": r.proposed_year,
                     "proposed_season": r.proposed_season,
                     "status": r.status.value,
@@ -707,8 +812,18 @@ class Game:
                     pd.get("capital_in_transit", [])
                 ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
+                personal_cash=pd.get("personal_cash", 0.0),
+                holdings=dict(pd.get("holdings", {})),
+                cap_table=(
+                    CapTable.from_dict(pd["cap_table"])
+                    if pd.get("cap_table") is not None else None
+                ),
+                shareholder_loans=dict(pd.get("shareholder_loans", {})),
             )
             for r_str, qty in pd.get("inventory", {}).items():
+                # Save-migration: the consumable "LaboratoryEquipment" was
+                # renamed to "Reagents" (2026-06-02); fold legacy keys forward.
+                r_str = LEGACY_RESOURCE_IDS.get(r_str, r_str)
                 p.receive_resources(ResourceType(r_str), qty)
             wf_data = pd.get("workforce", {})
             p.workforce._next_id = wf_data.get("next_id", 0)
@@ -723,6 +838,7 @@ class Game:
                     age_seasons=w.get("age_seasons", 0),
                     has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
+                    engineer_specialty=w.get("engineer_specialty", ""),
                 )
                 for w in wf_data.get("workers", [])
             ]
@@ -808,6 +924,8 @@ class Game:
                 dollops_to_educator=rd.get("dollops_to_educator", 0),
                 dollops_to_transporter=rd.get("dollops_to_transporter", 0),
                 target_profession=rd.get("target_profession", Profession.UNSKILLED.value),
+                engineer_specialty=rd.get("engineer_specialty", ""),
+                duration_seasons=rd.get("duration_seasons", 0),
                 proposed_year=rd.get("proposed_year", 0),
                 proposed_season=rd.get("proposed_season", 0),
                 status=TrainingStatus(rd["status"]),

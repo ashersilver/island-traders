@@ -1,6 +1,6 @@
 [project]
 name = "island-traders"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -12,6 +12,7 @@ server = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "websockets>=12.0", "wspr
 
 [project.scripts]
 island-traders = "island_traders.cli.session:main"
+island-traders-agent = "island_traders.cli.agent_client:main"
 island-traders-sim = "island_traders.simulation.runner:main"
 island-traders-export = "island_traders.export.printables:main"
 island-traders-server = "island_traders.server.app:main"

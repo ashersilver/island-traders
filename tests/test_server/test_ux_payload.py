@@ -123,6 +123,8 @@ def test_training_pipeline_shape():
         "batch_id",
         "worker_count",
         "target_profession",
+        "engineer_specialty",
+        "duration_seasons",
         "status",
         "educator_player_id",
         "educator_name",
@@ -191,3 +193,23 @@ def test_decision_hint_target_structured():
         "type": "resource_shortfall",
         "resource": ResourceType.OIL.value,
     }
+
+
+def test_game_state_includes_revenue_opportunities():
+    mgr, room, players = _bootstrap_game(["Manufacturer", "Farmer"])
+    manufacturer = players[0]
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    manufacturer_data = next(
+        p for p in state["players"] if p["player_id"] == manufacturer.player_id
+    )
+    opportunities = manufacturer_data["revenue_opportunities"]
+    farm = next(
+        opp for opp in opportunities
+        if opp["output"] == ResourceType.FARM_MACHINERY.value
+    )
+
+    assert farm["product_line"] == "FarmMachinery"
+    assert farm["structural_demand_units"] >= 1
+    assert farm["inputs_to_stockpile"]["Metal"] > 0
+    assert farm["required_professions"]

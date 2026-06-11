@@ -55,6 +55,8 @@ ACTION_GROUPS: dict[TurnAction, str] = {
     TurnAction.BUY_INSURANCE: "Finance",
     TurnAction.SELL_INSURANCE: "Finance",
     TurnAction.MANAGE_INSURANCE: "Finance",
+    TurnAction.LEND_TO_ISLAND: "Finance",
+    TurnAction.REPAY_SHAREHOLDER_LOAN: "Finance",
     TurnAction.VIEW_MARKET: "Info",
     TurnAction.VIEW_PLAYERS: "Info",
     TurnAction.INVENTORY: "Info",
@@ -74,9 +76,13 @@ def action_option_payload(action: TurnAction, player) -> dict:
     if action == TurnAction.OFFER_LOAN and not _player_has_role(player, "Banker"):
         enabled = False
         disabled_reason = "Only Banking can offer loans."
-    elif action == TurnAction.SELL_INSURANCE and not _player_has_role(player, "Banker"):
-        enabled = False
-        disabled_reason = "Only Banking can sell insurance."
+    elif action == TurnAction.SELL_INSURANCE:
+        if not _player_has_role(player, "Banker"):
+            enabled = False
+            disabled_reason = "Only Banking can sell insurance."
+        elif player.workforce.count_profession(Profession.ACTUARY.value) <= 0:
+            enabled = False
+            disabled_reason = "Banking needs an Actuary to sell insurance."
     elif action == TurnAction.ARRANGE_TRANSPORT and not _player_has_role(player, "Transporter"):
         enabled = False
         disabled_reason = "Only Transportation can arrange training transport."
@@ -86,6 +92,21 @@ def action_option_payload(action: TurnAction, player) -> dict:
     elif action == TurnAction.REVIEW_STAFFING_REQUESTS and not _player_has_role(player, "Doctor"):
         enabled = False
         disabled_reason = "Only the Healthcare island can review staffing requests."
+    elif action == TurnAction.LEND_TO_ISLAND:
+        cash = getattr(player, "personal_cash", 0.0)
+        if cash <= 0:
+            enabled = False
+            disabled_reason = "No personal cash to lend."
+    elif action == TurnAction.REPAY_SHAREHOLDER_LOAN:
+        from ..models import shareholder_loans as sh_loans
+        owed = sh_loans.total_owed(getattr(player, "shareholder_loans", {}))
+        treasury = getattr(player, "dollops", 0.0)
+        if owed <= 0:
+            enabled = False
+            disabled_reason = "No shareholder loan outstanding."
+        elif treasury <= 0:
+            enabled = False
+            disabled_reason = "Island treasury is empty — cannot repay now."
 
     return {
         "value": action.value,
@@ -288,7 +309,13 @@ class WebSocketIOAdapter(IOAdapter):
         with self._player_locks[player_id]:
             msg = self._player_pending_msgs.get(player_id)
             if not msg:
-                return False
+                if player_id in self._player_ready_flags:
+                    msg = {
+                        "type": "choose_action_parked",
+                        "player_id": player_id,
+                    }
+                else:
+                    return False
             replay = dict(msg)
             replay["replayed"] = True
         self._send_to(player_id, replay)

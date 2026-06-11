@@ -54,7 +54,7 @@ ROLES: dict[str, Role] = {
         short_name="Education",
         island="Education, Research and Training Island",
         produces=(ResourceType.EXPERTISE, ResourceType.PATENTS),
-        needs=(ResourceType.LABORATORY_EQUIPMENT,),
+        needs=(ResourceType.REAGENTS,),
         description="Trains the workforce and advances knowledge across the archipelago.",
     ),
     "Banker": Role(
@@ -78,7 +78,7 @@ ROLES: dict[str, Role] = {
         produces=(
             ResourceType.FARM_MACHINERY,
             ResourceType.MINING_EQUIPMENT,
-            ResourceType.LABORATORY_EQUIPMENT,
+            ResourceType.REAGENTS,
             ResourceType.MEDICAL_DEVICES,
             ResourceType.TRANSPORT_EQUIPMENT,
         ),
@@ -94,7 +94,7 @@ ROLES: dict[str, Role] = {
         short_name="Healthcare",
         island="Healthcare and Health Research Island",
         produces=(ResourceType.HEALTH_SERVICES, ResourceType.VACCINE),
-        needs=(ResourceType.EXPERTISE, ResourceType.LABORATORY_EQUIPMENT),
+        needs=(ResourceType.EXPERTISE, ResourceType.REAGENTS),
         description="Provides health services and vaccines, keeping the workforce productive.",
     ),
 }

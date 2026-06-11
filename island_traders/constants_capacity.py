@@ -26,9 +26,35 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Any",
         cost=80.0,
         delivery_seasons=0,
-        effects={"kitchen_food_per_season": 6, "cash_only": True},
-        description="Chef-staffed kitchen: converts raw ingredients into up to 6 Food/season",
+        effects={"kitchen_food_per_season": 10, "cash_only": True},
+        description="Chef-staffed kitchen: converts raw ingredients into up to 10 Food/season",
         service_life_seasons=12,
+    ),
+    CapitalItem(
+        item_id="common.industrial_kitchen",
+        name="Industrial Kitchen",
+        role="Any",
+        cost=150.0,
+        delivery_seasons=1,
+        effects={"kitchen_food_per_season": 20, "cash_only": True},
+        description="Industrial kitchen: converts raw ingredients into up to 20 Food/season, no Chef required",
+    ),
+    CapitalItem(
+        item_id="common.laboratory_equipment",
+        name="Laboratory Equipment",
+        role="Any",
+        cost=40.0,
+        delivery_seasons=1,
+        # Durable soil/sample-testing kit (NOT the consumable Reagents).  Lifts
+        # output capacity for the islands that test soil/samples — Agriculture,
+        # Mining, Medical (2026-06-02).  Only the outputs an island actually
+        # produces are affected.
+        effects={"cash_only": True, "capacity": {
+            "Grain": 2, "Produce": 2, "Food": 2,   # Agriculture
+            "Ore": 2,                               # Mining
+            "HealthServices": 2, "Vaccine": 1,      # Medical
+        }},
+        description="Soil/sample testing: +2 capacity to Agriculture, Mining & Medical outputs",
     ),
 
     # ----- Farmer ----------------------------------------------------------
@@ -185,8 +211,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Expertise": 4}, "education_slots": 2},
-        description="+4 Expertise, +2 Education slots",
+        effects={"capacity": {"Expertise": 4, "Courses": 4}, "education_slots": 2},
+        description="+4 Expertise, +4 Courses, +2 Education slots",
     ),
     CapitalItem(
         item_id="educator.library",
@@ -212,8 +238,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=80.0,
         delivery_seasons=2,
-        effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"LaboratoryEquipment": 0.2}}},
-        description="+1 Patent, -0.2 LaboratoryEquipment per Expertise",
+        effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"Reagents": 0.2}}},
+        description="+1 Patent, -0.2 Reagents per Expertise",
     ),
     CapitalItem(
         item_id="educator.technical_workshop",
@@ -278,10 +304,10 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         cost=80.0,
         delivery_seasons=0,
         effects={
-            "unlocks_lines": ["FarmMachinery", "MiningEquipment", "LaboratoryEquipment"],
-            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2, "LaboratoryEquipment": 3},
+            "unlocks_lines": ["FarmMachinery", "MiningEquipment"],
+            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2},
         },
-        description="enables FarmMachinery, MiningEquipment + LaboratoryEquipment lines",
+        description="enables FarmMachinery + MiningEquipment lines",
     ),
     CapitalItem(
         item_id="manufacturer.assembly_line",
@@ -294,7 +320,6 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             "capacity": {
                 "FarmMachinery": 1,
                 "MiningEquipment": 1,
-                "LaboratoryEquipment": 1,
                 "MedicalDevices": 1,
                 "TransportEquipment": 1,
             },
@@ -357,6 +382,20 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"vaccine_persistence": True},
         description="Vaccine doesn't expire between seasons",
     ),
+    # 2026-06-02: Reagents are made on the Medical island from Oil + Ore but
+    # had no capital item dedicated to their capacity — players saw a vague
+    # "Capital Equipment" hint with no catalogue option.  The Reagent Lab
+    # is the dedicated piece of plant.  Modest, fast delivery so it can be
+    # bought in the opening investing window.
+    CapitalItem(
+        item_id="doctor.reagent_lab",
+        name="Reagent Lab",
+        role="Doctor",
+        cost=70.0,
+        delivery_seasons=1,
+        effects={"capacity": {"Reagents": 6}},
+        description="Chemistry plant: turns Oil+Ore into Reagents (+capacity)",
+    ),
 ]
 
 
@@ -368,21 +407,21 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
         role="Farmer", output="Grain",
-        inputs={"Oil": 10 / 6},
+        inputs={"Oil": 5 / 6},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Farm equipment fuel",
+        description="Farm equipment fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 10 / 3},
+        inputs={"Oil": 5 / 3},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Fishing fleet fuel",
+        description="Fishing fleet fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Produce",
-        inputs={"Oil": 5.0},
+        inputs={"Oil": 2.5},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Field produce; Horticulturalists improve the line",
+        description="Field produce; Horticulturalists improve the line (oil halved 2026-06-04)",
     ),
     ProductionRecipe(
         role="Farmer", output="Meat",
@@ -430,19 +469,19 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
         role="Educator", output="Expertise",
-        inputs={"LaboratoryEquipment": 0.25},
+        inputs={},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
         description="1 Professor required per unit of Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Courses",
-        inputs={"LaboratoryEquipment": 0.1, "Expertise": 1.0},
+        inputs={"Expertise": 1.0},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.0,
         description="1 Instructor + 0.5 Professor per Course; consumes 1 Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Patents",
-        inputs={"LaboratoryEquipment": 0.5, "Expertise": 0.25},
+        inputs={"Reagents": 0.5, "Expertise": 0.25},
         manager_per_unit=2.0, technician_per_unit=1.0, worker_per_unit=0.0,
         description="2 Professors per Patent; consumes a small Expertise input",
     ),
@@ -475,11 +514,6 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=1.0,
     ),
     ProductionRecipe(
-        role="Manufacturer", output="LaboratoryEquipment",
-        inputs={"Metal": 1.0, "Oil": 1.0, "Freight": 1.0},
-        manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
-    ),
-    ProductionRecipe(
         role="Manufacturer", output="MedicalDevices",
         inputs={"Metal": 1.0, "Oil": 1.0, "Freight": 1.0},
         manager_per_unit=0.2, technician_per_unit=1.5, worker_per_unit=0.5,
@@ -490,15 +524,23 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
     ),
 
-    # ----- Doctor ----------------------------------------------------------
+    # ----- Doctor (Medical Sciences) --------------------------------------
+    # Reagents (formerly the Manufacturer's "LaboratoryEquipment") are now made
+    # here from Oil + Ore — used in-house for HealthServices/Vaccine and sold
+    # to the Educator (2026-06-02).
+    ProductionRecipe(
+        role="Doctor", output="Reagents",
+        inputs={"Oil": 1.0, "Ore": 1.0},
+        manager_per_unit=0.2, technician_per_unit=1.0, worker_per_unit=0.5,
+    ),
     ProductionRecipe(
         role="Doctor", output="HealthServices",
-        inputs={"Expertise": 0.25, "LaboratoryEquipment": 0.25},
+        inputs={"Expertise": 0.25, "Reagents": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
     ProductionRecipe(
         role="Doctor", output="Vaccine",
-        inputs={"Expertise": 0.5, "LaboratoryEquipment": 1.0},
+        inputs={"Expertise": 0.5, "Reagents": 1.0},
         manager_per_unit=1.0, technician_per_unit=0.0, worker_per_unit=0.0,
     ),
 ]

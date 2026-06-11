@@ -6,6 +6,7 @@ from ..models.market import Market
 from ..models.resource import ResourceType
 from ..models.training import (
     TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
+    engineer_training_duration,
 )
 from ..models.staffing import StaffingRegistry, StaffingStatus
 from ..engine.events import EventResult
@@ -15,7 +16,10 @@ from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
-from ..models.profession import Profession, PROFESSION_LABEL, WorkerBand, band_of
+from ..models.profession import (
+    Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
+    WorkerBand, EngineerSpecialty, band_of,
+)
 from ..engine.workforce_events import apply_workplace_risks
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
@@ -24,7 +28,8 @@ from ..constants import (
     TRAINEE_FOOD_ACCOM_PER_SEASON,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
-    MEDICAL_INSURANCE_INJURY_REDUCTION, WORKPLACE_RISK,
+    MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD,
+    ACTUARIAL_EVALUATION_COST, WORKPLACE_RISK,
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
     REPURPOSE_WORKER_COST,
 )
@@ -66,6 +71,8 @@ class TurnAction(Enum):
     REPURPOSE_WORKER         = "repurpose_worker"         # reassign a worker to a new profession
     REQUEST_MEDICAL_STAFF    = "request_medical_staff"    # any island: hire Doctor/Nurse on contract
     REVIEW_STAFFING_REQUESTS = "review_staffing_requests" # Doctor island: approve/reject/counter
+    LEND_TO_ISLAND     = "lend_to_island"      # owner: move personal cash → island treasury
+    REPAY_SHAREHOLDER_LOAN = "repay_shareholder_loan"  # owner: recover treasury → personal cash
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
     INVENTORY          = "inventory"
@@ -349,7 +356,7 @@ class TurnManager:
                 elif action == TurnAction.ACK_TRAINING_DECISION:
                     self._action_ack_training_decision(player, result)
                 elif action == TurnAction.SUPPLY_TRAINING_EXPERTISE:
-                    self._action_supply_training_expertise(player, result)
+                    self._action_supply_training_expertise(player, result, year, season_index)
                 elif action == TurnAction.ARRANGE_TRANSPORT:
                     self._action_arrange_transport(player, result, season_name, year)
                 elif action == TurnAction.RECRUIT_WORKERS:
@@ -384,6 +391,10 @@ class TurnManager:
                     self._action_request_medical_staff(player, result, year, season_index)
                 elif action == TurnAction.REVIEW_STAFFING_REQUESTS:
                     self._action_review_staffing_requests(player, result, year, season_index)
+                elif action == TurnAction.LEND_TO_ISLAND:
+                    self._action_lend_to_island(player, result)
+                elif action == TurnAction.REPAY_SHAREHOLDER_LOAN:
+                    self._action_repay_shareholder_loan(player, result)
             except ActionCancelled:
                 # User pressed Cancel mid-prompt-chain — abort cleanly without
                 # falling back to default values that would partially execute
@@ -441,8 +452,8 @@ class TurnManager:
             "Farmer": ResourceType.FARM_MACHINERY,
             "Miner": ResourceType.MINING_EQUIPMENT,
             "Transporter": ResourceType.TRANSPORT_EQUIPMENT,
-            "Educator": ResourceType.LABORATORY_EQUIPMENT,
-            "Banker": ResourceType.LABORATORY_EQUIPMENT,
+            "Educator": ResourceType.REAGENTS,
+            "Banker": ResourceType.REAGENTS,
             "Manufacturer": ResourceType.TRANSPORT_EQUIPMENT,
             "Doctor": ResourceType.MEDICAL_DEVICES,
         }
@@ -927,12 +938,28 @@ class TurnManager:
                     f"{len(trainable_ids)} eligible worker(s) are available now."
                 )
         else:
+            engineer_specialty = ""
+            if target_profession == Profession.ENGINEER.value:
+                engineer_specialty = self._choose_engineer_specialty()
+                if engineer_specialty:
+                    engineer_ids = [
+                        w.worker_id
+                        for w in player.workforce.active_workers
+                        if w.profession == Profession.ENGINEER.value
+                        and w.worker_id not in reserved_worker_ids
+                    ]
+                    trainable_ids = engineer_ids + [
+                        wid for wid in trainable_ids if wid not in engineer_ids
+                    ]
             remaining_capacity = capacity_map[target_profession]["remaining"]
             max_send = min(len(trainable_ids), remaining_capacity)
             count = self.io.choose_quantity(
                 f"How many workers to train as {target_profession}? (max {max_send})", 1, max_send
             )
             training_plan = {target_profession: count}
+            engineer_specialty_by_profession = {target_profession: engineer_specialty}
+        if target_profession == bundle_option:
+            engineer_specialty_by_profession = {}
         worker_ids = trainable_ids[:count]
 
         # Self-training: if THIS player is the Educator, they're training their
@@ -980,17 +1007,34 @@ class TurnManager:
                     min(count, requester_ticket_pool),
                 )
             ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
-            course_duration = away_seasons(target_profession)
-            is_manager = band_of(target_profession) == WorkerBand.MANAGER
-            # Expertise is burned per Course per season — Manager-tier only;
-            # apprenticeships (Technician) are not Course/Expertise gated.
-            courses = self.courses_needed(count) if is_manager else 0
             expertise_price = self.market.current_price(ResourceType.EXPERTISE)
             base_fee = 20.0 * count
-            food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * count * course_duration
+            course_duration = 0
+            courses = 0
+            food_accom = 0.0
+            expertise_cost = 0.0
+            fee_worker_offset = 0
+            for profession, profession_count in training_plan.items():
+                batch_worker_ids = worker_ids[
+                    fee_worker_offset:fee_worker_offset + profession_count
+                ]
+                fee_worker_offset += profession_count
+                duration = self._training_duration_for_selection(
+                    profession,
+                    batch_worker_ids,
+                    player,
+                    engineer_specialty_by_profession.get(profession, ""),
+                )
+                course_duration = max(course_duration, duration)
+                food_accom += (
+                    TRAINEE_FOOD_ACCOM_PER_SEASON * profession_count * duration
+                )
+                if band_of(profession) == WorkerBand.MANAGER:
+                    profession_courses = self.courses_needed(profession_count)
+                    courses += profession_courses
+                    expertise_cost += expertise_price * profession_courses * duration
             educator_ticket_count = count - tickets_supplied_by_requester
             tickets = ticket_price * educator_ticket_count
-            expertise_cost = expertise_price * courses * course_duration
             suggested_total = base_fee + food_accom + tickets + expertise_cost
             self.io.print(
                 f"  Fee components — base {base_fee:.0f}, food/accom "
@@ -1035,6 +1079,10 @@ class TurnManager:
                 if count else 0.0
             )
             try:
+                specialty = engineer_specialty_by_profession.get(profession, "")
+                duration = self._training_duration_for_selection(
+                    profession, batch_worker_ids, player, specialty
+                )
                 req = self.training.propose(
                     requester_id=player.player_id,
                     worker_ids=batch_worker_ids,
@@ -1046,6 +1094,8 @@ class TurnManager:
                     season=season_index,
                     transport_mode=transport_mode,
                     tickets_supplied_by_requester=batch_requester_tickets,
+                    engineer_specialty=specialty,
+                    duration_seasons=duration,
                 )
             except TrainingCapacityError as e:
                 self.io.print(f"  {e}")
@@ -1067,7 +1117,7 @@ class TurnManager:
             # without a dispatch) and leave any blocked batch pending
             # until its capacity frees up.
             for req in requests:
-                ok, gate_msg = self._training_capacity_status(player, req)
+                ok, gate_msg = self._training_capacity_status(player, req, year, season_index)
                 if not ok:
                     self.io.print(
                         f"  Self-training request #{req.batch_id} "
@@ -1076,7 +1126,7 @@ class TurnManager:
                         f"once that capacity frees up."
                     )
                     continue
-                used_desc = self._consume_training_capacity(player, req)
+                used_desc = self._consume_training_capacity(player, req, year, season_index)
                 self.training.educator_approve(req.batch_id)
                 self.training.dispatch(req.batch_id, year, season_index)
                 # Mark workers as in-training on the workforce side too.
@@ -1144,7 +1194,10 @@ class TurnManager:
         educator_tickets = self._educator_ticket_count(req)
         if req.dollops_to_educator >= required_offer:
             # Peek training capacity before burning air tickets.
-            ok, gate_msg = self._training_capacity_status(educator, req)
+            season_index = SEASONS.index(season_name)
+            ok, gate_msg = self._training_capacity_status(
+                educator, req, year, season_index
+            )
             if not ok:
                 self.io.print(
                     f"  [AI] {educator.name} cannot approve training request #{req.batch_id} yet: "
@@ -1158,7 +1211,7 @@ class TurnManager:
                     f"{req.tickets_supplied_by_requester}, Educator supplies {educator_tickets}."
                 )
                 return
-            self._consume_training_capacity(educator, req)
+            self._consume_training_capacity(educator, req, year, season_index)
             self.training.educator_approve(req.batch_id)
             requester.spend_dollops(req.dollops_to_educator)
             educator.receive_dollops(req.dollops_to_educator)
@@ -1260,6 +1313,44 @@ class TurnManager:
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * educator_tickets
         return fair_rate + ticket_cost
 
+    def _choose_engineer_specialty(self) -> str:
+        options = [{"label": "No specialty", "value": ""}]
+        options.extend(
+            {"label": f"{specialty.value} specialty", "value": specialty.value}
+            for specialty in EngineerSpecialty
+        )
+        choice = self.io.choose_option(
+            "Engineer specialty course?",
+            options,
+            request_summary={
+                "kind": "engineer_specialty",
+                "note": "Optional fourth season, or one-season return course for existing Engineers.",
+            },
+        )
+        return choice or ""
+
+    def _training_duration_for_selection(
+        self,
+        profession: str,
+        worker_ids: list[int],
+        player: Player,
+        engineer_specialty: str = "",
+    ) -> int:
+        if profession != Profession.ENGINEER.value:
+            return away_seasons(profession)
+        if not engineer_specialty:
+            return away_seasons(profession)
+        workers = {
+            worker.worker_id: worker
+            for worker in player.workforce.workers
+            if worker.worker_id in set(worker_ids)
+        }
+        returning_engineer = bool(workers) and all(
+            worker.profession == Profession.ENGINEER.value
+            for worker in workers.values()
+        )
+        return engineer_training_duration(engineer_specialty, returning_engineer)
+
     def _auto_arrange_transport(self, requester, req, season_name: str, year: int) -> None:
         """Find an AI Transporter to handle the logistics, or flag for human turn."""
         transporters = [
@@ -1290,17 +1381,77 @@ class TurnManager:
                 f"{transporter.name} must agree on their turn."
             )
 
+    def _training_worker_is_eligible(self, worker, req) -> bool:
+        """True when this active worker can fill the request's trainee seat."""
+        if (
+            req.target_profession == Profession.ENGINEER.value
+            and req.engineer_specialty
+            and worker.profession == Profession.ENGINEER.value
+        ):
+            return True
+        if worker.training_level >= 3:
+            return False
+        return (
+            worker.profession == Profession.UNSKILLED.value
+            or worker.profession == req.target_profession
+        )
+
     def _training_workers_ready(self, requester: Player, req) -> bool:
-        active_ids = {worker.worker_id for worker in requester.workforce.active_workers}
-        missing = [worker_id for worker_id in req.worker_ids if worker_id not in active_ids]
-        if missing:
-            ids = ", ".join(str(worker_id) for worker_id in missing)
+        needed = len(req.worker_ids)
+        if needed <= 0:
+            return True
+        original_ids = list(req.worker_ids)
+        original_id_set = set(original_ids)
+        reserved_by_other = (
+            self.training.reserved_worker_ids(requester.player_id) - original_id_set
+        )
+        eligible = [
+            worker
+            for worker in requester.workforce.active_workers
+            if worker.worker_id not in reserved_by_other
+            and self._training_worker_is_eligible(worker, req)
+        ]
+        eligible_by_id = {worker.worker_id: worker for worker in eligible}
+
+        selected_ids: list[int] = []
+        for worker_id in original_ids:
+            if worker_id in eligible_by_id:
+                selected_ids.append(worker_id)
+        for worker in sorted(
+            eligible,
+            key=lambda w: (
+                w.worker_id not in original_id_set,
+                w.profession != Profession.UNSKILLED.value,
+                -w.experience_seasons,
+                w.worker_id,
+            ),
+        ):
+            if len(selected_ids) >= needed:
+                break
+            if worker.worker_id not in selected_ids:
+                selected_ids.append(worker.worker_id)
+
+        if len(selected_ids) < needed:
+            active_ids = {worker.worker_id for worker in requester.workforce.active_workers}
+            missing = [worker_id for worker_id in original_ids if worker_id not in active_ids]
+            reason = (
+                f"worker(s) not active: {', '.join(str(i) for i in missing)}; "
+                if missing else ""
+            )
             self.io.print(
                 f"  [Training] Cannot dispatch request #{req.batch_id}: "
-                f"worker(s) not active on {requester.name}'s island: {ids}. "
-                "The request remains pending."
+                f"{reason}needs {needed} eligible active trainee(s) for "
+                f"{self._profession_label(req.target_profession)}, but only "
+                f"{len(selected_ids)} are available. The request remains pending."
             )
             return False
+
+        if selected_ids != original_ids:
+            req.worker_ids = selected_ids
+            self.io.print(
+                f"  [Training] Reassigned request #{req.batch_id} to active "
+                f"eligible worker id(s): {', '.join(str(i) for i in selected_ids)}."
+            )
         return True
 
     def _dispatch_training(self, requester, req, season_name: str, year: int) -> bool:
@@ -1308,6 +1459,18 @@ class TurnManager:
         if not self._training_workers_ready(requester, req):
             return False
         season_index = SEASONS.index(season_name)
+        # Students travelling to the Education island must be covered by medical
+        # insurance paid for by the Education island (2026-06-02).  Coverage is
+        # auto-provisioned at dispatch (premium to a Banker if present) so
+        # training never silently stalls; only an Educator that can't afford the
+        # premium holds the dispatch.
+        educator = next(
+            (p for p in self.players if p.player_id == req.educator_id), None
+        )
+        if educator is not None and not self._ensure_student_medical_coverage(
+            educator, req, year, season_index
+        ):
+            return False
         self.training.dispatch(req.batch_id, year=year, season=season_index, num_seasons=len(SEASONS))
         departed = requester.workforce.dispatch_for_training(req.worker_ids)
         if len(departed) != len(req.worker_ids):
@@ -1320,6 +1483,60 @@ class TurnManager:
         self.io.print(
             f"  {len(departed)} worker(s) from {requester.name}'s island departed for "
             f"Education Island. Return scheduled: {self._format_training_return(req)}."
+        )
+        return True
+
+    def _ensure_student_medical_coverage(
+        self, educator: Player, req, year: int, season_index: int
+    ) -> bool:
+        """Education island must hold medical cover for travelling students.
+
+        Pre-bought medical coverage (sized policies) is consumed first; any
+        shortfall is auto-provisioned — the Education island pays a per-head
+        premium (to a Banker if one exists, which also feeds Banker income) and
+        a covering policy is recorded.  Returns False only when the Educator
+        can't afford the shortfall premium (dispatch is then held)."""
+        # Self-training uses the educator's own residents — they don't travel.
+        if req.requester_id == req.educator_id:
+            return True
+        needed = self.training.visiting_trainees(educator.player_id) + len(req.worker_ids)
+        have = educator.medical_coverage_seats(year, season_index)
+        if have >= needed:
+            return True
+        shortfall = needed - have
+        premium = MEDICAL_PREMIUM_PER_HEAD * shortfall
+        if educator.dollops < premium:
+            self.io.print(
+                f"  [Training] {educator.name} cannot afford medical cover for "
+                f"{shortfall} travelling student(s) ({premium:.0f} {CURRENCY_SYMBOL}). "
+                "Dispatch held — buy a medical policy or free treasury."
+            )
+            return False
+        educator.spend_dollops(premium)
+        banker = next(
+            (p for p in self.players
+             if any(r.name == "Banker" for r in p.roles)
+             and p.player_id != educator.player_id),
+            None,
+        )
+        banker_id = banker.player_id if banker else educator.player_id
+        if banker:
+            banker.receive_dollops(premium)
+        tick = year * 4 + season_index
+        educator.add_insurance_policy(InsurancePolicy(
+            policy_id=len(educator.insurance_policies) + 1,
+            policy_type="medical",
+            holder_player_id=educator.player_id,
+            banker_player_id=banker_id,
+            premium_paid=premium,
+            purchased_tick=tick,
+            expires_at_tick=tick + INSURANCE_DURATION_SEASONS,
+            covered_count=shortfall,
+        ))
+        self.io.print(
+            f"  Education Island paid {premium:.0f} {CURRENCY_SYMBOL} medical cover "
+            f"for {shortfall} travelling student(s)"
+            + (f" (premium to {banker.name})" if banker else "") + "."
         )
         return True
 
@@ -1359,7 +1576,46 @@ class TurnManager:
             return 0
         return -(-num_trainees // MAX_CLASS_SIZE_PER_COURSE)  # ceil division
 
-    def _training_capacity_status(self, educator: Player, req) -> tuple[bool, str]:
+    def _cohort_year_season_for_request(
+        self,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> tuple[int, int]:
+        if req.status == TrainingStatus.DISPATCHED:
+            return req.dispatched_year, req.dispatched_season
+        if year is not None and season is not None:
+            return year, season
+        return req.proposed_year, req.proposed_season
+
+    def _incremental_courses_for_request(
+        self,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> int:
+        cohort_year, cohort_season = self._cohort_year_season_for_request(
+            req, year, season
+        )
+        existing = self.training.cohort_trainees_committed(
+            req.educator_id,
+            req.target_profession,
+            cohort_year,
+            cohort_season,
+            exclude_batch_id=req.batch_id,
+            engineer_specialty=req.engineer_specialty,
+        )
+        return self.courses_needed(existing + len(req.worker_ids)) - self.courses_needed(
+            existing
+        )
+
+    def _training_capacity_status(
+        self,
+        educator: Player,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> tuple[bool, str]:
         """Can this batch be admitted?  Pure check — no side effects.
 
         Manager-tier and Technician-tier training are gated by per-course
@@ -1368,21 +1624,25 @@ class TurnManager:
         Returns (ok, reason); reason is empty when ok.
         """
         band = band_of(req.target_profession)
-        n_courses = 1
-        need_courses = self.courses_needed(len(req.worker_ids))
+        need_courses = self._incremental_courses_for_request(req, year, season)
+        reagents_needed = self._training_reagents_needed(req, need_courses)
         if band == WorkerBand.MANAGER:
             prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
             lect = educator.workforce.count_profession(Profession.LECTURER.value)
             max_concurrent = self._manager_course_capacity(educator)
-            in_flight = self.training.manager_courses_in_flight(educator.player_id)
-            if max_concurrent - in_flight < n_courses:
+            in_flight = self.training.manager_courses_in_flight(
+                educator.player_id, year, season
+            )
+            if max_concurrent - in_flight < need_courses:
                 return False, (
                     f"Manager-course staffing full: {in_flight}/{max_concurrent} "
                     f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
                     f"have {prof} Professor(s), {lect} Lecturer(s))."
                 )
-            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * n_courses:
-                return False, f"needs {2 * n_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * need_courses:
+                return False, f"needs {2 * need_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
+                return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1404,8 +1664,10 @@ class TurnManager:
             # Staffing gate — per-course (Technical Director supervises 2
             # concurrent courses; Instructor leads 1).
             max_concurrent = self._technical_course_capacity(educator)
-            courses_in_flight = self.training.technical_courses_in_flight(educator.player_id)
-            if max_concurrent - courses_in_flight < n_courses:
+            courses_in_flight = self.training.technical_courses_in_flight(
+                educator.player_id, year, season
+            )
+            if max_concurrent - courses_in_flight < need_courses:
                 return False, (
                     f"Technical-course staffing full: {courses_in_flight}/{max_concurrent} "
                     f"concurrent courses (need 0.5 Technical Director + 1 Instructor per course; "
@@ -1421,8 +1683,10 @@ class TurnManager:
                     f"{trainees_in_flight}/{workshop_seats} trainee seat(s) "
                     f"already in training (need {batch_trainees} more for this batch)."
                 )
-            if educator.inventory.get(ResourceType.EXPERTISE) < n_courses:
-                return False, f"needs {n_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.EXPERTISE) < need_courses:
+                return False, f"needs {need_courses} Expertise for this course."
+            if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
+                return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
             if have < need_courses:
                 return False, (
@@ -1431,6 +1695,19 @@ class TurnManager:
                 )
             return True, ""
         return True, ""
+
+    @staticmethod
+    def _training_reagents_needed(req, need_courses: int) -> int:
+        if need_courses <= 0:
+            return 0
+        try:
+            profession = Profession(req.target_profession)
+        except ValueError:
+            return 0
+        if profession not in SCIENCE_TRAINING_PROFESSIONS:
+            return 0
+        duration = req.duration_seasons or away_seasons(req.target_profession)
+        return need_courses * duration
 
     def _manager_course_capacity(self, educator: Player) -> int:
         prof = educator.workforce.count_profession(Profession.PROFESSOR.value)
@@ -1444,27 +1721,40 @@ class TurnManager:
         inst = educator.workforce.count_profession(Profession.INSTRUCTOR.value)
         return min(td * 2, inst)
 
-    def _consume_training_capacity(self, educator: Player, req) -> str:
+    def _consume_training_capacity(
+        self,
+        educator: Player,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> str:
         """Debit the capacity this batch uses; return a human description.
 
         Staffing capacity is held by the request's in-flight status. Course
         and Expertise resources are spent at approval/dispatch.
         """
         band = band_of(req.target_profession)
-        n_courses = 1
-        need_courses = self.courses_needed(len(req.worker_ids))
+        need_courses = self._incremental_courses_for_request(req, year, season)
+        reagents_needed = self._training_reagents_needed(req, need_courses)
         if need_courses > 0:
             educator.give_resources(ResourceType.COURSES, need_courses)
+        if reagents_needed > 0:
+            educator.give_resources(ResourceType.REAGENTS, reagents_needed)
         if band == WorkerBand.MANAGER:
-            educator.give_resources(ResourceType.EXPERTISE, 2 * n_courses)
+            expertise = 2 * need_courses
+            if expertise > 0:
+                educator.give_resources(ResourceType.EXPERTISE, expertise)
             return (
-                f"{need_courses} Course slot(s) + 2 Expertise "
+                f"{need_courses} Course slot(s) + {expertise} Expertise"
+                f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the Manager-tier course"
             )
         if band == WorkerBand.TECHNICIAN:
-            educator.give_resources(ResourceType.EXPERTISE, n_courses)
+            if need_courses > 0:
+                educator.give_resources(ResourceType.EXPERTISE, need_courses)
             return (
-                f"{need_courses} Course slot(s) + 1 Expertise "
+                f"{need_courses} Course slot(s) + {need_courses} Expertise"
+                f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the technical course"
             )
         return f"{need_courses} Course slot(s)"
@@ -1495,8 +1785,11 @@ class TurnManager:
         self.io.print("  Current training pipeline:")
         grouped: dict[tuple[str, str, TrainingStatus], int] = {}
         for req in active:
+            label = self._profession_label(req.target_profession)
+            if req.engineer_specialty:
+                label = f"{label} ({req.engineer_specialty})"
             key = (
-                self._profession_label(req.target_profession),
+                label,
                 self._format_training_return(req),
                 req.status,
             )
@@ -1615,7 +1908,10 @@ class TurnManager:
             return False
         # Peek training capacity BEFORE consuming any air tickets so a
         # capacity shortfall doesn't burn the Educator's PassengerSeats.
-        ok, gate_msg = self._training_capacity_status(educator, req)
+        season_index = SEASONS.index(season_name)
+        ok, gate_msg = self._training_capacity_status(
+            educator, req, year, season_index
+        )
         if not ok:
             self.io.print(
                 f"  Cannot approve yet — Education Island {gate_msg} "
@@ -1641,7 +1937,7 @@ class TurnManager:
             )
             return False
         # Tickets secured; now consume Course and Expertise resources.
-        self._consume_training_capacity(educator, req)
+        self._consume_training_capacity(educator, req, year, season_index)
         requester.spend_dollops(req.dollops_to_educator)
         educator.receive_dollops(req.dollops_to_educator)
         if req.status == TrainingStatus.COUNTERED:
@@ -1940,7 +2236,11 @@ class TurnManager:
         result.actions_taken.append(f"countered_training:batch#{req.batch_id}")
 
     def _action_supply_training_expertise(
-        self, player: Player, result: TurnResult
+        self,
+        player: Player,
+        result: TurnResult,
+        year: int | None = None,
+        season_index: int | None = None,
     ) -> None:
         """Requester gifts Expertise to the Educator to unblock a pending request.
 
@@ -1968,7 +2268,9 @@ class TurnManager:
                 continue
             # Compute Expertise shortfall from the same capacity-status
             # logic the Educator uses to gate approvals.
-            ok, reason = self._training_capacity_status(educator, req)
+            ok, reason = self._training_capacity_status(
+                educator, req, year, season_index
+            )
             if not ok and "Expertise" in reason:
                 eligible.append((req, educator, reason))
         if not eligible:
@@ -2007,7 +2309,7 @@ class TurnManager:
         # courses need 2 per course, Technician-tier need 1 per course.
         band = band_of(req.target_profession)
         per_course = 2 if band == WorkerBand.MANAGER else 1
-        n_courses = self.courses_needed(len(req.worker_ids))
+        n_courses = self._incremental_courses_for_request(req, year, season_index)
         needed = per_course * n_courses
         have_at_educator = educator.inventory.get(ResourceType.EXPERTISE)
         shortfall = max(0, needed - have_at_educator)
@@ -2192,13 +2494,19 @@ class TurnManager:
         if not valid_profs:
             self.io.print("  No alternative professions available for this island's roles.")
             return
-        prof_options = [
+        prof_options = []
+        if chosen_worker.profession != Profession.UNSKILLED.value:
+            prof_options.append({
+                "value": Profession.UNSKILLED.value,
+                "label": "Unskilled",
+            })
+        prof_options.extend([
             {
                 "value": p.value,
                 "label": PROFESSION_LABEL.get(p, p.value),
             }
             for p in sorted(set(valid_profs), key=lambda p: PROFESSION_LABEL.get(p, p.value))
-        ]
+        ])
         new_prof_value = self.io.choose_option(
             "Choose the new profession for this worker:",
             prof_options,
@@ -2231,6 +2539,15 @@ class TurnManager:
         if not any(r.name == "Banker" for r in player.roles):
             self.io.print("  Only the Banker can sell insurance policies.")
             return
+        if not self._banker_can_underwrite_insurance(player):
+            self.io.print("  Cannot issue policy: no Actuary on staff.")
+            return
+        if player.dollops < ACTUARIAL_EVALUATION_COST:
+            self.io.print(
+                f"  Cannot issue policy: needs {ACTUARIAL_EVALUATION_COST:.0f} "
+                f"{CURRENCY_SYMBOL} for actuarial evaluation."
+            )
+            return
         sym = CURRENCY_SYMBOL
         eligible = [p for p in self.players if p.player_id != player.player_id]
         if not eligible:
@@ -2251,6 +2568,19 @@ class TurnManager:
         choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
         policy_type = "life" if choice == 1 else "medical"
         base = INSURANCE_BASE_PREMIUM[policy_type]
+
+        # Medical policies are sized + priced per covered head (2026-06-02).
+        covered_count = 1
+        if policy_type == "medical":
+            covered_count = self.io.choose_quantity(
+                "How many workers/students should this medical policy cover?", 1, 200
+            )
+            base = MEDICAL_PREMIUM_PER_HEAD * covered_count
+            self.io.print(
+                f"  Medical cover for {covered_count} head(s) — "
+                f"base premium {base:.0f} {sym} "
+                f"({MEDICAL_PREMIUM_PER_HEAD:.0f} {sym}/head for the term)."
+            )
 
         buyer = self.io.choose_player("Sell to which player?", eligible)
 
@@ -2299,6 +2629,7 @@ class TurnManager:
 
         buyer.spend_dollops(premium)
         player.receive_dollops(premium)
+        player.spend_dollops(ACTUARIAL_EVALUATION_COST)
         policy_id = len(buyer.insurance_policies) + 1
         purchased_tick = year * 4 + season_index
         policy = InsurancePolicy(
@@ -2309,13 +2640,19 @@ class TurnManager:
             premium_paid=premium,
             purchased_tick=purchased_tick,
             expires_at_tick=purchased_tick + INSURANCE_DURATION_SEASONS,
+            covered_count=covered_count,
         )
         buyer.add_insurance_policy(policy)
         self.io.print(
             f"  Policy issued: {policy.describe()}  "
-            f"— {buyer.name} paid {premium:.0f} {sym}"
+            f"— {buyer.name} paid {premium:.0f} {sym}; "
+            f"actuarial evaluation cost {ACTUARIAL_EVALUATION_COST:.0f} {sym}"
         )
         result.actions_taken.append(f"sell_insurance:{policy_type}:{buyer.name}")
+
+    @staticmethod
+    def _banker_can_underwrite_insurance(banker: Player) -> bool:
+        return banker.workforce.count_profession(Profession.ACTUARY.value) > 0
 
     def _action_buy_insurance(
         self, player: Player, result: TurnResult, year: int, season_index: int
@@ -2340,6 +2677,15 @@ class TurnManager:
             self.io.print("  No Banker player in this game.")
             return
         banker = self.io.choose_player("Buy from which Banker?", bankers)
+        if not self._banker_can_underwrite_insurance(banker):
+            self.io.print("  Cannot issue policy: no Actuary on staff.")
+            return
+        if banker.dollops < ACTUARIAL_EVALUATION_COST:
+            self.io.print(
+                f"  Cannot issue policy: {banker.name} needs "
+                f"{ACTUARIAL_EVALUATION_COST:.0f} {sym} for actuarial evaluation."
+            )
+            return
 
         self.io.print("\n  Available policies:")
         self.io.print(
@@ -2386,6 +2732,7 @@ class TurnManager:
 
         player.spend_dollops(premium)
         banker.receive_dollops(premium)
+        banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
         policy_id = len(player.insurance_policies) + 1
         purchased_tick = year * 4 + season_index
         policy = InsurancePolicy(
@@ -3332,6 +3679,87 @@ class TurnManager:
             )
 
     # ------------------------------------------------------------------
+    # Shareholder loans to own island (Phase 2b mid-game lend/repay)
+    # ------------------------------------------------------------------
+
+    def _action_lend_to_island(self, player: Player, result: TurnResult) -> None:
+        """Move personal cash → island treasury, recording a shareholder loan.
+
+        The loan is a senior liability: total_wealth subtracts it, and the
+        investor's net_worth adds the matching receivable — so lending is
+        net-worth-neutral.  No interest (SHAREHOLDER_LOAN_RATE = 0%).
+        """
+        from ..models import shareholder_loans as sh_loans
+        sym = CURRENCY_SYMBOL
+        cash = player.personal_cash
+        if cash <= 0:
+            self.io.print(f"  No personal cash to lend (personal cash: {cash:.1f} {sym}).")
+            return
+        owed = sh_loans.total_owed(player.shareholder_loans)
+        self.io.print(
+            f"  Personal cash: {cash:.1f} {sym}  |  "
+            f"Existing shareholder loan owed by island: {owed:.1f} {sym}"
+        )
+        amount = self.io.ask_dollop_amount(
+            f"How much to lend to your island treasury ({sym})?",
+            cash,
+        )
+        if amount <= 0:
+            self.io.print("  Cancelled.")
+            return
+        amount = min(amount, cash)
+        player.personal_cash = round(player.personal_cash - amount, 1)
+        player.dollops = round(player.dollops + amount, 1)
+        sh_loans.lend(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        self.io.print(
+            f"  Lent {amount:.1f} {sym} to your island treasury.  "
+            f"Island treasury: {player.dollops:.1f} {sym}  |  "
+            f"Loan owed: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}"
+        )
+        result.actions_taken.append(f"lend_to_island:{amount:.1f}")
+
+    def _action_repay_shareholder_loan(self, player: Player, result: TurnResult) -> None:
+        """Move treasury → personal cash, reducing the shareholder-loan principal.
+
+        Only the island's own owner can repay their own loan; the treasury
+        must hold enough to cover the repayment.
+        """
+        from ..models import shareholder_loans as sh_loans
+        sym = CURRENCY_SYMBOL
+        owed = sh_loans.total_owed(player.shareholder_loans)
+        if owed <= 0:
+            self.io.print("  No shareholder loan outstanding to repay.")
+            return
+        if player.dollops <= 0:
+            self.io.print(
+                f"  Island treasury is empty ({player.dollops:.1f} {sym}); "
+                f"cannot repay."
+            )
+            return
+        max_repay = min(owed, player.dollops)
+        self.io.print(
+            f"  Outstanding shareholder loan: {owed:.1f} {sym}  |  "
+            f"Island treasury: {player.dollops:.1f} {sym} (max repayable: {max_repay:.1f} {sym})"
+        )
+        amount = self.io.ask_dollop_amount(
+            f"How much to repay from the island treasury ({sym})?",
+            max_repay,
+        )
+        if amount <= 0:
+            self.io.print("  Cancelled.")
+            return
+        amount = min(amount, max_repay)
+        paid = sh_loans.repay(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        player.dollops = round(player.dollops - paid, 1)
+        player.personal_cash = round(player.personal_cash + paid, 1)
+        self.io.print(
+            f"  Repaid {paid:.1f} {sym} to personal cash.  "
+            f"Remaining loan: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}  |  "
+            f"Treasury: {player.dollops:.1f} {sym}"
+        )
+        result.actions_taken.append(f"repay_shareholder_loan:{paid:.1f}")
+
+    # ------------------------------------------------------------------
     # Medical staffing contracts (2026-05-28)
     # ------------------------------------------------------------------
 
@@ -3503,7 +3931,26 @@ class TurnManager:
                 {"value": "counter",  "label": "Counter (propose different fee)"},
                 {"value": "reject",   "label": "Reject"},
             ]
-            decision = self.io.choose_option("Decision:", decision_options)
+            # Surface the contract details in the decision modal (web UI renders
+            # request_summary), so the reviewer sees what they're approving.
+            avail_note = f"{len(available)} {prof_label}(s)"
+            if len(available) < contract.staff_count:
+                avail_note += f" ⚠ need {contract.staff_count}"
+            staffing_summary = {
+                "title": f"Staffing request #{contract.contract_id} from {req_name}",
+                "fields": [
+                    ["Staff requested", f"{contract.staff_count}× {prof_label}"],
+                    ["Duration", f"{contract.duration_seasons} season(s)"],
+                    ["Fee offered", f"{contract.fee_total:.1f} {sym}"],
+                    ["Per staff/season",
+                     f"{contract.fee_total / max(1, contract.staff_count * contract.duration_seasons):.1f} {sym}"],
+                    ["PassengerSeats you supply", tickets_prov],
+                    ["Available now", avail_note],
+                ],
+            }
+            decision = self.io.choose_option(
+                "Decision:", decision_options, request_summary=staffing_summary
+            )
 
             if decision == "approve":
                 self.staffing.provider_approve(contract.contract_id)

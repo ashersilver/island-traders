@@ -36,6 +36,7 @@ def _turn_manager(players, training, io=None) -> TurnManager:
 def _prepare_manager_training(educator: Player, courses: int = 10, expertise: int = 20) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, 20)
     educator.workforce.add_workers(2, training_level=1, profession=Profession.PROFESSOR.value)
     educator.workforce.add_workers(2, training_level=1, profession=Profession.LECTURER.value)
 
@@ -145,7 +146,9 @@ def test_ai_educator_approves_lower_offer_when_requester_self_supplies():
 
     assert req.status == TrainingStatus.DISPATCHED
     assert requester.inventory.get(ResourceType.PASSENGER_SEATS) == 0
-    assert educator.dollops == 540.0
+    # Educator pays student medical cover at dispatch (2 × 8 = 16) on top of
+    # the fee, so 540 − 16 = 524 (2026-06-02 student insurance).
+    assert educator.dollops == 524.0
 
 
 def test_dispatch_fails_when_requester_promises_tickets_but_lacks_inventory():

@@ -40,6 +40,67 @@ def test_simulation_deterministic_with_same_seed():
         assert r1.role_stats[role].wins == r2.role_stats[role].wins
 
 
+def test_simulation_money_supply_has_opening_plus_one_per_season():
+    runner = SimulationRunner(num_games=4, num_years=2, seed=42)
+    stats = runner.run()
+    # Opening snapshot + one per season (2 years × 4 seasons).
+    assert len(stats.money_supply_mean) == 2 * 4 + 1
+
+
+def test_simulation_money_supply_opens_at_total_starting_dollops():
+    from island_traders.constants import STARTING_DOLLOPS
+
+    runner = SimulationRunner(num_games=3, num_years=1, seed=7)
+    stats = runner.run()
+    # All-AI game seats one player per role; opening circulation is the sum of
+    # every island's starting treasury.
+    expected = STARTING_DOLLOPS * len(stats.role_stats)
+    assert stats.money_supply_mean[0] == pytest.approx(expected)
+
+
+def test_simulation_records_resource_flows():
+    runner = SimulationRunner(num_games=3, num_years=1, seed=42)
+    stats = runner.run()
+    # Some production happens every game, so produced totals are non-empty and
+    # positive; traded volume is recorded separately.
+    assert stats.flow_produced, "expected some produced resources"
+    assert all(v > 0 for v in stats.flow_produced.values())
+    # Every traded/consumed resource name is a real resource string (sanity:
+    # keys come straight from ResourceType.value).
+    from island_traders.models.resource import ResourceType
+
+    valid = {r.value for r in ResourceType}
+    for bucket in (stats.flow_produced, stats.flow_consumed, stats.flow_traded):
+        assert set(bucket).issubset(valid)
+
+
+def test_production_telemetry_records_produced_and_starvation():
+    from island_traders.engine.production import ProductionEngine, InsufficientInputsError
+    from island_traders.engine.telemetry import ResourceFlowTelemetry
+    from island_traders.engine.events import EventResult
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+    from island_traders.models.resource import ResourceType
+
+    telem = ResourceFlowTelemetry()
+    engine = ProductionEngine()
+    engine.telemetry = telem
+
+    # A Miner with no inputs at all should stall and log starvation, not crash
+    # the telemetry path.
+    player = Player(player_id=1, name="M", roles=[ROLES["Miner"]], dollops=0.0)
+    for r in list(ResourceType):
+        have = player.inventory.get(r)
+        if have:
+            player.give_resources(r, have)
+    event = EventResult(event_name="none")
+    try:
+        engine.produce(player, event, season_name="Spring")
+    except InsufficientInputsError:
+        pass
+    assert telem.starvation, "starvation should be recorded on missing inputs"
+
+
 def test_parse_seeds_accepts_comma_separated_values():
     assert _parse_seeds("42, 1,7") == [42, 1, 7]
 

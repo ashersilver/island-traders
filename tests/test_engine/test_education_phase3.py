@@ -66,7 +66,7 @@ def _propose_tech(training, farmer, educator, workers):
 def test_away_seasons_by_profession():
     assert away_seasons("Doctor") == 3
     assert away_seasons("Nurse") == 1
-    assert away_seasons("Engineer") == 2
+    assert away_seasons("Engineer") == 3
     assert away_seasons("FarmingTechnician") == 1   # Technician away
     assert away_seasons("NotARealProfession") == 1   # safe fallback
 

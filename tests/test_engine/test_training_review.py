@@ -29,6 +29,7 @@ def _turn_manager(players, training, io):
 def _manager_training_ready(educator: Player, courses: int = 1, expertise: int = 3) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, 20)
     educator.workforce.add_workers(1, training_level=1, profession="Professor")
     educator.workforce.add_workers(1, training_level=1, profession="Lecturer")
 
@@ -121,6 +122,39 @@ def test_non_educator_review_training_shows_personal_pipeline():
     assert "Year 1, Autumn" in output
 
 
+def test_review_training_still_lists_request_with_absent_pinned_workers():
+    farmer = _player(0, "Farmer", "Farmer")
+    farmer.workforce.workers.clear()
+    farmer.workforce._next_id = 0
+    farmer.workforce.add_workers(3, profession="Unskilled")
+    educator = _player(1, "Educator", "Educator")
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[0],
+        educator_id=educator.player_id,
+        dollops_to_educator=40.0,
+        target_profession="FarmingTechnician",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    farmer.workforce.dispatch_for_training([0])
+
+    io = TrainingReviewIO(confirms=[None])
+    manager = _turn_manager([farmer, educator], training, io)
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    output = "\n".join(io.printed)
+    assert f"TrainingRequest #{req.batch_id}" in output
+    assert "No training requests awaiting your approval." not in output
+
+
 def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
@@ -151,7 +185,8 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     assert req.status == TrainingStatus.DISPATCHED
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     assert educator.inventory.get(ResourceType.COURSES) == 0  # 1 Course consumed
-    assert educator.dollops == 170.0
+    # 100 + 70 fee − 16 student medical cover (2 × 8) = 154 (2026-06-02).
+    assert educator.dollops == 154.0
     assert farmer.dollops == 30.0
     assert farmer.workforce.training_count == 2
 
@@ -288,7 +323,10 @@ def test_requester_can_accept_training_counter_offer_and_dispatch():
 
     assert req.status == TrainingStatus.DISPATCHED
     assert farmer.dollops == 10.0
-    assert educator.dollops == 190.0
+    # Educator receives the 90 fee but pays student medical cover at dispatch
+    # (2 students × MEDICAL_PREMIUM_PER_HEAD 8 = 16; no Banker here so it's an
+    # external insurer): 100 + 90 − 16 = 174 (2026-06-02 student insurance).
+    assert educator.dollops == 174.0
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     assert farmer.workforce.training_count == 2
     assert result.actions_taken == ["approved_training:batch#0"]

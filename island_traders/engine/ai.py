@@ -6,6 +6,7 @@ from ..models.deal import DealProposal, DealStatus
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
@@ -14,7 +15,7 @@ from ..constants import (
     PRODUCTION_INPUTS,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
-    MBA_QUALIFIED_THRESHOLD,
+    MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role
@@ -24,11 +25,14 @@ AI_OFFER_MARKUP = 1.0
 AI_ARBITRAGE_MIN_MARGIN = 0.05
 AI_MIN_LOAN_PRINCIPAL = 50.0
 AI_DEBT_CEILING_MULTIPLIER = 2.0
+AI_WORKING_CAPITAL_LOAN_FRACTION = 0.12
+AI_DEBT_CEILING_WEALTH_FRACTION = 0.35
+AI_MAX_WORKING_CAPITAL_LOAN = 250.0
 AI_EQUIPMENT_INPUT_RUNS = 5
 AI_EQUIPMENT_INPUTS = {
     ResourceType.FARM_MACHINERY,
     ResourceType.MINING_EQUIPMENT,
-    ResourceType.LABORATORY_EQUIPMENT,
+    ResourceType.REAGENTS,
     ResourceType.MEDICAL_DEVICES,
     ResourceType.TRANSPORT_EQUIPMENT,
 }
@@ -103,6 +107,41 @@ class AIStrategy:
         product_line: str | None = None,
     ) -> float:
         return self._one_season_input_cost(player, market, season_name, product_line)
+
+    def _borrower_wealth(self, borrower: Player, market: Market) -> float:
+        return max(
+            borrower.dollops,
+            borrower.total_wealth(market.current_prices(), capital_catalogue=CAPITAL_CATALOGUE),
+        )
+
+    def _borrower_debt_ceiling(
+        self, borrower: Player, market: Market, loan_ledger: LoanLedger
+    ) -> float:
+        wealth = self._borrower_wealth(borrower, market)
+        return max(
+            AI_MIN_LOAN_PRINCIPAL,
+            round(wealth * AI_DEBT_CEILING_WEALTH_FRACTION, 1),
+        )
+
+    def _ai_working_capital_principal(
+        self,
+        borrower: Player,
+        market: Market,
+        loan_ledger: LoanLedger,
+        season_name: str,
+        product_line: str | None = None,
+    ) -> float:
+        wealth = self._borrower_wealth(borrower, market)
+        target_line = max(
+            self._capital_short_threshold(borrower, market, season_name, product_line),
+            min(AI_MAX_WORKING_CAPITAL_LOAN, wealth * AI_WORKING_CAPITAL_LOAN_FRACTION),
+        )
+        debt = loan_ledger.outstanding_debt(borrower.player_id)
+        capacity = self._borrower_debt_ceiling(borrower, market, loan_ledger) - debt
+        principal = min(target_line, capacity)
+        if principal < AI_MIN_LOAN_PRINCIPAL:
+            return 0.0
+        return round(principal, 1)
 
     def _find_ai_banker(
         self,
@@ -199,14 +238,14 @@ class AIStrategy:
                 for loan in loan_ledger.active_loans_for(borrower.player_id)
             ):
                 continue
-            threshold = self._capital_short_threshold(borrower, market, season_name)
-            if borrower.dollops >= threshold:
+            debt_ceiling = self._borrower_debt_ceiling(borrower, market, loan_ledger)
+            if loan_ledger.outstanding_debt(borrower.player_id) >= debt_ceiling:
                 continue
-            if loan_ledger.outstanding_debt(borrower.player_id) > (
-                threshold * AI_DEBT_CEILING_MULTIPLIER
-            ):
+            principal = self._ai_working_capital_principal(
+                borrower, market, loan_ledger, season_name
+            )
+            if principal <= 0:
                 continue
-            principal = round(threshold - borrower.dollops, 1)
             action = self._ai_issue_loan(
                 banker, borrower, principal, loan_ledger, year, season_index
             )
@@ -320,6 +359,8 @@ class AIStrategy:
     ) -> list[str]:
         """Banker AI proactively sells base-premium policies to uninsured AI players."""
         actions: list[str] = []
+        if banker.workforce.count_profession(Profession.ACTUARY.value) <= 0:
+            return actions
         purchased_tick = year * 4 + season_index
         expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
         for target in other_players:
@@ -333,10 +374,11 @@ class AIStrategy:
                     if target.has_active_insurance(policy_type, year, season_index):
                         continue
                     premium = INSURANCE_BASE_PREMIUM[policy_type]
-                    if target.dollops < premium or banker.dollops < 0:
+                    if target.dollops < premium or banker.dollops < ACTUARIAL_EVALUATION_COST:
                         continue
                     target.spend_dollops(premium)
                     banker.receive_dollops(premium)
+                    banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
                     policy = InsurancePolicy(
                         policy_id=len(target.insurance_policies) + 1,
                         policy_type=policy_type,
@@ -359,39 +401,62 @@ class AIStrategy:
         market: Market,
         demand_players: list[Player] | None = None,
         training_registry=None,
+        season_name: str = "Spring",
     ) -> str:
         """Pick the Manufacturer product line with the strongest unmet demand."""
+        has_human_demand = False
         if demand_players is not None:
-            human_demand = self._has_human_equipment_demand(
+            has_human_demand = self._has_human_equipment_demand(
                 demand_players, training_registry=training_registry
             )
-            if not human_demand:
-                player.ai_product_line_human_demand = False
-                return self._choose_product_line_profit(player, market)
+        has_visible_bid = any(
+            market.best_bid(ResourceType(line["output"])) is not None
+            for line in MANUFACTURER_PRODUCT_LINES.values()
+        )
 
         current_line = getattr(
             player, "ai_product_line", next(iter(MANUFACTURER_PRODUCT_LINES))
         )
-        scores = {
-            line_key: self._manufacturer_demand_score(player, market, line_key)
-            for line_key in MANUFACTURER_PRODUCT_LINES
-        }
+        if demand_players is not None and not has_human_demand and has_visible_bid:
+            return self._choose_product_line_profit(player, market)
+        structural_opportunity_scores = False
+        if demand_players is not None:
+            opportunities = revenue_opportunities(
+                player, market, demand_players, season_name
+            )
+            scores = {
+                opp["product_line"]: opp["score"]
+                for opp in opportunities
+                if opp.get("product_line") in MANUFACTURER_PRODUCT_LINES
+            }
+            structural_opportunity_scores = bool(scores)
+        else:
+            scores = {}
+        if not scores:
+            scores = {
+                line_key: self._manufacturer_demand_score(player, market, line_key)
+                for line_key in MANUFACTURER_PRODUCT_LINES
+            }
         feasible = [
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
         if not feasible:
-            return current_line
+            chosen = max(scores, key=lambda line_key: scores[line_key])
+            player.ai_product_line = chosen
+            player.ai_product_line_human_demand = has_human_demand
+            return chosen
         top_line = max(feasible, key=lambda line_key: scores[line_key])
+        sticky_margin = 1.15 if structural_opportunity_scores else 1.10
         if (
             current_line in feasible
-            and scores[top_line] <= scores[current_line] * 1.10
+            and scores[top_line] <= scores[current_line] * sticky_margin
         ):
             chosen = current_line
         else:
             chosen = top_line
         player.ai_product_line = chosen
-        player.ai_product_line_human_demand = True
+        player.ai_product_line_human_demand = has_human_demand
         return chosen
 
     def _choose_product_line_profit(self, player: Player, market: Market) -> str:
@@ -445,7 +510,7 @@ class AIStrategy:
         - **Indirect** (2026-05-27 training-expertise-deadlock brief): the
           human has pending training requests or workers already in
           training.  Both signal that the Educator must produce Expertise
-          to fulfil them, which in turn requires LaboratoryEquipment from
+          to fulfil them, which in turn requires Reagents from
           the Manufacturer.  Without this, a game with one human Miner
           (Mining is direct-demand for MiningEquipment, but NOT for
           LabEquipment) leaves the Educator's Expertise pipeline
@@ -502,7 +567,8 @@ class AIStrategy:
         unmet = max(0, demand_units - supply_units)
         bid = market.best_bid(output)
         bid_pull = bid.remaining if bid is not None else 0
-        return (current_price / base_price) * (unmet + bid_pull)
+        visible_bid_pull = bid_pull * PRODUCER_PRODUCTIVITY_MULTIPLIER
+        return (current_price / base_price) * (unmet + visible_bid_pull)
 
     def _manufacturer_demand_units(self, output: ResourceType) -> int:
         per_season = self._manufacturer_per_season_demand_units(output)
@@ -518,13 +584,10 @@ class AIStrategy:
 
     def _manufacturer_line_feasible(self, player: Player, line_key: str) -> bool:
         line = MANUFACTURER_PRODUCT_LINES[line_key]
-        if not all(
+        return all(
             player.inventory.get(ResourceType(resource)) >= qty
             for resource, qty in line["inputs"].items()
-        ):
-            return False
-        freight = self._manufacturer_freight_surcharge(line_key, line["qty"])
-        return player.inventory.get(ResourceType.FREIGHT) >= freight
+        )
 
     def _manufacturer_freight_surcharge(self, product_line: str | None, qty: int) -> int:
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
@@ -551,6 +614,33 @@ class AIStrategy:
                 if freight:
                     inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight
         return inputs
+
+    def _farmer_visible_human_demand_output(
+        self,
+        player: Player,
+        market: Market,
+        other_players: list[Player],
+        production_engine: ProductionEngine,
+        event_result: EventResult,
+        season_name: str,
+    ) -> tuple[ResourceType, int] | None:
+        if not any(role.name == "Farmer" for role in player.roles):
+            return None
+        humans = {candidate.player_id for candidate in other_players if candidate.is_human}
+        options = {
+            option["output"]: option
+            for option in production_engine.production_options(player, event_result, season_name)
+            if option["role"] == "Farmer"
+        }
+        for output in (ResourceType.FOOD, ResourceType.MEAT):
+            bid = market.best_bid(output)
+            option = options.get(output)
+            if bid is None or option is None or bid.buyer_id not in humans:
+                continue
+            qty = min(option["max_qty"], bid.remaining)
+            if qty > 0:
+                return output, qty
+        return None
 
     def _last_deal_price(self, trading_engine: TradingEngine, rtype: ResourceType) -> float | None:
         """Infer the latest cash/unit price from accepted one-resource deals."""
@@ -679,7 +769,9 @@ class AIStrategy:
         chosen_line: str | None = None
         if is_manufacturer:
             chosen_line = self._choose_product_line(
-                player, market, other_players, training_registry=training_registry
+                player, market, other_players,
+                training_registry=training_registry,
+                season_name=season_name,
             )
 
         actions.extend(
@@ -741,16 +833,28 @@ class AIStrategy:
 
         produced_totals: dict[ResourceType, int] = {}
         missing: dict[ResourceType, int] = {}
-        for _ in range(self.target_production_runs):
-            can, missing = production_engine.can_produce(
-                player, event_result, season_name, chosen_line
+        selected_farmer_output = self._farmer_visible_human_demand_output(
+            player, market, other_players, production_engine, event_result, season_name
+        )
+        if selected_farmer_output is not None:
+            output, qty = selected_farmer_output
+            produced = production_engine.produce_product(
+                player, event_result, season_name, "Farmer", output, qty
             )
-            if not can:
-                break
-            produced = production_engine.produce(player, event_result, season_name, chosen_line)
             if produced:
                 for rtype, qty in produced.items():
                     produced_totals[rtype] = produced_totals.get(rtype, 0) + qty
+        else:
+            for _ in range(self.target_production_runs):
+                can, missing = production_engine.can_produce(
+                    player, event_result, season_name, chosen_line
+                )
+                if not can:
+                    break
+                produced = production_engine.produce(player, event_result, season_name, chosen_line)
+                if produced:
+                    for rtype, qty in produced.items():
+                        produced_totals[rtype] = produced_totals.get(rtype, 0) + qty
         if produced_totals:
             if is_manufacturer:
                 supply_memory = getattr(player, "ai_equipment_supply_memory", {})
@@ -794,7 +898,7 @@ class AIStrategy:
             qty = max(0, player.inventory.get(rtype) - reserve_inputs.get(rtype, 0))
             if (
                 is_manufacturer
-                and rtype == ResourceType.LABORATORY_EQUIPMENT
+                and rtype == ResourceType.REAGENTS
                 and getattr(player, "ai_product_line_human_demand", False)
             ):
                 qty = min(qty, 1)

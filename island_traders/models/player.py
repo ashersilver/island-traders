@@ -6,6 +6,7 @@ from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
 from .profession import Profession
 from .insurance import InsurancePolicy
+from .equity import CapTable
 from ..constants import (
     PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
     MAX_WORKFORCE_FRACTION_OF_POPULATION,
@@ -175,6 +176,44 @@ class Player:
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
 
+    # --- Equity / balance-sheet split (Phase 1, additive) ------------------
+    # `dollops` (above) is the ISLAND's operating treasury.  `personal_cash`
+    # is the player-as-investor's private wealth (the auction budget; the
+    # winning bid is paid from here to imaginary former owners).  `holdings`
+    # maps an island's player_id (as str) -> shares this investor owns in it.
+    # `cap_table` records who owns THIS player's island (60/40 at auction).
+    # All default empty/zero so existing games are unaffected until the
+    # economy flip wires them in.  See
+    # requirements/equity-balance-sheet-separation.md.
+    personal_cash: float = 0.0
+    holdings: dict[str, int] = field(default_factory=dict)
+    cap_table: CapTable | None = None
+    # Shareholder loans owed by THIS island back to investors who lent it
+    # personal cash (Phase 2b): lender_player_id (str) -> principal owed.
+    # A senior liability: subtracted in total_wealth/liquidation value, and the
+    # matching receivable is added to the lender's net worth, so lending is
+    # net-worth-neutral.  See models/shareholder_loans.py.
+    shareholder_loans: dict[str, float] = field(default_factory=dict)
+
+    def net_worth(
+        self,
+        share_price_by_island: dict[str, float],
+        loan_receivable: float = 0.0,
+    ) -> float:
+        """Investor net worth = personal cash + holdings value + loan receivable.
+
+        `share_price_by_island` maps island player_id (str) -> price per share;
+        the caller (the engine, which has the market + valuation history)
+        computes those via `equity.share_price(equity.fair_value(...))`.
+        `loan_receivable` is the total shareholder-loan principal owed *to* this
+        investor across all islands (the engine sums it via
+        `shareholder_loans.receivable(...)`), making a loan net-worth-neutral.
+        """
+        total = self.personal_cash + loan_receivable
+        for island_id, shares in self.holdings.items():
+            total += shares * share_price_by_island.get(str(island_id), 0.0)
+        return total
+
     def effective_capital_inventory(self) -> dict[str, int]:
         """Capital available for production this season.
 
@@ -300,6 +339,16 @@ class Player:
 
     def active_policies(self, year: int, season_index: int) -> list[InsurancePolicy]:
         return [p for p in self.insurance_policies if p.is_valid(year, season_index)]
+
+    def medical_coverage_seats(self, year: int, season_index: int) -> int:
+        """Total head-count of valid medical coverage this island holds
+        (sum of covered_count over active medical policies).  Used to gate
+        student travel to the Education island (2026-06-02)."""
+        return sum(
+            p.covered_count
+            for p in self.insurance_policies
+            if p.policy_type == "medical" and p.is_valid(year, season_index)
+        )
 
     def cancel_insurance_policy(
         self, policy_id: int, year: int, season_index: int
@@ -524,26 +573,62 @@ class Player:
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
 
+    def wealth_breakdown(self, prices: dict[ResourceType, float],
+                         loan_ledger=None, capital_catalogue=None,
+                         current_tick: int = 0) -> dict:
+        """Decompose the win-condition score into its labelled drivers.
+
+        The ``components`` are signed (liabilities negative) and sum to exactly
+        ``total`` — ``total_wealth`` is implemented in terms of this so the panel
+        and the score can never disagree (P7 / #86).  This is the *island
+        liquidation* total; investor wealth (personal cash + equity holdings) is
+        a separate balance sheet — see ``net_worth``.
+        """
+        treasury = self.dollops
+        inventory_value = self.inventory.total_value(prices)
+        capital_value = self.capital_book_value(capital_catalogue, current_tick)
+        bank_debt = (
+            loan_ledger.outstanding_debt(self.player_id) if loan_ledger else 0.0
+        )
+        loans_receivable = (
+            loan_ledger.loans_receivable(self.player_id) if loan_ledger else 0.0
+        )
+        shareholder_debt = sum(self.shareholder_loans.values())
+        # Unrounded so the signed components sum to exactly ``total`` (and to the
+        # prior total_wealth value); presentation layers round for display.
+        components = {
+            "treasury": treasury,
+            "inventory_value": inventory_value,
+            "capital_value": capital_value,
+            "loans_receivable": loans_receivable,
+            "bank_debt": -bank_debt,
+            "shareholder_debt": -shareholder_debt,
+        }
+        total = sum(components.values())
+        return {"components": components, "total": total}
+
     def total_wealth(self, prices: dict[ResourceType, float],
                      loan_ledger=None, capital_catalogue=None,
                      current_tick: int = 0) -> float:
-        assets = self.dollops + self.inventory.total_value(prices)
-        assets += self.capital_book_value(capital_catalogue, current_tick)
-        if loan_ledger:
-            assets -= loan_ledger.outstanding_debt(self.player_id)
-            assets += loan_ledger.loans_receivable(self.player_id)
-        return assets
+        return self.wealth_breakdown(
+            prices, loan_ledger, capital_catalogue, current_tick
+        )["total"]
 
     def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:
         if not capital_catalogue:
             return 0.0
         items = {item.item_id: item for item in capital_catalogue}
-        depreciation_ticks = 5 * 4
         total = 0.0
+        from ..engine.engineering import effective_capital_service_life
         for item_id, count in self.capital_inventory.items():
             item = items.get(item_id)
             if not item:
                 continue
+            depreciation_ticks = effective_capital_service_life(
+                self, item.service_life_seasons
+            )
+            if depreciation_ticks <= 0:
+                depreciation_ticks = 5 * 4
             ticks = list(self.capital_acquired_ticks.get(item_id, []))
             if len(ticks) < count:
                 ticks.extend([0] * (count - len(ticks)))

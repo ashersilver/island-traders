@@ -5,6 +5,677 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.1 — 2026-06-11
+
+First point release since `0.1.0`. Rolls up ~2 weeks of `pre-release` work into
+`master`. Highlights: science professions + reagent gating, engineer
+specialisation, the economy-mechanism layer (market-maker spread/depth + payroll
++ AI revenue-opportunity advisory), money-supply + supply-chain liveness
+instrumentation, the net-worth breakdown panel, a modular/hideable/filterable
+dashboard with disaster pop-ups, multi-role LLM agents, and Banker/Farmer/
+Manufacturer AI improvements.
+
+**Known issue — economy balance is mid-rebalance (P3 pending).** The mechanism
+layer (P1/P2/#98) is in, but the demand-side pass (P3/#84) is deferred: the money
+supply still contracts over a game and Farmer/Manufacturer win rates remain low.
+Tracked for the next cycle.
+
+### codex/final-demand-98-p3
+
+Version bump: `0.1.0-dev.2026-06-11.5`
+
+**AI revenue-opportunity advisory (#98).** Added a reusable
+`revenue_opportunities(...)` engine helper that ranks producible outputs by
+unit margin and live/structural demand, and reports required professions plus
+input stockpiles. The Manufacturer AI now uses this structural-demand signal
+when choosing a product line, so an AI Farmer's latent FarmMachinery need is
+visible even before a bid is posted. The same ranked advisory is exposed in
+the per-player server payload for dashboard and external agent clients.
+
+**Scope choice.** P3 consumer demand is intentionally deferred: it changes the
+economy rules and needs its own final-demand calibration pass. This branch is
+decision support/AI behavior only.
+
+**Verification.** Added regressions for the AI-Farmer/no-bid FarmMachinery
+case, hand-computed opportunity margin/stockpile math, and server payload
+shape. Full suite: 673 passed. Calibration sanity (`--games 1000 --seed 42`):
+Farmer 4.0%, Miner 19.3%, Transporter 23.9%, Educator 15.4%, Banker 14.9%,
+Manufacturer 5.5%, Doctor 17.0%; money supply closes at 4,955.5 Dp (-52.8%,
+-462.0 Dp/season). FarmMachinery traded volume nudges up to 1,651 (baseline
+1,641), while role balance stays effectively unchanged; an initial live-bid
+amplification attempt was backed out after it over-steered Miner.
+
+### codex/economy-spread-payroll-82-83-current
+
+Version bump: `0.1.0-dev.2026-06-11.4`
+
+**Formula-market spread/depth and payroll calibration pass (#82, #83).** The
+central formula market now quotes a bid/ask spread around the dynamic reference
+price and has finite per-resource, per-season buy/sell depth, so player-posted
+orders can compete with the infinite market maker instead of being undercut by
+frictionless liquidity. Formula-market stock is now separated from player
+asks, so a central-market buy cannot consume escrowed player inventory without
+paying the seller. Active home workers now draw per-season payroll by band
+(Worker, Technician, Manager), excluding trainees and contracted-away staff;
+shortfalls are logged without adding layoffs in this pass.
+
+**Verification.** Added focused regressions for market-maker bid/ask pricing,
+finite depth reset, player-ask isolation, payroll band charging, payroll
+exclusions, and payroll shortfalls. Full suite: 669 passed. Calibration sanity
+(`--games 1000 --seed 42`): Farmer 3.8%, Miner 19.4%, Transporter 23.6%,
+Educator 15.5%, Banker 15.1%, Manufacturer 5.8%, Doctor 16.8%. Mean money
+supply closes at 4,954.8 Dp from a 10,500.0 Dp opening (-52.8%, -462.1
+Dp/season), so the economy remains a net sink; the payroll bands were trimmed
+to 0.25/0.5/1.0 Dp after an initial smoke landed at -60.4%.
+
+### claude/ui-tiled-log-disasters
+
+Version bump: `0.1.0-dev.2026-06-11.3`
+
+**Modular layout, log filtering, and disaster pop-ups.** The dashboard is now
+customisable without a full re-tiling:
+
+- **Hide/collapse panels + presets.** A new **▦ Layout** header menu hides the
+  left sidebar, right info column, and/or the game log, with four presets (Full,
+  Hide log, Trader, Focus). The chosen layout persists per browser
+  (`localStorage`).
+- **Game log: hideable + filterable.** The log can be hidden entirely, and a
+  filter bar (All / My island / Trades / Events / Training) shows only the lines
+  in a category. Categories are derived per line; "My island" reuses the
+  existing relevance highlight. Filter choice persists.
+- **Disaster pop-ups.** Droughts, floods, outages, and other disruptive events
+  now raise a modal describing the **problem** (event name), the **impact**
+  (yield %, outage, any price shock), and the **duration** (damage seasons), with
+  a "don't pop these up" opt-out. The `season_events` payload now carries
+  `damage_seasons`, `price_shock_resource/multiplier`, and a `disruptive` flag.
+
+### claude/p7-net-worth-panel-86
+
+Version bump: `0.1.0-dev.2026-06-11.2`
+
+**Net-worth breakdown panel (P7 / #86).** New `Player.wealth_breakdown()`
+decomposes the win-condition score into signed drivers — treasury, inventory,
+equipment (capital book value), loans receivable, bank debt, shareholder loans
+— that sum to exactly `total_wealth()` (now implemented in terms of it, so the
+panel and the score can never disagree). Surfaced three ways: a `wealth_breakdown`
+object in the server player payload; a click-to-expand breakdown under "Island
+Value" in the dashboard (`static/index.html`); and a decomposed "Net Wealth"
+block in the CLI player summary. Reporting only — no scoring changes — so it is
+independent of the P1/P2/P3 economy rebalance.
+
+### codex/farmer-manufacturer-ai-29
+
+Version bump: `0.1.0-dev.2026-06-11.1`
+
+**Farmer / Manufacturer AI strategy gaps (#29).** Manufacturer AI now keeps the
+demand-scored product-line chooser on the human-demand path, weights live bids
+as immediate demand there, and treats Freight as a procurement need rather than
+a reason to avoid an otherwise viable Metal/Oil product line. Farmer AI now
+uses selected-output production for visible human Food/Meat demand when it has
+the matching capital and ingredients. Farmer reserve-listing heuristics were
+tested and deliberately left out after the simulation smoke showed they
+throttled the food basket.
+
+**Verification.** Added regressions for Farmer selected-output Food packaging
+and Manufacturer procurement of a visible human-demand line. Focused AI suite:
+23 tests passing. A 100-game seed-42 simulation smoke matches the #72 base
+balance profile, so this branch does not pre-empt the #73/#82/#83 measurement
+and rebalance sequence.
+
+### claude/b1-b2-liveness-metrics-73
+
+Version bump: `0.1.0-dev.2026-06-10.7`
+
+**Dynamic supply-chain liveness metrics (B1/B2, #73 — completes the issue).**
+A new `ResourceFlowTelemetry` (`engine/telemetry.py`) records, per resource:
+units **produced**, **consumed** (production + kitchen inputs), and **traded**
+(formula market, order-book fills, and peer deals), plus an input-**starvation**
+count (production attempts that stalled on a missing input). It is attached to
+the Market + ProductionEngine in `Game.setup()` and surfaced on
+`GameSummary.resource_flow`; the simulation runner aggregates across games,
+prints a liveness table (flagging resources that are consumed/traded but never
+produced, and the worst starvations), and writes a `*_flows.csv`. Default
+`None` everywhere, so live play and direct-construction unit tests pay nothing.
+Note: "consumed" is intermediate/producer demand only — population sustenance is
+a separate sink and is *not* counted here.
+
+**Findings (`--games 1000 --seed 42`):**
+- **The trading game barely trades.** Primary commodities are produced in bulk
+  but almost never change hands: Grain 243k produced / **0 traded**, Produce
+  186k / 0, Fish 137k / 0; the highest traded item is Freight at 3.2k vs 169k
+  produced. The dominant AI strategy is autarkic self-production with output
+  hoarded as inventory wealth.
+- **End products are economically inert** (produced, never consumed *or* traded):
+  Finance 146k, HealthServices 118k, PassengerSeats 56k, Courses 45k, Vaccine
+  27k — all with 0 consumed / 0 traded. Empirical confirmation of review D3
+  (no final demand) and motivation for P1 (spread/depth → peer trade) and P3.
+- **Zero input starvation across all resources** — supply chains are live; the
+  original Reagents-style "producible but never produced" gap is closed.
+
+### claude/money-supply-instrumentation-73
+
+Version bump: `0.1.0-dev.2026-06-10.6`
+
+**Money-supply instrumentation (P5 / #73).** The simulation runner and
+`GameSummary` now track total Dollops in circulation (every island treasury +
+investor personal cash) snapshotted once per season. The runner prints an
+opening/closing/net-mint summary and writes a `*_money.csv`; `GameSummary`
+exposes `money_supply` for the eventual game-over panel. This is the
+measurement-first step the economics review sequences before any
+faucet/sink tuning — "don't tune blind."
+
+**First finding:** over a standard 1000×3-year run the money supply *shrinks*
+~45% (≈10500 → ~5700 Dp, ~−400 Dp/season), i.e. the net flow is a **sink**, not
+the faucet hypothesised in D1 of `economics-review-2026-06-10.md`. The P1/P2
+calibration pass should treat this as the baseline. (B1/B2 per-resource
+produced/consumed/traded liveness metrics remain open under #73.)
+
+### codex/banker-ai-lending-72
+
+Version bump: `0.1.0-dev.2026-06-10.5`
+
+**Banker AI originates loans (#72).** Banker AI now offers small working-capital
+loans to AI borrowers with healthy debt capacity, instead of waiting until a
+borrower is nearly broke. Principal is sized from borrower wealth and operating
+needs, rates still come from the existing posted-funding / borrower-risk quote,
+and the existing `2 × Banker` active customer-loan cap remains the hard stop.
+
+**Verification.** Added AI tests for normal all-AI loan origination, issue-time
+rate/bookkeeping, and cap behavior. A 5-game smoke that previously produced
+zero customer loans now produces 6 customer loans per 3-year game, with 2 active
+at the end under the one-Banker cap.
+
+### codex-engineer-specialisation-75-76-78
+
+Version bump: `0.1.0-dev.2026-06-10.4`
+
+**Engineer specialization + combined science training bundle (#75, #76, #78,
+#24).** Extends the science/Reagents branch with #78: Engineer base training is
+now 3 seasons, and players can add a fourth consecutive specialty season or
+send an existing Engineer back for a 1-season return course. Engineer
+specialties are stored on workers and preserved through save/load; each Engineer
+holds at most one specialty, with retraining replacing it.
+
+**Specialty effects.** Active Industrial Engineers add +2 capacity to every
+product line; Mechanical Engineers extend capital service life by 25% and count
+as one Technician of labour relief; Electrical Engineers add +5 percentage
+points of workforce efficiency; Chemical Engineers reduce Oil inputs by 20% and
+add +2 Reagents capacity to Reagents producers. Specialty effects only count
+while the Engineer is active, and each island stacks each specialty at most
+twice.
+
+**Training and balance sanity.** Science-track training now consumes Reagents
+per course-season, so a base Engineer costs 3 Reagents per course, a first-time
+specialized Engineer costs 4, and a return specialty course costs 1. Full suite:
+655 passed. Calibration sanity (`--games 1000 --seed 42`): Farmer 3.7%, Miner
+19.8%, Transporter 24.9%, Educator 20.0%, Banker 6.2%, Manufacturer 5.9%,
+Doctor 19.5%. Educator did not need another #76-specific output trim; broader
+economy balance remains a separate measurement-first pass.
+
+### codex/meat-orphan-74
+
+Version bump: `0.1.0-dev.2026-06-10.3`
+
+**Meat orphan resolved (#74).** Confirms Option A: Farmer already has a real
+Livestock Barn Meat line that converts Grain feedstock into Meat, so the stale
+B3 supply-chain allowlist entry is removed. Static reachability now treats Meat
+as an active Farmer output instead of a known exception, so future regressions
+will fail the supply-chain tests instead of hiding behind the old orphan note.
+
+### codex-science-reagents-gating-75-76
+
+Version bump: `0.1.0-dev.2026-06-10.1`
+
+**Science profession set + Reagents gating (#75, #76, #24).** Adds Actuary
+(Banking), Tradesman (Manufacturing), Medical Researcher, and Medical Technician
+(Healthcare) across profession enum/bands/display labels, role training lists,
+skilled-workforce maps, university capacities, and course durations. Banking
+insurance now requires at least one Actuary on staff, Banking starts with one
+Actuary so insurance is live from game start, and each issued policy charges
+the Banker the 5 Dp actuarial evaluation cost. Reagents no longer
+blanket-gate Educator production: Expertise and generic Courses can run without
+Reagents, Patents still consume Reagents as research output, and only the
+confirmed science-track professions consume Reagents during training.
+
+**Calibration sanity.** Removing the blanket Educator input made Educator spike
+to 44.5% wins on `--games 1000 --seed 42`; trimming Educator Expertise and
+Patent output while keeping Course slots at 4 brought the same sanity check to:
+Farmer 3.8%, Miner 20.1%, Transporter 25.0%, Educator 19.6%, Banker 6.0%,
+Manufacturer 5.9%, Doctor 19.6%. This fixes the #76-specific Educator spike;
+broader role balance remains a separate calibration pass.
+
+### claude/pr-template-closes-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.9`
+
+**Process: every PR links the issue it addresses.** Adds
+`.github/pull_request_template.md` (so GitHub auto-prompts for
+`Closes #N` / `Refs #N`), and reinforces the rule in `CLAUDE.md` and
+`requirements/release-process.md`. Requirements live in GitHub issues; PRs
+reference them so the backlog self-reconciles on merge. Docs-only; no behavior
+change.
+
+### claude/spectator-by-code-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.8`
+
+**Spectator can be addressed by share code, with clearer status.** Watching a
+game 404'd when the watcher pasted the 6-char join code (the state endpoint needs
+the internal room id) or watched before the game started. New read-only
+`GET /api/rooms/by-code/{code}` resolves a code → room metadata without joining;
+`static/spectator.html` now accepts a room id **or** a code (resolved via that
+endpoint), reports "waiting for the game to start…" on a pre-start 404, and lists
+the players present when a name doesn't match. 641 green; `node --check` clean.
+
+### codex/engine-bugs-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.7`
+
+**Fix 06-05 playtest engine/server regressions.** Parked Done-Trading prompts
+can now be replayed live and the browser no longer resurrects stale cached
+menus while the player is still parked. Farmer raw output capacity/input hints
+now use the seasonal conversion table instead of the separate recipe oil model.
+Lecture Halls provide Course capacity again, so Educators with Expertise can
+produce Course slots. Workforce profession summaries exclude staff away on
+contracts, keeping active counts consistent with production. Game state also
+surfaces training-capacity rows with unavailable reasons when a profession cap
+is exhausted.
+
+### claude/market-event-push-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.6`
+
+**Push discrete market events over the WebSocket (#4).** Previously clients only
+learned of market changes on the next full game-state broadcast, so an AI agent
+(or dashboard) couldn't react to, e.g., a needed input becoming buyable. The
+`Market` now records a `market_event` for each posted ask/bid and each fill
+(`{resource, side, action, price, quantity, actor}`); the server drains and
+broadcasts them after every action alongside the full state. The
+`island-traders-agents` loop already consumes these (buffers them into the next
+decision). Tests: `test_market.py` event emit/drain + fill. 636 green.
+
+### claude/spectator-view-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.5`
+
+**Read-only spectator view** (`static/spectator.html`). A standalone page that
+polls `GET /api/rooms/{room_id}/state?player_id=…` and renders one island's
+dashboard — net worth, treasury/personal cash, workforce, inventory, what's
+blocking production, the market order book, other islands' needs, and recent
+activity. It never opens a WebSocket and never sends actions, so it can watch a
+seat held by a human or an AI agent without disturbing it (the server keeps only
+one control socket per player, so co-occupying the live seat would otherwise
+hijack it). Accepts `?room=…&player=…` where `player` is a lobby player id *or*
+name (resolved to the id). Served from the existing `/static` mount, so it needs
+no server restart. Frontend only; `node --check` clean.
+
+### claude/pause-timer-and-playtest-spec-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.4`
+
+**Fix: countdown kept ticking while the game was paused (#1).** The server froze
+its timers on pause, but the browser countdowns (`updateSeasonTimerUI`,
+`updatePreSeasonTimerUI`, the auction interval) read `Date.now()` directly and
+`onGamePaused`/`onGameResumed` never froze or re-anchored them. They now use
+`effectiveNowMs()` — frozen at the pause instant — and the end-epochs are bumped
+forward by the pause duration on resume, so the display holds steady while paused
+and continues correctly after. Frontend only; `node --check` clean.
+
+Also logs the rest of the 06-05 playtest (game PNU61D) for Codex in
+`requirements/playtest-defects-2026-06-05.md`: #2 Done-Trading/parked state gets
+stuck (player can't resume trading with time left — distinct from the season-end
+fix), #3 Farmer "Oil needed" display uses `PRODUCTION_RECIPES` while actual
+production uses `FARMER_SEASONAL_CONVERSION` (the two disagree; the 06-04 halving
+only moved the displayed number), #4 FarmingTechnician drops out of training
+options mid-game.
+
+### claude/quickseat-join-by-code-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.3`
+
+**Quick-seat URLs can now join by room code.** The `?join=NAME` URL found the
+room by hashing NAME into a `pt-` id, which only matched a room created with the
+paired `?room=NAME` quick-seat URL — so it could not join a game started with the
+normal "Create Game" button (random id + share code). The quick-seat parser now
+accepts `&code=ABC123`; when present, it joins via `join-by-code` (the room the
+host actually created, and reconnects if the game has already started) instead of
+the name hash. `?code=ABC123&player=…&role=…` works without a `join=` name too.
+Frontend only (served fresh). Verified with `node --check`.
+
+### claude/leave-waiting-room-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.2`
+
+**Leave a waiting room** (deregister after joining the wrong game). New
+`GameManager.leave_room` + `POST /api/rooms/{room_id}/leave` remove a lobby
+player before the game starts; host duties pass to the next human, and the room
+is closed if no humans remain. The waiting-room screen gets a "← Leave Game"
+button (visible to every seated player) that calls the endpoint, drops the
+WebSocket without auto-reconnecting, and returns to the landing screen. Only
+allowed in `waiting` status. Tests: `test_server/test_leave_room.py` (5).
+
+### claude/quickseat-rejoin-2026-06-05
+
+Version bump: `0.1.0-dev.2026-06-05.1`
+
+**Fix: quick-seat `?join=` URLs stopped working once the game was established.**
+`POST /api/rooms/{room_id}/join` (used by the quick-seat join URLs) only ever
+called `join_room`, which refuses any room not in `waiting` status — so once the
+auction/game started, re-opening a join URL 400'd ("Cannot join room") even
+though the player's seat still existed. The endpoint now falls back to
+`rejoin_room_by_name` for a running room (mirroring join-by-code), reconnecting
+the player to their existing seat by name. Tests:
+`test_server/test_join_rejoin.py` (2). 629 green.
+
+### codex/playtest-defects-2026-06-04 (integrated by Claude)
+
+Version bump: `0.1.0-dev.2026-06-04.2`. Codex engine fixes for the 06-04 playtest
+defects (`233f575`), integrated onto pre-release:
+
+- **#1 Training dispatch** rebinds a pending request to currently-active eligible
+  workers (Unskilled or matching the target profession, untrained), preferring
+  the originally-pinned ids and reserving across requests to avoid double-booking;
+  only fails when too few eligible active workers exist. Stops requests stalling
+  because the originally-chosen workers became absent (seasonal casualties).
+- **#2 Repurpose** can now return a trained worker to Unskilled (the relief-valve
+  direction). Educator review still surfaces requests whose pinned workers are
+  absent.
+- **#4 Cross-role kitchens** now appear in the capacity payload as kitchen-enabled
+  Food for any island that owns one.
+- **#5 Timed trading seasons** no longer end early when all humans click done —
+  the season stays open until the timer expires.
+
+#6 (market offer-book) intentionally not touched. Tests added across repurpose,
+training dispatch/review, investing, and pause-game. 627 green.
+
+### claude/farming-oil-balance-2026-06-04
+
+Version bump: `0.1.0-dev.2026-06-04.1`
+
+**Farming oil consumption halved** (playtest balance, defect #3). Oil inputs on
+the three fuelled Farmer outputs in `PRODUCTION_RECIPES` were too high (a single
+Produce line needed 5 Oil/unit — ~25 Oil to unblock a typical batch). Halved:
+- Grain `10/6 → 5/6` Oil/unit
+- Fish `10/3 → 5/3` Oil/unit
+- Produce `5.0 → 2.5` Oil/unit
+
+Food (Grain+Produce+Fish) inherits the reduction via its inputs. 622 tests green.
+
+### claude/integrate-codex-llm-swagger-2026-06-03
+
+Version bump: `0.1.0-dev.2026-06-03.1`
+
+Integrates two Codex branches onto pre-release (.12):
+
+**Terminal room client (`island_traders/cli/agent_client.py`)** — from
+`codex/llm-room-client-2026-06-02` (b4510cb). Provider-agnostic WebSocket
+client for LLM/GPT-style players. Joins or rejoins a room by code, bridges
+server prompts to stdin/stdout. Entrypoint: `island-traders-agent ROOMCODE
+--name "GPT Player" --server http://127.0.0.1:8001`. Commands: `/state`,
+`/bid`, `/withdraw`, `/respond`, `/invest`, `/ready`, `/quit`.
+Tests: `tests/test_cli/test_agent_client.py` (7).
+
+**OpenAPI/Swagger documentation** — from `codex/swagger-api-docs-2026-06-02`
+(1cf1340). Adds typed Pydantic request models (`CreateRoomRequest`,
+`JoinByCodeRequest`, `JoinRoomRequest`, `AddAIRequest`, `AuctionBidRequest`)
+and OpenAPI route tags (`Lobby`, `Game Flow`, `Reference`) with summaries and
+descriptions throughout `server/app.py`. Docs now live at `/docs`,
+`/openapi.json`, `/redoc`. Tests: `tests/test_server/test_openapi_schema.py` (3).
+
+622 green.
+
+### claude/supply-chain-reachability-2026-06-02
+
+Version bump: `0.1.0-dev.2026-06-02.12`
+
+**B3 — static supply-chain reachability tests**
+(`tests/test_models/test_supply_chain_reachability.py`): cheap import-time checks
+that catch the "silent bottleneck" bug class — (1) every required production
+input has a producer, (2) every capacity-recipe output is actually produced by
+the active model. Would have caught both the Courses-never-produced stall and
+the Reagents-no-producer gap. Surfaced a pre-existing latent gap (`Meat` is
+priced + has a livestock recipe but the Farmer never produces it; protein
+demand is met by Fish) — documented in an allowlist for follow-up.
+
+**Student medical insurance (per-headcount policies)**:
+- `InsurancePolicy.covered_count` + `Player.medical_coverage_seats()`; medical
+  policies are now sized and priced per head (`MEDICAL_PREMIUM_PER_HEAD = 8`),
+  asked for in the Banker's sell-insurance action.
+- Students travelling to the Education island must be medically covered, paid by
+  the Education island. At training dispatch, pre-bought cover is consumed first;
+  any shortfall is auto-provisioned (Education pays the per-head premium, routed
+  to a Banker if present), and dispatch is held only when the Educator can't
+  afford it (so training never silently stalls). Self-training needs no cover.
+- Tests: `test_student_medical_insurance.py` (7); training-fee tests updated for
+  the new dispatch-time premium. 615 green.
+
+### claude/economy-rebalance-2026-06-02
+
+Branch: `claude/economy-rebalance-2026-06-02`
+Version bump: `0.1.0-dev.2026-06-02.9`
+
+**Structural economy rebalance** (4-iteration sim-validated):
+- **Transporter** massively uplifted (was 553 Dp/s vs ~1300 avg): Freight
+  output 2.5→3.5×M, Seats 0.75→1.2×M; Freight price 16.5→22, Seats 18.7→24.
+  Win rate 0.8%→20%.
+- **Educator** output cut to match: Expertise 4.5→2.5×M, Patents 0.75→0.35×M;
+  Patents price 47.5→32. Win rate 88%→22%.
+- **Doctor** value-gap correction: HealthServices 31.5→18 Dp, Vaccine 36.75→22 Dp.
+  Win rate 34%→21%.
+- **Banker** given modest Finance production (0.5×M) for base viability. 0%→10%.
+- **Farmer** staples repriced to reflect real demand: Food 13.5→18, Fish 10.8→15,
+  Grain 9.45→12, Produce 12.15→15. Win rate 0.2%→2.5%.
+- Residual Farmer/Manufacturer gaps are AI-strategy (supply-chain/seasonal timing),
+  not pricing — flagged as Codex `ai.py` follow-up.
+- 605 tests green. Full analysis in `requirements/calibration-findings-2026-06-02.md`.
+
+### claude/shareholder-loan-to-company-2026-06-02
+
+Branch: `claude/shareholder-loan-to-company-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.8`
+
+**Mid-game shareholder loans (Phase 2b — manual lend/repay)**:
+The owner can now move personal cash into their island's treasury (and back) at
+any time during play, not just at the opening.
+- **Lend to island** (`Finance` action group): ask for an amount, move personal
+  cash → treasury, record the shareholder loan. Treasury goes up; personal cash
+  goes down; the island's liability goes up (subtracted in `total_wealth` →
+  net-worth-neutral).
+- **Repay shareholder loan** (`Finance` action group): move treasury → personal
+  cash, reduce the loan principal. Only available when a loan is outstanding and
+  the treasury has funds; clamped to `min(owed, treasury)`.
+- Sidebar: a **"Fund island"** row (Lend… / Repay… buttons) appears when you
+  have personal cash or an outstanding loan; buttons are individually greyed when
+  the relevant prerequisite is absent.
+- 6 new engine tests (`test_shareholder_loan_actions.py`): accounting invariants,
+  clamp logic, lend-then-full-repay restores original state. 605 tests green.
+
+### claude/calibration-2026-06-02
+
+Branch: `claude/calibration-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.7`
+
+**Calibration sweep — chart rebalance + structural findings**:
+- Retuned `config/event_charts.yaml` (moderate, non-distorted): trimmed the
+  over-generous roles (Educator avg-yield 1.21→0.88, Transporter→0.95) and
+  softened the over-harsh (Miner 0.53→0.92, Manufacturer 0.69→0.95, Doctor
+  0.65→0.90, Farmer→1.0). Top-role win share nearly halved in sim (Educator
+  88%→53%); Miner/Doctor pulled up.
+- **Finding (see `requirements/calibration-findings-2026-06-02.md`):** charts
+  can't reach 1/7 — the residual imbalance is structural (output value gap:
+  Educator/Doctor make high-value goods, Farmer/Transporter cheap ones; Banker
+  has no commodity and the AI underuses lending). Recommends a base-economy
+  rebalance (output values / Banker model) **before** finer chart calibration.
+  All 599 tests green.
+
+### claude/equity-phase3-buyout-2026-06-02
+
+Branch: `claude/equity-phase3-buyout-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.6`
+
+**Equity Phase 3 — buy out the public float**: the controlling owner can now
+spend personal cash to buy their island's 40% public-float shares at live fair
+value. The cash leaves the game (paid to imaginary public holders, like the
+auction bid); shares move `public → owner` via `CapTable.transfer`; `holdings`
+mirror it. Net-worth-neutral at purchase (cash → equity at fair value); the
+payoff is future growth accruing to a bigger stake.
+- WS action `buy_out_float` (owner-only, clamps to the float, affordability
+  check); payload gains `public_float_shares`.
+- Sidebar "Buy shares…" control appears when you control the island and a float
+  remains (shows available / price-per-share / affordable count).
+- Tests: `tests/test_server/test_equity_buyout_float.py` (transfer, clamp,
+  afford guard, net-worth neutrality). 599 green.
+
+Backlog noted separately: partial food production on missing ingredients
+(`requirements/food-partial-production-2026-06-02.md`).
+
+### codex/kitchen-tiers-2026-06-02 (merged)
+
+Version bump: `0.1.0-dev.2026-06-02.5`
+
+**Kitchen tiers (Codex)**: the single 6-Food kitchen is replaced by two tiers
+via per-item `KITCHEN_SPECS` + a generalised `run_kitchens`:
+- **Industrial Kitchen** (`common.industrial_kitchen`, 150 Dp, opening-investment
+  + buyable): **20 Food/season, no Chef**, efficient 1 / 0.5 / 0.5 recipe.
+- **Manufacturing Kitchen** (`common.kitchen`): **10 Food/season** (up from 6),
+  **requires a Chef**; chefs are a limited pool (one per chef-requiring kitchen).
+- Kitchens idle gracefully with clear reasons ("needs a Chef" / "short on
+  <ingredient>"). Ships `tests/test_engine/test_kitchen_tiers_2026_06_02.py`.
+
+Merged on top of the lab split; the two universal capital items
+(`common.industrial_kitchen`, `common.laboratory_equipment`) now sit alongside
+`common.kitchen`. 595 tests green.
+
+### claude/lab-split-2026-06-02
+
+Branch: `claude/lab-split-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.4`
+
+**Lab Supplies split** (per the 2026-06-02 brief; numbers tunable in calibration):
+- **`LaboratoryEquipment` resource renamed to `Reagents`** (display "Reagents")
+  across recipes, prices, inventory, AI, UI — with a save-migration so old saves'
+  `LaboratoryEquipment` inventory keys fold forward to `Reagents`.
+- **Reagents production moved Manufacturer → Medical Sciences (Doctor)**: the
+  Doctor now makes Reagents from **Oil + Ore** (6/season), consumes Oil+Ore+
+  Expertise, and sells surplus to the Educator. Removed the Manufacturer's
+  Reagents product line + foundry/assembly-line capacity for it.
+- **New durable capital `common.laboratory_equipment`** ("Laboratory Equipment",
+  40 Dp, cash-only, 1-season delivery): soil/sample-testing kit that adds +2
+  output capacity for Agriculture (Grain/Produce/Food), Mining (Ore) and Medical
+  (HealthServices/+1 Vaccine). Distinct from the consumable Reagents.
+- Player briefings + AI Manufacturer tests updated; the Manufacturer's
+  medical/lab tests repurposed to the remaining `MedicalDevices` line. 729 green.
+- (Kitchen tiers — the other half of the brief — are with Codex on
+  `codex/kitchen-tiers-2026-06-02`.)
+
+### codex/training-shared-classrooms-2026-05-29 (merged)
+
+Version bump: `0.1.0-dev.2026-06-02.3`
+
+**Shared training classrooms (Codex)**: same-profession + same-season training
+batches now share a 12-seat classroom instead of each batch burning a fresh
+Course slot. Incremental Course slots and Expertise are charged per
+`(educator, profession, course-running season)` cohort, and the concurrency
+gate counts distinct classrooms rather than requests. So a second 1-trainee
+Engineer request in the same season rides the existing classroom at zero extra
+Course cost until the 12 seats fill. Per
+`requirements/codex-tasks/training-shared-classrooms-2026-05-29.md`; ships with
+`tests/test_engine/test_training_shared_classrooms.py`.
+
+### claude/starting-workforce-50-2026-06-02
+
+Branch: `claude/starting-workforce-50-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.2`
+
+**Each island starts with 50 workers + a real 50-resident population**
+(2026-06-02 playtest ask):
+- `STARTING_WORKFORCE` → 50 for every role. The skilled faculty/specialist
+  breakdown (`STARTING_WORKERS_BY_PROFESSION`) is seeded first; the remainder
+  (~40) fills as **Unskilled**, so labour/training requests for up to ~10
+  unskilled workers can always be met.
+- **Population bug fixed:** `Game.setup` used `TOTAL_STARTING_POPULATION //
+  num_players` (= 20/island), silently overriding the intended 50. It now seeds
+  `STARTING_POPULATION` (50) per island. (An earlier "set population to 50"
+  change had landed on `STARTING_POPULATION`, which `setup` never read.)
+- Workforce no longer scales by `7/num_players` — every island gets exactly 50
+  workers regardless of player count (the old scaling, with a fixed 50-resident
+  population, would have inflated small-game islands past their populace).
+- ⚠ **Balance:** this is a large labour-base increase (was 4–11 workers/island);
+  production capacity rises substantially. A calibration pass is warranted.
+- Tests updated for the new population (sustenance math; Educator roster total).
+
+### claude/courses-production-2026-06-02
+
+Branch: `claude/courses-production-2026-06-02`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-06-02.1`
+
+**Courses are now produced (training-stall bugfix)**: The Educator's
+`BASE_PRODUCTION` had no `Courses` entry, so an Educator spent the 5 starting
+Course slots training others and could **never** make more — permanently
+stalling all training (the capacity panel listed Courses as "producible" but
+production never made them). Courses are now produced each season (base 4,
+scaled by workforce skill / capacity so they taper if the faculty is gutted),
+alongside Expertise and Patents. This also fixes the panel/reality mismatch.
+
+### claude/playtest-fixes-2026-05-29b
+
+Branch: `claude/playtest-fixes-2026-05-29b`
+Target: `pre-release`
+Version bump: `0.1.0-dev.2026-05-29.4`
+
+**Staffing request approval — detail + counter (web)**: The Doctor-island
+staffing-review modal now shows the full contract (staff × profession, duration,
+fee offered, per-staff/season rate, PassengerSeats to supply, staff available)
+via `request_summary`, instead of bare Approve/Counter/Reject buttons. The
+counter-offer fee prompt already worked; reviewers can now see what they're
+pricing.
+
+**Education capital hint clarity**: The "Capital limits <output>" decision hint
+now names the specific equipment that unblocks the output (e.g. "Needs 1×
+Laboratory Equipment — 28 Dp each …") using the catalogue options the server
+already computes, instead of the vague "plan a capital purchase" text.
+
+**(Codex brief) Shared training classrooms**: see
+`requirements/codex-tasks/training-shared-classrooms-2026-05-29.md` — same
+profession + same season should share a 12-seat classroom rather than each batch
+burning a fresh Course slot. Engine change handed to Codex.
+
+### claude/equity-phase2b-flip-2026-05-29
+
+Branch: `claude/equity-phase2b-flip-2026-05-29`
+Target: `pre-release` (after the Codex shareholder-loans leaf merges first)
+Version bump: `0.1.0-dev.2026-05-29.3`
+
+**Equity model — Phase 2b + economy flip** (web game):
+- **Two balance sheets.** A player is now an *investor* with `personal_cash`
+  separate from their *island's* operating `treasury` (the engine `dollops`).
+- **Auction = buying a 60% stake.** At game start the island treasury is seeded
+  independently at `ISLAND_STARTING_CASH` (500 Dp); the winning bid leaves the
+  investor's personal cash (paid to imaginary former owners). Cap table seated
+  60% owner / 40% public float.
+- **Shareholder loans (Phase 2b).** Opening capital is bought from the treasury;
+  any shortfall is auto-lent from personal cash as a shareholder loan, recorded
+  as a senior liability the island owes back. Net-worth-neutral by construction
+  (no 60/40 leakage). 0% interest for now.
+- **Win condition = net worth** (`personal_cash + Σ shares×share_price +
+  loan receivables`) in the web game. Sidebar now shows Net Worth, Personal
+  Cash, Island Treasury, Ownership (you % / public %), and Island Value; live
+  scoreboard leads with net worth + treasury.
+- Engine/CLI/sim keep their single-pool economy and `total_wealth` scoring
+  unchanged (additive cap-table scaffolding only) — a calibration pass for the
+  flipped web economy is queued separately.
+- Model leaf `shareholder_loans.py` (lend/repay/total_owed/receivable) — Codex
+  brief `codex-tasks/shareholder-loans-model-2026-05-29.md`; a Claude-side
+  reference stub ships on this branch pending Codex's authoritative module.
+- Tests: `test_equity_flip.py` (treasury seed, auto-lend, net-worth neutrality);
+  Phase-1 `test_player_equity_fields.py`. Full suite 729 green.
+
 ### claude/playtest-fixes-2026-05-29
 
 Branch: `claude/playtest-fixes-2026-05-29`

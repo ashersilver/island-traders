@@ -46,36 +46,42 @@ def test_outage_blocks_production(farmer, outage_event):
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
-def test_banker_does_not_produce_a_finance_commodity(banker, normal_event):
-    """After the Banker rebalance, banking income comes from loan interest and
-    insurance premiums — not from selling a 'Finance' resource on the
-    market.  Producing should return an empty dict."""
+def test_banker_produces_finance_commodity(banker, normal_event):
+    """2026-06-02 rebalance: Banker reinstated as a Finance producer (modest
+    output so it isn't structurally unwinnable in sim while AI lending is
+    improved).  Banking ALSO earns from loan interest."""
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
-    assert produced == {}
+    assert ResourceType.FINANCE in produced
+    assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_needs_laboratory_equipment(normal_event):
+def test_educator_expertise_runs_without_reagents(normal_event):
+    """Generic Education output is classroom-based; Reagents gate Patents and
+    science-track training, not all Expertise/Courses production."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
-    educator.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
+    assert ResourceType.PATENTS not in produced
 
 
-def test_doctor_needs_laboratory_equipment(normal_event):
+def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     doctor = Player(11, "Doctor", [ROLES["Doctor"]], 100.0, is_human=False)
     doctor.receive_resources(ResourceType.EXPERTISE, 1)
-    doctor.receive_resources(ResourceType.LABORATORY_EQUIPMENT, 1)
+    # Medical Sciences now makes its own Reagents from Oil + Ore (2026-06-02).
+    doctor.receive_resources(ResourceType.OIL, 1)
+    doctor.receive_resources(ResourceType.ORE, 1)
     produced = ProductionEngine().produce(doctor, normal_event)
 
     assert ResourceType.HEALTH_SERVICES in produced
+    assert ResourceType.REAGENTS in produced   # produced in-house now
 
 
 def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
@@ -94,13 +100,14 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     assert produced[ResourceType.OIL] == 40
 
 
-def test_banker_production_is_a_no_op(banker, normal_event):
-    """Banker has no commodity production (empty BASE_PRODUCTION) and no
-    required inputs after the rebalance.  Calling produce() should be
-    safe and return an empty dict without raising."""
+def test_banker_production_is_safe(banker, normal_event):
+    """produce() on a Banker with no inputs should not raise — the
+    InsufficientInputsError path is guarded by checking PRODUCTION_INPUTS.
+    2026-06-02: Banker now produces Finance (no inputs required)."""
     engine = ProductionEngine()
     produced = engine.produce(banker, normal_event)
-    assert produced == {}
+    # Finance production requires no inputs so the call must succeed.
+    assert produced is not None
 
 
 def test_bumper_harvest_increases_yield(farmer, bumper_event):
@@ -115,11 +122,11 @@ def test_production_preview_does_not_mutate(farmer, normal_event):
     _give_farmer_inputs(farmer)
     engine = ProductionEngine()
     before_dollops = farmer.dollops
-    before_equip = farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT)
+    before_equip = farmer.inventory.get(ResourceType.REAGENTS)
     before_oil = farmer.inventory.get(ResourceType.OIL)
     engine.production_preview(farmer, normal_event)
     assert farmer.dollops == before_dollops
-    assert farmer.inventory.get(ResourceType.LABORATORY_EQUIPMENT) == before_equip
+    assert farmer.inventory.get(ResourceType.REAGENTS) == before_equip
     assert farmer.inventory.get(ResourceType.OIL) == before_oil
 
 
@@ -187,6 +194,7 @@ def test_production_options_show_per_product_current_max(normal_event):
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
     farmer.receive_resources(ResourceType.OIL, 10)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
 
     options = ProductionEngine().production_options(farmer, normal_event, season_name="Spring")
     by_output = {option["output"]: option for option in options}

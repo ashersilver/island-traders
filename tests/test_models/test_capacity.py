@@ -15,7 +15,7 @@ ROLES = ["Farmer", "Miner", "Transporter", "Educator",
          "Banker", "Manufacturer", "Doctor"]
 
 
-def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchen():
+def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchens():
     for role in ROLES:
         items = items_for_role(CAPITAL_CATALOGUE, role)
         role_items = [item for item in items if item.role == role]
@@ -23,7 +23,11 @@ def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchen():
         assert 3 <= len(role_items) <= 6, (
             f"{role} has {len(role_items)} role items (expected 3–6)"
         )
-        assert [item.item_id for item in universal_items] == ["common.kitchen"]
+        assert [item.item_id for item in universal_items] == [
+            "common.kitchen",
+            "common.industrial_kitchen",
+            "common.laboratory_equipment",
+        ]
 
 
 def test_every_role_has_at_least_two_recipes():
@@ -125,7 +129,7 @@ def test_manufacturer_opening_equipment_provides_capacity():
 
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "FarmMachinery") > 0
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "MiningEquipment") > 0
-    assert equipment_capacity(CAPITAL_CATALOGUE, owned, "LaboratoryEquipment") > 0
+    # Reagents moved off the Manufacturer to Medical Sciences (2026-06-02).
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "MedicalDevices") > 0
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "TransportEquipment") > 0
 

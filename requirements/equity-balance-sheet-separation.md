@@ -195,12 +195,23 @@ class Player:
     def net_worth(self, islands) -> float: ...
 ```
 
-> *Open question C:* rename `Player → Island` (clean, but a large mechanical
-> diff touching production/turn/market/tests), **or** keep the class named
-> `Player` and just add `treasury`/`cap_table` + a thin separate `Investor`
-> record (smaller diff, fuzzier naming). Recommendation: do the rename — it's
-> mechanical and leaves the codebase honest. Stage it as its own commit before
-> any behavior change so the rename diff is reviewable in isolation.
+> **Resolved (2026-05-29): NO global rename.** We keep the class named `Player`
+> (it remains the island-operating entity; its existing `dollops` field *is* the
+> island treasury) and add `personal_cash` + `holdings` + a `cap_table` onto it,
+> plus the new leaf module `equity.py`. Rationale: a `Player → Island` rename
+> would touch nearly every file and collide head-on with Codex's parallel work.
+> The additive approach is smaller, parallel-safe, and matches the "simple but
+> elegant" brief. Naming trade-off (one object carries both the island books and
+> the investor's personal cash) is accepted for Phase 1; a cosmetic rename can
+> follow later if desired.
+
+So in practice the integrated `Player` gains:
+```python
+personal_cash: float = 0.0           # investor wealth (score component)
+holdings: dict[str, int] = {}        # island player_id (as str) -> shares held
+cap_table: CapTable                  # who owns THIS player's island
+# `dollops` stays as-is and is reinterpreted as the island treasury.
+```
 
 ---
 
@@ -216,19 +227,43 @@ strategic tension that didn't exist before.
 
 ## 8. Touch points (impact survey)
 
-- `models/player.py` → split into `Island` + `Player`/`Investor` (+ `equity.py`).
-- `engine/game.py` → construct islands + investors; wire auction proceeds into
-  treasury + cap table; year-end dividend step (Phase 2); net-worth scoring.
-- `engine/turn.py`, `engine/production.py`, `engine/trading.py`,
-  `models/market.py` → mechanical `player.dollops` → `island.treasury` rename;
-  no logic change in Phase 1.
-- `server/app.py` → auction already takes a bid; add cap-table + treasury to the
-  player/game-state payload; new actions for buyout/buy-in (Phases 3–4).
-- `server/static/index.html` → show two balances (personal cash + island
-  treasury) and a small cap-table / "shareholders" readout; net-worth on the
-  scoreboard.
-- Tests → broad but mostly mechanical rename; new tests for cap-table math,
-  share price, dividend split, buyout pricing.
+With the additive (no-rename) approach the footprint is much smaller:
+
+- **`models/equity.py`** (NEW leaf) → `CapTable` + valuation math. *(Codex —
+  see brief.)*
+- `models/player.py` → add `personal_cash`, `holdings`, `cap_table`, and
+  `net_worth(islands)`; `dollops` reinterpreted as treasury (no rename).
+- `engine/game.py` → seed each island treasury at `ISLAND_STARTING_CASH`;
+  on auction resolution, deduct the winning bid from the winner's
+  `personal_cash` (paid to imaginary former owners — leaves the game), seat
+  the 60/40 cap table; switch end-of-game scoring to `net_worth`.
+- `server/app.py` → add `personal_cash`, `treasury`, cap-table, and `net_worth`
+  to the player/game-state payload.
+- `server/static/index.html` → show the two balances + a compact "shareholders"
+  readout; net-worth on the scoreboard.
+- Tests → `equity.py` unit tests (Codex); integration tests for auction →
+  cap-table / cash and net-worth scoring (Claude).
+
+No changes needed in `turn.py` / `production.py` / `trading.py` / `market.py`
+for Phase 1, because `dollops` keeps its name and meaning (the island's money).
+
+---
+
+## 8a. Execution split — Claude + Codex (parallel)
+
+| Piece | Owner | Files | Depends on |
+|---|---|---|---|
+| Equity model module + valuation math + unit tests | **Codex** | `models/equity.py`, `tests/test_models/test_equity.py` | nothing (leaf) |
+| Player fields (`personal_cash`, `holdings`, `cap_table`, `net_worth`) | **Claude** | `models/player.py` | equity.py interface |
+| Auction → cash/cap-table wiring; treasury seeding; net-worth scoring | **Claude** | `engine/game.py` | equity.py + player fields |
+| Server payload + UI (two balances, cap table, scoreboard) | **Claude** | `server/app.py`, `server/static/index.html` | the above |
+
+**Brief for Codex:** [`codex-tasks/equity-model-module-2026-05-29.md`](codex-tasks/equity-model-module-2026-05-29.md).
+
+**Merge order (per the durable rule):** `equity.py` is a leaf nothing imports
+yet, so Codex merges it **first**; Claude (merging second) adds the imports and
+wiring. Claude codes against the public names fixed in the brief, so integration
+compiles the moment Codex's branch lands. No shared-line edits → no conflicts.
 
 ---
 
@@ -249,33 +284,80 @@ strategic tension that didn't exist before.
   volatility).
 - **Phased rollout approved.**
 
+- **No global class rename** — additive `personal_cash`/`holdings`/`cap_table`
+  on `Player`; `dollops` reinterpreted as the island treasury (§6). Parallel-safe.
+
 ### Still to confirm (tunables, not blockers)
 - **D1.** `ISLAND_STARTING_CASH = 500`, `STARTING_CAPITAL` for the player
   (today 1500)? These two plus the auction dynamics set the whole opening
-  economy — worth a sim sweep.
+  economy — worth a sim sweep once Phase 1 lands.
 - **D2.** `EARNINGS_MULTIPLE` (≈3?) and `VOLATILITY_PENALTY` (≈1.0?) for the
   fair-value formula.
-- **D3.** Class rename `Player → Island` (recommended; staged as its own
-  no-behavior-change commit) vs. keep the name and bolt equity on.
 - **D4.** First cut = Phase 1 only, or Phase 1 + Phase 2 dividends together?
   (Recommend Phase 1 alone to land the separation cleanly, then dividends.)
 
 ---
 
-## 10. Recommended first cut
+## 10. Recommended first cut (additive, parallel)
 
-Ship **Phase 1** behind a clean rename:
+Ship **Phase 1** as the model module + integration:
 
-1. Commit 1 — pure rename `Player → Island` (`dollops → treasury`), no behavior
-   change, all tests green.
-2. Commit 2 — add `equity.py` (`CapTable`, `TOTAL_SHARES = 100`,
-   `AUCTIONED_SHARES = 60`, `ISLAND_STARTING_CASH = 500`), a separate
-   `Player`/`Investor` with `cash` + `holdings`; seed each island treasury at
-   `ISLAND_STARTING_CASH`; wire the auction to deduct the bid from personal
-   `cash` (paid to imaginary former owners — leaves the game, **not** into
-   treasury) and seat 60/40 in the cap table.
-3. Commit 3 — switch scoring to `net_worth` (using §4.2 `fair_value`), surface
+1. **Codex** — `equity.py` (`CapTable`, valuation math) + unit tests. Merges
+   first (leaf). See the Codex brief.
+2. **Claude** — add `personal_cash`/`holdings`/`cap_table`/`net_worth` to
+   `Player`; seed each island treasury at `ISLAND_STARTING_CASH`; wire the
+   auction to deduct the bid from the winner's `personal_cash` (paid to imaginary
+   former owners — leaves the game, **not** into treasury) and seat 60/40 in the
+   cap table.
+3. **Claude** — switch scoring to `net_worth` (using §4.2 `fair_value`); surface
    both balances (personal cash + island treasury) and the cap table in the UI.
 
-Dividends (Phase 2), buyouts (Phase 3), and cross-island buy-ins (Phase 4) then
-land as independent follow-ups, each small on its own.
+Dividends (Phase 2), shareholder loans (Phase 2b), buyouts (Phase 3), and
+cross-island buy-ins (Phase 4) then land as independent follow-ups, each small
+on its own — and each is a candidate to hand to Codex once the Phase 1 seam is
+stable.
+
+---
+
+## 11. Implementation findings & sequencing decision (2026-05-29)
+
+While starting Claude's side, two findings reshaped the sequencing:
+
+1. **Treasury reseed ↔ shareholder loans are coupled.** Today the web game funds
+   everything from one pool: `personal_cash(1500) − winning_bid −
+   investing_spend` becomes the island's operating money. The opening investing
+   phase routinely spends ~1000+ Dp on capital. If the island treasury is
+   reseeded to just `ISLAND_STARTING_CASH = 500` and capital is bought from the
+   treasury, the opening is unplayable **unless** the player can inject personal
+   cash — which is **Phase 2b (shareholder loans)**. ⇒ The treasury reseed must
+   ship **bundled with Phase 2b**, not in a Phase-1-alone cut.
+2. **Valuation is already available.** `Player.total_wealth(prices, loan_ledger,
+   CAPITAL_CATALOGUE, tick)` already computes the island's liquidation value, and
+   `wealth_history` already records it per year — so `equity.fair_value(...)` and
+   net-worth scoring wire in directly with no new valuation code. Also: with
+   every player owning 60% of their *own* island, switching the score to
+   net-worth is a uniform scaling (rankings unchanged) **until** buy-ins/buyouts
+   make ownership differ.
+
+**Decision (2026-05-29): HOLD the economy flip pending Codex's `equity.py`.**
+The additive foundation (Player fields `personal_cash`/`holdings`/`cap_table` +
+`net_worth` helper + save/load) is committed on branch
+`claude/equity-phase1-integration-2026-05-29` (713 tests green, not merged). We
+resume once Codex's `equity.py` lands so we integrate against the real module,
+then decide the flip scope at that point (likely: bundle treasury reseed + 2b
+shareholder loans so the opening stays playable).
+
+### Update (2026-05-29, later): module integrated; foundation merged.
+Codex's `equity.py` (+ `test_equity.py`, 13 tests) merged to `pre-release`, and
+the additive foundation merged on top (`844621f`). **726 tests green.** The
+`claude/equity-phase1-integration` and `codex/equity-model-module` branches are
+merged and deleted. `equity.py` is the leaf; `Player` now carries the additive
+fields and `net_worth` helper. **Still on hold:** the economy flip (treasury
+reseed to 500, bid→personal cash, investing-from-treasury) — to be bundled with
+**Phase 2b shareholder loans** so the opening stays playable.
+
+**Brief written (2026-05-29):**
+[`equity-phase2b-flip-2026-05-29.md`](./equity-phase2b-flip-2026-05-29.md)
+specs the bundle — the money model, net-worth-neutral shareholder loans, the
+exact code plug-in points, tests, and an optional Codex leaf carve-out (the
+loan/valuation math). Awaiting go-ahead to implement.

@@ -25,14 +25,20 @@ from pathlib import Path
 from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
+from ..engine.revenue import revenue_opportunities
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.training import TrainingStatus
+from ..models.equity import (
+    ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
+    AUCTIONED_SHARES, PUBLIC_HOLDER,
+)
+from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
-    SEASONS, CURRENCY_SYMBOL,
+    SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
     TOTAL_STARTING_POPULATION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -42,9 +48,11 @@ try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+    from pydantic import BaseModel, Field
 except ImportError:
     FastAPI = WebSocket = WebSocketDisconnect = None
     StaticFiles = HTMLResponse = JSONResponse = None
+    BaseModel = Field = None
 
 logger = logging.getLogger("island_traders.server")
 
@@ -74,6 +82,65 @@ ROLE_INFO = {
                      "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
                      "needs": "Expertise, Laboratory Equipment", "color": "#e74c3c"},
 }
+
+
+if BaseModel is not None:
+    class CreateRoomRequest(BaseModel):
+        name: str = Field("Game Room", description="Lobby display name.")
+        creator_name: str = Field("Host", description="Name for the host lobby player.")
+        max_players: int = Field(7, ge=2, le=7, description="Maximum lobby seats.")
+        num_years: int = Field(3, ge=1, description="Number of game years to play.")
+        is_public: bool = Field(True, description="Whether the room appears in public room listings.")
+        require_all_human: bool = Field(
+            False,
+            description="If true, auction cannot resolve with AI-held roles.",
+        )
+        starting_capital: float = Field(
+            1500.0,
+            ge=0,
+            description="Starting investor cash budget per player, in Dollops.",
+        )
+        auction_timer_seconds: int = Field(
+            60,
+            ge=0,
+            description="Auction timer length in seconds.",
+        )
+        season_timer_seconds: int = Field(
+            120,
+            ge=0,
+            description="Action-phase timer length in seconds.",
+        )
+        pre_season_timer_seconds: int = Field(
+            30,
+            ge=0,
+            description="Pre-season ready timer length in seconds.",
+        )
+
+
+    class JoinByCodeRequest(BaseModel):
+        code: str = Field(..., description="Six-character room join code.")
+        name: str = Field("Player", description="Player name to join or rejoin with.")
+
+
+    class JoinRoomRequest(BaseModel):
+        name: str = Field("Player", description="Player name to join with.")
+
+
+    class AddAIRequest(BaseModel):
+        name: str = Field("AI Player", description="Display name for the built-in server AI.")
+
+
+    class AuctionBidRequest(BaseModel):
+        player_id: str = Field(..., description="Lobby player id placing the bid.")
+        role_name: str = Field(..., description="Role/island being bid on, e.g. Farmer.")
+        amount: float = Field(..., ge=0, description="Bid amount in Dollops.")
+
+
+    class LeaveRoomRequest(BaseModel):
+        player_id: str = Field(..., description="Lobby player id leaving the room.")
+else:
+    CreateRoomRequest = JoinByCodeRequest = JoinRoomRequest = AddAIRequest = AuctionBidRequest = dict
+    LeaveRoomRequest = dict
 
 AUCTION_DURATION_SECONDS    = 60   # fallback if room has no override
 INVESTING_DURATION_SECONDS  = 180  # 3 minutes for Investing Phase
@@ -476,6 +543,43 @@ class GameManager:
             "type": "room_update",
             "room": room.to_dict(),
         })
+
+    def _delete_room(self, room: GameRoom) -> None:
+        """Remove a room and its indexes (used when the last human leaves)."""
+        self.rooms.pop(room.room_id, None)
+        if room.join_code:
+            self._code_index.pop(room.join_code, None)
+        with self._ws_lock:
+            self._ws_connections.pop(room.room_id, None)
+
+    def leave_room(self, room_id: str, player_id: str) -> dict:
+        """Deregister a lobby player from a waiting room.
+
+        Only allowed before the game starts (status == "waiting"). If the host
+        leaves, host duties pass to the next human. If no humans remain, the room
+        is torn down (an AI-only lobby can never start).
+        """
+        room = self.rooms.get(room_id)
+        if not room:
+            return {"error": "Room not found"}
+        if room.status != "waiting":
+            return {"error": "You can only leave before the game starts."}
+        lp = next((p for p in room.players if p.player_id == player_id), None)
+        if lp is None:
+            return {"error": "You are not registered in this room."}
+
+        room.players.remove(lp)
+
+        if room.creator_id == player_id:
+            new_host = next((p for p in room.players if p.is_human), None)
+            room.creator_id = new_host.player_id if new_host else ""
+
+        if not any(p.is_human for p in room.players):
+            self._delete_room(room)
+            return {"left": True, "room_closed": True}
+
+        self._broadcast_room_update(room)
+        return {"left": True, "room_closed": False}
 
     # ---- Auction ----
 
@@ -1261,22 +1365,32 @@ class GameManager:
             "spend": capital_spend,
         })
         self._launch_game(
-            room_id, total_deductions,
+            room_id, bids=auction_deductions,
             capital_purchases=capital_purchases,
             capital_leases=capital_leases,
+            capital_spend=capital_spend,
         )
 
     # ---- Game launch ----
 
     def _launch_game(self, room_id: str,
-                     deductions: dict[str, float] | None = None,
+                     bids: dict[str, float] | None = None,
                      capital_purchases: dict[str, list[str]] | None = None,
-                     capital_leases: dict[str, list[str]] | None = None) -> bool:
+                     capital_leases: dict[str, list[str]] | None = None,
+                     capital_spend: dict[str, float] | None = None) -> bool:
         room = self.rooms.get(room_id)
         if not room:
             return False
 
-        base_dollops = room.starting_capital
+        # --- Equity flip (Phase 2b) -------------------------------------
+        # Personal cash (investor wallet) = starting_capital − winning bid
+        # (the bid leaves the game, paid to imaginary former owners).
+        # Island treasury is seeded independently at ISLAND_STARTING_CASH and
+        # funds the opening capital basket; any shortfall is auto-lent from
+        # personal cash as a shareholder loan (net-worth-neutral).
+        base_capital = room.starting_capital
+        bids = bids or {}
+        capital_spend = capital_spend or {}
 
         specs = []
         spec_to_lobby_pid: dict[int, str] = {}   # PlayerSpec idx -> lobby player_id
@@ -1284,14 +1398,11 @@ class GameManager:
             roles = list(lp.role_names)
             if not roles:
                 continue
-            # Each player starts with starting_capital minus their auction bids
-            # (winning bids only) and investing capital spend.
-            player_dollops = base_dollops
-            if deductions:
-                player_dollops -= deductions.get(lp.player_id, 0)
+            # Seed each engine Player's treasury at ISLAND_STARTING_CASH; the
+            # personal-cash / loan flip is applied post-setup below.
             specs.append(PlayerSpec(
                 name=lp.name, role_names=roles, is_human=lp.is_human,
-                starting_dollops=round(player_dollops, 1),
+                starting_dollops=round(ISLAND_STARTING_CASH, 1),
             ))
             spec_to_lobby_pid[len(specs) - 1] = lp.player_id
 
@@ -1324,6 +1435,24 @@ class GameManager:
         room.lobby_to_engine_id = {
             lobby_pid: spec_idx for spec_idx, lobby_pid in spec_to_lobby_pid.items()
         }
+
+        # --- Apply the equity flip to each engine Player (post-setup) -------
+        # treasury = ISLAND_STARTING_CASH + lent − capital_spend
+        # personal_cash = starting_capital − winning_bid − lent
+        # lent (shareholder loan) = max(0, capital_spend − ISLAND_STARTING_CASH)
+        for spec_idx, lobby_pid in spec_to_lobby_pid.items():
+            if spec_idx >= len(game.players):
+                continue
+            p = game.players[spec_idx]
+            bid = float(bids.get(lobby_pid, 0.0))
+            cspend = float(capital_spend.get(lobby_pid, 0.0))
+            lent = max(0.0, cspend - ISLAND_STARTING_CASH)
+            p.dollops = round(ISLAND_STARTING_CASH + lent - cspend, 1)
+            p.personal_cash = round(base_capital - bid - lent, 1)
+            p.shareholder_loans = {}
+            if lent > 0:
+                # The owner (investor) lends to their own island (same id).
+                sh_loans.lend(p.shareholder_loans, str(p.player_id), round(lent, 1))
 
         # Simultaneous-play mode is ALWAYS on for the server: each human
         # plays on their own turn-thread, exit via Ready button or (if
@@ -1403,6 +1532,14 @@ class GameManager:
             state = self.get_game_state(room_id)
             if state:
                 self._thread_safe_broadcast(room_id, state)
+            # Push discrete market events (Issue #4) so clients (dashboards and AI
+            # agents) can react to new bids/asks/fills between full-state snapshots.
+            room = self.rooms.get(room_id)
+            game = getattr(room, "game", None)
+            market = getattr(game, "market", None)
+            if market is not None:
+                for ev in market.drain_events():
+                    self._thread_safe_broadcast(room_id, {"type": "market_event", **ev})
 
         io.on_action_complete = _broadcast_state
 
@@ -1415,13 +1552,37 @@ class GameManager:
                 summary = game.run()
                 room.summary = summary
                 room.status = "finished"
+                # Web win condition is investor NET WORTH (cash + equity +
+                # loan receivables), not the engine's island total_wealth.
+                final_tick = max(0, game.config.num_years * len(SEASONS) - 1)
+                fprices = game.market.current_prices()
+                books = [p.shareholder_loans for p in game.players]
+                spi = {
+                    str(p.player_id): share_price(
+                        fair_value(
+                            p.total_wealth(fprices, game.loan_ledger,
+                                           CAPITAL_CATALOGUE, final_tick),
+                            p.wealth_history,
+                        )
+                    )
+                    for p in game.players
+                }
+                nw_ranked = sorted(
+                    game.players,
+                    key=lambda p: p.net_worth(
+                        spi, sh_loans.receivable(books, str(p.player_id))
+                    ),
+                    reverse=True,
+                )
                 broadcast({
                     "type": "game_over",
-                    "winner": summary.winner.name,
+                    "winner": nw_ranked[0].name if nw_ranked else summary.winner.name,
                     "rankings": [
                         {"name": p.name, "roles": p.role_names(),
-                         "wealth": round(w, 1)}
-                        for p, w in summary.final_rankings
+                         "wealth": round(
+                             p.net_worth(spi, sh_loans.receivable(books, str(p.player_id))), 1
+                         )}
+                        for p in nw_ranked
                     ],
                 })
             except Exception as e:
@@ -1465,17 +1626,27 @@ class GameManager:
 
         return self._launch_game(room_id)
 
-    def _player_capacity(self, p, current_tick: int | None = None) -> dict:
+    def _player_capacity(
+        self, p, current_tick: int | None = None, season_name: str = "Spring"
+    ) -> dict:
         """Compute per-output max-producible + binding constraint for a player.
 
         Returns a dict shaped for direct UI consumption — the frontend renders
         the Production Capacity panel and Constraint Popup straight from this.
         """
         from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
+        from ..constants import FARMER_SEASONAL_CONVERSION
         from ..models.capacity import (
             recipes_for_role, compute_capacity, find_item,
         )
         from ..models.profession import WorkerBand, primary_title
+        from ..engine.engineering import (
+            active_engineer_specialty_counts,
+            adjusted_capacity_for_engineers,
+            adjusted_recipe_for_engineers,
+            adjusted_workforce_for_engineers,
+            specialty_payload,
+        )
 
         # Build workforce by band (active workers only)
         band_counts = p.workforce.band_summary()
@@ -1484,6 +1655,10 @@ class GameManager:
             WorkerBand.TECHNICIAN: band_counts.get("Technician", 0),
             WorkerBand.WORKER:     band_counts.get("Worker", 0),
         }
+        engineer_counts = active_engineer_specialty_counts(p)
+        effective_wf_by_band = adjusted_workforce_for_engineers(
+            wf_by_band, engineer_counts
+        )
 
         on_hand = {r.value: p.inventory.get(r) for r in p.inventory.amounts}
 
@@ -1518,6 +1693,7 @@ class GameManager:
                         },
                     )
                 # Apply patent boost to this output's input requirements
+                recipe = adjusted_recipe_for_engineers(recipe, engineer_counts)
                 mult = p.patent_input_multiplier(recipe.output)
                 if mult < 1.0:
                     boosted_inputs = {k: v * mult for k, v in recipe.inputs.items()}
@@ -1531,13 +1707,36 @@ class GameManager:
                         p.inventory.get(ResourceType.FISH)
                         + p.inventory.get(ResourceType.MEAT)
                     )
+                farmer_raw_output = (
+                    recipe.role == "Farmer"
+                    and recipe.output in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+                    and recipe.output not in (
+                        ResourceType.FOOD.value,
+                        ResourceType.MEAT.value,
+                    )
+                )
+                if farmer_raw_output:
+                    seasonal_inputs = FARMER_SEASONAL_CONVERSION[season_name]["inputs"]
+                    enough_for_seasonal_run = all(
+                        p.inventory.get(ResourceType(resource)) >= amount
+                        for resource, amount in seasonal_inputs.items()
+                    )
+                    boosted = recipe
+                    on_hand_for_cap = dict(on_hand)
+                    for resource in recipe.inputs:
+                        on_hand_for_cap[resource] = (
+                            float("inf") if enough_for_seasonal_run else 0
+                        )
+                else:
+                    on_hand_for_cap = on_hand
                 cap = compute_capacity(
                     recipe=boosted,
                     catalogue=CAPITAL_CATALOGUE,
                     owned=p.capital_inventory,
-                    workforce=wf_by_band,
-                    on_hand=on_hand,
+                    workforce=effective_wf_by_band,
+                    on_hand=on_hand_for_cap,
                 )
+                cap = adjusted_capacity_for_engineers(cap, engineer_counts, recipe.output)
                 # Per-input shortfall (units needed to lift the input cap to
                 # the next bottleneck). Useful for the constraint popup
                 # ("buy 4 more Oil").
@@ -1550,7 +1749,14 @@ class GameManager:
                 if input_target == float("inf") or input_target <= 0:
                     input_target = 1 if boosted.inputs else 0
                 inputs_short: dict[str, float] = {}
-                if input_cap < input_target:
+                if farmer_raw_output:
+                    seasonal_inputs = FARMER_SEASONAL_CONVERSION[season_name]["inputs"]
+                    for resource, need_total in seasonal_inputs.items():
+                        have = p.inventory.get(ResourceType(resource))
+                        short = need_total - have
+                        if short > 0:
+                            inputs_short[resource] = round(short, 2)
+                elif input_cap < input_target:
                     for resource, per_unit in boosted.inputs.items():
                         if per_unit <= 0:
                             continue
@@ -1576,7 +1782,7 @@ class GameManager:
                         if per_unit <= 0:
                             continue
                         need = per_unit * workforce_target
-                        have = wf_by_band.get(band, 0)
+                        have = effective_wf_by_band.get(band, 0)
                         short = need - have
                         if short > 0:
                             # Name the missing workers by their specific
@@ -1666,7 +1872,116 @@ class GameManager:
                     # floor" chip so the player can see why output is
                     # reduced (or about to be).  1.0 = no floor applies.
                     "degradation_floor": round(degradation_floor, 3),
+                    "engineer_specialties": specialty_payload(p),
                 })
+
+        effective_capital = p.effective_capital_inventory()
+        kitchen_capacity = sum(
+            int(spec["food_per_season"]) * effective_capital.get(item_id, 0)
+            for item_id, spec in KITCHEN_SPECS.items()
+        )
+        if kitchen_capacity > 0 and ResourceType.FOOD.value not in seen:
+            chef_limited_capacity = 0
+            inputs_short: dict[str, float] = {}
+            grain_units = p.inventory.get(ResourceType.GRAIN)
+            produce_units = p.inventory.get(ResourceType.PRODUCE)
+            protein_units = (
+                p.inventory.get(ResourceType.FISH) + p.inventory.get(ResourceType.MEAT)
+            )
+            input_caps = []
+            owned_kitchens = []
+            for item_id, spec in KITCHEN_SPECS.items():
+                count = effective_capital.get(item_id, 0)
+                if count <= 0:
+                    continue
+                item = find_item(CAPITAL_CATALOGUE, item_id)
+                label = item.name if item else item_id
+                food_each = int(spec["food_per_season"])
+                owned_kitchens.append(f"{count} × {label}")
+                if spec.get("requires_chef", False):
+                    chef_limited_capacity += (
+                        min(count, p.workforce.count_profession(Profession.CHEF.value))
+                        * food_each
+                    )
+                else:
+                    chef_limited_capacity += count * food_each
+                recipe = spec.get("recipe", {})
+                for resource_name, per_food in recipe.items():
+                    if per_food <= 0:
+                        continue
+                    have = (
+                        protein_units if resource_name == "Protein"
+                        else p.inventory.get(ResourceType(resource_name))
+                    )
+                    input_caps.append(have / per_food)
+            input_cap = min(input_caps) if input_caps else float("inf")
+            max_producible = min(kitchen_capacity, chef_limited_capacity, input_cap)
+            target = min(kitchen_capacity, chef_limited_capacity)
+            if target > 0 and input_cap < target:
+                for resource_name, per_food in {
+                    "Grain": 1,
+                    "Produce": 1,
+                    "Protein": 1,
+                }.items():
+                    per_food_needed = max(
+                        (
+                            spec.get("recipe", {}).get(resource_name, 0)
+                            for item_id, spec in KITCHEN_SPECS.items()
+                            if effective_capital.get(item_id, 0) > 0
+                        ),
+                        default=0,
+                    )
+                    if per_food_needed <= 0:
+                        continue
+                    have = (
+                        protein_units if resource_name == "Protein"
+                        else p.inventory.get(ResourceType(resource_name))
+                    )
+                    short = per_food_needed * target - have
+                    if short > 0:
+                        inputs_short[resource_name] = round(short, 2)
+            workforce_short = {}
+            if chef_limited_capacity < kitchen_capacity:
+                chef_kitchens = sum(
+                    effective_capital.get(item_id, 0)
+                    for item_id, spec in KITCHEN_SPECS.items()
+                    if spec.get("requires_chef", False)
+                )
+                chef_short = max(
+                    0,
+                    chef_kitchens - p.workforce.count_profession(Profession.CHEF.value),
+                )
+                if chef_short:
+                    workforce_short["Chef"] = chef_short
+            caps = {
+                "equipment": kitchen_capacity,
+                "workforce": chef_limited_capacity,
+                "inputs": input_cap,
+            }
+            binding = min(caps, key=caps.get)
+            outputs.append({
+                "output": ResourceType.FOOD.value,
+                "role": "Kitchen",
+                "is_service_output": False,
+                "max_producible": round(max_producible, 2)
+                                  if max_producible != float("inf") else None,
+                "equipment_cap": round(kitchen_capacity, 2),
+                "workforce_cap": round(chef_limited_capacity, 2),
+                "input_cap": round(input_cap, 2)
+                              if input_cap != float("inf") else None,
+                "binding": binding,
+                "blockers": [
+                    name for name, value in caps.items()
+                    if value == caps[binding]
+                ],
+                "inputs_short": inputs_short,
+                "workforce_short": workforce_short,
+                "equipment_short": {},
+                "patents_active": 0,
+                "patent_input_mult": 1.0,
+                "degradation_floor": 1.0,
+                "enabled_by": owned_kitchens,
+            })
 
         # Render owned capital with display info (name, role, count)
         capital_owned = []
@@ -1702,6 +2017,7 @@ class GameManager:
             "capital_owned":   capital_owned,
             "capital_in_transit": in_transit,
             "band_counts":     band_counts,
+            "engineer_specialties": specialty_payload(p),
         }
 
     @staticmethod
@@ -1806,10 +2122,15 @@ class GameManager:
                                 shortfall > 0 and have_at_requester >= shortfall
                             )
 
+            target_label = self._profession_label(req.target_profession)
+            if req.engineer_specialty:
+                target_label = f"{target_label} ({req.engineer_specialty})"
             pipeline.append({
                 "batch_id": req.batch_id,
                 "worker_count": len(req.worker_ids),
-                "target_profession": self._profession_label(req.target_profession),
+                "target_profession": target_label,
+                "engineer_specialty": req.engineer_specialty or None,
+                "duration_seasons": req.duration_seasons or None,
                 # Status is the canonical TrainingStatus enum value.
                 "status": req.status.value,
                 "educator_player_id": req.educator_id,
@@ -1956,6 +2277,47 @@ class GameManager:
             })
         return decisions
 
+    def _training_capacity_for_player(
+        self,
+        game: Game,
+        current_year_idx: int,
+        current_season_idx: int,
+    ) -> list[dict]:
+        training = getattr(game, "training", None)
+        if not training:
+            return []
+        rows: list[dict] = []
+        for profession, info in training.capacity_summary(
+            current_year_idx, current_season_idx
+        ).items():
+            remaining = info.get("remaining", 0)
+            trained = info.get("trained", 0)
+            annual_cap = info.get("annual_cap", 0)
+            seasonal_cap = info.get("seasonal_cap")
+            unavailable_reason = ""
+            if remaining <= 0:
+                if seasonal_cap is not None and trained < annual_cap:
+                    unavailable_reason = (
+                        f"Seasonal cap reached ({seasonal_cap}/season); "
+                        "try again next season."
+                    )
+                else:
+                    unavailable_reason = (
+                        f"Annual cap reached ({trained}/{annual_cap}); "
+                        "try again next year."
+                    )
+            rows.append({
+                "profession": profession,
+                "label": self._profession_label(profession),
+                "available": remaining > 0,
+                "remaining": remaining,
+                "annual_cap": annual_cap,
+                "trained": trained,
+                "seasonal_cap": seasonal_cap,
+                "unavailable_reason": unavailable_reason,
+            })
+        return rows
+
     async def _handle_training_counter_response(
         self,
         room_id: str,
@@ -2049,6 +2411,80 @@ class GameManager:
                         room_id, educator_lobby_id,
                         self.get_game_state(room_id, educator_lobby_id) or {},
                     )
+
+    async def _handle_buy_out_float(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Equity Phase 3: the controlling owner buys public-float shares of
+        their own island at live fair value, paid from personal cash (the cash
+        leaves the game, like the auction bid).  Message: {shares:int}."""
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+        player = next((p for p in room.game.players if p.player_id == engine_pid), None)
+        if player is None or player.cap_table is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "No island to buy into"}))
+            return
+
+        owner_key = str(player.player_id)
+        # Only the controlling owner may buy their island's float.
+        if player.cap_table.held_by(owner_key) < AUCTIONED_SHARES:
+            await websocket.send_text(json.dumps({
+                "type": "error", "message": "Only the controlling owner can buy this float."
+            }))
+            return
+
+        try:
+            shares = int(msg.get("shares", 0))
+        except (TypeError, ValueError):
+            shares = 0
+        available = player.cap_table.public_float()
+        shares = min(max(0, shares), available)
+        if shares <= 0:
+            await websocket.send_text(json.dumps({
+                "type": "error", "message": "No public-float shares to buy."
+            }))
+            return
+
+        # Live fair value per share (= liquidation value incl. shareholder
+        # loans, fed through the going-concern premium).
+        prices = room.game.market.current_prices()
+        cyi = getattr(room, "current_year_index", 0)
+        csi = getattr(room, "current_season_index", 0)
+        tick = cyi * len(SEASONS) + csi
+        liq = player.total_wealth(prices, room.game.loan_ledger, CAPITAL_CATALOGUE, tick)
+        price = share_price(fair_value(liq, player.wealth_history))
+        cost = round(shares * price, 1)
+        if player.personal_cash < cost:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Need {cost:.1f} Dp for {shares} share(s); you have "
+                           f"{player.personal_cash:.1f} Dp.",
+            }))
+            return
+
+        # Execute: cash leaves the game (paid to imaginary public holders);
+        # shares move public -> owner; holdings mirror the cap table.
+        player.personal_cash = round(player.personal_cash - cost, 1)
+        player.cap_table.transfer(PUBLIC_HOLDER, owner_key, shares)
+        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+
+        await websocket.send_text(json.dumps({
+            "type": "buy_out_float_ack", "shares": shares,
+            "cost": cost, "price_per_share": round(price, 2),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
 
     def _leases_detail_for_player(
         self,
@@ -2189,6 +2625,17 @@ class GameManager:
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
         player_names = {p.player_id: p.name for p in game.players}
 
+        # --- Equity (Phase 2b): per-island share price + investor net worth ---
+        # liquidation value (= total_wealth, already net of bank + shareholder
+        # loans) feeds fair_value; share_price drives net-worth scoring.
+        share_price_by_island: dict[str, float] = {}
+        island_loan_books = [p.shareholder_loans for p in game.players]
+        for _p in game.players:
+            _liq = _p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick)
+            share_price_by_island[str(_p.player_id)] = share_price(
+                fair_value(_liq, _p.wealth_history)
+            )
+
         def banker_loan_book_status(player: Player) -> dict[str, int]:
             if not any(role.name == "Banker" for role in player.roles):
                 return {"active": 0, "cap": 0}
@@ -2211,9 +2658,46 @@ class GameManager:
                 "roles": p.role_names(),
                 "role_names": [r.name for r in p.roles],
                 "dollops": round(p.dollops, 1),
+                # --- Equity (Phase 2b): two balance sheets + ownership ---
+                "treasury": round(p.dollops, 1),          # island operating cash (alias of dollops)
+                "personal_cash": round(p.personal_cash, 1),  # investor wallet
+                "net_worth": round(
+                    p.net_worth(
+                        share_price_by_island,
+                        sh_loans.receivable(island_loan_books, str(p.player_id)),
+                    ),
+                    1,
+                ),
+                "owns_pct": round(
+                    p.cap_table.fraction(str(p.player_id)) * 100, 1
+                ) if p.cap_table else None,
+                "public_float_pct": round(
+                    (p.cap_table.public_float() / 100) * 100, 1
+                ) if p.cap_table else None,
+                "public_float_shares": p.cap_table.public_float() if p.cap_table else 0,
+                "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
+                "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
+                "shareholder_loan_receivable": round(
+                    sh_loans.receivable(island_loan_books, str(p.player_id)), 1
+                ),
                 "wealth": round(
                     p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick),
                     1,
+                ),
+                # Signed decomposition of the win-condition score (P7 / #86).
+                # Components sum to ``wealth``; lets the dashboard render a
+                # "why is my net worth X?" panel without re-deriving the math.
+                "wealth_breakdown": {
+                    k: round(v, 1)
+                    for k, v in p.wealth_breakdown(
+                        prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick
+                    )["components"].items()
+                },
+                "revenue_opportunities": revenue_opportunities(
+                    p,
+                    game.market,
+                    game.players,
+                    getattr(game, "season", SEASONS[current_season_idx]),
                 ),
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
@@ -2271,6 +2755,11 @@ class GameManager:
                     current_year_idx,
                     current_season_idx,
                 ),
+                "training_capacity": self._training_capacity_for_player(
+                    game,
+                    current_year_idx,
+                    current_season_idx,
+                ),
                 "staffing_contracts": self._staffing_contracts_for_player(
                     game, p.player_id, player_names, current_year_idx, current_season_idx,
                 ),
@@ -2322,7 +2811,11 @@ class GameManager:
                     for r in ResourceType if p.inventory.get(r) > 0
                 }
             # Production capacity panel + constraint data
-            pd["capacity"] = self._player_capacity(p, current_tick=current_tick)
+            pd["capacity"] = self._player_capacity(
+                p,
+                current_tick=current_tick,
+                season_name=getattr(game, "season", SEASONS[current_season_idx]),
+            )
             pd["decision_hints"] = self._decision_hints_for_player(pd)
             players_data.append(pd)
 
@@ -2722,22 +3215,24 @@ class GameManager:
         logger.info("Room %s resumed by host after %.1fs paused",
                     room.room_id, pause_duration)
 
-        # After resume, re-check the Ready quorum.  If everyone became Ready
-        # during the pause, close the phase now (grace period for action phase,
-        # immediate for pre-season).
+        # After resume, re-check the Ready quorum.  Pre-season readiness always
+        # closes the review window.  In action phase, only ready-only games
+        # (season_timer_end == 0) close on quorum; timed seasons stay open
+        # until the countdown expires so players can undo/resume trading.
         if (room.status == "running"
                 and room.season_active_humans
                 and room.season_ready_set >= room.season_active_humans):
             if room.season_phase == "action" and room.io_adapter:
-                if self._loop is not None:
-                    if room.all_ready_task is None:
-                        fut = asyncio.run_coroutine_threadsafe(
-                            self._delayed_interrupt(room.room_id), self._loop
-                        )
-                        room.all_ready_task = fut
-                else:
-                    # No event loop (e.g. unit-test environment): interrupt immediately.
-                    room.io_adapter.interrupt_all()
+                if room.season_timer_end <= 0:
+                    if self._loop is not None:
+                        if room.all_ready_task is None:
+                            fut = asyncio.run_coroutine_threadsafe(
+                                self._delayed_interrupt(room.room_id), self._loop
+                            )
+                            room.all_ready_task = fut
+                    else:
+                        # No event loop (e.g. unit-test environment): interrupt immediately.
+                        room.io_adapter.interrupt_all()
             elif room.season_phase == "pre_season":
                 room._pre_season_done.set()
 
@@ -2844,6 +3339,18 @@ class GameManager:
                     "outage": ev.outage,
                     "natural_disaster": ev.natural_disaster,
                     "description": ev.describe(),
+                    # Impact + duration for the disaster pop-up (UI #86-adjacent).
+                    "damage_seasons": ev.damage_seasons,
+                    "price_shock_resource": (
+                        ev.price_shock_resource.value
+                        if ev.price_shock_resource else None
+                    ),
+                    "price_shock_multiplier": ev.price_shock_multiplier,
+                    # A disruptive event is anything off-normal — drives whether
+                    # the client raises a modal.
+                    "disruptive": (
+                        ev.natural_disaster or ev.outage or ev.yield_modifier < 1.0
+                    ),
                 }
                 if ev.natural_disaster and not has_disaster:
                     has_disaster = True
@@ -2949,8 +3456,9 @@ class GameManager:
           sleeping through the pre-season window.
 
         Action phase: Ready means "I'm done trading this season."
-          When all active humans are ready, the season-timer is cancelled and
-          every pending IO prompt is interrupted (force-ending each turn).
+          In ready-only games, all-human readiness ends the season. In timed
+          games, readiness parks each player but the trading window remains
+          open until the timer expires, so players can resume while time remains.
         """
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
@@ -2994,13 +3502,14 @@ class GameManager:
         self._broadcast_ready_update(room)
 
         if ready:
-            # All active humans Ready → end the season after a brief grace
-            # period so the park loop can engage and the "Resume Trading"
-            # banner appears before the interrupt fires.  While paused,
-            # defer until resume (see _do_resume).
+            # All active humans Ready → end only ready-only seasons after a
+            # brief grace period so the park loop can engage and the "Resume
+            # Trading" banner appears before the interrupt fires.  Timed
+            # seasons stay open until the countdown expires.
             if (not room.paused
                     and room.season_active_humans
                     and room.season_ready_set >= room.season_active_humans
+                    and room.season_timer_end <= 0
                     and room.all_ready_task is None
                     and self._loop is not None):
                 fut = asyncio.run_coroutine_threadsafe(
@@ -3028,10 +3537,33 @@ def create_app() -> FastAPI:
             "Install with: pip install fastapi uvicorn[standard] websockets"
         )
 
-    app = FastAPI(title="Island Traders", version=APP_VERSION)
+    app = FastAPI(
+        title="Island Traders API",
+        version=APP_VERSION,
+        description=(
+            "HTTP API for creating Island Traders rooms, joining by room code, "
+            "starting auctions/games, and reading game state. Real-time player "
+            "interaction happens over WebSocket at `/ws/{room_id}/{player_id}`; "
+            "clients send prompt replies as `{type: 'response', value: ...}`."
+        ),
+        openapi_tags=[
+            {
+                "name": "Lobby",
+                "description": "Create rooms, list public waiting rooms, and join/rejoin by code.",
+            },
+            {
+                "name": "Game Flow",
+                "description": "Advance the room through auction, quick-start, and state inspection.",
+            },
+            {
+                "name": "Reference",
+                "description": "Static reference data for clients and agents.",
+            },
+        ],
+    )
     manager = GameManager()
 
-    @app.get("/version")
+    @app.get("/version", tags=["Reference"], summary="Get server version")
     async def _get_version():
         return {"version": APP_VERSION}
 
@@ -3052,24 +3584,38 @@ def create_app() -> FastAPI:
             return HTMLResponse(html_path.read_text())
         return HTMLResponse("<h1>Island Traders Server</h1>")
 
-    @app.post("/api/rooms")
-    async def create_room(body: dict = {}):
+    @app.post(
+        "/api/rooms",
+        tags=["Lobby"],
+        summary="Create a room",
+        description=(
+            "Creates a waiting-room lobby and returns its room id, join code, "
+            "and host lobby player. External agent clients usually create a "
+            "room here or join an existing room by code."
+        ),
+    )
+    async def create_room(body: CreateRoomRequest | None = None):
+        body = body or CreateRoomRequest()
         room = manager.create_room(
-            name=body.get("name", "Game Room"),
-            max_players=body.get("max_players", 7),
-            num_years=body.get("num_years", 3),
-            creator_name=body.get("creator_name", "Host"),
-            is_public=body.get("is_public", True),
-            require_all_human=body.get("require_all_human", False),
-            starting_capital=body.get("starting_capital", DEFAULT_STARTING_CAPITAL),
-            auction_timer_seconds=body.get("auction_timer_seconds", AUCTION_DURATION_SECONDS),
-            season_timer_seconds=body.get("season_timer_seconds", DEFAULT_SEASON_TIMER),
-            pre_season_timer_seconds=body.get("pre_season_timer_seconds", DEFAULT_PRE_SEASON_TIMER),
-            room_id=body.get("room_id"),
+            name=body.name,
+            max_players=body.max_players,
+            num_years=body.num_years,
+            creator_name=body.creator_name,
+            is_public=body.is_public,
+            require_all_human=body.require_all_human,
+            starting_capital=body.starting_capital,
+            auction_timer_seconds=body.auction_timer_seconds,
+            season_timer_seconds=body.season_timer_seconds,
+            pre_season_timer_seconds=body.pre_season_timer_seconds,
         )
         return JSONResponse(room.to_dict())
 
-    @app.get("/api/rooms")
+    @app.get(
+        "/api/rooms",
+        tags=["Lobby"],
+        summary="List public waiting rooms",
+        description="Returns public rooms that are still in the waiting-room phase.",
+    )
     async def list_rooms():
         public = [
             r.to_dict() for r in manager.rooms.values()
@@ -3077,17 +3623,52 @@ def create_app() -> FastAPI:
         ]
         return JSONResponse(public)
 
-    @app.get("/api/rooms/{room_id}")
+    @app.get(
+        "/api/rooms/{room_id}",
+        tags=["Lobby"],
+        summary="Get room details",
+        description="Returns the lobby/room metadata for a room id.",
+    )
     async def get_room(room_id: str):
         room = manager.rooms.get(room_id)
         if not room:
             return JSONResponse({"error": "Room not found"}, status_code=404)
         return JSONResponse(room.to_dict())
 
-    @app.post("/api/rooms/join-by-code")
-    async def join_by_code(body: dict = {}):
-        code = body.get("code", "").strip().upper()
-        name = body.get("name", "Player")
+    @app.get(
+        "/api/rooms/by-code/{code}",
+        tags=["Lobby"],
+        summary="Resolve a room by its join code (read-only)",
+        description=(
+            "Returns room metadata (room_id, name, status) for a join code "
+            "WITHOUT joining or taking a seat. Used by the spectator view so a "
+            "watcher can supply the share code instead of the internal room id."
+        ),
+    )
+    async def room_by_code(code: str):
+        room = manager.find_room_by_code(code.strip().upper())
+        if not room:
+            return JSONResponse({"error": "Invalid room code"}, status_code=404)
+        return JSONResponse({
+            "room_id": room.room_id,
+            "name": room.name,
+            "status": room.status,
+            "join_code": room.join_code,
+        })
+
+    @app.post(
+        "/api/rooms/join-by-code",
+        tags=["Lobby"],
+        summary="Join or rejoin by room code",
+        description=(
+            "Join a waiting room by its short room code. If the game is already "
+            "running, this also supports reconnecting by using the same player "
+            "name originally used in the room."
+        ),
+    )
+    async def join_by_code(body: JoinByCodeRequest):
+        code = body.code.strip().upper()
+        name = body.name
         room = manager.find_room_by_code(code)
         if not room:
             return JSONResponse({"error": "Invalid room code"}, status_code=404)
@@ -3103,55 +3684,133 @@ def create_app() -> FastAPI:
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
-    @app.post("/api/rooms/{room_id}/join")
-    async def join_room(room_id: str, body: dict = {}):
-        result = manager.join_room(room_id, body.get("name", "Player"))
+    @app.post(
+        "/api/rooms/{room_id}/join",
+        tags=["Lobby"],
+        summary="Join (or rejoin) by room id",
+        description=(
+            "Join a waiting room when the full room id is already known. If the "
+            "game has already started, reconnects you to your existing seat when "
+            "the same player name is supplied (mirroring join-by-code). This is "
+            "what the quick-seat ?join= URLs rely on to rejoin an established game."
+        ),
+    )
+    async def join_room(room_id: str, body: JoinRoomRequest | None = None):
+        body = body or JoinRoomRequest()
+        result = manager.join_room(room_id, body.name)
+        if not result:
+            # Game already running: reconnect to the existing seat by name,
+            # mirroring the join-by-code rejoin path.
+            room = manager.rooms.get(room_id)
+            if room and room.status != "waiting":
+                result = manager.rejoin_room_by_name(room_id, body.name)
         if not result:
             return JSONResponse({"error": "Cannot join room"}, status_code=400)
         room, lp = result
         return JSONResponse({"room": room.to_dict(), "player_id": lp.player_id})
 
-    @app.post("/api/rooms/{room_id}/ai")
-    async def add_ai(room_id: str, body: dict = {}):
-        lp = manager.add_ai_player(room_id, body.get("name", "AI Player"))
+    @app.post(
+        "/api/rooms/{room_id}/leave",
+        tags=["Lobby"],
+        summary="Leave a waiting room",
+        description=(
+            "Deregisters a lobby player from a room before the game starts "
+            "(e.g. you joined the wrong game). Host duties pass to the next "
+            "human; if no humans remain, the room is closed."
+        ),
+    )
+    async def leave_room(room_id: str, body: LeaveRoomRequest):
+        result = manager.leave_room(room_id, body.player_id)
+        if "error" in result:
+            status = 404 if result["error"] == "Room not found" else 400
+            return JSONResponse(result, status_code=status)
+        return JSONResponse(result)
+
+    @app.post(
+        "/api/rooms/{room_id}/ai",
+        tags=["Lobby"],
+        summary="Add built-in server AI",
+        description=(
+            "Adds a built-in deterministic server AI to a waiting room. This is "
+            "different from an external GPT/Perplexity client, which should "
+            "join as a normal player and connect to the WebSocket."
+        ),
+    )
+    async def add_ai(room_id: str, body: AddAIRequest | None = None):
+        body = body or AddAIRequest()
+        lp = manager.add_ai_player(room_id, body.name)
         if not lp:
             return JSONResponse({"error": "Cannot add AI player"}, status_code=400)
         return JSONResponse({"player_id": lp.player_id, "name": lp.name})
 
-    @app.post("/api/rooms/{room_id}/auction/start")
+    @app.post(
+        "/api/rooms/{room_id}/auction/start",
+        tags=["Game Flow"],
+        summary="Start the role auction",
+        description="Starts the timed role auction for a waiting room.",
+    )
     async def start_auction(room_id: str):
         ok = manager.start_auction(room_id)
         if not ok:
             return JSONResponse({"error": "Cannot start auction"}, status_code=400)
         return JSONResponse({"status": "auction"})
 
-    @app.post("/api/rooms/{room_id}/auction/bid")
-    async def place_bid(room_id: str, body: dict = {}):
+    @app.post(
+        "/api/rooms/{room_id}/auction/bid",
+        tags=["Game Flow"],
+        summary="Place an auction bid",
+        description=(
+            "Places or raises a lobby player's bid on a role during the auction. "
+            "WebSocket clients can also send `{type:'bid', role_name, amount}`."
+        ),
+    )
+    async def place_bid(room_id: str, body: AuctionBidRequest):
         result = manager.place_bid(
             room_id,
-            body.get("player_id", ""),
-            body.get("role_name", ""),
-            float(body.get("amount", 0)),
+            body.player_id,
+            body.role_name,
+            float(body.amount),
         )
         if "error" in result:
             return JSONResponse(result, status_code=400)
         return JSONResponse(result)
 
-    @app.post("/api/rooms/{room_id}/start")
+    @app.post(
+        "/api/rooms/{room_id}/start",
+        tags=["Game Flow"],
+        summary="Quick-start a room",
+        description=(
+            "Legacy quick-start: auto-assigns roles, fills missing roles with "
+            "server AI, and launches the game without the auction."
+        ),
+    )
     async def start_game_quick(room_id: str):
         ok = manager.start_game_quick(room_id)
         if not ok:
             return JSONResponse({"error": "Cannot start game"}, status_code=400)
         return JSONResponse({"status": "running"})
 
-    @app.get("/api/rooms/{room_id}/state")
+    @app.get(
+        "/api/rooms/{room_id}/state",
+        tags=["Game Flow"],
+        summary="Get current game state",
+        description=(
+            "Returns the current room/game state. Pass `player_id` to receive "
+            "the player-specific view used by the dashboard and terminal agents."
+        ),
+    )
     async def get_state(room_id: str, player_id: str = ""):
         state = manager.get_game_state(room_id, player_id)
         if not state:
             return JSONResponse({"error": "No game state"}, status_code=404)
         return JSONResponse(state)
 
-    @app.get("/api/rooms/{room_id}/log")
+    @app.get(
+        "/api/rooms/{room_id}/log",
+        tags=["Game Flow"],
+        summary="Download room log",
+        response_class=PlainTextResponse,
+    )
     async def get_log(room_id: str):
         """Download the full server-side game log as plain text.
 
@@ -3181,7 +3840,12 @@ def create_app() -> FastAPI:
             },
         )
 
-    @app.get("/api/roles")
+    @app.get(
+        "/api/roles",
+        tags=["Reference"],
+        summary="List playable roles",
+        description="Returns role names, display names, island names, production, needs, and UI colors.",
+    )
     async def list_roles():
         return JSONResponse([{**ROLE_INFO[r], "name": r} for r in ALL_ROLES])
 
@@ -3346,6 +4010,10 @@ def create_app() -> FastAPI:
                     })
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "buy_out_float":
+                    await manager._handle_buy_out_float(
                         room_id, player_id, msg, websocket
                     )
 

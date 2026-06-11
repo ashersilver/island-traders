@@ -15,6 +15,10 @@ pytest.importorskip("fastapi")
 from island_traders.server.app import (
     AuctionState, GameManager, LobbyPlayer, RoleBid,
 )
+from island_traders.models.player import Player
+from island_traders.models.profession import Profession
+from island_traders.models.resource import ResourceType
+from island_traders.models.role import ROLES
 
 
 def _make_room(manager: GameManager, num_humans: int = 2) -> str:
@@ -100,6 +104,40 @@ def test_investing_phase_ai_auto_submits():
     mgr._start_investing(room_id, deductions={})
     assert "ai1" in room.investing.submitted        # AI auto-submitted
     assert "h1" not in room.investing.submitted     # Human still pending
+
+
+def test_player_capacity_surfaces_cross_role_kitchen_food_output():
+    transporter = Player(
+        0,
+        "Dockside",
+        [ROLES["Transporter"]],
+        100.0,
+        is_human=True,
+    )
+    transporter.add_capital("common.kitchen")
+    transporter.workforce.add_workers(
+        1,
+        training_level=1,
+        profession=Profession.CHEF.value,
+    )
+    transporter.receive_resources(ResourceType.GRAIN, 20)
+    transporter.receive_resources(ResourceType.PRODUCE, 10)
+    transporter.receive_resources(ResourceType.FISH, 10)
+
+    cap = GameManager()._player_capacity(transporter)
+
+    assert any(
+        item["item_id"] == "common.kitchen"
+        for item in cap["capital_owned"]
+    )
+    food = next(
+        output for output in cap["outputs"]
+        if output["output"] == ResourceType.FOOD.value
+        and output["role"] == "Kitchen"
+    )
+    assert food["max_producible"] == 10
+    assert food["equipment_cap"] == 10
+    assert food["workforce_cap"] == 10
 
 
 def test_ai_lobby_player_keeps_identity_when_winning_a_role():
@@ -326,6 +364,7 @@ def test_player_capacity_returns_per_output_data():
     p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
     # Inputs: enough Oil for raw lines and balanced ingredients for packaged Food
     p.receive_resources(ResourceType.OIL, 30)
+    p.receive_resources(ResourceType.FARM_MACHINERY, 1)
     p.receive_resources(ResourceType.FISH, 5)
     p.receive_resources(ResourceType.GRAIN, 5)
     p.receive_resources(ResourceType.PRODUCE, 5)
@@ -362,6 +401,26 @@ def test_player_capacity_returns_per_output_data():
     fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
     assert fish["binding"] == "workforce"
     assert fish["inputs_short"] == {}
+
+
+def test_farmer_capacity_uses_seasonal_inputs_for_raw_lines():
+    p = Player(
+        player_id=0, name="Underfuelled Farmer", roles=[ROLES["Farmer"]],
+        dollops=100.0,
+    )
+    p.add_capital("farmer.tractor", 1)
+    p.add_capital("farmer.fishing_boat", 1)
+    p.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    p.workforce.add_workers(1, training_level=1, profession=Profession.MECHANIC.value)
+    p.workforce.add_workers(3, profession=Profession.UNSKILLED.value)
+    p.receive_resources(ResourceType.FARM_MACHINERY, 1)
+
+    cap = GameManager()._player_capacity(p, season_name="Spring")
+    grain = next(o for o in cap["outputs"] if o["output"] == "Grain")
+    fish = next(o for o in cap["outputs"] if o["output"] == "Fish")
+
+    assert grain["inputs_short"] == {"Oil": 1}
+    assert fish["inputs_short"] == {"Oil": 1}
 
 
 def test_player_capacity_surfaces_equipment_shortfall_options():

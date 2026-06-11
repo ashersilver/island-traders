@@ -11,6 +11,60 @@ folder on this computer when working alongside Codex.
 - Release notes must be updated before a feature/fix branch is merged into
   `pre-release`; see `RELEASE_NOTES.md` and
   `requirements/release-process.md`.
+- **Every PR must link the issue it addresses.** Requirements live in the
+  GitHub issue tracker; PRs reference them with `Closes #N` (or `Refs #N` for
+  partial progress) so the backlog self-reconciles on merge. If no issue
+  exists yet, open one first to capture the requirement. The
+  `.github/pull_request_template.md` makes this prompt automatic.
+
+## Process (agreed 2026-06-04/05)
+
+### Roles & integration
+- **Codex** owns engine leaf work (production, workforce, turn orchestration)
+  and works in the primary checkout. **Claude** is the integrator and works in
+  its own worktree. Codex hands off with "branch X at commit Y — ready to
+  integrate".
+- Integrator checklist: (1) fetch; confirm the branch is based on current
+  `origin/pre-release` (`git merge-base --is-ancestor`) — if diverged, merge
+  pre-release in and reconcile (keep both `RELEASE_NOTES.md` entries; version
+  becomes the next `.N`); (2) run the FULL test suite; spot-check the diff
+  against the spec; (3) add `APP_VERSION` bump + release notes if the branch
+  lacks them; (4) PR into `pre-release` with `Closes #N`/`Refs #N`;
+  (5) **merge → confirm the PR state is MERGED → only then delete the
+  branch** (deleting first auto-closes the PR); (6) **manually `gh issue close`
+  every issue the PR resolved** — `Closes #N` only auto-closes on merge to the
+  default branch (`master`), and we integrate via `pre-release`, so closing is
+  manual with a comment naming the PR + version; (7) restart the server only
+  when the user asks.
+- If two parallel branches touch the same seam, the **second to merge wires
+  the integration call**; the first leaves a stub.
+- Git discipline: never `--no-verify`, never `--amend`, never force-push;
+  always new commits. Promotion `pre-release` → `master` only on explicit
+  request.
+
+### Versioning
+`APP_VERSION` is `0.1.0-dev.YYYY-MM-DD.N` in `island_traders/constants.py`;
+`.N` increments per merge that day. Docs-only changes don't need a bump.
+
+### Playtest feedback loop
+While the user is playing, they log observations; record them without acting
+until told to review. Then triage into: (a) agent fixes →
+`island-traders-agents` repo (Claude); (b) quick wins → Claude branch here;
+(c) engine bugs → a `requirements/playtest-defects-DATE.md` spec with
+root-cause file:line pointers → Codex; (d) one tracking GitHub issue per batch
+with a checklist, labelled `playtest` + `area:*`, closed when the batch ships.
+
+### Server operations
+Serve from the Claude worktree pinned to `origin/pre-release` (branch
+`claude/serve-prerelease`), port 8001, log `/tmp/island-traders-server.log`.
+**Restart only on explicit user request** (it kills live games). Static
+frontend files are served fresh without a restart; engine/backend changes need
+one. Bare `python` is not on PATH (pyenv) — use the venv binary.
+
+### Related repos
+The LLM-player agent lives in the separate `island-traders-agents` repo
+(`…/projects/island-traders-agents`, GitHub `ashersilver/island-traders-agents`)
+with its own CLAUDE.md. It talks to this server only via REST/WebSocket.
 
 ## What this project is
 

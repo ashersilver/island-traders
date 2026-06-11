@@ -3,13 +3,28 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-05-29.2"
+APP_VERSION: str = "0.1.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
 CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
+
+# Central formula market-maker controls (P1, 2026-06-11).
+# `current_price` remains the fair reference; formula-market buys pay the ask
+# premium and formula-market sells receive the bid discount. Player order-book
+# trades keep their posted prices.
+MARKET_MAKER_SPREAD: float = 0.12
+MARKET_MAKER_DEPTH_PER_RESOURCE: int = 50
+
+# Per-season payroll by active-worker band (P2, 2026-06-11). Trainees and
+# contracted-away staff are not active at home and are excluded.
+PAYROLL_WAGE_BY_BAND: dict[str, float] = {
+    "Worker": 0.25,
+    "Technician": 0.5,
+    "Manager": 1.0,
+}
 
 STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
 TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
@@ -23,11 +38,23 @@ TOTAL_STARTING_POPULATION: int = 140  # 7 roles × 20
 # ``Player.consume_sustenance`` for the allocator.
 PEOPLE_PER_MEAL: int = 10
 
-# Kitchen capital item (cash-only, all islands). A staffed Kitchen converts
-# local raw ingredients into packaged Food once per season.
+# Kitchen capital items (cash-only, all islands). Kitchens convert local raw
+# ingredients into packaged Food once per season. "Protein" means Fish or Meat.
 KITCHEN_ITEM_ID: str = "common.kitchen"
-KITCHEN_FOOD_PER_SEASON: int = 6
-KITCHEN_RECIPE: dict[str, int] = {
+KITCHEN_SPECS: dict[str, dict] = {
+    "common.kitchen": {
+        "food_per_season": 10,
+        "requires_chef": True,
+        "recipe": {"Grain": 2, "Produce": 1, "Protein": 1},
+    },
+    "common.industrial_kitchen": {
+        "food_per_season": 20,
+        "requires_chef": False,
+        "recipe": {"Grain": 1, "Produce": 0.5, "Protein": 0.5},
+    },
+}
+KITCHEN_FOOD_PER_SEASON: int = KITCHEN_SPECS[KITCHEN_ITEM_ID]["food_per_season"]
+KITCHEN_RECIPE: dict[str, float] = {
     "Grain": 2,
     "Produce": 1,
     "Protein": 1,  # Fish or Meat, chosen from local inventory.
@@ -56,7 +83,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
     "Educator":      {"Expertise": 6,                                 # feeds Course production
                       "Courses": 5,                                    # classroom slots ready Y1
-                      "LaboratoryEquipment": 2,                         # 2 seasons of Lab Equipment
+                      "Reagents": 2,                                   # 2 seasons of Reagents
                       "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
@@ -68,26 +95,29 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Expertise": 2, "LaboratoryEquipment": 2},      # 2 seasons of each input
+                      "Expertise": 2, "Oil": 2, "Ore": 2},  # 2 seasons of inputs (makes own Reagents)
 }
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                13.5,
-    "Fish":                10.8,
-    "Grain":                9.45,
-    "Produce":             12.15,
+    "Food":                18.0,
+    "Fish":                15.0,
+    "Grain":               12.0,
+    "Produce":             15.0,
     "Meat":                16.2,
     "Ore":                 12.0,
     "Metal":               20.0,
     "Oil":                 16.0,
-    "Freight":             16.5,
+    # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
+    # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
+    # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
+    "Freight":             22.0,   # was 16.5; Transporter uplift
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
-    "LaboratoryEquipment": 28.0,
+    "Reagents":            28.0,
     "Goods":               30.0,
-    "HealthServices":      31.5,
-    "Vaccine":             36.75,
+    "HealthServices":      18.0,   # was 31.5; Doctor/Educator value gap reduction
+    "Vaccine":             22.0,   # was 36.75; same
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
@@ -95,9 +125,9 @@ BASE_PRICES: dict[str, float] = {
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      18.7,   # charter flight / passenger berth (per seat)
+    "PassengerSeats":      24.0,   # was 18.7; Transporter uplift
     # Educator IP
-    "Patents":             47.5,   # one-time productivity boost (–20% input cost on chosen output)
+    "Patents":             32.0,   # was 47.5; curtail Patent compounding
 }
 
 # Units produced per season before event modifiers
@@ -107,18 +137,35 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Transporter":   {"Freight": 2.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "PassengerSeats": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    "Educator":      {"Expertise": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Patents": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    # Banker does NOT produce a "Finance" commodity — banking earns through
-    # the spread on loans (and insurance premiums, future deal-guarantee
-    # fees, brokerage, project finance).  Finance-as-tradeable-commodity
-    # was a placeholder that made the Banker print money; removed so the
-    # business model has to come from the actual lending engine.
-    "Banker":        {},
+    # Rebalance 2026-06-02: Transporter was the lowest-value role (553 Dp/s vs
+    # ~1300 average). Doubled Freight and doubled PassengerSeats production so
+    # the Transporter is competitive without chart distortion.
+    "Transporter":   {"Freight": 3.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Courses are classroom slots the Educator sells/uses for training.  They
+    # are produced each season (scaled by workforce skill / capacity, so they
+    # taper if the academic faculty is gutted) — previously they were absent
+    # from production entirely, so the Educator spent the 5 starting slots and
+    # could never make more, hard-stalling all training (playtest 2026-06).
+    # Not multiplied by PRODUCER_PRODUCTIVITY_MULTIPLIER: a course is one
+    # classroom (up to MAX_CLASS_SIZE_PER_COURSE trainees), not a bulk crate.
+    # Rebalance 2026-06-10: Reagents no longer blanket-gate Education output,
+    # so Expertise/Patents are trimmed while Courses stay at 4 to preserve
+    # training throughput.
+    "Educator":      {"Expertise": 1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Courses": 4,
+                      "Patents": 0.10 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Banker rebalance 2026-06-02: small Finance production so the Banker has
+    # some base value in the sim while the AI lending model is improved.
+    # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
+    # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
+    "Banker":        {"Finance": 1.0 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Medical Sciences also produces Reagents (formerly the Manufacturer's
+    # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
+    # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
     "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "Reagents": 6},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -127,14 +174,25 @@ PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
     "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
     "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
     "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
-    "Educator":      {"LaboratoryEquipment": 1},               # labs (operating budget paid in Dp, not Finance commodity)
+    "Educator":      {},
     # Banker has no per-season production input — they make money from loan
     # interest spread (and future deal-guarantee fees, brokerage, project
     # finance, insurance underwriting).  Expertise is still useful but is
     # not a hard requirement gating "production".
     "Banker":        {},
     # Manufacturer has no single entry — see MANUFACTURER_PRODUCT_LINES
-    "Doctor":        {"Expertise": 1, "LaboratoryEquipment": 1},
+    # Medical Sciences makes its own Reagents in-house from Oil + Ore (rather
+    # than buying them), plus Expertise for clinical work (2026-06-02).
+    "Doctor":        {"Expertise": 1, "Oil": 1, "Ore": 1},
+}
+
+# Inputs that gate only a specific output rather than the whole role's
+# production run.  This keeps generic Education output classroom-based while
+# preserving Reagents as the research input for Patents.
+OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
+    "Educator": {
+        "Patents": {"Reagents": 1},
+    },
 }
 
 # Per-season input→output table for the Farmer island.
@@ -198,15 +256,9 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 3,   # heaviest line; specialist transport
         "desc":             "Mining Equipment",
     },
-    "LaboratoryEquipment": {
-        "inputs":           {"Metal": 1, "Oil": 1},
-        "output":           "LaboratoryEquipment",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-        "skilled":          3,
-        "unskilled":        1,
-        "freight_per_unit": 1,
-        "desc":             "Laboratory Equipment",
-    },
+    # Reagents (formerly "LaboratoryEquipment") moved to the Medical Sciences
+    # island (Doctor), produced from Oil + Ore — see BASE_PRODUCTION/
+    # PRODUCTION_INPUTS["Doctor"].  No longer a Manufacturer line (2026-06-02).
     "MedicalDevices": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "MedicalDevices",
@@ -265,14 +317,20 @@ SEASONAL_YIELD: dict[str, dict[str, float]] = {
 
 # Starting total workers per role (see STARTING_WORKERS_BY_PROFESSION for detail).
 # Invariant: every island starts with at least 1 Manager + 2 Technicians.
+# Each island starts with 50 workers (2026-06-02 playtest ask): the skilled
+# breakdown in STARTING_WORKERS_BY_PROFESSION is seeded first, and the
+# remainder up to 50 fills in as Unskilled — giving a deep unskilled bench
+# (~40) so production/training labour requests (sometimes up to ~10 unskilled)
+# can always be met.  NOTE: total is scaled by 7/num_players in Game.setup, so
+# a full 7-player game gets exactly 50 per island.
 STARTING_WORKFORCE: dict[str, int] = {
-    "Farmer":        6,
-    "Miner":         5,
-    "Transporter":   4,   # 1 Logistics Mgr + 3 Technicians (Flight/Seaman/Warehouse)
-    "Educator":      11,  # 2 Prof + 4 Lect + 1 TD + 4 Instructor (bootstraps Manager-course capacity)
-    "Banker":        4,   # 1 Banker + 2 Technicians (Analyst + Clerk) + 1 Unskilled
-    "Manufacturer":  5,
-    "Doctor":        6,   # 2 Doctors + 2 Nurses + 2 Medical Orderlies
+    "Farmer":        50,
+    "Miner":         50,
+    "Transporter":   50,
+    "Educator":      50,
+    "Banker":        50,
+    "Manufacturer":  50,
+    "Doctor":        50,
 }
 
 # Fraction of starting workers who begin with training_level >= 1.
@@ -323,9 +381,9 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
+        ("Actuary", 1),              # Technician — insurance underwriting
         ("BankingAnalyst", 1),       # Technician
         ("BankingClerk", 1),         # Technician
-        # +1 Unskilled remainder (Receptionist)
     ],
     "Manufacturer":  [("Engineer", 1), ("AssemblyWorker", 1), ("Mechanic", 1)],
     "Doctor":        [
@@ -433,9 +491,9 @@ SKILLED_PROFESSIONS: dict[str, list[str]] = {
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
     ],
     "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
-    "Banker":       ["Banker", "BankingAnalyst", "BankingClerk", "Chef"],
-    "Manufacturer": ["FactoryForeman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalOrderly", "Chef"],
+    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef"],
+    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef"],
 }
 
 # ---------------------------------------------------------------------------
@@ -542,6 +600,8 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Healthcare
     "Doctor":               2,
     "Nurse":               10,
+    "MedicalResearcher":     2,
+    "MedicalTechnician":     8,
     "MedicalOrderly":       8,    # apprenticeship-tier healthcare support
     # Engineering / cross-island
     "Engineer":             2,
@@ -553,6 +613,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Veterinarian":         1,
     # Manufacturing
     "FactoryForeman":      4,
+    "Tradesman":           10,
     "AssemblyWorker":      10,
     # Mining
     "Miner":                2,
@@ -562,6 +623,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "RefinerySpecialist":   2,
     # Banking
     "Banker":               2,
+    "Actuary":              4,
     "BankingAnalyst":       4,
     "BankingClerk":         6,
     # Education
@@ -684,6 +746,16 @@ INSURANCE_BASE_PREMIUM: dict[str, float] = {
     "life":    50.0,    # per worker covered; pays LIFE_INSURANCE_DEATH_BENEFIT on death
     "medical": 60.0,    # flat per island; halves seasonal injury rate
 }
+
+# Per-head medical premium (2026-06-02): medical policies now cover a specified
+# number of workers/students and are priced per head for the policy term.  Used
+# both when the Banker sells a sized policy and when the Education island
+# auto-provisions cover for incoming students.  Tunable in calibration.
+MEDICAL_PREMIUM_PER_HEAD: float = 8.0  # Dp per covered head for the full term
+
+# Internal underwriting cost paid by the Banker when issuing an insurance
+# policy. Requires an Actuary on staff.
+ACTUARIAL_EVALUATION_COST: float = 5.0
 
 # Dollops paid to the insured player per fatality (funded by the Banker).
 # Doubled 2026-05-27 from 60 to 120 to offset the Banker calibration

@@ -52,7 +52,7 @@ def _manager(players, training, io=None) -> TurnManager:
 
 def test_indirect_demand_via_pending_training_request_triggers_demand_chooser():
     """A human Miner with a pending training request creates indirect
-    LaboratoryEquipment demand (Educator needs Expertise → needs
+    Reagents demand (Educator needs Expertise → needs
     LabEquipment).  The AI Manufacturer's _has_human_equipment_demand
     must return True even though the Miner doesn't directly consume
     LabEquipment.

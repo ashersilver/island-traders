@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Island Traders — Spectator</title>
+<style>
+  :root {
+    --bg:#0b1622; --panel:#12233a; --panel2:#0e1c2e; --border:#1f3a5a;
+    --text:#dce8f5; --dim:#7e98b5; --heading:#eaf2fb; --accent:#39a0ff;
+    --gold:#f1c40f; --green:#27ae60; --red:#e74c3c; --radius:10px;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  }
+  header {
+    position:sticky; top:0; z-index:5; background:var(--panel2);
+    border-bottom:1px solid var(--border); padding:.55rem .9rem;
+    display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;
+  }
+  header h1 { font-size:1rem; margin:0; color:var(--heading); font-weight:700; }
+  header .tag { color:var(--gold); }
+  header input, header button {
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:7px; padding:.32rem .5rem; font:inherit;
+  }
+  header input { width:130px; }
+  header button { cursor:pointer; }
+  header button.primary { background:var(--accent); color:#022; border-color:var(--accent); font-weight:700; }
+  #status { margin-left:auto; color:var(--dim); font-size:.82rem; }
+  #status.err { color:var(--red); }
+  #status.ok { color:var(--green); }
+  main { padding:.9rem; max-width:1100px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:.9rem; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:.8rem .9rem; }
+  .card h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 .55rem; }
+  .stat-row { display:flex; justify-content:space-between; padding:.15rem 0; border-bottom:1px dashed var(--border); }
+  .stat-row:last-child { border-bottom:0; }
+  .stat-row .v { color:var(--heading); font-variant-numeric:tabular-nums; }
+  .big { font-size:1.4rem; color:var(--gold); font-weight:700; }
+  .inv { display:flex; flex-wrap:wrap; gap:.4rem; }
+  .chip { background:var(--panel2); border:1px solid var(--border); border-radius:20px; padding:.2rem .6rem; font-size:.85rem; }
+  .chip b { color:var(--gold); }
+  .blocked { color:var(--red); }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th,td { text-align:left; padding:.25rem .4rem; border-bottom:1px solid var(--border); }
+  th { color:var(--dim); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .muted { color:var(--dim); }
+  ul.feed { list-style:none; margin:0; padding:0; max-height:260px; overflow:auto; }
+  ul.feed li { padding:.2rem 0; border-bottom:1px solid var(--border); font-size:.84rem; color:var(--dim); }
+  .span2 { grid-column:1/-1; }
+  .ro-note { color:var(--dim); font-size:.78rem; margin:.2rem 0 .8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏝️ Spectator <span class="tag" id="hdr-phase"></span></h1>
+  <input id="in-room" placeholder="room id or code" />
+  <input id="in-player" placeholder="player id or name" />
+  <input id="in-interval" type="number" min="1" value="3" style="width:60px" title="poll seconds" />
+  <button id="btn-watch" class="primary">Watch</button>
+  <button id="btn-stop">Stop</button>
+  <span id="status">idle</span>
+</header>
+<main>
+  <div class="ro-note">Read-only — this view polls game state and never sends actions, so it can't disturb the player (human or AI) holding the seat.</div>
+  <div id="view"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const ORIGIN = window.location.origin;
+let timer = null, playerId = null, playerWant = null;
+
+function qs() { return new URLSearchParams(window.location.search); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function setStatus(msg, cls){ const el=$('status'); el.textContent=msg; el.className=cls||''; }
+
+async function fetchState(room, pid) {
+  const url = `${ORIGIN}/api/rooms/${encodeURIComponent(room)}/state` +
+              (pid ? `?player_id=${encodeURIComponent(pid)}` : '');
+  const r = await fetch(url, { cache:'no-store' });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// `roles` from the server is a comma-joined STRING (role_names() ), while
+// `role_names` is the list of short names — handle either shape.
+function rolesText(roles){ return Array.isArray(roles) ? roles.join(', ') : (roles==null ? '' : String(roles)); }
+
+function findMe(state, want) {
+  const players = state.players || [];
+  const w = String(want||'').toLowerCase();
+  // match by lobby_player_id, then name, then role (short name or display text)
+  return players.find(p => String(p.lobby_player_id) === String(want))
+      || players.find(p => (p.name||'').toLowerCase() === w)
+      || players.find(p => Array.isArray(p.role_names) && p.role_names.some(r => String(r).toLowerCase() === w))
+      || players.find(p => rolesText(p.roles).toLowerCase().includes(w))
+      || null;
+}
+
+function renderMarket(market) {
+  const rows = Object.entries(market || {})
+    .filter(([,i]) => i && (i.ask_price!=null || i.bid_price!=null || i.formula_price!=null))
+    .map(([res,i]) => {
+      const buy = i.ask_price!=null ? `${i.ask_price} <span class="muted">×${i.ask_quantity||0}</span>` : `<span class="muted">~${i.formula_price ?? '—'}</span>`;
+      const sell = i.bid_price!=null ? `${i.bid_price} <span class="muted">×${i.bid_quantity||0}</span>` : `<span class="muted">—</span>`;
+      return `<tr><td>${esc(res)}</td><td class="num">${buy}</td><td class="num">${sell}</td></tr>`;
+    }).join('');
+  return rows ? `<table><tr><th>Resource</th><th style="text-align:right">Buy @ ask</th><th style="text-align:right">Sell @ bid</th></tr>${rows}</table>` : '<div class="muted">No market data.</div>';
+}
+
+function renderBlocked(me) {
+  const hints = (me.decision_hints||[]).filter(h => h.tone==='blocked');
+  if (!hints.length) return '<div class="muted">Nothing blocking production.</div>';
+  return '<ul class="feed">' + hints.map(h =>
+    `<li class="blocked">⛔ ${esc(h.title)} — <span class="muted">${esc(h.why||'')}</span></li>`).join('') + '</ul>';
+}
+
+function renderNeeds(barter, meName) {
+  const needs = (barter && barter.needs || []).filter(n => n.player !== meName && (n.needs||[]).length);
+  if (!needs.length) return '<div class="muted">No outstanding needs.</div>';
+  return '<ul class="feed">' + needs.map(n =>
+    `<li><b>${esc(n.player)}</b> <span class="muted">[${esc(rolesText(n.roles))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
+}
+
+function render(state, me) {
+  $('hdr-phase').textContent = `· Year ${state.year ?? '?'} ${state.season ?? ''} · ${state.status||''}${state.paused?' · ⏸ PAUSED':''}`;
+  const inv = Object.entries(me.inventory || {}).filter(([,v])=>v)
+    .map(([k,v])=>`<span class="chip">${esc(k)} <b>${v}</b></span>`).join('') || '<span class="muted">empty</span>';
+  const log = (state.recent_log||[]).slice(-18).reverse()
+    .map(l=>`<li>${esc(l)}</li>`).join('') || '<li class="muted">No log yet.</li>';
+
+  $('view').innerHTML = `
+  <div class="grid">
+    <div class="card">
+      <h2>${esc(me.name)} — ${esc(rolesText(me.roles)||'no role')}</h2>
+      <div class="stat-row"><span>Net worth</span><span class="v big">${me.net_worth ?? '—'} Dp</span></div>
+      <div class="stat-row"><span>Treasury (island cash)</span><span class="v">${me.treasury ?? me.dollops ?? '—'} Dp</span></div>
+      <div class="stat-row"><span>Personal cash</span><span class="v">${me.personal_cash ?? '—'} Dp</span></div>
+      <div class="stat-row"><span>Wealth</span><span class="v">${me.wealth ?? '—'} Dp</span></div>
+      <div class="stat-row"><span>Workforce active/total</span><span class="v">${me.workforce_active ?? '?'} / ${me.workforce_count ?? '?'}</span></div>
+      <div class="stat-row"><span>Efficiency / capacity</span><span class="v">${me.workforce_efficiency ?? '?'}% / ${me.production_capacity ?? '?'}%</span></div>
+    </div>
+    <div class="card">
+      <h2>Inventory</h2>
+      <div class="inv">${inv}</div>
+      <h2 style="margin-top:.8rem">Blocking production</h2>
+      ${renderBlocked(me)}
+    </div>
+    <div class="card">
+      <h2>Market (buy @ ask / sell @ bid)</h2>
+      ${renderMarket(state.market)}
+    </div>
+    <div class="card">
+      <h2>Other islands need (trade openings)</h2>
+      ${renderNeeds(state.barter_market, me.name)}
+    </div>
+    <div class="card span2">
+      <h2>Recent activity</h2>
+      <ul class="feed">${log}</ul>
+    </div>
+  </div>`;
+}
+
+let roomId = null;  // resolved internal room id (from a code or used as-is)
+
+async function resolveRoomId(input) {
+  // Accept either an internal room id or a share code. Try the read-only
+  // by-code lookup first; if that 404s, the input is already a room id.
+  try {
+    const r = await fetch(
+      `${ORIGIN}/api/rooms/by-code/${encodeURIComponent(input.toUpperCase())}`,
+      { cache: 'no-store' });
+    if (r.ok) { return (await r.json()).room_id; }
+  } catch (_) {}
+  return input;
+}
+
+async function tick() {
+  if (!roomId) { roomId = await resolveRoomId($('in-room').value.trim()); }
+  try {
+    let state = await fetchState(roomId, playerId);
+    let me = findMe(state, playerId || playerWant);
+    // Resolve a name (or unknown id) to the real lobby_player_id, then refetch
+    // with it so the server includes that island's private inventory.
+    if (me && String(me.lobby_player_id) !== String(playerId)) {
+      playerId = me.lobby_player_id;
+      state = await fetchState(roomId, playerId);
+      me = findMe(state, playerId);
+    }
+    if (!me) {
+      const names = (state.players || []).map(p => p.name).join(', ');
+      setStatus(`player "${playerWant}" not found. In room: ${names || '(none)'}`, 'err');
+      return;
+    }
+    render(state, me);
+    setStatus(`updated ${new Date().toLocaleTimeString()}`, 'ok');
+  } catch (e) {
+    // 404 here means the room exists but has no game state yet (not started),
+    // or the room/code is wrong (resolveRoomId returned the raw input).
+    const msg = String(e.message).includes('404')
+      ? 'waiting for the game to start, or check the room id/code…'
+      : `waiting… (${e.message})`;
+    setStatus(msg, 'err');
+  }
+}
+
+function start() {
+  stop();
+  const room = $('in-room').value.trim();
+  playerWant = $('in-player').value.trim();
+  playerId = null;
+  roomId = null;
+  if (!room || !playerWant) { setStatus('enter a room id or code, and a player', 'err'); return; }
+  const secs = Math.max(1, parseInt($('in-interval').value, 10) || 3);
+  const url = new URL(window.location);
+  url.searchParams.set('room', room); url.searchParams.set('player', playerWant);
+  url.searchParams.set('interval', secs); history.replaceState(null,'',url);
+  setStatus('connecting…');
+  tick();
+  timer = setInterval(tick, secs*1000);
+}
+function stop(){ if (timer){ clearInterval(timer); timer=null; } setStatus('stopped'); }
+
+$('btn-watch').onclick = start;
+$('btn-stop').onclick = stop;
+
+// Prefill from query params and auto-start.
+(function init(){
+  const p = qs();
+  if (p.get('room')) $('in-room').value = p.get('room');
+  if (p.get('player')) $('in-player').value = p.get('player');
+  if (p.get('interval')) $('in-interval').value = p.get('interval');
+  if (p.get('room') && p.get('player')) start();
+})();
+</script>
+</body>
+</html>
