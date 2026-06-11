@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/final-demand-98-p3
+
+Version bump: `0.1.0-dev.2026-06-11.5`
+
+**AI revenue-opportunity advisory (#98).** Added a reusable
+`revenue_opportunities(...)` engine helper that ranks producible outputs by
+unit margin and live/structural demand, and reports required professions plus
+input stockpiles. The Manufacturer AI now uses this structural-demand signal
+when choosing a product line, so an AI Farmer's latent FarmMachinery need is
+visible even before a bid is posted. The same ranked advisory is exposed in
+the per-player server payload for dashboard and external agent clients.
+
+**Scope choice.** P3 consumer demand is intentionally deferred: it changes the
+economy rules and needs its own final-demand calibration pass. This branch is
+decision support/AI behavior only.
+
+**Verification.** Added regressions for the AI-Farmer/no-bid FarmMachinery
+case, hand-computed opportunity margin/stockpile math, and server payload
+shape. Full suite: 673 passed. Calibration sanity (`--games 1000 --seed 42`):
+Farmer 4.0%, Miner 19.3%, Transporter 23.9%, Educator 15.4%, Banker 14.9%,
+Manufacturer 5.5%, Doctor 17.0%; money supply closes at 4,955.5 Dp (-52.8%,
+-462.0 Dp/season). FarmMachinery traded volume nudges up to 1,651 (baseline
+1,641), while role balance stays effectively unchanged; an initial live-bid
+amplification attempt was backed out after it over-steered Miner.
+
 ### codex/economy-spread-payroll-82-83-current
 
 Version bump: `0.1.0-dev.2026-06-11.4`

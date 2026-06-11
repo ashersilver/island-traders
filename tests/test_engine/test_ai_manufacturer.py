@@ -3,12 +3,14 @@ from __future__ import annotations
 from island_traders.engine.ai import AIStrategy
 from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
+from island_traders.engine.revenue import revenue_opportunities
 from island_traders.engine.trading import TradingEngine
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
+from island_traders.constants import MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER
 
 
 def _player(pid: int, role: str, dollops: float = 500.0) -> Player:
@@ -31,9 +33,59 @@ def test_ai_manufacturer_chooses_a_feasible_line_without_demand():
 
     chosen = ai._choose_product_line(manufacturer, Market())
 
-    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
     assert chosen in MANUFACTURER_PRODUCT_LINES
     assert "Reagents" not in MANUFACTURER_PRODUCT_LINES
+
+
+def test_revenue_opportunities_rank_ai_farmer_structural_farm_machinery_demand():
+    manufacturer = _manufacturer()
+    farmer = _player(2, "Farmer")
+    market = Market()
+
+    opportunities = revenue_opportunities(
+        manufacturer, market, [manufacturer, farmer], "Spring"
+    )
+    farm = next(
+        opp for opp in opportunities
+        if opp["output"] == ResourceType.FARM_MACHINERY.value
+    )
+    line = MANUFACTURER_PRODUCT_LINES["FarmMachinery"]
+    expected_input_cost = round(
+        (
+            market.current_price(ResourceType.METAL) * line["inputs"]["Metal"]
+            + market.current_price(ResourceType.OIL) * line["inputs"]["Oil"]
+            + market.current_price(ResourceType.FREIGHT)
+                * line["freight_per_unit"]
+                * max(1, round(line["qty"] / PRODUCER_PRODUCTIVITY_MULTIPLIER))
+        ) / line["qty"],
+        2,
+    )
+
+    assert farm["structural_demand_units"] == 1
+    assert farm["live_bid_units"] == 0
+    assert farm["unit_price"] == market.market_maker_bid(ResourceType.FARM_MACHINERY)
+    assert farm["unit_input_cost"] == expected_input_cost
+    assert farm["inputs_to_stockpile"] == {
+        "Metal": 2,
+        "Oil": 1,
+        "Freight": 6,
+    }
+
+
+def test_ai_manufacturer_selects_farm_machinery_for_ai_farmer_without_bid():
+    ai = AIStrategy()
+    manufacturer = _manufacturer()
+    farmer = _player(2, "Farmer")
+    market = Market()
+
+    chosen = ai._choose_product_line(
+        manufacturer,
+        market,
+        [manufacturer, farmer],
+        season_name="Spring",
+    )
+
+    assert chosen == "FarmMachinery"
 
 
 def test_ai_manufacturer_sticky_when_scores_within_ten_percent(monkeypatch):
