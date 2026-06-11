@@ -3319,6 +3319,11 @@ class GameManager:
             "season": season_name,
             "season_index": season_index,
             "timer_seconds": secs,        # 0 = Ready-only mode
+            # Authoritative timing so clients sync their countdown to the server
+            # clock instead of starting it at message-receipt (avoids the "season
+            # ended before my countdown finished" desync).
+            "server_now": round(time.time(), 3),
+            "timer_end": round(room.season_timer_end, 3) if secs > 0 else 0,
             "active_humans": list(humans),
         })
 
@@ -3393,9 +3398,19 @@ class GameManager:
             "season": season_name,
         })
 
+    # Grace added to the server-side season countdown so the authoritative timer
+    # never fires *before* a client's visible countdown reaches 0. The client
+    # starts its countdown when it receives `season_start` (broadcast + network
+    # + render latency after the server starts its clock), so without this the
+    # season could resolve while players still see a few seconds left. The
+    # season_start payload also carries `server_now` + `timer_end` so clients can
+    # sync their display to the server clock; this grace covers the residual
+    # latency + the client's 250ms tick/rounding.
+    _SEASON_TIMER_GRACE_SECONDS: float = 1.5
+
     async def _season_timer(self, room_id: str, seconds: int) -> None:
-        """Sleep for the season window, then force-end any pending turns."""
-        await asyncio.sleep(seconds)
+        """Sleep for the season window (plus grace), then force-end pending turns."""
+        await asyncio.sleep(max(0.0, seconds) + self._SEASON_TIMER_GRACE_SECONDS)
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
             return
