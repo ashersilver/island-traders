@@ -78,6 +78,9 @@ class Market:
     # The server drains these and pushes them to clients so they can react
     # between full-state broadcasts (Issue #4).
     _event_log: list[dict] = field(default_factory=list)
+    # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
+    # simulation. None during normal play, so live games pay nothing.
+    telemetry: object | None = None
 
     def _emit_market_event(self, rtype: ResourceType, side: str, action: str,
                            price: float, quantity: int, actor: str) -> None:
@@ -132,6 +135,8 @@ class Market:
         buyer.receive_resources(rtype, qty)
         self.supply[rtype] = available - qty
         self.post_demand(rtype, qty)
+        if self.telemetry is not None:
+            self.telemetry.record_traded(rtype, qty)
         return total
 
     def execute_sell(self, seller: Player, rtype: ResourceType, qty: int) -> float:
@@ -140,6 +145,8 @@ class Market:
         total = price * qty
         seller.receive_dollops(total)
         self.post_supply(rtype, qty)
+        if self.telemetry is not None:
+            self.telemetry.record_traded(rtype, qty)
         return total
 
     def apply_price_shock(self, rtype: ResourceType, multiplier: float, duration_seasons: int) -> None:
@@ -289,6 +296,8 @@ class Market:
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(bid.resource, qty)
 
     def _auto_match_offer(self, offer: MarketOffer) -> None:
         """Cross a new ask against resting bids while the price covers them.
@@ -328,6 +337,8 @@ class Market:
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(offer.resource, qty)
 
     # Threshold for automatic execution of near-crossing orders (2026-05-28).
     # A spread of 2.5% or less is close enough to be auto-accepted, executing
@@ -377,6 +388,8 @@ class Market:
             seller.receive_dollops(cost)
             ask.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(rtype, qty)
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
         return sorted(
