@@ -126,6 +126,39 @@ def test_ai_places_bid_for_missing_required_inputs():
     assert bids[0].remaining >= 1
 
 
+def test_farmer_ai_packages_food_for_visible_human_demand():
+    ai = AIStrategy()
+    market = Market()
+    farmer = make_player(1, "Farmer AI", ["Farmer"], dollops=30.0)
+    buyer = make_player(2, "Human Buyer", ["Transporter"], dollops=500.0, is_human=True)
+    farmer.add_capital("farmer.industrial_kitchen")
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(
+        1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value
+    )
+    farmer.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    farmer.receive_resources(ResourceType.GRAIN, 3)
+    farmer.receive_resources(ResourceType.PRODUCE, 3)
+    farmer.receive_resources(ResourceType.FISH, 3)
+    market.post_bid(buyer, ResourceType.FOOD, 25.0, 3)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [farmer, buyer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert farmer.dollops == 105.0
+    assert any("produced" in action and "Food" in action for action in actions)
+
+
 def test_transporter_ai_lists_passenger_seats_after_production():
     ai = AIStrategy()
     market = Market()

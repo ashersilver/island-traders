@@ -5,6 +5,25 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/farmer-manufacturer-ai-29
+
+Version bump: `0.1.0-dev.2026-06-11.1`
+
+**Farmer / Manufacturer AI strategy gaps (#29).** Manufacturer AI now keeps the
+demand-scored product-line chooser on the human-demand path, weights live bids
+as immediate demand there, and treats Freight as a procurement need rather than
+a reason to avoid an otherwise viable Metal/Oil product line. Farmer AI now
+uses selected-output production for visible human Food/Meat demand when it has
+the matching capital and ingredients. Farmer reserve-listing heuristics were
+tested and deliberately left out after the simulation smoke showed they
+throttled the food basket.
+
+**Verification.** Added regressions for Farmer selected-output Food packaging
+and Manufacturer procurement of a visible human-demand line. Focused AI suite:
+23 tests passing. A 100-game seed-42 simulation smoke matches the #72 base
+balance profile, so this branch does not pre-empt the #73/#82/#83 measurement
+and rebalance sequence.
+
 ### claude/b1-b2-liveness-metrics-73
 
 Version bump: `0.1.0-dev.2026-06-10.7`

@@ -75,6 +75,43 @@ def test_ai_manufacturer_falls_back_to_best_feasible_line(monkeypatch):
     assert chosen == "MedicalDevices"
 
 
+def test_ai_manufacturer_procures_visible_human_demand_line(monkeypatch):
+    ai = AIStrategy()
+    manufacturer = _manufacturer(metal=0, oil=0)
+    manufacturer.dollops = 2000.0
+    market = Market()
+    miner = _player(2, "Miner")
+    miner.is_human = True
+    market.post_bid(miner, ResourceType.MINING_EQUIPMENT, 70.0, 5)
+
+    def demand_units(output):
+        return 0
+
+    monkeypatch.setattr(ai, "_manufacturer_demand_units", demand_units)
+
+    actions = ai.take_turn(
+        manufacturer,
+        market,
+        [manufacturer, miner, _player(3, "Doctor")],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    metal_bid = market.best_bid(ResourceType.METAL)
+    oil_bid = market.best_bid(ResourceType.OIL)
+    assert manufacturer.ai_product_line == "MiningEquipment"
+    assert manufacturer.ai_product_line_human_demand is True
+    assert metal_bid is not None
+    assert metal_bid.remaining == 6
+    assert oil_bid is not None
+    assert oil_bid.remaining == 4
+    assert any("Manufacturer idle" in action for action in actions)
+
+
 def test_ai_manufacturer_idle_path_when_no_line_can_be_produced():
     ai = AIStrategy()
     manufacturer = _manufacturer(metal=0, oil=0)

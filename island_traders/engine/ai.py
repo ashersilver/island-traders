@@ -402,13 +402,15 @@ class AIStrategy:
         training_registry=None,
     ) -> str:
         """Pick the Manufacturer product line with the strongest unmet demand."""
+        has_human_demand = False
         if demand_players is not None:
-            human_demand = self._has_human_equipment_demand(
+            has_human_demand = self._has_human_equipment_demand(
                 demand_players, training_registry=training_registry
             )
-            if not human_demand:
-                player.ai_product_line_human_demand = False
-                return self._choose_product_line_profit(player, market)
+        has_visible_bid = any(
+            market.best_bid(ResourceType(line["output"])) is not None
+            for line in MANUFACTURER_PRODUCT_LINES.values()
+        )
 
         current_line = getattr(
             player, "ai_product_line", next(iter(MANUFACTURER_PRODUCT_LINES))
@@ -421,8 +423,17 @@ class AIStrategy:
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
+        if (
+            demand_players is not None
+            and not has_human_demand
+        ):
+            player.ai_product_line_human_demand = False
+            return self._choose_product_line_profit(player, market)
         if not feasible:
-            return current_line
+            chosen = max(scores, key=lambda line_key: scores[line_key])
+            player.ai_product_line = chosen
+            player.ai_product_line_human_demand = has_human_demand
+            return chosen
         top_line = max(feasible, key=lambda line_key: scores[line_key])
         if (
             current_line in feasible
@@ -432,7 +443,7 @@ class AIStrategy:
         else:
             chosen = top_line
         player.ai_product_line = chosen
-        player.ai_product_line_human_demand = True
+        player.ai_product_line_human_demand = has_human_demand
         return chosen
 
     def _choose_product_line_profit(self, player: Player, market: Market) -> str:
@@ -543,7 +554,8 @@ class AIStrategy:
         unmet = max(0, demand_units - supply_units)
         bid = market.best_bid(output)
         bid_pull = bid.remaining if bid is not None else 0
-        return (current_price / base_price) * (unmet + bid_pull)
+        visible_bid_pull = bid_pull * PRODUCER_PRODUCTIVITY_MULTIPLIER
+        return (current_price / base_price) * (unmet + visible_bid_pull)
 
     def _manufacturer_demand_units(self, output: ResourceType) -> int:
         per_season = self._manufacturer_per_season_demand_units(output)
@@ -559,13 +571,10 @@ class AIStrategy:
 
     def _manufacturer_line_feasible(self, player: Player, line_key: str) -> bool:
         line = MANUFACTURER_PRODUCT_LINES[line_key]
-        if not all(
+        return all(
             player.inventory.get(ResourceType(resource)) >= qty
             for resource, qty in line["inputs"].items()
-        ):
-            return False
-        freight = self._manufacturer_freight_surcharge(line_key, line["qty"])
-        return player.inventory.get(ResourceType.FREIGHT) >= freight
+        )
 
     def _manufacturer_freight_surcharge(self, product_line: str | None, qty: int) -> int:
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
@@ -592,6 +601,33 @@ class AIStrategy:
                 if freight:
                     inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight
         return inputs
+
+    def _farmer_visible_human_demand_output(
+        self,
+        player: Player,
+        market: Market,
+        other_players: list[Player],
+        production_engine: ProductionEngine,
+        event_result: EventResult,
+        season_name: str,
+    ) -> tuple[ResourceType, int] | None:
+        if not any(role.name == "Farmer" for role in player.roles):
+            return None
+        humans = {candidate.player_id for candidate in other_players if candidate.is_human}
+        options = {
+            option["output"]: option
+            for option in production_engine.production_options(player, event_result, season_name)
+            if option["role"] == "Farmer"
+        }
+        for output in (ResourceType.FOOD, ResourceType.MEAT):
+            bid = market.best_bid(output)
+            option = options.get(output)
+            if bid is None or option is None or bid.buyer_id not in humans:
+                continue
+            qty = min(option["max_qty"], bid.remaining)
+            if qty > 0:
+                return output, qty
+        return None
 
     def _last_deal_price(self, trading_engine: TradingEngine, rtype: ResourceType) -> float | None:
         """Infer the latest cash/unit price from accepted one-resource deals."""
@@ -782,16 +818,28 @@ class AIStrategy:
 
         produced_totals: dict[ResourceType, int] = {}
         missing: dict[ResourceType, int] = {}
-        for _ in range(self.target_production_runs):
-            can, missing = production_engine.can_produce(
-                player, event_result, season_name, chosen_line
+        selected_farmer_output = self._farmer_visible_human_demand_output(
+            player, market, other_players, production_engine, event_result, season_name
+        )
+        if selected_farmer_output is not None:
+            output, qty = selected_farmer_output
+            produced = production_engine.produce_product(
+                player, event_result, season_name, "Farmer", output, qty
             )
-            if not can:
-                break
-            produced = production_engine.produce(player, event_result, season_name, chosen_line)
             if produced:
                 for rtype, qty in produced.items():
                     produced_totals[rtype] = produced_totals.get(rtype, 0) + qty
+        else:
+            for _ in range(self.target_production_runs):
+                can, missing = production_engine.can_produce(
+                    player, event_result, season_name, chosen_line
+                )
+                if not can:
+                    break
+                produced = production_engine.produce(player, event_result, season_name, chosen_line)
+                if produced:
+                    for rtype, qty in produced.items():
+                        produced_totals[rtype] = produced_totals.get(rtype, 0) + qty
         if produced_totals:
             if is_manufacturer:
                 supply_memory = getattr(player, "ai_equipment_supply_memory", {})
