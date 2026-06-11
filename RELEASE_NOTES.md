@@ -5,6 +5,24 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/money-supply-instrumentation-73
+
+Version bump: `0.1.0-dev.2026-06-10.6`
+
+**Money-supply instrumentation (P5 / #73).** The simulation runner and
+`GameSummary` now track total Dollops in circulation (every island treasury +
+investor personal cash) snapshotted once per season. The runner prints an
+opening/closing/net-mint summary and writes a `*_money.csv`; `GameSummary`
+exposes `money_supply` for the eventual game-over panel. This is the
+measurement-first step the economics review sequences before any
+faucet/sink tuning — "don't tune blind."
+
+**First finding:** over a standard 1000×3-year run the money supply *shrinks*
+~45% (≈10500 → ~5700 Dp, ~−400 Dp/season), i.e. the net flow is a **sink**, not
+the faucet hypothesised in D1 of `economics-review-2026-06-10.md`. The P1/P2
+calibration pass should treat this as the baseline. (B1/B2 per-resource
+produced/consumed/traded liveness metrics remain open under #73.)
+
 ### codex/banker-ai-lending-72
 
 Version bump: `0.1.0-dev.2026-06-10.5`

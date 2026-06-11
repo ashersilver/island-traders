@@ -61,6 +61,9 @@ class SimulationStats:
     num_years: int
     role_stats: dict[str, RoleStats]
     price_history_mean: dict[str, list[float]] = field(default_factory=dict)
+    # Mean total Dollops in circulation per snapshot, averaged across games.
+    # Index 0 is the opening balance; indices 1..N are end-of-season N.
+    money_supply_mean: list[float] = field(default_factory=list)
 
 
 class SimulationRunner:
@@ -83,6 +86,9 @@ class SimulationRunner:
         # Accumulate per-season price sums for averaging
         num_seasons = self.num_years * len(SEASONS)
         price_sums: dict[str, list[float]] = {r.value: [0.0] * num_seasons for r in ResourceType}
+        # Money supply has one opening snapshot + one per season.
+        money_sums: list[float] = [0.0] * (num_seasons + 1)
+        money_counts: list[int] = [0] * (num_seasons + 1)
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -122,6 +128,13 @@ class SimulationRunner:
             winner_role = summary.winner.roles[0].name
             stats[winner_role].wins += 1
 
+            # Accumulate money supply (per-game series may be shorter if a game
+            # ended early; only fold in the snapshots that exist).
+            for idx, value in enumerate(summary.money_supply):
+                if idx < len(money_sums):
+                    money_sums[idx] += value
+                    money_counts[idx] += 1
+
             # Accumulate prices
             for snap in summary.price_history:
                 season_idx = snap.year * len(SEASONS) + snap.season
@@ -134,11 +147,17 @@ class SimulationRunner:
         for r_val, sums in price_sums.items():
             price_means[r_val] = [round(s / self.num_games, 2) for s in sums]
 
+        money_means = [
+            round(s / c, 2) if c else 0.0
+            for s, c in zip(money_sums, money_counts)
+        ]
+
         return SimulationStats(
             num_games=self.num_games,
             num_years=self.num_years,
             role_stats=stats,
             price_history_mean=price_means,
+            money_supply_mean=money_means,
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -170,8 +189,17 @@ class SimulationRunner:
                 row = [i] + [stats.price_history_mean[r][i] for r in resources]
                 writer.writerow(row)
 
+        # Money supply per snapshot (index 0 = opening balance)
+        money_csv = p.parent / (p.stem + "_money.csv")
+        with open(money_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["snapshot_index", "mean_money_supply"])
+            for i, value in enumerate(stats.money_supply_mean):
+                writer.writerow([i, f"{value:.2f}"])
+
         print(f"Role stats  → {role_csv}")
         print(f"Price history → {price_csv}")
+        print(f"Money supply → {money_csv}")
 
 
 def _parse_seeds(raw: str) -> list[int]:
@@ -194,6 +222,19 @@ def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> 
             f"{rs.role_name:<16} {rs.wins:>6} "
             f"{rs.win_rate*100:>6.1f}% {rs.avg_wealth:>12.1f} Dp"
         )
+
+
+def _print_money_supply(stats: SimulationStats) -> None:
+    series = stats.money_supply_mean
+    if not series:
+        return
+    opening, closing = series[0], series[-1]
+    growth = ((closing / opening - 1) * 100) if opening else 0.0
+    print("\n--- Money Supply (mean Dollops in circulation) ---")
+    print(f"  Opening: {opening:>12.1f} Dp")
+    print(f"  Closing: {closing:>12.1f} Dp   ({growth:+.1f}% over the game)")
+    per_season = (closing - opening) / (len(series) - 1) if len(series) > 1 else 0.0
+    print(f"  Net mint/season: {per_season:>+9.1f} Dp")
 
 
 def _print_multi_seed_summary(seed_stats: list[tuple[int, SimulationStats]]) -> None:
@@ -240,6 +281,7 @@ def main() -> None:
             stats = runner.run()
             seed_stats.append((seed, stats))
             _print_role_balance(stats, title=f"Role Balance — seed {seed}")
+            _print_money_supply(stats)
             runner.export_csv(stats, f"{args.output}_seed_{seed}")
         _print_multi_seed_summary(seed_stats)
         return
@@ -253,6 +295,7 @@ def main() -> None:
     )
     stats = runner.run()
     _print_role_balance(stats)
+    _print_money_supply(stats)
     runner.export_csv(stats, args.output)
 
 

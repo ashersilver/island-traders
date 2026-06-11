@@ -40,6 +40,24 @@ def test_simulation_deterministic_with_same_seed():
         assert r1.role_stats[role].wins == r2.role_stats[role].wins
 
 
+def test_simulation_money_supply_has_opening_plus_one_per_season():
+    runner = SimulationRunner(num_games=4, num_years=2, seed=42)
+    stats = runner.run()
+    # Opening snapshot + one per season (2 years × 4 seasons).
+    assert len(stats.money_supply_mean) == 2 * 4 + 1
+
+
+def test_simulation_money_supply_opens_at_total_starting_dollops():
+    from island_traders.constants import STARTING_DOLLOPS
+
+    runner = SimulationRunner(num_games=3, num_years=1, seed=7)
+    stats = runner.run()
+    # All-AI game seats one player per role; opening circulation is the sum of
+    # every island's starting treasury.
+    expected = STARTING_DOLLOPS * len(stats.role_stats)
+    assert stats.money_supply_mean[0] == pytest.approx(expected)
+
+
 def test_parse_seeds_accepts_comma_separated_values():
     assert _parse_seeds("42, 1,7") == [42, 1, 7]
 
