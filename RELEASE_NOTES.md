@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/economy-spread-payroll-82-83-current
+
+Version bump: `0.1.0-dev.2026-06-11.4`
+
+**Formula-market spread/depth and payroll calibration pass (#82, #83).** The
+central formula market now quotes a bid/ask spread around the dynamic reference
+price and has finite per-resource, per-season buy/sell depth, so player-posted
+orders can compete with the infinite market maker instead of being undercut by
+frictionless liquidity. Formula-market stock is now separated from player
+asks, so a central-market buy cannot consume escrowed player inventory without
+paying the seller. Active home workers now draw per-season payroll by band
+(Worker, Technician, Manager), excluding trainees and contracted-away staff;
+shortfalls are logged without adding layoffs in this pass.
+
+**Verification.** Added focused regressions for market-maker bid/ask pricing,
+finite depth reset, player-ask isolation, payroll band charging, payroll
+exclusions, and payroll shortfalls. Full suite: 669 passed. Calibration sanity
+(`--games 1000 --seed 42`): Farmer 3.8%, Miner 19.4%, Transporter 23.6%,
+Educator 15.5%, Banker 15.1%, Manufacturer 5.8%, Doctor 16.8%. Mean money
+supply closes at 4,954.8 Dp from a 10,500.0 Dp opening (-52.8%, -462.1
+Dp/season), so the economy remains a net sink; the payroll bands were trimmed
+to 0.25/0.5/1.0 Dp after an initial smoke landed at -60.4%.
+
 ### claude/ui-tiled-log-disasters
 
 Version bump: `0.1.0-dev.2026-06-11.3`

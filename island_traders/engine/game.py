@@ -33,6 +33,7 @@ from ..constants import (
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
+    PAYROLL_WAGE_BY_BAND,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 
@@ -253,6 +254,43 @@ class Game:
         the formula market mints (sell) or burns (buy) cash."""
         return sum(p.dollops + p.personal_cash for p in self.players)
 
+    def _seasonal_payroll_due(self, player: Player) -> float:
+        return round(
+            sum(
+                PAYROLL_WAGE_BY_BAND.get(band_of(worker.profession).value, 0.0)
+                for worker in player.workforce.active_workers
+            ),
+            2,
+        )
+
+    def _process_payroll(self, year: int, season: int) -> None:
+        """Charge per-season wages for active home workers.
+
+        Payroll is a pure Dollops sink: active staff must be paid each season,
+        while trainees and contracted-away staff are excluded because they are
+        not available to the home island. Shortfalls are logged but do not add a
+        layoff/morale rule in this pass.
+        """
+        _ = (year, season)  # kept for log-hook symmetry with other processors
+        for player in self.players:
+            due = self._seasonal_payroll_due(player)
+            if due <= 0:
+                continue
+            paid = min(player.dollops, due)
+            player.dollops = round(player.dollops - paid, 2)
+            if paid >= due:
+                self.io.print(
+                    f"[PAYROLL] {player.name}: paid {CURRENCY_SYMBOL}{paid:.2f} "
+                    f"for active workforce wages."
+                )
+            else:
+                shortfall = round(due - paid, 2)
+                self.io.print(
+                    f"[PAYROLL SHORTFALL] {player.name}: paid "
+                    f"{CURRENCY_SYMBOL}{paid:.2f} of {CURRENCY_SYMBOL}{due:.2f}; "
+                    f"{CURRENCY_SYMBOL}{shortfall:.2f} unpaid."
+                )
+
     def run(self) -> GameSummary:
         # Opening balance, before any season runs (resumed games append from
         # wherever they left off — the series stays monotonic in season order).
@@ -265,6 +303,7 @@ class Game:
                 self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
+                self._process_payroll(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
                 )
