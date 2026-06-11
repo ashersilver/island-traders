@@ -3323,6 +3323,18 @@ class GameManager:
                     "outage": ev.outage,
                     "natural_disaster": ev.natural_disaster,
                     "description": ev.describe(),
+                    # Impact + duration for the disaster pop-up (UI #86-adjacent).
+                    "damage_seasons": ev.damage_seasons,
+                    "price_shock_resource": (
+                        ev.price_shock_resource.value
+                        if ev.price_shock_resource else None
+                    ),
+                    "price_shock_multiplier": ev.price_shock_multiplier,
+                    # A disruptive event is anything off-normal — drives whether
+                    # the client raises a modal.
+                    "disruptive": (
+                        ev.natural_disaster or ev.outage or ev.yield_modifier < 1.0
+                    ),
                 }
                 if ev.natural_disaster and not has_disaster:
                     has_disaster = True
