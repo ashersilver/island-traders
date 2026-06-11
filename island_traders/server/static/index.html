@@ -383,6 +383,18 @@ button:active{transform:scale(.97)}
 .stat.net-wealth .lbl{font-size:.76rem;color:var(--gold);font-weight:800;text-transform:uppercase}
 .stat.net-wealth .val{font-size:1.35rem;font-weight:900;color:var(--gold)}
 
+.wealth-breakdown{
+  margin:.1rem 0 .5rem;padding:.4rem .55rem;
+  border:1px solid rgba(231,192,93,.3);border-radius:var(--radius);
+  background:rgba(231,192,93,.05);font-size:.8rem;
+}
+.wealth-breakdown .wb-row{display:flex;justify-content:space-between;padding:.1rem 0}
+.wealth-breakdown .wb-row.wb-total{
+  border-top:1px solid rgba(231,192,93,.3);margin-top:.2rem;padding-top:.25rem;font-weight:800;color:var(--gold)
+}
+.wealth-breakdown .wb-pos{color:var(--text)}
+.wealth-breakdown .wb-neg{color:#d98a8a}
+
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
 .mkt-row .res{color:var(--text)}
 .mkt-row .price{color:var(--gold);font-weight:600}
@@ -989,7 +1001,8 @@ button:active{transform:scale(.97)}
               title="Buy public-float shares of your island at fair value (paid from personal cash)">Buy shares…</button>
           </span>
         </div>
-        <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" title="Liquidation value of the island (treasury + inventory + equipment − loans)">—</span></div>
+        <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" style="cursor:pointer" onclick="toggleWealthBreakdown()" title="Click for the full breakdown — why your island value is what it is">—</span></div>
+        <div id="s-wealth-breakdown" class="wealth-breakdown" style="display:none"></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
@@ -3201,6 +3214,39 @@ function handleMessage(msg) {
   }
 }
 
+// Net-worth breakdown panel (P7 / #86): decompose the island value into its
+// signed drivers so players can see why the score is what it is.
+const WEALTH_LABELS = {
+  treasury: 'Treasury (cash)',
+  inventory_value: 'Inventory',
+  capital_value: 'Equipment',
+  loans_receivable: 'Loans receivable',
+  bank_debt: 'Bank debt',
+  shareholder_debt: 'Shareholder loans',
+};
+function toggleWealthBreakdown(){
+  const el = document.getElementById('s-wealth-breakdown');
+  if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function renderWealthBreakdown(me){
+  const el = document.getElementById('s-wealth-breakdown');
+  if (!el) return;
+  const wb = me.wealth_breakdown;
+  if (!wb){ el.innerHTML = ''; return; }
+  let rows = '';
+  for (const k of Object.keys(WEALTH_LABELS)){
+    const v = wb[k];
+    if (!v) continue;
+    const cls = v < 0 ? 'wb-neg' : 'wb-pos';
+    const sign = v < 0 ? '−' : '+';
+    rows += `<div class="wb-row"><span>${WEALTH_LABELS[k]}</span>`
+          + `<span class="${cls}">${sign}${Math.abs(v)} Dp</span></div>`;
+  }
+  rows += `<div class="wb-row wb-total"><span>Island value (score)</span>`
+        + `<span>${me.wealth} Dp</span></div>`;
+  el.innerHTML = rows;
+}
+
 // ==================== GAME RENDERING ====================
 function renderGameState() {
   if (!gameState) return;
@@ -3243,6 +3289,7 @@ function renderGameState() {
   document.getElementById('s-dollops').textContent = (me.treasury ?? me.dollops) + ' Dp';
   document.getElementById('s-loans').textContent = (me.loans_outstanding || 0) + ' Dp';
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
+  renderWealthBreakdown(me);
   // --- Equity (Phase 2b) sidebar fields ---
   if (me.net_worth !== undefined)
     document.getElementById('s-networth').textContent = me.net_worth + ' Dp';

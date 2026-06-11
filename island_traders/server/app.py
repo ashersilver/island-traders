@@ -2683,6 +2683,15 @@ class GameManager:
                     p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick),
                     1,
                 ),
+                # Signed decomposition of the win-condition score (P7 / #86).
+                # Components sum to ``wealth``; lets the dashboard render a
+                # "why is my net worth X?" panel without re-deriving the math.
+                "wealth_breakdown": {
+                    k: round(v, 1)
+                    for k, v in p.wealth_breakdown(
+                        prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick
+                    )["components"].items()
+                },
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
