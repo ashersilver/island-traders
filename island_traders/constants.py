@@ -3,13 +3,28 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.0-dev.2026-06-11.1"
+APP_VERSION: str = "0.1.0-dev.2026-06-11.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
 CURRENCY_NAME   = "Dollop"   # singular
 CURRENCY_PLURAL = "Dollops"  # plural
 CURRENCY_SYMBOL = "Dp"       # display symbol
+
+# Central formula market-maker controls (P1, 2026-06-11).
+# `current_price` remains the fair reference; formula-market buys pay the ask
+# premium and formula-market sells receive the bid discount. Player order-book
+# trades keep their posted prices.
+MARKET_MAKER_SPREAD: float = 0.12
+MARKET_MAKER_DEPTH_PER_RESOURCE: int = 50
+
+# Per-season payroll by active-worker band (P2, 2026-06-11). Trainees and
+# contracted-away staff are not active at home and are excluded.
+PAYROLL_WAGE_BY_BAND: dict[str, float] = {
+    "Worker": 0.25,
+    "Technician": 0.5,
+    "Manager": 1.0,
+}
 
 STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
 TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
