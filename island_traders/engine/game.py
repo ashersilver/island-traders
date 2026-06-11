@@ -99,6 +99,12 @@ class GameSummary:
     final_rankings: list[tuple[Player, float]]
     deal_count: int
     price_history: list
+    # Total Dollops in circulation, snapshotted once per season (index 0 is the
+    # opening balance before any season runs).  Surfaced so calibration can see
+    # whether the economy inflates or starves as faucets/sinks change — the
+    # formula market mints/burns cash, so the money supply is otherwise
+    # unanchored.  See requirements/economics-review-2026-06-10.md (P5 / #73).
+    money_supply: list[float] = field(default_factory=list)
 
 
 class Game:
@@ -116,6 +122,8 @@ class Game:
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
+        # Per-season total Dollops in circulation; see GameSummary.money_supply.
+        self._money_supply_history: list[float] = []
 
     def setup(self) -> None:
         self.market = Market()
@@ -227,7 +235,18 @@ class Game:
             self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
+    def _total_money_supply(self) -> float:
+        """Total liquid Dollops in circulation: every island's operating
+        treasury plus every investor's personal cash.  Loans and trades only
+        move Dollops between these balances, so this is conserved except where
+        the formula market mints (sell) or burns (buy) cash."""
+        return sum(p.dollops + p.personal_cash for p in self.players)
+
     def run(self) -> GameSummary:
+        # Opening balance, before any season runs (resumed games append from
+        # wherever they left off — the series stays monotonic in season order).
+        if not self._money_supply_history:
+            self._money_supply_history.append(round(self._total_money_supply(), 2))
         for year in range(self._resume_year, self.config.num_years):
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
@@ -260,6 +279,9 @@ class Game:
                     except Exception:
                         pass
                 self._auto_save(year, season_index + 1)
+                self._money_supply_history.append(
+                    round(self._total_money_supply(), 2)
+                )
 
             prices = self.market.current_prices()
             year_end_tick = year * len(SEASONS) + (len(SEASONS) - 1)
@@ -457,6 +479,7 @@ class Game:
             final_rankings=rankings,
             deal_count=len(self.ledger.deals),
             price_history=self.market.price_history,
+            money_supply=list(self._money_supply_history),
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],
