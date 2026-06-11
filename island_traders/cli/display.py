@@ -51,13 +51,31 @@ class Display:
             )
 
         ws = player.workforce.summary()
+        breakdown = player.wealth_breakdown(
+            prices, loan_ledger, CAPITAL_CATALOGUE, current_tick
+        )
+        labels = {
+            "treasury": "Treasury",
+            "inventory_value": "Inventory",
+            "capital_value": "Capital",
+            "loans_receivable": "Loans receivable",
+            "bank_debt": "Bank debt",
+            "shareholder_debt": "Shareholder loans",
+        }
+        wealth_lines = "\n".join(
+            f"      {labels[k]:<18} {breakdown['components'][k]:>+10.1f} {sym}"
+            for k in labels
+            if breakdown["components"][k]
+        )
+        wealth_block = f"  Net Wealth   : {breakdown['total']:.2f} {sym}\n"
+        if wealth_lines:
+            wealth_block += wealth_lines + "\n"
         return (
             f"\n  Player       : {player.name}\n"
             f"  Role(s)      :\n" + "\n".join(role_lines) + "\n"
             f"  Dollops      : {player.dollops:.2f} {sym}\n"
-            f"  Net Wealth   : "
-            f"{player.total_wealth(prices, loan_ledger, CAPITAL_CATALOGUE, current_tick):.2f} {sym}\n"
-            f"  Capacity     : {player.production_capacity*100:.0f}%\n"
+            + wealth_block
+            + f"  Capacity     : {player.production_capacity*100:.0f}%\n"
             f"  Workforce    : {ws['active']}/{ws['total']} workers  "
             f"(eff {ws['avg_efficiency_pct']}%)\n"
             f"  Inventory:\n{inv_str}"
