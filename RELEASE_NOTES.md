@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.1 — 2026-06-11
+
+First point release since `0.1.0`. Rolls up ~2 weeks of `pre-release` work into
+`master`. Highlights: science professions + reagent gating, engineer
+specialisation, the economy-mechanism layer (market-maker spread/depth + payroll
++ AI revenue-opportunity advisory), money-supply + supply-chain liveness
+instrumentation, the net-worth breakdown panel, a modular/hideable/filterable
+dashboard with disaster pop-ups, multi-role LLM agents, and Banker/Farmer/
+Manufacturer AI improvements.
+
+**Known issue — economy balance is mid-rebalance (P3 pending).** The mechanism
+layer (P1/P2/#98) is in, but the demand-side pass (P3/#84) is deferred: the money
+supply still contracts over a game and Farmer/Manufacturer win rates remain low.
+Tracked for the next cycle.
+
 ### codex/final-demand-98-p3
 
 Version bump: `0.1.0-dev.2026-06-11.5`
