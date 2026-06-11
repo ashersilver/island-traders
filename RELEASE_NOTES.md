@@ -5,6 +5,36 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/b1-b2-liveness-metrics-73
+
+Version bump: `0.1.0-dev.2026-06-10.7`
+
+**Dynamic supply-chain liveness metrics (B1/B2, #73 — completes the issue).**
+A new `ResourceFlowTelemetry` (`engine/telemetry.py`) records, per resource:
+units **produced**, **consumed** (production + kitchen inputs), and **traded**
+(formula market, order-book fills, and peer deals), plus an input-**starvation**
+count (production attempts that stalled on a missing input). It is attached to
+the Market + ProductionEngine in `Game.setup()` and surfaced on
+`GameSummary.resource_flow`; the simulation runner aggregates across games,
+prints a liveness table (flagging resources that are consumed/traded but never
+produced, and the worst starvations), and writes a `*_flows.csv`. Default
+`None` everywhere, so live play and direct-construction unit tests pay nothing.
+Note: "consumed" is intermediate/producer demand only — population sustenance is
+a separate sink and is *not* counted here.
+
+**Findings (`--games 1000 --seed 42`):**
+- **The trading game barely trades.** Primary commodities are produced in bulk
+  but almost never change hands: Grain 243k produced / **0 traded**, Produce
+  186k / 0, Fish 137k / 0; the highest traded item is Freight at 3.2k vs 169k
+  produced. The dominant AI strategy is autarkic self-production with output
+  hoarded as inventory wealth.
+- **End products are economically inert** (produced, never consumed *or* traded):
+  Finance 146k, HealthServices 118k, PassengerSeats 56k, Courses 45k, Vaccine
+  27k — all with 0 consumed / 0 traded. Empirical confirmation of review D3
+  (no final demand) and motivation for P1 (spread/depth → peer trade) and P3.
+- **Zero input starvation across all resources** — supply chains are live; the
+  original Reagents-style "producible but never produced" gap is closed.
+
 ### claude/money-supply-instrumentation-73
 
 Version bump: `0.1.0-dev.2026-06-10.6`

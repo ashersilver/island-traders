@@ -64,6 +64,13 @@ class SimulationStats:
     # Mean total Dollops in circulation per snapshot, averaged across games.
     # Index 0 is the opening balance; indices 1..N are end-of-season N.
     money_supply_mean: list[float] = field(default_factory=list)
+    # Dynamic supply-chain liveness (B1/B2, #73): total volumes summed across
+    # all games, keyed by resource name.  `flow_starvation` counts production
+    # attempts that stalled on a missing input.
+    flow_produced: dict[str, float] = field(default_factory=dict)
+    flow_consumed: dict[str, float] = field(default_factory=dict)
+    flow_traded: dict[str, float] = field(default_factory=dict)
+    flow_starvation: dict[str, int] = field(default_factory=dict)
 
 
 class SimulationRunner:
@@ -89,6 +96,11 @@ class SimulationRunner:
         # Money supply has one opening snapshot + one per season.
         money_sums: list[float] = [0.0] * (num_seasons + 1)
         money_counts: list[int] = [0] * (num_seasons + 1)
+        # Supply-chain liveness, summed across all games.
+        flow_produced: dict[str, float] = {}
+        flow_consumed: dict[str, float] = {}
+        flow_traded: dict[str, float] = {}
+        flow_starvation: dict[str, int] = {}
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -135,6 +147,18 @@ class SimulationRunner:
                     money_sums[idx] += value
                     money_counts[idx] += 1
 
+            # Accumulate supply-chain liveness counters.
+            flow = summary.resource_flow
+            if flow is not None:
+                for dst, src in (
+                    (flow_produced, flow.produced),
+                    (flow_consumed, flow.consumed),
+                    (flow_traded, flow.traded),
+                    (flow_starvation, flow.starvation),
+                ):
+                    for name, value in src.items():
+                        dst[name] = dst.get(name, 0) + value
+
             # Accumulate prices
             for snap in summary.price_history:
                 season_idx = snap.year * len(SEASONS) + snap.season
@@ -158,6 +182,10 @@ class SimulationRunner:
             role_stats=stats,
             price_history_mean=price_means,
             money_supply_mean=money_means,
+            flow_produced=flow_produced,
+            flow_consumed=flow_consumed,
+            flow_traded=flow_traded,
+            flow_starvation=flow_starvation,
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -197,9 +225,30 @@ class SimulationRunner:
             for i, value in enumerate(stats.money_supply_mean):
                 writer.writerow([i, f"{value:.2f}"])
 
+        # Supply-chain liveness per resource (B1/B2, #73)
+        flow_csv = p.parent / (p.stem + "_flows.csv")
+        resources = sorted(
+            set(stats.flow_produced)
+            | set(stats.flow_consumed)
+            | set(stats.flow_traded)
+            | set(stats.flow_starvation)
+        )
+        with open(flow_csv, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["resource", "produced", "consumed", "traded", "starvation_events"])
+            for r in resources:
+                writer.writerow([
+                    r,
+                    f"{stats.flow_produced.get(r, 0):.0f}",
+                    f"{stats.flow_consumed.get(r, 0):.0f}",
+                    f"{stats.flow_traded.get(r, 0):.0f}",
+                    stats.flow_starvation.get(r, 0),
+                ])
+
         print(f"Role stats  → {role_csv}")
         print(f"Price history → {price_csv}")
         print(f"Money supply → {money_csv}")
+        print(f"Resource flows → {flow_csv}")
 
 
 def _parse_seeds(raw: str) -> list[int]:
@@ -235,6 +284,37 @@ def _print_money_supply(stats: SimulationStats) -> None:
     print(f"  Closing: {closing:>12.1f} Dp   ({growth:+.1f}% over the game)")
     per_season = (closing - opening) / (len(series) - 1) if len(series) > 1 else 0.0
     print(f"  Net mint/season: {per_season:>+9.1f} Dp")
+
+
+def _print_resource_flows(stats: SimulationStats) -> None:
+    if not (stats.flow_produced or stats.flow_consumed or stats.flow_traded):
+        return
+    print("\n--- Supply-Chain Liveness (totals across all games) ---")
+    resources = sorted(
+        set(stats.flow_produced) | set(stats.flow_consumed) | set(stats.flow_traded)
+    )
+    print(f"{'Resource':<18}{'Produced':>12}{'Consumed':>12}{'Traded':>12}")
+    for r in resources:
+        print(
+            f"{r:<18}"
+            f"{stats.flow_produced.get(r, 0):>12,.0f}"
+            f"{stats.flow_consumed.get(r, 0):>12,.0f}"
+            f"{stats.flow_traded.get(r, 0):>12,.0f}"
+        )
+    # Flag the things calibration cares about: resources that are consumed or
+    # traded but never produced (a dead supply chain), and the worst input
+    # starvations.
+    never_produced = sorted(
+        r for r in (set(stats.flow_consumed) | set(stats.flow_traded))
+        if stats.flow_produced.get(r, 0) == 0
+    )
+    if never_produced:
+        print(f"  ⚠ consumed/traded but NEVER produced: {', '.join(never_produced)}")
+    if stats.flow_starvation:
+        top = sorted(stats.flow_starvation.items(), key=lambda kv: -kv[1])[:5]
+        print("  ⚠ top input starvations (producer stalled on missing input):")
+        for name, count in top:
+            print(f"      {name}: {count:,} events")
 
 
 def _print_multi_seed_summary(seed_stats: list[tuple[int, SimulationStats]]) -> None:
@@ -282,6 +362,7 @@ def main() -> None:
             seed_stats.append((seed, stats))
             _print_role_balance(stats, title=f"Role Balance — seed {seed}")
             _print_money_supply(stats)
+            _print_resource_flows(stats)
             runner.export_csv(stats, f"{args.output}_seed_{seed}")
         _print_multi_seed_summary(seed_stats)
         return
@@ -296,6 +377,7 @@ def main() -> None:
     stats = runner.run()
     _print_role_balance(stats)
     _print_money_supply(stats)
+    _print_resource_flows(stats)
     runner.export_csv(stats, args.output)
 
 

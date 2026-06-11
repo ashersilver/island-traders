@@ -18,6 +18,7 @@ from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.telemetry import ResourceFlowTelemetry
 from ..engine.turn import TurnManager
 from ..engine.engineering import effective_capital_service_life
 from ..constants import (
@@ -105,6 +106,9 @@ class GameSummary:
     # formula market mints/burns cash, so the money supply is otherwise
     # unanchored.  See requirements/economics-review-2026-06-10.md (P5 / #73).
     money_supply: list[float] = field(default_factory=list)
+    # Dynamic supply-chain liveness (B1/B2, #73): a ResourceFlowTelemetry with
+    # per-resource produced/consumed/traded volumes and input-starvation counts.
+    resource_flow: "ResourceFlowTelemetry | None" = None
 
 
 class Game:
@@ -124,6 +128,9 @@ class Game:
         self._resume_season: int = 0
         # Per-season total Dollops in circulation; see GameSummary.money_supply.
         self._money_supply_history: list[float] = []
+        # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
+        # market + production engine in setup().
+        self.resource_flow = ResourceFlowTelemetry()
 
     def setup(self) -> None:
         self.market = Market()
@@ -230,6 +237,10 @@ class Game:
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
         trading = TradingEngine(self.market, self.ledger)
+        # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
+        # market + production engine so the simulation runner can read it.
+        self.market.telemetry = self.resource_flow
+        production.telemetry = self.resource_flow
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
@@ -480,6 +491,7 @@ class Game:
             deal_count=len(self.ledger.deals),
             price_history=self.market.price_history,
             money_supply=list(self._money_supply_history),
+            resource_flow=self.resource_flow,
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],

@@ -48,6 +48,10 @@ class InsufficientInputsError(Exception):
 
 
 class ProductionEngine:
+    # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
+    # simulation.  None during normal play and in direct unit-test construction.
+    telemetry: object | None = None
+
     def _has_active_profession(self, player: Player, profession: str) -> bool:
         return any(w.profession == profession for w in player.workforce.active_workers)
 
@@ -154,6 +158,14 @@ class ProductionEngine:
         if second_used:
             player.give_resources(second, second_used)
         player.receive_resources(ResourceType.FOOD, food_qty)
+        if self.telemetry is not None:
+            self.telemetry.record_consumed(ResourceType.GRAIN, grain_needed)
+            self.telemetry.record_consumed(ResourceType.PRODUCE, produce_needed)
+            if first_used:
+                self.telemetry.record_consumed(first, first_used)
+            if second_used:
+                self.telemetry.record_consumed(second, second_used)
+            self.telemetry.record_produced(ResourceType.FOOD, food_qty)
         return food_qty, ""
 
     def _adjust_recipe_for_player(
@@ -448,10 +460,15 @@ class ProductionEngine:
         inputs = self._all_inputs(player, season_name, product_line)
         missing = {r: qty for r, qty in inputs.items() if player.inventory.get(r) < qty}
         if missing:
+            if self.telemetry is not None:
+                for r in missing:
+                    self.telemetry.record_starvation(r)
             raise InsufficientInputsError(player.role_names(), missing)
 
         for r, qty in inputs.items():
             player.give_resources(r, qty)
+            if self.telemetry is not None:
+                self.telemetry.record_consumed(r, qty)
 
         workforce_factor = self._labour_productivity_factor(player, season_name, product_line)
         effective_factor = max(player.production_capacity, workforce_factor)
@@ -465,6 +482,8 @@ class ProductionEngine:
             )
             for r, qty in output_inputs.items():
                 player.give_resources(r, qty)
+                if self.telemetry is not None:
+                    self.telemetry.record_consumed(r, qty)
             for r, base_qty in role_outputs.items():
                 if r in skipped_outputs:
                     continue
@@ -481,6 +500,8 @@ class ProductionEngine:
                         # If not enough freight, ship anyway (partial loss already modelled by can_produce check)
                     player.receive_resources(r, qty)
                     produced[r] = produced.get(r, 0) + qty
+                    if self.telemetry is not None:
+                        self.telemetry.record_produced(r, qty)
 
         player.workforce.apply_season_work()
         return produced
@@ -841,10 +862,17 @@ class ProductionEngine:
             if player.inventory.get(r) < amount
         }
         if missing:
+            if self.telemetry is not None:
+                for r in missing:
+                    self.telemetry.record_starvation(r)
             raise InsufficientInputsError(role_name, missing)
 
         for r, amount in inputs.items():
             player.give_resources(r, amount)
+            if self.telemetry is not None:
+                self.telemetry.record_consumed(r, amount)
         player.receive_resources(output, qty)
+        if self.telemetry is not None:
+            self.telemetry.record_produced(output, qty)
         player.workforce.apply_season_work()
         return {output: qty}
