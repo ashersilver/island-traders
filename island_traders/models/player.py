@@ -573,18 +573,46 @@ class Player:
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
 
+    def wealth_breakdown(self, prices: dict[ResourceType, float],
+                         loan_ledger=None, capital_catalogue=None,
+                         current_tick: int = 0) -> dict:
+        """Decompose the win-condition score into its labelled drivers.
+
+        The ``components`` are signed (liabilities negative) and sum to exactly
+        ``total`` — ``total_wealth`` is implemented in terms of this so the panel
+        and the score can never disagree (P7 / #86).  This is the *island
+        liquidation* total; investor wealth (personal cash + equity holdings) is
+        a separate balance sheet — see ``net_worth``.
+        """
+        treasury = self.dollops
+        inventory_value = self.inventory.total_value(prices)
+        capital_value = self.capital_book_value(capital_catalogue, current_tick)
+        bank_debt = (
+            loan_ledger.outstanding_debt(self.player_id) if loan_ledger else 0.0
+        )
+        loans_receivable = (
+            loan_ledger.loans_receivable(self.player_id) if loan_ledger else 0.0
+        )
+        shareholder_debt = sum(self.shareholder_loans.values())
+        # Unrounded so the signed components sum to exactly ``total`` (and to the
+        # prior total_wealth value); presentation layers round for display.
+        components = {
+            "treasury": treasury,
+            "inventory_value": inventory_value,
+            "capital_value": capital_value,
+            "loans_receivable": loans_receivable,
+            "bank_debt": -bank_debt,
+            "shareholder_debt": -shareholder_debt,
+        }
+        total = sum(components.values())
+        return {"components": components, "total": total}
+
     def total_wealth(self, prices: dict[ResourceType, float],
                      loan_ledger=None, capital_catalogue=None,
                      current_tick: int = 0) -> float:
-        assets = self.dollops + self.inventory.total_value(prices)
-        assets += self.capital_book_value(capital_catalogue, current_tick)
-        if loan_ledger:
-            assets -= loan_ledger.outstanding_debt(self.player_id)
-            assets += loan_ledger.loans_receivable(self.player_id)
-        # Shareholder loans the island owes back to its investors are a senior
-        # liability against the island's liquidation value (Phase 2b).
-        assets -= sum(self.shareholder_loans.values())
-        return assets
+        return self.wealth_breakdown(
+            prices, loan_ledger, capital_catalogue, current_tick
+        )["total"]
 
     def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:
         if not capital_catalogue:

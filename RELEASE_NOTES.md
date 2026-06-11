@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/economy-spread-payroll-82-83-current
 
-Version bump: `0.1.0-dev.2026-06-11.2`
+Version bump: `0.1.0-dev.2026-06-11.4`
 
 **Formula-market spread/depth and payroll calibration pass (#82, #83).** The
 central formula market now quotes a bid/ask spread around the dynamic reference
@@ -27,6 +27,41 @@ Educator 15.5%, Banker 15.1%, Manufacturer 5.8%, Doctor 16.8%. Mean money
 supply closes at 4,954.8 Dp from a 10,500.0 Dp opening (-52.8%, -462.1
 Dp/season), so the economy remains a net sink; the payroll bands were trimmed
 to 0.25/0.5/1.0 Dp after an initial smoke landed at -60.4%.
+
+### claude/ui-tiled-log-disasters
+
+Version bump: `0.1.0-dev.2026-06-11.3`
+
+**Modular layout, log filtering, and disaster pop-ups.** The dashboard is now
+customisable without a full re-tiling:
+
+- **Hide/collapse panels + presets.** A new **▦ Layout** header menu hides the
+  left sidebar, right info column, and/or the game log, with four presets (Full,
+  Hide log, Trader, Focus). The chosen layout persists per browser
+  (`localStorage`).
+- **Game log: hideable + filterable.** The log can be hidden entirely, and a
+  filter bar (All / My island / Trades / Events / Training) shows only the lines
+  in a category. Categories are derived per line; "My island" reuses the
+  existing relevance highlight. Filter choice persists.
+- **Disaster pop-ups.** Droughts, floods, outages, and other disruptive events
+  now raise a modal describing the **problem** (event name), the **impact**
+  (yield %, outage, any price shock), and the **duration** (damage seasons), with
+  a "don't pop these up" opt-out. The `season_events` payload now carries
+  `damage_seasons`, `price_shock_resource/multiplier`, and a `disruptive` flag.
+
+### claude/p7-net-worth-panel-86
+
+Version bump: `0.1.0-dev.2026-06-11.2`
+
+**Net-worth breakdown panel (P7 / #86).** New `Player.wealth_breakdown()`
+decomposes the win-condition score into signed drivers — treasury, inventory,
+equipment (capital book value), loans receivable, bank debt, shareholder loans
+— that sum to exactly `total_wealth()` (now implemented in terms of it, so the
+panel and the score can never disagree). Surfaced three ways: a `wealth_breakdown`
+object in the server player payload; a click-to-expand breakdown under "Island
+Value" in the dashboard (`static/index.html`); and a decomposed "Net Wealth"
+block in the CLI player summary. Reporting only — no scoring changes — so it is
+independent of the P1/P2/P3 economy rebalance.
 
 ### codex/farmer-manufacturer-ai-29
 
