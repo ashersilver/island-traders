@@ -4180,7 +4180,17 @@ function onSeasonStart(msg) {
   seasonDoneSet = new Set();
   imReady = false;
   const secs = +msg.timer_seconds || 0;
-  seasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+  // Prefer the server's authoritative end time: translate `timer_end` (server
+  // epoch seconds) into client-clock ms using the server/client offset measured
+  // from `server_now`. This keeps the displayed countdown aligned with the
+  // server's real deadline instead of starting fresh at message-receipt (which
+  // drifted later than the server and made seasons appear to "end early").
+  if (secs > 0 && msg.timer_end && msg.server_now) {
+    const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
+    seasonTimerEnd = msg.timer_end * 1000 + offsetMs;
+  } else {
+    seasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+  }
 
   const box = document.getElementById('season-timer-box');
   const btn = document.getElementById('ready-btn');

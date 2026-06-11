@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/fix-season-countdown-desync
+
+Version bump: `0.1.2-dev.2026-06-11.2`
+
+**Fix: season ending before the on-screen countdown finished.** The authoritative
+season timer started when the server *broadcast* `season_start`, but each client
+started its countdown when it *received* that message — so the server's deadline
+fell a little before the client's visible 0 (worse on a throttled/background
+tab), making timed seasons appear to end early. Two changes: (1) `season_start`
+now carries `server_now` + `timer_end`, and the client syncs its countdown to the
+server clock instead of starting fresh at message-receipt; (2) the server adds a
+small grace (`_SEASON_TIMER_GRACE_SECONDS = 1.5`) so the authoritative timer
+never fires before a client's countdown reaches 0. Ready-only seasons and the
+pause/resume timer bump are unaffected.
+
 ## 0.1.1 — 2026-06-11
 
 First point release since `0.1.0`. Rolls up ~2 weeks of `pre-release` work into
