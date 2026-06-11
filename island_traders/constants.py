@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.2-dev.2026-06-11.2"
+APP_VERSION: str = "0.1.2-dev.2026-06-11.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -91,7 +91,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # for the full institutional-cash-pool model (future implementation).
     "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
     # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
-    "Manufacturer":  {"FarmMachinery": 2,                             # to sell
+    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4,                 # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
@@ -116,8 +116,8 @@ BASE_PRICES: dict[str, float] = {
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
     "Goods":               30.0,
-    "HealthServices":      18.0,   # was 31.5; Doctor/Educator value gap reduction
-    "Vaccine":             22.0,   # was 36.75; same
+    "HealthServices":      24.0,   # P3 demand restores some clinical pricing power
+    "Vaccine":             28.0,   # P3 demand restores some preventive-care pricing
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
@@ -247,6 +247,15 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 2,   # large steel frames; shipped on flatbeds
         "desc":             "Tractors & Farm Machinery",
     },
+    "Goods": {
+        "inputs":           {"Metal": 1, "Oil": 1},
+        "output":           "Goods",
+        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "skilled":          2,
+        "unskilled":        2,
+        "freight_per_unit": 1,
+        "desc":             "Consumer Goods",
+    },
     "MiningEquipment": {
         "inputs":           {"Metal": 3, "Oil": 2},
         "output":           "MiningEquipment",
@@ -277,6 +286,21 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 0,   # self-propelled / delivered under own power
         "desc":             "Transportation Equipment",
     },
+}
+
+# P3 consumer demand loop. Payroll accumulates in Player.household_cash; these
+# constants convert resident cash into funded end-product purchases.
+CONSUMER_GOODS_BASE_UNITS_PER_100_POP: int = 1
+CONSUMER_GOODS_WEALTH_STEP_DOLLOPS: float = 1200.0
+CONSUMER_GOODS_WEALTH_STEP_UNITS: int = 1
+CONSUMER_STRUCTURAL_ADVISORY_WEIGHT: float = 0.4
+CONSUMER_HEALTH_BASE_SEASONAL_UNITS: dict[str, int] = {
+    "Summer": 1,
+    "Winter": 1,
+}
+CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
+CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
+    "Autumn": 1,
 }
 
 # How strongly prices respond to supply/demand imbalance

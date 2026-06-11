@@ -21,8 +21,9 @@ def test_payroll_charges_active_workers_by_band():
     game._process_payroll(0, 0)
 
     assert player.dollops == 18.25
+    assert player.household_cash == 1.75
     assert game.io.printed == [
-        "[PAYROLL] Payroll Island: paid Dp1.75 for active workforce wages."
+        "[PAYROLL] Payroll Island: paid Dp1.75 to household wages."
     ]
 
 
@@ -39,6 +40,7 @@ def test_payroll_excludes_trainees_and_contracted_staff():
     game._process_payroll(0, 0)
 
     assert player.dollops == 19.75
+    assert player.household_cash == 0.25
 
 
 def test_payroll_shortfall_pays_available_cash_without_removing_workers():
@@ -49,6 +51,7 @@ def test_payroll_shortfall_pays_available_cash_without_removing_workers():
     game._process_payroll(0, 0)
 
     assert player.dollops == 0.0
+    assert player.household_cash == 0.5
     assert player.workforce.count == 1
     assert game.io.printed == [
         "[PAYROLL SHORTFALL] Broke Island: paid Dp0.50 of Dp1.00; Dp0.50 unpaid."

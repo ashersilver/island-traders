@@ -5,6 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/p3-consumer-demand-84
+
+Version bump: `0.1.2-dev.2026-06-11.4`
+
+**Economy P3: household cash and funded end-product demand.** Payroll now moves
+from island treasury into a per-island household cash pool instead of vanishing;
+households spend that cash on Goods, HealthServices, and Vaccine from producer
+offers, with unmet demand posted before producer turns so AI sellers can react.
+Household cash is counted in money supply and island wealth, and the dashboard
+surfaces it in the player payload and wealth breakdown. Manufacturer now has a
+Goods product line and a small opening Goods stock, while Healthcare end-product
+prices were nudged upward for the new funded-demand market. Calibration sanity
+check: 1000 games at seed 42 closed at 5,739.3 Dp (-45.3%, improved from the
+prior -52.8% baseline) with Goods (569), HealthServices (23,619), and Vaccine
+(5,492) traded off zero; Farmer remains a known low-win-rate follow-up for the
+next rebalance pass.
+
 ### claude/fix-season-countdown-desync
 
 Version bump: `0.1.2-dev.2026-06-11.2`

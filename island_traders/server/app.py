@@ -2661,6 +2661,7 @@ class GameManager:
                 # --- Equity (Phase 2b): two balance sheets + ownership ---
                 "treasury": round(p.dollops, 1),          # island operating cash (alias of dollops)
                 "personal_cash": round(p.personal_cash, 1),  # investor wallet
+                "household_cash": round(p.household_cash, 1),
                 "net_worth": round(
                     p.net_worth(
                         share_price_by_island,
