@@ -5,6 +5,37 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/unissued-recap-ai-financing-106
+
+Version bump: `0.1.2-dev.2026-06-11.3`
+
+**Unissued-share recapitalization + AI cash-shortfall financing (PR #106
+brief).** The 40% reserve equity is now modeled and displayed as authorized
+but unissued shares, not externally held public float. Buying those shares is
+now a primary issuance: investor personal cash decreases, island treasury cash
+increases by the same amount, and the cap table/holdings issue the shares to
+the owner. Legacy saves with `"public"` cap-table entries migrate to
+`"unissued"` on load.
+
+**AI financing.** Cash-short AI islands now proactively finance operating needs:
+they first try a bounded borrower-initiated bank loan from an available Banker
+(AI or human), then recapitalize by issuing unissued shares if the owner has
+personal cash above reserve. Only after both paths fail do they stay stalled.
+
+**Note.** The brief requested both primary issuance and near-neutral owner net
+worth. Those are not exactly compatible when an owner moves from 60% to a larger
+stake while injecting cash into their own island; the implementation preserves
+the maintainer's primary-issuance rule and asserts money-supply neutrality
+instead.
+
+**Verification.** Added regressions for unissued-share issuance, legacy cap-table
+migration, payload relabeling, borrower-initiated AI loans, and AI
+recapitalization. Full suite: 677 passed. Calibration sanity
+(`--games 1000 --seed 42`): Farmer 4.0%, Miner 19.3%, Transporter 23.9%,
+Educator 15.4%, Banker 14.9%, Manufacturer 5.5%, Doctor 17.0%; money supply
+closes at 4,955.9 Dp (-52.8%, -462.0 Dp/season), effectively unchanged because
+standard sim players do not start with spare personal cash for recapitalization.
+
 ### claude/fix-season-countdown-desync
 
 Version bump: `0.1.2-dev.2026-06-11.2`
