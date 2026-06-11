@@ -1,4 +1,5 @@
 from __future__ import annotations
+from math import ceil
 from ..models.player import Player
 from ..models.market import Market
 from ..models.resource import ResourceType
@@ -10,6 +11,7 @@ from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
+from ..models.equity import UNISSUED_HOLDER, fair_value, share_price
 from ..constants import (
     BASE_PRICES, MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     PRODUCTION_INPUTS,
@@ -28,6 +30,7 @@ AI_DEBT_CEILING_MULTIPLIER = 2.0
 AI_WORKING_CAPITAL_LOAN_FRACTION = 0.12
 AI_DEBT_CEILING_WEALTH_FRACTION = 0.35
 AI_MAX_WORKING_CAPITAL_LOAN = 250.0
+AI_PERSONAL_CASH_RESERVE = 100.0
 AI_EQUIPMENT_INPUT_RUNS = 5
 AI_EQUIPMENT_INPUTS = {
     ResourceType.FARM_MACHINERY,
@@ -153,6 +156,17 @@ class AIStrategy:
                 return candidate
         return None
 
+    def _candidate_bankers(
+        self,
+        players: list[Player],
+        exclude_player_id: int | None = None,
+    ) -> list[Player]:
+        return [
+            candidate for candidate in players
+            if candidate.player_id != exclude_player_id
+            and any(role.name == "Banker" for role in candidate.roles)
+        ]
+
     def _ai_issue_loan(
         self,
         banker: Player,
@@ -262,28 +276,75 @@ class AIStrategy:
         season_index: int,
         product_line: str | None = None,
     ) -> list[str]:
-        if loan_ledger is None:
-            return []
         if any(role.name == "Banker" for role in player.roles):
-            return []
-        if any(
-            loan.borrower_id == player.player_id
-            for loan in loan_ledger.active_loans_for(player.player_id)
-        ):
             return []
         threshold = self._capital_short_threshold(
             player, market, season_name, product_line
         )
         if player.dollops >= threshold:
             return []
-        banker = self._find_ai_banker(other_players, exclude_player_id=player.player_id)
-        if banker is None:
-            return []
-        principal = round(threshold - player.dollops, 1)
-        action = self._ai_issue_loan(
-            banker, player, principal, loan_ledger, year, season_index
-        )
+        if loan_ledger is not None and not any(
+            loan.borrower_id == player.player_id
+            for loan in loan_ledger.active_loans_for(player.player_id)
+        ):
+            debt_capacity = (
+                self._borrower_debt_ceiling(player, market, loan_ledger)
+                - loan_ledger.outstanding_debt(player.player_id)
+            )
+            needed = max(AI_MIN_LOAN_PRINCIPAL, threshold - player.dollops)
+            principal = round(min(needed, debt_capacity), 1)
+            if principal >= AI_MIN_LOAN_PRINCIPAL:
+                for banker in self._candidate_bankers(
+                    other_players, exclude_player_id=player.player_id
+                ):
+                    action = self._ai_issue_loan(
+                        banker, player, principal, loan_ledger, year, season_index
+                    )
+                    if action:
+                        return [action]
+
+        action = self._ai_recapitalize_if_short(player, market, threshold)
         return [action] if action else []
+
+    def _ai_recapitalize_if_short(
+        self,
+        player: Player,
+        market: Market,
+        threshold: float,
+    ) -> str | None:
+        if player.cap_table is None or player.dollops >= threshold:
+            return None
+        available_cash = player.personal_cash - AI_PERSONAL_CASH_RESERVE
+        if available_cash <= 0:
+            return None
+        unissued = player.cap_table.unissued()
+        if unissued <= 0:
+            return None
+        price = share_price(
+            fair_value(
+                player.total_wealth(
+                    market.current_prices(),
+                    capital_catalogue=CAPITAL_CATALOGUE,
+                ),
+                player.wealth_history,
+            )
+        )
+        needed_cash = threshold - player.dollops
+        needed_shares = max(1, ceil(needed_cash / price))
+        affordable_shares = int(available_cash // price)
+        shares = min(unissued, needed_shares, affordable_shares)
+        if shares <= 0:
+            return None
+        cost = round(shares * price, 1)
+        player.personal_cash = round(player.personal_cash - cost, 1)
+        player.dollops = round(player.dollops + cost, 1)
+        owner_key = str(player.player_id)
+        player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
+        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+        return (
+            f"[AI] {player.name} recapitalized with {shares} unissued share(s) "
+            f"for {cost:.1f} Dp"
+        )
 
     def _ai_rollover_due_loans(
         self,

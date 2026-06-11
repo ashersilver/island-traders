@@ -174,7 +174,8 @@ class Game:
             )
 
             # Equity scaffolding (Phase 1/2b): every player owns a 60% majority
-            # of their own island (player_id == island id); 40% public float.
+            # of their own island (player_id == island id); 40% remains
+            # authorized but unissued.
             # Additive — the pure engine keeps its single-pool economy and
             # total_wealth scoring; the web path (app.py) applies the full flip
             # (treasury reseed, bid->personal cash, shareholder loans).

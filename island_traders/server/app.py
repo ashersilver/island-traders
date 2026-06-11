@@ -32,7 +32,7 @@ from ..models.role import ROLES
 from ..models.training import TrainingStatus
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
-    AUCTIONED_SHARES, PUBLIC_HOLDER,
+    AUCTIONED_SHARES, UNISSUED_HOLDER,
 )
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
@@ -2419,9 +2419,11 @@ class GameManager:
         msg: dict,
         websocket,
     ) -> None:
-        """Equity Phase 3: the controlling owner buys public-float shares of
-        their own island at live fair value, paid from personal cash (the cash
-        leaves the game, like the auction bid).  Message: {shares:int}."""
+        """The controlling owner buys unissued shares of their own island.
+
+        This is a primary issuance: investor personal cash becomes island
+        treasury cash. Message: {shares:int}.
+        """
         room = self.rooms.get(room_id)
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
@@ -2439,7 +2441,7 @@ class GameManager:
         # Only the controlling owner may buy their island's float.
         if player.cap_table.held_by(owner_key) < AUCTIONED_SHARES:
             await websocket.send_text(json.dumps({
-                "type": "error", "message": "Only the controlling owner can buy this float."
+                "type": "error", "message": "Only the controlling owner can buy unissued shares."
             }))
             return
 
@@ -2447,11 +2449,11 @@ class GameManager:
             shares = int(msg.get("shares", 0))
         except (TypeError, ValueError):
             shares = 0
-        available = player.cap_table.public_float()
+        available = player.cap_table.unissued()
         shares = min(max(0, shares), available)
         if shares <= 0:
             await websocket.send_text(json.dumps({
-                "type": "error", "message": "No public-float shares to buy."
+                "type": "error", "message": "No unissued shares to buy."
             }))
             return
 
@@ -2472,10 +2474,11 @@ class GameManager:
             }))
             return
 
-        # Execute: cash leaves the game (paid to imaginary public holders);
-        # shares move public -> owner; holdings mirror the cap table.
+        # Execute primary issuance: personal cash becomes island treasury cash;
+        # shares move unissued -> owner; holdings mirror the cap table.
         player.personal_cash = round(player.personal_cash - cost, 1)
-        player.cap_table.transfer(PUBLIC_HOLDER, owner_key, shares)
+        player.dollops = round(player.dollops + cost, 1)
+        player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
         player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
 
         await websocket.send_text(json.dumps({
@@ -2672,10 +2675,10 @@ class GameManager:
                 "owns_pct": round(
                     p.cap_table.fraction(str(p.player_id)) * 100, 1
                 ) if p.cap_table else None,
-                "public_float_pct": round(
-                    (p.cap_table.public_float() / 100) * 100, 1
+                "unissued_pct": round(
+                    (p.cap_table.unissued() / 100) * 100, 1
                 ) if p.cap_table else None,
-                "public_float_shares": p.cap_table.public_float() if p.cap_table else 0,
+                "unissued_shares": p.cap_table.unissued() if p.cap_table else 0,
                 "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
                 "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
                 "shareholder_loan_receivable": round(

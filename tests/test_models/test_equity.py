@@ -5,8 +5,8 @@ import pytest
 from island_traders.models.equity import (
     AUCTIONED_SHARES,
     MIN_SHARE_PRICE,
-    PUBLIC_HOLDER,
     TOTAL_SHARES,
+    UNISSUED_HOLDER,
     CapTable,
     fair_value,
     liquidation_value,
@@ -14,30 +14,30 @@ from island_traders.models.equity import (
 )
 
 
-def test_new_with_majority_seats_owner_and_public_float():
+def test_new_with_majority_seats_owner_and_unissued_shares():
     cap_table = CapTable.new_with_majority("player-1")
 
     assert cap_table.held_by("player-1") == AUCTIONED_SHARES
-    assert cap_table.public_float() == TOTAL_SHARES - AUCTIONED_SHARES
+    assert cap_table.unissued() == TOTAL_SHARES - AUCTIONED_SHARES
     assert sum(cap_table.shares.values()) == TOTAL_SHARES
 
 
-def test_fraction_held_by_and_public_float_handle_absent_holders():
+def test_fraction_held_by_and_unissued_handle_absent_holders():
     cap_table = CapTable.new_with_majority("player-1")
 
     assert cap_table.fraction("player-1") == 0.6
     assert cap_table.fraction("missing") == 0.0
     assert cap_table.held_by("missing") == 0
-    assert cap_table.public_float() == 40
+    assert cap_table.unissued() == 40
 
 
 def test_transfer_moves_shares_drops_zeroed_holders_and_preserves_total():
     cap_table = CapTable.new_with_majority("seller")
 
-    cap_table.transfer(PUBLIC_HOLDER, "buyer", 40)
+    cap_table.transfer(UNISSUED_HOLDER, "buyer", 40)
 
-    assert cap_table.held_by(PUBLIC_HOLDER) == 0
-    assert PUBLIC_HOLDER not in cap_table.shares
+    assert cap_table.held_by(UNISSUED_HOLDER) == 0
+    assert UNISSUED_HOLDER not in cap_table.shares
     assert cap_table.held_by("buyer") == 40
     assert cap_table.held_by("seller") == 60
     assert sum(cap_table.shares.values()) == TOTAL_SHARES
@@ -48,7 +48,7 @@ def test_transfer_raises_when_holder_lacks_shares():
     cap_table = CapTable.new_with_majority("seller")
 
     with pytest.raises(ValueError):
-        cap_table.transfer(PUBLIC_HOLDER, "buyer", 41)
+        cap_table.transfer(UNISSUED_HOLDER, "buyer", 41)
 
     assert sum(cap_table.shares.values()) == TOTAL_SHARES
 
@@ -62,11 +62,19 @@ def test_transfer_rejects_non_positive_share_counts():
 
 def test_to_dict_and_from_dict_round_trip_cap_table():
     cap_table = CapTable.new_with_majority("seller")
-    cap_table.transfer(PUBLIC_HOLDER, "buyer", 5)
+    cap_table.transfer(UNISSUED_HOLDER, "buyer", 5)
 
     rebuilt = CapTable.from_dict(cap_table.to_dict())
 
     assert rebuilt.shares == cap_table.shares
+
+
+def test_from_dict_migrates_legacy_public_holder_to_unissued():
+    rebuilt = CapTable.from_dict({"seller": 60, "public": 40})
+
+    assert rebuilt.held_by("seller") == 60
+    assert rebuilt.unissued() == 40
+    assert "public" not in rebuilt.shares
 
 
 def test_cap_table_rejects_invalid_totals_and_counts():
