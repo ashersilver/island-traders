@@ -1,4 +1,4 @@
-"""Equity Phase 3: buy out the public float.
+"""Equity Phase 3: issue unissued shares.
 
 See requirements/equity-phase3-buyout-float-2026-06-02.md.
 """
@@ -12,7 +12,7 @@ pytest.importorskip("fastapi")
 
 from island_traders.server.app import GameManager, GameRoom, LobbyPlayer
 from island_traders.models.equity import (
-    AUCTIONED_SHARES, PUBLIC_HOLDER, share_price, fair_value,
+    AUCTIONED_SHARES, share_price, fair_value,
 )
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 
@@ -54,16 +54,21 @@ def test_owner_buys_some_float_shares():
     rid = _running_room(mgr)
     p = mgr.rooms[rid].game.players[0]
     cash0 = p.personal_cash
+    treasury0 = p.dollops
+    money0 = round(p.personal_cash + p.dollops, 1)
     price = _price(mgr, rid)
     ws = _WS()
 
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 10}, ws))
 
     assert p.cap_table.held_by("0") == AUCTIONED_SHARES + 10
-    assert p.cap_table.public_float() == (100 - AUCTIONED_SHARES) - 10
+    assert p.cap_table.unissued() == (100 - AUCTIONED_SHARES) - 10
     assert sum(p.cap_table.shares.values()) == 100
     assert p.holdings["0"] == AUCTIONED_SHARES + 10
-    assert p.personal_cash == round(cash0 - round(10 * price, 1), 1)
+    cost = round(10 * price, 1)
+    assert p.personal_cash == round(cash0 - cost, 1)
+    assert (p.dollops - treasury0) == pytest.approx(cash0 - p.personal_cash, abs=0.1)
+    assert round(p.personal_cash + p.dollops, 1) == money0
 
 
 def test_buy_is_clamped_to_available_float():
@@ -72,11 +77,11 @@ def test_buy_is_clamped_to_available_float():
     p = mgr.rooms[rid].game.players[0]
     ws = _WS()
 
-    # Ask for way more than the 40-share float -> clamped to the float.
+    # Ask for way more than the 40 unissued shares -> clamped to available.
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 999}, ws))
 
     assert p.cap_table.held_by("0") == 100
-    assert p.cap_table.public_float() == 0
+    assert p.cap_table.unissued() == 0
 
 
 def test_cannot_buy_without_enough_cash():
@@ -89,21 +94,35 @@ def test_cannot_buy_without_enough_cash():
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 5}, ws))
 
     # Nothing bought; an error was returned.
-    assert p.cap_table.public_float() == 100 - AUCTIONED_SHARES
+    assert p.cap_table.unissued() == 100 - AUCTIONED_SHARES
     assert any(m.get("type") == "error" for m in ws.sent)
 
 
-def test_lending_is_capital_neutralish_buyout_converts_cash_to_equity():
-    """Net worth right after a buyout ~ before (cash converted to equity)."""
+def test_primary_issuance_converts_personal_cash_to_island_treasury():
     mgr = GameManager()
     rid = _running_room(mgr)
     state0 = mgr.get_game_state(rid, "h1")
+    pdata0 = next(p for p in state0["players"] if p["player_id"] == 0)
     nw0 = next(p for p in state0["players"] if p["player_id"] == 0)["net_worth"]
     ws = _WS()
 
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 10}, ws))
 
     state1 = mgr.get_game_state(rid, "h1")
-    nw1 = next(p for p in state1["players"] if p["player_id"] == 0)["net_worth"]
-    # Within a Dp or two of rounding — cash became equity at fair value.
-    assert abs(nw1 - nw0) <= 2.0
+    pdata1 = next(p for p in state1["players"] if p["player_id"] == 0)
+    assert pdata1["treasury"] > pdata0["treasury"]
+    assert pdata1["personal_cash"] < pdata0["personal_cash"]
+    assert pdata1["net_worth"] >= nw0
+
+
+def test_payload_reports_unissued_shares_not_public_float():
+    mgr = GameManager()
+    rid = _running_room(mgr)
+
+    state = mgr.get_game_state(rid, "h1")
+    pdata = next(p for p in state["players"] if p["player_id"] == 0)
+
+    assert pdata["unissued_pct"] == 40.0
+    assert pdata["unissued_shares"] == 40
+    assert "public_float_pct" not in pdata
+    assert "public_float_shares" not in pdata

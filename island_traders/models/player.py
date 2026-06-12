@@ -156,6 +156,9 @@ class Player:
     # Grows each year via year_end_births().  New people are NOT automatic
     # workers — players must recruit them via the Recruit action.
     population: int = 100
+    # Resident household spending pool. Payroll flows here from the island
+    # treasury, then households spend it on end products.
+    household_cash: float = 0.0
     # Capital equipment owned by this player, keyed by CapitalItem.item_id.
     # Populated during the Investing Phase and via mid-game purchases.
     # See `island_traders.constants_capacity.CAPITAL_CATALOGUE`.
@@ -585,6 +588,7 @@ class Player:
         a separate balance sheet — see ``net_worth``.
         """
         treasury = self.dollops
+        household_cash = self.household_cash
         inventory_value = self.inventory.total_value(prices)
         capital_value = self.capital_book_value(capital_catalogue, current_tick)
         bank_debt = (
@@ -598,6 +602,7 @@ class Player:
         # prior total_wealth value); presentation layers round for display.
         components = {
             "treasury": treasury,
+            "household_cash": household_cash,
             "inventory_value": inventory_value,
             "capital_value": capital_value,
             "loans_receivable": loans_receivable,

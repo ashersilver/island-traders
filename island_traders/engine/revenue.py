@@ -11,11 +11,13 @@ from ..constants import (
     OUTPUT_PRODUCTION_INPUTS,
     PRODUCTION_INPUTS,
     PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    CONSUMER_STRUCTURAL_ADVISORY_WEIGHT,
     SKILLED_PROFESSIONS,
 )
 from ..models.market import Market
 from ..models.player import Player
 from ..models.resource import ResourceType
+from .consumer import structural_consumer_demand_units
 
 
 def _resource(value: str | ResourceType) -> ResourceType:
@@ -54,11 +56,18 @@ def _structural_demand_units(
                 for recipe_inputs in OUTPUT_PRODUCTION_INPUTS.get(role.name, {}).values():
                     _add_inputs(inputs, recipe_inputs)
             total += inputs.get(output, 0)
+    total += (
+        structural_consumer_demand_units(output, all_players, season_name)
+        * CONSUMER_STRUCTURAL_ADVISORY_WEIGHT
+    )
     return total
 
 
 def _live_bid_units(market: Market, output: ResourceType) -> int:
-    return sum(bid.remaining for bid in market.available_bids(output))
+    return (
+        sum(bid.remaining for bid in market.available_bids(output))
+        + market.demand.get(output, 0)
+    )
 
 
 def _unit_price(market: Market, output: ResourceType) -> float:

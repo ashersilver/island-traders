@@ -1,3 +1,5 @@
+import pytest
+
 from island_traders.engine.ai import AIStrategy
 from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
@@ -6,6 +8,7 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.equity import AUCTIONED_SHARES, CapTable
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
@@ -140,7 +143,10 @@ def test_farmer_ai_packages_food_for_visible_human_demand():
     farmer.receive_resources(ResourceType.GRAIN, 3)
     farmer.receive_resources(ResourceType.PRODUCE, 3)
     farmer.receive_resources(ResourceType.FISH, 3)
-    market.post_bid(buyer, ResourceType.FOOD, 25.0, 3)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    farmer.receive_resources(ResourceType.OIL, 1)
+    bid_price = round(market.current_price(ResourceType.FOOD) * 1.6, 2)
+    market.post_bid(buyer, ResourceType.FOOD, bid_price, 3)
 
     actions = ai.take_turn(
         farmer,
@@ -155,7 +161,7 @@ def test_farmer_ai_packages_food_for_visible_human_demand():
     )
 
     assert buyer.inventory.get(ResourceType.FOOD) == 3
-    assert farmer.dollops == 105.0
+    assert farmer.dollops == pytest.approx(30.0 + bid_price * 3)
     assert any("produced" in action and "Food" in action for action in actions)
 
 
@@ -392,6 +398,72 @@ def test_ai_borrower_accepts_loan_when_capital_short():
     assert farmer_loans
     assert farmer.dollops > 0
     assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_borrower_can_take_human_banker_loan_when_capital_short():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Human Banker", ["Banker"], dollops=100.0, is_human=True)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans
+    assert any("Human Banker issued Loan" in action for action in actions)
+
+
+def test_ai_recapitalizes_with_unissued_shares_when_loan_unavailable():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Tapped Banker", ["Banker"], dollops=0.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+    farmer.personal_cash = 500.0
+    farmer.cap_table = CapTable.new_with_majority(str(farmer.player_id))
+    farmer.holdings = {str(farmer.player_id): AUCTIONED_SHARES}
+    money0 = farmer.dollops + farmer.personal_cash
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans == []
+    assert farmer.dollops > 0
+    assert farmer.personal_cash < 500.0
+    assert farmer.dollops + farmer.personal_cash == money0
+    assert farmer.cap_table.held_by(str(farmer.player_id)) > AUCTIONED_SHARES
+    assert farmer.cap_table.unissued() < 100 - AUCTIONED_SHARES
+    assert any("recapitalized" in action for action in actions)
 
 
 def test_ai_rollover_loan_when_cannot_repay_at_maturity():
