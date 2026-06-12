@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/fix-season-timer-resync
+
+Version bump: `0.1.3-dev.2026-06-12.2`
+
+**Fix: different season countdowns per tab + season ending before the countdown.**
+The action-phase countdown was only ever synced from the one-shot `season_start`
+broadcast, so any tab that joined/reconnected mid-season — or whose timer was
+clobbered by a re-render — ran off a stale value, showing a different (often
+inflated) countdown than the real server deadline. The `game_state` snapshot now
+carries the authoritative `season_timer_end` (epoch) + `server_now`, and the
+client re-syncs `seasonTimerEnd` from every snapshot (clock-offset corrected), so
+all tabs track the same server clock and the displayed countdown matches the real
+deadline. Complements the earlier grace fix (the server still ends ~1.5s after the
+on-screen 0, never before).
+
 ## 0.1.2 — 2026-06-12
 
 Second point release. The headline is the **economy rebalance** reaching a

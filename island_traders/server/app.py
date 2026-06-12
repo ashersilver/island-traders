@@ -2989,6 +2989,18 @@ class GameManager:
             "status": room.status,
             "year": current_year,
             "season": current_season,
+            # Authoritative season-timer state so ANY tab (late join, reconnect,
+            # mid-season re-render) syncs its countdown to the server clock — not
+            # just the one-shot season_start broadcast. server_now lets the client
+            # correct for clock offset; season_timer_end is the epoch deadline
+            # (0 = no active action-phase timer).
+            "season_phase": room.season_phase,
+            "server_now": round(time.time(), 3),
+            "season_timer_end": (
+                round(room.season_timer_end, 3)
+                if (room.season_phase == "action" and room.season_timer_end > 0)
+                else 0
+            ),
             "funding_rates": {
                 str(term): round(rate * 100, 2)
                 for term, rate in posted_funding_rates(
