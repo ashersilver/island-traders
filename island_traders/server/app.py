@@ -29,7 +29,7 @@ from ..engine.revenue import revenue_opportunities
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.training import TrainingStatus
+from ..models.training import TrainingCapacityError, TrainingStatus
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
     AUCTIONED_SHARES, UNISSUED_HOLDER,
@@ -2412,6 +2412,186 @@ class GameManager:
                         self.get_game_state(room_id, educator_lobby_id) or {},
                     )
 
+    async def _handle_order_batch(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        batch_ref = msg.get("batch_ref")
+        if not room or not room.game or room.status != "running":
+            await websocket.send_text(json.dumps({
+                "type": "order_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "order_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Player not in game.",
+            }))
+            return
+        orders = msg.get("orders") or []
+        results = room.game.turn_manager.trading.execute_order_list(
+            player,
+            orders,
+            room.game.players,
+        )
+        await websocket.send_text(json.dumps({
+            "type": "order_batch_result",
+            "batch_ref": batch_ref,
+            "results": results,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_training_batch(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        batch_ref = msg.get("batch_ref")
+        if not room or not room.game or room.status != "running":
+            await websocket.send_text(json.dumps({
+                "type": "training_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Game is not running.",
+            }))
+            return
+        requester = self._engine_player_for_lobby(room, lobby_player_id)
+        if requester is None:
+            await websocket.send_text(json.dumps({
+                "type": "training_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Player not in game.",
+            }))
+            return
+
+        year = getattr(room, "current_year_index", 0)
+        season = getattr(room, "current_season_index", 0)
+        results = []
+        for index, row in enumerate(msg.get("requests") or []):
+            results.append(
+                self._submit_training_batch_row(room, requester, row or {}, index, year, season)
+            )
+
+        await websocket.send_text(json.dumps({
+            "type": "training_batch_result",
+            "batch_ref": batch_ref,
+            "results": results,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    def _submit_training_batch_row(
+        self,
+        room,
+        requester: Player,
+        row: dict,
+        index: int,
+        year: int,
+        season: int,
+    ) -> dict:
+        try:
+            profession = str(row.get("profession", "")).strip()
+            count = int(row.get("count", 0))
+            if not profession:
+                raise ValueError("profession is required")
+            if count <= 0:
+                raise ValueError("count must be positive")
+            educator = self._resolve_training_educator(room, requester, row)
+            if educator is None:
+                raise ValueError("No Educator player in this game.")
+            if not any(role.name == "Educator" for role in educator.roles):
+                raise ValueError("campus_player_id must identify an Educator.")
+            worker_ids = self._select_training_workers(
+                requester,
+                count,
+                room.game.training,
+            )
+            if len(worker_ids) < count:
+                raise ValueError(
+                    f"Only {len(worker_ids)} eligible worker(s) available."
+                )
+            transport_mode = str(row.get("transport_mode") or "air_ticket")
+            if educator.player_id == requester.player_id:
+                transport_mode = "self_training"
+            tickets = int(row.get("tickets_supplied_by_requester", 0) or 0)
+            fee = float(row.get("dollops_to_educator", row.get("fee", 0.0)) or 0.0)
+            specialty = str(row.get("specialty", row.get("engineer_specialty", "")) or "")
+            duration = room.game.turn_manager._training_duration_for_selection(
+                profession,
+                worker_ids,
+                requester,
+                specialty,
+            )
+            req = room.game.training.propose(
+                requester_id=requester.player_id,
+                worker_ids=worker_ids,
+                educator_id=educator.player_id,
+                dollops_to_educator=fee,
+                target_profession=profession,
+                year=year,
+                season=season,
+                transport_mode=transport_mode,
+                tickets_supplied_by_requester=tickets,
+                engineer_specialty=specialty,
+                duration_seasons=duration,
+            )
+            return {
+                "index": index,
+                "status": "submitted",
+                "batch_id": req.batch_id,
+            }
+        except (TrainingCapacityError, ValueError, TypeError) as exc:
+            return {"index": index, "status": "rejected", "reason": str(exc)}
+
+    def _select_training_workers(self, requester: Player, count: int, training) -> list[int]:
+        trainable = requester.workforce.get_trainable_ids(requester.workforce.active_count)
+        committed = training.reserved_worker_ids(requester.player_id)
+        return [worker_id for worker_id in trainable if worker_id not in committed][:count]
+
+    def _resolve_training_educator(self, room, requester: Player, row: dict) -> Player | None:
+        campus_id = row.get("campus_player_id", row.get("educator_id"))
+        if campus_id is not None:
+            try:
+                engine_id = int(campus_id)
+            except (TypeError, ValueError):
+                engine_id = (room.lobby_to_engine_id or {}).get(str(campus_id))
+            return next((p for p in room.game.players if p.player_id == engine_id), None)
+        if any(role.name == "Educator" for role in requester.roles):
+            return requester
+        return next(
+            (
+                player for player in room.game.players
+                if any(role.name == "Educator" for role in player.roles)
+            ),
+            None,
+        )
+
+    def _engine_player_for_lobby(self, room, lobby_player_id: str) -> Player | None:
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            return None
+        return next(
+            (player for player in room.game.players if player.player_id == engine_pid),
+            None,
+        )
+
     async def _handle_buy_out_float(
         self,
         room_id: str,
@@ -4034,6 +4214,14 @@ def create_app() -> FastAPI:
                     })
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "order_batch":
+                    await manager._handle_order_batch(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "training_batch":
+                    await manager._handle_training_batch(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "buy_out_float":
