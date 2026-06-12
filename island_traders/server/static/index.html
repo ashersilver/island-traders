@@ -1083,12 +1083,12 @@ button:active{transform:scale(.97)}
           </span>
         </div>
         <div class="stat"><span class="lbl">🏦 Island Treasury</span><span class="val gold" id="s-dollops" title="Your island's operating cash (buys inputs, pays wages & maintenance)">—</span></div>
-        <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. the public float">—</span></div>
+        <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. authorized unissued shares">—</span></div>
         <div class="stat" id="s-buyfloat-row" style="display:none">
-          <span class="lbl">Buy float</span>
+          <span class="lbl">Issue shares</span>
           <span class="val">
             <button class="btn-ghost btn-sm" id="s-buyfloat-btn" onclick="openBuyFloat()"
-              title="Buy public-float shares of your island at fair value (paid from personal cash)">Buy shares…</button>
+              title="Issue unissued shares of your island at fair value; personal cash becomes island treasury cash">Buy shares…</button>
           </span>
         </div>
         <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" style="cursor:pointer" onclick="toggleWealthBreakdown()" title="Click for the full breakdown — why your island value is what it is">—</span></div>
@@ -2235,16 +2235,17 @@ function submitInvestment(ready) {
   }
 }
 
-// ==================== EQUITY: buy out the public float (Phase 3) ==========
+// ==================== EQUITY: issue unissued shares (Phase 3) ==============
 let _buyFloatState = null;   // { shares, price, cash } when buying is offered
 function openBuyFloat() {
   if (!_buyFloatState || !ws || ws.readyState !== WebSocket.OPEN) return;
   const { shares: avail, price, cash } = _buyFloatState;
   const maxAfford = price > 0 ? Math.floor(cash / price) : 0;
   const maxBuy = Math.min(avail, maxAfford);
-  const prompt = `Buy public-float shares of your island.\n`
+  const prompt = `Issue unissued shares of your island.\n`
     + `Available: ${avail}  ·  Price/share: ${price.toFixed(2)} Dp  ·  `
     + `Your cash: ${cash.toFixed(1)} Dp (affords ${maxAfford}).\n`
+    + `Personal cash becomes island treasury cash.\n`
     + `How many shares to buy? (1–${maxBuy})`;
   const raw = window.prompt(prompt, String(maxBuy));
   if (raw === null) return;
@@ -3401,9 +3402,9 @@ function renderGameState() {
   }
   const ownEl = document.getElementById('s-ownership');
   if (ownEl && me.owns_pct != null)
-    ownEl.textContent = `You ${me.owns_pct}% · Public ${me.public_float_pct ?? 0}%`;
-  // Phase 3: offer "Buy shares" when you control the island and a public float
-  // remains.  Stash the live figures for the prompt.
+    ownEl.textContent = `You ${me.owns_pct}% · Unissued ${me.unissued_pct ?? 0}%`;
+  // Phase 3: offer "Buy shares" when you control the island and unissued
+  // authorized shares remain. Stash the live figures for the prompt.
   // Lend / repay row — shown when you're in-game and have cash or a loan
   const lendRow = document.getElementById('s-lend-row');
   if (lendRow && gameState) {
@@ -3418,7 +3419,7 @@ function renderGameState() {
   }
   const bfRow = document.getElementById('s-buyfloat-row');
   if (bfRow) {
-    const floatShares = me.public_float_shares || 0;
+    const floatShares = me.unissued_shares || 0;
     const canBuy = (me.owns_pct || 0) >= 60 && floatShares > 0;
     bfRow.style.display = canBuy ? '' : 'none';
     _buyFloatState = canBuy

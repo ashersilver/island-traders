@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 TOTAL_SHARES: int = 100
 AUCTIONED_SHARES: int = 60
+UNISSUED_HOLDER: str = "unissued"
+# Save/back-compat only. New cap tables use UNISSUED_HOLDER.
 PUBLIC_HOLDER: str = "public"
 ISLAND_STARTING_CASH: float = 500.0
 MIN_SHARE_PRICE: float = 0.01
@@ -25,7 +27,11 @@ class CapTable:
     shares: dict[str, int]
 
     def __post_init__(self) -> None:
-        self.shares = {str(holder): int(count) for holder, count in self.shares.items()}
+        migrated: dict[str, int] = {}
+        for holder, count in self.shares.items():
+            key = UNISSUED_HOLDER if str(holder) == PUBLIC_HOLDER else str(holder)
+            migrated[key] = migrated.get(key, 0) + int(count)
+        self.shares = migrated
         if any(count <= 0 for count in self.shares.values()):
             raise ValueError("share counts must be positive")
         if sum(self.shares.values()) != TOTAL_SHARES:
@@ -33,11 +39,11 @@ class CapTable:
 
     @classmethod
     def new_with_majority(cls, owner_id: str) -> "CapTable":
-        """Owner gets the opening majority block; the rest remains public."""
+        """Owner gets the opening majority block; the rest remains unissued."""
         return cls(
             shares={
                 str(owner_id): AUCTIONED_SHARES,
-                PUBLIC_HOLDER: TOTAL_SHARES - AUCTIONED_SHARES,
+                UNISSUED_HOLDER: TOTAL_SHARES - AUCTIONED_SHARES,
             }
         )
 
@@ -49,9 +55,13 @@ class CapTable:
         """Return the number of shares held by holder_id."""
         return self.shares.get(str(holder_id), 0)
 
+    def unissued(self) -> int:
+        """Return authorized shares not yet issued to any holder."""
+        return self.held_by(UNISSUED_HOLDER)
+
     def public_float(self) -> int:
-        """Return the unsold public float."""
-        return self.held_by(PUBLIC_HOLDER)
+        """Compatibility alias for older callers; use unissued()."""
+        return self.unissued()
 
     def transfer(self, frm: str, to: str, n: int) -> None:
         """Move n shares from frm to to, preserving the fixed share total."""
@@ -74,8 +84,12 @@ class CapTable:
             raise ValueError(f"cap table must total {TOTAL_SHARES} shares")
 
     def player_holders(self) -> dict[str, int]:
-        """Return all non-public holders and their share counts."""
-        return {holder: count for holder, count in self.shares.items() if holder != PUBLIC_HOLDER}
+        """Return issued player holders and their share counts."""
+        return {
+            holder: count
+            for holder, count in self.shares.items()
+            if holder != UNISSUED_HOLDER
+        }
 
     def to_dict(self) -> dict[str, int]:
         """Return a JSON-friendly copy of the cap table."""
