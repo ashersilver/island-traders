@@ -45,7 +45,7 @@ from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
 
 try:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
@@ -398,6 +398,10 @@ class GameRoom:
     # advance the game state until resume.
     paused: bool = False
     paused_at: float = 0.0  # epoch time the current pause began
+
+    # Ring buffer of agent interaction events POSTed by external agent processes.
+    # Capped at _AGENT_INTERACTIONS_MAX to avoid unbounded growth.
+    agent_interactions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = {
@@ -3664,6 +3668,51 @@ class GameManager:
             "timer_remaining": timer_rem,
         })
 
+    # ---- Agent interaction store ----
+
+    _AGENT_INTERACTIONS_MAX = 2000  # max records kept per room
+
+    def post_agent_interactions(self, room_id: str, events: list[dict]) -> dict:
+        """Append agent interaction records to the room's in-memory store.
+
+        Called by the POST /api/rooms/{room_id}/agent-interactions route.
+        Records are kept in arrival order; the oldest are evicted once the
+        ring buffer reaches _AGENT_INTERACTIONS_MAX.  The caller (an external
+        agent process) is responsible for including useful fields such as
+        ``run_id``, ``seq``, ``timestamp``, ``direction``, ``kind``, and
+        ``message_type`` — see the transcript format in island-traders-agents.
+        """
+        room = self.rooms.get(room_id)
+        if room is None:
+            return {"error": "Room not found"}
+        if not isinstance(events, list):
+            return {"error": "events must be a list"}
+        room.agent_interactions.extend(events)
+        excess = len(room.agent_interactions) - self._AGENT_INTERACTIONS_MAX
+        if excess > 0:
+            del room.agent_interactions[:excess]
+        return {"accepted": len(events), "total": len(room.agent_interactions)}
+
+    def get_agent_interactions(
+        self, room_id: str, limit: int = 100, since_seq: int = 0
+    ) -> dict | None:
+        """Return agent interaction records for the room.
+
+        ``since_seq`` filters to records whose ``seq`` field is strictly
+        greater than the given value (0 = return all).  ``limit`` caps the
+        number of returned records (0 = no cap).
+        """
+        room = self.rooms.get(room_id)
+        if room is None:
+            return None
+        events: list[dict] = room.agent_interactions
+        if since_seq > 0:
+            events = [e for e in events if e.get("seq", 0) > since_seq]
+        total = len(room.agent_interactions)
+        if limit > 0:
+            events = events[-limit:]
+        return {"events": events, "total": total}
+
     def submit_ready(self, room_id: str, lobby_player_id: str, ready: bool = True) -> dict:
         """Mark a player as Ready (or unready) for the current season phase.
 
@@ -4055,6 +4104,65 @@ def create_app() -> FastAPI:
                     f'attachment; filename="island-traders-log-{room.room_id}.txt"',
             },
         )
+
+    @app.post(
+        "/api/rooms/{room_id}/agent-interactions",
+        tags=["Game Flow"],
+        summary="Ingest agent interaction events",
+        description="External LLM agent processes POST transcript-style interaction "
+                    "records here; stored in a room-scoped ring buffer for the observer UI.",
+    )
+    async def post_agent_interactions(room_id: str, request: Request):
+        """Ingest agent interaction events from an external LLM agent process.
+
+        Accepts a JSON object ``{"events": [...]}`` or a bare JSON array.
+        A single-event object is also accepted for convenience.
+
+        Records are stored in a room-scoped ring buffer (2 000 max) and
+        served by the GET endpoint below.  No authentication: intended for
+        local / trusted agent processes only.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        if isinstance(body, list):
+            events = body
+        elif isinstance(body, dict) and "events" in body:
+            events = body["events"]
+            if not isinstance(events, list):
+                return JSONResponse({"error": "events must be an array"}, status_code=400)
+        elif isinstance(body, dict):
+            events = [body]
+        else:
+            return JSONResponse({"error": "Expected JSON object or array"}, status_code=400)
+
+        result = manager.post_agent_interactions(room_id, events)
+        if "error" in result:
+            return JSONResponse(result, status_code=404)
+        return JSONResponse(result)
+
+    @app.get(
+        "/api/rooms/{room_id}/agent-interactions",
+        tags=["Game Flow"],
+        summary="Fetch agent interaction events",
+        description="Returns stored agent interaction records for the room, "
+                    "with optional limit and since_seq filters.",
+    )
+    async def get_agent_interactions(
+        room_id: str, limit: int = 100, since_seq: int = 0
+    ):
+        """Return agent interaction records for the room.
+
+        Query params:
+        - ``limit``: max records to return (default 100, 0 = no cap)
+        - ``since_seq``: only return records with seq > this value (0 = all)
+        """
+        result = manager.get_agent_interactions(room_id, limit=limit, since_seq=since_seq)
+        if result is None:
+            return JSONResponse({"error": "Room not found"}, status_code=404)
+        return JSONResponse(result)
 
     @app.get(
         "/api/roles",
