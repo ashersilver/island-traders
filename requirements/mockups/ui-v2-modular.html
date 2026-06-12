@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Island Traders — UI v2 Mockup (modular tiles, desks, trade finder, chat)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  --bg:#070f1e; --panel:#0d1b2e; --panel2:#111f33; --border:#1a3050;
+  --text:#b8cde0; --heading:#eaf0f8; --accent:#0abde3; --gold:#f6b93b;
+  --green:#26de81; --red:#fc5c65; --dim:#4a6080; --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.45 -apple-system,'Segoe UI',Roboto,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:6px;padding:.3rem .6rem}
+button:hover{border-color:var(--accent)}
+.btn-gold{background:var(--gold);color:#0a1626;border-color:var(--gold);font-weight:600}
+.btn-green{background:var(--green);color:#0a1626;border-color:var(--green);font-weight:600}
+.btn-sm{padding:.12rem .45rem;font-size:.72rem}
+input,select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:.28rem .4rem;font:inherit}
+.tag{font-size:.66rem;padding:.05rem .4rem;border-radius:8px;border:1px solid var(--border);color:var(--dim)}
+.tag.ai{color:var(--accent);border-color:var(--accent)}
+.gold{color:var(--gold)} .green{color:var(--green)} .red{color:var(--red)} .dim{color:var(--dim)} .acc{color:var(--accent)}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;gap:1rem;padding:.45rem .9rem;background:var(--panel);border-bottom:1px solid var(--border)}
+header .brand{color:var(--heading);font-weight:700}
+header .season{color:var(--gold);font-weight:600}
+header .timer{margin-left:auto;color:var(--red);font-weight:700;font-variant-numeric:tabular-nums}
+.preset-menu{position:relative}
+.preset-pop{display:none;position:absolute;right:0;top:120%;z-index:50;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem;width:230px;box-shadow:0 8px 24px #0008}
+.preset-pop.open{display:block}
+.preset-pop h4{color:var(--heading);font-size:.75rem;margin-bottom:.35rem}
+.preset-pop .row{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.5rem}
+.preset-pop label{display:flex;gap:.4rem;align-items:center;font-size:.78rem;padding:.12rem 0}
+
+/* ---------- layout ---------- */
+main{flex:1;display:grid;grid-template-columns:290px 1fr 360px;gap:0;min-height:0}
+.col{overflow-y:auto;padding:.6rem;display:flex;flex-direction:column;gap:.6rem;min-height:0}
+.col.side{background:var(--panel);border-right:1px solid var(--border)}
+.col.info{background:var(--panel);border-left:1px solid var(--border)}
+
+/* ---------- tiles ---------- */
+.tile{background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius)}
+.col.center .tile{background:var(--panel)}
+.tile>header{background:none;border-bottom:1px solid var(--border);padding:.4rem .6rem;display:flex;align-items:center;gap:.4rem}
+.tile>header h3{font-size:.8rem;color:var(--heading);font-weight:600;flex:1}
+.tile>header .tctl{display:flex;gap:.15rem;opacity:.35}
+.tile>header:hover .tctl{opacity:1}
+.tile>header .tctl button{border:none;background:none;padding:0 .2rem;font-size:.72rem;color:var(--dim)}
+.tile>header .tctl button:hover{color:var(--accent)}
+.tile .body{padding:.55rem .6rem}
+.tile.collapsed .body{display:none}
+.stat{display:flex;justify-content:space-between;padding:.14rem 0;font-size:.8rem}
+.stat .lbl{color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:.78rem}
+th{color:var(--dim);text-align:left;font-weight:500;padding:.2rem .35rem;border-bottom:1px solid var(--border)}
+td{padding:.26rem .35rem;border-bottom:1px solid #14253c}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- order desk ---------- */
+.basket-row td{background:#0a1626}
+.side-buy{color:var(--green);font-weight:600} .side-sell{color:var(--red);font-weight:600}
+.desk-add{display:grid;grid-template-columns:70px 1fr 64px 76px 30px;gap:.35rem;margin:.45rem 0}
+.desk-foot{display:flex;align-items:center;gap:.6rem;margin-top:.45rem}
+.status-ok{color:var(--green);font-size:.74rem} .status-warn{color:var(--gold);font-size:.74rem} .status-bad{color:var(--red);font-size:.74rem}
+
+/* ---------- trade finder ---------- */
+.tf-bar{display:flex;gap:.4rem;margin-bottom:.45rem}
+.tf-bar input{flex:1}
+.surplus{color:var(--green)} .needs{color:var(--gold)}
+
+/* ---------- chat dock ---------- */
+.chat{display:flex;flex-direction:column;min-height:330px}
+.chat .rooms{display:flex;gap:.3rem;padding:.35rem .5rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.room-btn{font-size:.72rem;padding:.15rem .5rem;border-radius:10px;position:relative}
+.room-btn.active{border-color:var(--accent);color:var(--accent)}
+.room-btn .unread{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;border-radius:50%;font-size:.6rem;min-width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;padding:0 2px}
+.chat .msgs{flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.45rem;min-height:140px;max-height:300px}
+.msg .who{font-size:.7rem;color:var(--dim)}
+.msg .who b{color:var(--accent);font-weight:600}
+.msg.me .who b{color:var(--gold)}
+.msg .txt{font-size:.8rem}
+.deal-card{border:1px solid var(--gold);border-radius:var(--radius);background:#161f12;padding:.45rem .55rem;font-size:.78rem}
+.deal-card.accepted{border-color:var(--green);background:#0e1f18}
+.deal-card h5{color:var(--gold);font-size:.72rem;margin-bottom:.25rem}
+.deal-card .terms{display:flex;gap:.8rem;margin:.2rem 0 .4rem}
+.deal-card .acts{display:flex;gap:.35rem}
+.composer{border-top:1px solid var(--border);padding:.45rem .5rem;display:flex;gap:.35rem;align-items:center}
+.composer input{flex:1}
+.push-toggle{font-size:.7rem;display:flex;gap:.3rem;align-items:center;color:var(--dim);white-space:nowrap}
+.push-toggle input{accent-color:var(--accent)}
+
+/* ---------- log ---------- */
+footer.log{height:120px;background:#04090f;border-top:1px solid var(--border);overflow-y:auto;padding:.4rem .8rem;font:11px/1.6 ui-monospace,Menlo,monospace}
+footer.log .lf{display:flex;gap:.3rem;margin-bottom:.3rem}
+footer.log .lf button{font-size:.66rem;padding:.05rem .45rem}
+footer.log .lf button.active{color:var(--accent);border-color:var(--accent)}
+.note{font-size:.7rem;color:var(--dim);font-style:italic}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">🏝 Island Traders</span>
+  <span class="season">Year 2 · Summer</span>
+  <span class="tag">You: <b style="color:var(--gold)">Asher</b> — Manufacturer</span>
+  <span class="timer">⏱ 02:41</span>
+  <div class="preset-menu">
+    <button onclick="document.getElementById('pp').classList.toggle('open')">▦ Layout: <b class="acc">Manufacturer</b> ▾</button>
+    <div class="preset-pop" id="pp">
+      <h4>Presets</h4>
+      <div class="row">
+        <button class="btn-sm" style="border-color:var(--accent);color:var(--accent)">Manufacturer (role)</button>
+        <button class="btn-sm">Full</button><button class="btn-sm">Trader</button>
+        <button class="btn-sm">Focus</button><button class="btn-sm">＋ Save…</button>
+      </div>
+      <h4>Tiles</h4>
+      <label><input type="checkbox" checked> Island Status</label>
+      <label><input type="checkbox" checked> Order Desk</label>
+      <label><input type="checkbox" checked> Trade Finder</label>
+      <label><input type="checkbox" checked> Training Desk</label>
+      <label><input type="checkbox"> Insurance</label>
+      <label><input type="checkbox"> Funding Rates</label>
+      <label><input type="checkbox" checked> Chat</label>
+      <div class="note" style="margin-top:.3rem">Role presets seed defaults; ▲▼ on a tile reorders it.</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ============ LEFT: my island ============ -->
+  <div class="col side">
+    <div class="tile">
+      <header><h3>My Island — Manufacturing</h3>
+        <div class="tctl"><button title="Move up">▲</button><button title="Move down">▼</button><button title="Collapse">—</button><button title="Hide">✕</button></div>
+      </header>
+      <div class="body">
+        <div class="stat"><span class="lbl">Net Worth</span><span class="gold">1,284 Dp</span></div>
+        <div class="stat"><span class="lbl">🏦 Treasury</span><span class="gold">412 Dp</span></div>
+        <div class="stat"><span class="lbl">Workers</span><span>14 / 16</span></div>
+        <div class="stat"><span class="lbl">Efficiency</span><span>82%</span></div>
+        <div class="stat"><span class="lbl">Capacity</span><span class="green">96%</span></div>
+      </div>
+    </div>
+    <div class="tile">
+      <header><h3>Inventory</h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="body">
+        <table>
+          <tr><td>⚙ Goods</td><td class="num">26</td><td class="num dim">~234 Dp</td></tr>
+          <tr><td>🏗 CapitalEquipment</td><td class="num">4</td><td class="num dim">~380 Dp</td></tr>
+          <tr><td>⛏ Ore</td><td class="num">9</td><td class="num dim">~58 Dp</td></tr>
+          <tr><td>🛢 Oil</td><td class="num red">2</td><td class="num dim">~19 Dp</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="tile collapsed">
+      <header><h3>Production Capacity <span class="dim" style="font-weight:400">(collapsed)</span></h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button onclick="this.closest('.tile').classList.toggle('collapsed')">＋</button><button>✕</button></div>
+      </header>
+      <div class="body">…</div>
+    </div>
+  </div>
+
+  <!-- ============ CENTER: desks ============ -->
+  <div class="col center">
+    <div class="tile">
+      <header><h3>📦 Order Desk <span class="note">— stage several orders, submit once</span></h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="body">
+        <table id="basket">
+          <thead><tr><th>Side</th><th>Resource</th><th class="num">Qty</th><th class="num">Limit</th><th class="num">Est. total</th><th></th></tr></thead>
+          <tbody>
+            <tr class="basket-row"><td class="side-buy">BUY</td><td>🛢 Oil</td><td class="num">12</td><td class="num">9.50</td><td class="num">−110.4 Dp</td><td><button class="btn-sm">✕</button></td></tr>
+            <tr class="basket-row"><td class="side-buy">BUY</td><td>⛏ Ore</td><td class="num">20</td><td class="num dim">mkt</td><td class="num">−128.0 Dp</td><td><button class="btn-sm">✕</button></td></tr>
+            <tr class="basket-row"><td class="side-sell">SELL</td><td>⚙ Goods</td><td class="num">15</td><td class="num dim">mkt</td><td class="num">+135.0 Dp</td><td><button class="btn-sm">✕</button></td></tr>
+          </tbody>
+        </table>
+        <div class="desk-add">
+          <select tabindex="1"><option>Buy</option><option>Sell</option></select>
+          <select tabindex="2"><option>🚚 Freight</option><option>🛢 Oil</option><option>⛏ Ore</option><option>🍞 Food</option></select>
+          <input type="number" inputmode="numeric" placeholder="qty 1–99" tabindex="3" autofocus>
+          <input type="number" inputmode="decimal" placeholder="limit · mkt 7.2" tabindex="4">
+          <button class="btn-sm" tabindex="5" onclick="addRow()">＋</button>
+        </div>
+        <div class="note">boxes open empty — land &amp; type; Tab moves across; Enter adds the row</div>
+        <div class="desk-foot">
+          <span class="status-ok">✓ Treasury after batch: ~309 Dp</span>
+          <span class="status-warn">⚠ Goods: selling 15 of 26</span>
+          <span style="margin-left:auto" class="note">prices move per fill — results are authoritative</span>
+          <button class="btn-gold">Submit 3 orders</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tile">
+      <header><h3>🔎 Trade Finder <span class="note">— who has it / who needs it</span></h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="body">
+        <div class="tf-bar">
+          <input value="Oil" placeholder="search a resource…">
+          <button class="btn-sm" style="border-color:var(--accent);color:var(--accent)">They have</button>
+          <button class="btn-sm">They need mine</button>
+        </div>
+        <table>
+          <thead><tr><th>Player</th><th>Role</th><th class="num">🛢 Oil</th><th>Position</th><th class="num">Mkt mid</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><b>Maria</b></td><td class="dim">Miner</td><td class="num green">48</td><td class="surplus">producer · surplus</td><td class="num">9.2</td>
+                <td><button class="btn-sm" onclick="openNegotiation()">💬 Negotiate</button> <button class="btn-sm">Deal…</button></td></tr>
+            <tr><td><b>Kai</b> <span class="tag ai">🤖 AI</span></td><td class="dim">Transporter</td><td class="num">11</td><td class="needs">consumer · holds stock</td><td class="num">9.2</td>
+                <td><button class="btn-sm" onclick="openNegotiation()">💬 Negotiate</button> <button class="btn-sm">Deal…</button></td></tr>
+            <tr><td><b>Priya</b></td><td class="dim">Farmer</td><td class="num">5</td><td class="needs">consumer</td><td class="num">9.2</td>
+                <td><button class="btn-sm">💬 Negotiate</button> <button class="btn-sm">Deal…</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tile">
+      <header><h3>🎓 Training Desk <span class="note">— queue several requests, submit once</span></h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="body">
+        <table>
+          <thead><tr><th>Profession</th><th class="num">Count</th><th>Campus</th><th>Transport</th><th>Capacity check</th><th></th></tr></thead>
+          <tbody>
+            <tr class="basket-row"><td>Technician</td><td class="num">2</td><td>Edu Island (Lena)</td><td>✈ air</td><td class="status-ok">✓ 2 of 3 seats left</td><td><button class="btn-sm">✕</button></td></tr>
+            <tr class="basket-row"><td>Manager</td><td class="num">1</td><td>Edu Island (Lena)</td><td>⛴ sea</td><td class="status-ok">✓ ok</td><td><button class="btn-sm">✕</button></td></tr>
+            <tr class="basket-row"><td>Professor</td><td class="num">2</td><td>Edu Island (Lena)</td><td>✈ air</td><td class="status-bad">✗ cap 1/season</td><td><button class="btn-sm">✕</button></td></tr>
+          </tbody>
+        </table>
+        <div class="desk-foot">
+          <span class="status-warn">⚠ fix 1 row before submit · est. fees 96 Dp + travel</span>
+          <button class="btn-gold" style="margin-left:auto">Submit 2 valid requests</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ RIGHT: market + chat ============ -->
+  <div class="col info">
+    <div class="tile">
+      <header><h3>Market Board</h3>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="body">
+        <table>
+          <thead><tr><th>Res</th><th class="num">Bid</th><th class="num">Ask</th><th class="num">Δ</th></tr></thead>
+          <tbody>
+            <tr><td>🛢 Oil</td><td class="num">8.9</td><td class="num">9.5</td><td class="num green">+0.4</td></tr>
+            <tr><td>⛏ Ore</td><td class="num">6.1</td><td class="num">6.4</td><td class="num red">−0.2</td></tr>
+            <tr><td>⚙ Goods</td><td class="num">8.7</td><td class="num">9.0</td><td class="num dim">0.0</td></tr>
+            <tr><td>🍞 Food</td><td class="num">3.1</td><td class="num">3.4</td><td class="num green">+0.1</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tile chat" id="chat-tile">
+      <header><h3>💬 Chat <span title="Unread messages in a thread" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red);vertical-align:middle"></span></h3>
+        <button class="btn-sm" title="New room">＋ Room</button>
+        <div class="tctl"><button>▲</button><button>▼</button><button>—</button><button>✕</button></div>
+      </header>
+      <div class="rooms">
+        <button class="room-btn">Table (all)</button>
+        <button class="room-btn active">Oil talks — Maria, Kai 🤖</button>
+        <button class="room-btn">Lena<span class="unread">2</span></button>
+      </div>
+      <div class="msgs" id="msgs">
+        <div class="msg"><div class="who"><b>Maria</b> · Miner · 14:02</div><div class="txt">I can spare 20 Oil this season if the price beats market.</div></div>
+        <div class="msg me"><div class="who"><b>You</b> · 14:03</div><div class="txt">I'll take 15 at 9.0 plus 2 CapitalEquipment next season?</div></div>
+        <div class="deal-card">
+          <h5>📜 Deal proposal — You → Maria</h5>
+          <div class="terms"><span>You give: <b class="gold">135 Dp</b> + <b>2 ⚙ CapEquip (Y2 Autumn)</b></span><span>You get: <b>15 🛢 Oil</b></span></div>
+          <div class="acts"><button class="btn-green btn-sm">Accept</button><button class="btn-sm">Counter…</button><button class="btn-sm" style="color:var(--red)">Reject</button>
+            <span class="note" style="margin-left:auto">expires end of season</span></div>
+        </div>
+        <div class="msg"><div class="who"><b>Kai</b> <span class="tag ai">🤖 AI</span> · 14:05</div><div class="txt">Freight note: I can ship that Oil for 6 Dp if you both confirm by Autumn. My current Freight ask is below market mid.</div></div>
+      </div>
+      <div class="composer">
+        <input placeholder="Message… (@Kai to ping the AI)">
+        <label class="push-toggle" title="Deliver this thread to the AI participant now and request a reply (3 pushes left this season)">
+          <input type="checkbox" checked> 📤 Push to AI <span class="dim">(3 left)</span>
+        </label>
+        <button class="btn-gold btn-sm">Send</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ LOG ============ -->
+<footer class="log">
+  <div class="lf">
+    <button class="active">All</button><button>My island</button><button>Trades</button><button>Events</button><button>Training</button><button>Chat</button>
+    <span class="note" style="margin-left:auto">windowed — ≤300 rows in DOM</span>
+  </div>
+  <div><span class="dim">[Y2·Su]</span> <span class="green">Order batch ob-16: 2 filled, 0 rejected (net +41.2 Dp)</span></div>
+  <div><span class="dim">[Y2·Su]</span> Maria sold 10 Ore @ 6.1 Dp</div>
+  <div><span class="dim">[Y2·Su]</span> <span class="gold">⚡ Power outage on Mining & Oil — 2 seasons remaining</span></div>
+  <div><span class="dim">[Y2·Su]</span> Training batch tb-3: Technician ×2 enrolled at Education Island</div>
+</footer>
+
+<script>
+// Mockup-only interactivity, so reviewers can feel the flows.
+function addRow(){
+  const tb=document.querySelector('#basket tbody');
+  const tr=document.createElement('tr');tr.className='basket-row';
+  tr.innerHTML='<td class="side-buy">BUY</td><td>🚚 Freight</td><td class="num">6</td><td class="num dim">mkt</td><td class="num">−43.2 Dp</td><td><button class="btn-sm" onclick="this.closest(\'tr\').remove()">✕</button></td>';
+  tb.appendChild(tr);
+}
+function openNegotiation(){
+  document.getElementById('chat-tile').scrollIntoView({behavior:'smooth'});
+  document.getElementById('chat-tile').style.outline='2px solid var(--accent)';
+  setTimeout(()=>document.getElementById('chat-tile').style.outline='',1200);
+}
+document.querySelectorAll('.basket-row button').forEach(b=>{
+  if(b.textContent==='✕') b.onclick=()=>b.closest('tr').remove();
+});
+</script>
+</body>
+</html>

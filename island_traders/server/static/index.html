@@ -380,6 +380,20 @@ button:active{transform:scale(.97)}
   background:var(--bg);color:var(--dim);border:1px solid var(--border)
 }
 .log-filter-bar .lf-btn.active{background:var(--accent);color:#04090f;border-color:var(--accent);font-weight:700}
+/* --- Tile system: per-tile collapse/hide/reorder (UI v2 phase 1, #114) --- */
+.section[data-tile]>h3{position:relative}
+.tile-ctl{display:inline-flex;gap:.1rem;margin-left:auto;opacity:0;transition:opacity .15s}
+.section[data-tile]:hover .tile-ctl{opacity:.85}
+.tile-ctl button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.68rem;padding:0 .25rem;line-height:1.2}
+.tile-ctl button:hover{color:var(--accent)}
+.section.tile-collapsed>*:not(h3){display:none!important}
+.section.tile-hidden{display:none!important}
+.section[data-tile]>h3{display:flex;align-items:center;gap:.4rem}
+/* --- Trade Finder (UI v2 phase 1, #114) --- */
+#trade-finder .tf-active{background:var(--accent);color:#04090f;font-weight:700}
+#trade-finder table td{padding:.24rem .4rem}
+#trade-finder .tf-ai-badge{font-size:.66rem;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 .35rem;margin-left:.3rem}
+#trade-finder .tf-needs{color:var(--gold);font-size:.72rem}
 .g-log[data-filter="mine"]    .g-log-line:not(.log-mine){display:none}
 .g-log[data-filter="trades"]  .g-log-line:not([data-cat="trade"]){display:none}
 .g-log[data-filter="events"]  .g-log-line:not([data-cat="event"]){display:none}
@@ -917,7 +931,8 @@ button:active{transform:scale(.97)}
     <div class="bid-panel hidden" id="bid-panel">
       <h3>Bid on: <span id="bid-panel-role">—</span></h3>
       <div class="bid-input-row">
-        <input type="number" id="bid-amount" min="0" step="1" value="0"/>
+        <input type="number" id="bid-amount" inputmode="numeric" min="0" step="1" placeholder="0"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();submitBid();}"/>
         <span class="dp-label">Dp</span>
       </div>
       <div class="bid-actions">
@@ -1032,6 +1047,9 @@ button:active{transform:scale(.97)}
             <div class="lp-row" onclick="togglePanel('side')"><input type="checkbox" id="lp-side" onclick="event.stopPropagation()"> Left sidebar</div>
             <div class="lp-row" onclick="togglePanel('info')"><input type="checkbox" id="lp-info" onclick="event.stopPropagation()"> Right info</div>
             <div class="lp-row" onclick="togglePanel('log')"><input type="checkbox" id="lp-log" onclick="event.stopPropagation()"> Game log</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Tiles</div>
+            <div id="lp-tiles"></div>
           </div>
         </div>
         <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
@@ -1066,8 +1084,8 @@ button:active{transform:scale(.97)}
 
     <div class="g-side">
       <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
-      <div class="section">
-        <h3 id="tab-island-name">My Island</h3>
+      <div class="section" data-tile="status" data-tile-label="Island status">
+        <h3><span id="tab-island-name">My Island</span></h3>
         <div class="stat net-wealth"><span class="lbl">Net Worth</span><span class="val" id="s-networth" title="Your investor net worth = personal cash + value of your equity stakes + loans owed to you">—</span></div>
         <div class="stat"><span class="lbl">Role</span><span class="val" id="s-role">—</span></div>
         <div class="stat"><span class="lbl">💰 Personal Cash</span><span class="val gold" id="s-personal-cash" title="Your private investor wallet — auction budget left after your winning bid">—</span></div>
@@ -1105,7 +1123,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
         <div class="stat" id="s-campus-load-row" style="display:none"><span class="lbl">Campus Load</span><span class="val" id="s-campus-load">0</span><span class="stat-hint" id="s-campus-load-hint" style="font-size:.65rem;color:var(--warn);margin-left:.3rem"></span></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="inventory" data-tile-label="Inventory">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Inventory
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1113,7 +1131,7 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="s-inventory">—</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="capacity" data-tile-label="Production capacity">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Production Capacity
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1122,7 +1140,7 @@ button:active{transform:scale(.97)}
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="insurance" data-tile-label="Insurance">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span>
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1130,7 +1148,7 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="loans" data-tile-label="Loans">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span>
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1147,23 +1165,39 @@ button:active{transform:scale(.97)}
         <div class="action-btns" id="prompt-btns"></div>
         <div id="prompt-input" style="margin-top:.5rem"></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="hints" data-tile-label="Decision hints">
         <h3>Decision Hints</h3>
         <div class="decision-list" id="decision-hints">
           <span style="color:var(--dim);font-size:.82rem">Waiting for game state…</span>
         </div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="players" data-tile-label="All players">
         <h3>All Players</h3>
         <table class="comp-table">
           <thead><tr><th>Player</th><th>Role</th><th>Net Worth (Dp)</th><th>Treasury (Dp)</th><th>Active</th><th>Mgr</th><th>Tech</th><th>Worker</th></tr></thead>
           <tbody id="comp-tbody"></tbody>
         </table>
       </div>
+      <div class="section" id="trade-finder" data-tile="trade-finder" data-tile-label="Trade Finder">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          🔎 Trade Finder
+          <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— who has it / who needs yours</span>
+        </h3>
+        <div style="display:flex;gap:.4rem;margin:.45rem 0;align-items:center;flex-wrap:wrap">
+          <input id="tf-search" list="tf-resources" placeholder="resource… e.g. Oil"
+                 style="flex:1;min-width:140px;max-width:230px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:.3rem .45rem"
+                 oninput="renderTradeFinder()"
+                 onkeydown="if(event.key==='Enter')event.preventDefault()">
+          <datalist id="tf-resources"></datalist>
+          <button class="btn-ghost btn-sm tf-active" id="tf-mode-have" onclick="setTradeFinderMode('have')">They have</button>
+          <button class="btn-ghost btn-sm" id="tf-mode-need" onclick="setTradeFinderMode('need')">They need mine</button>
+        </div>
+        <div id="tf-results" style="font-size:.8rem;color:var(--dim)">Type a resource to find who holds it.</div>
+      </div>
     </div>
 
     <div class="g-info">
-      <div class="section">
+      <div class="section" data-tile="conditions" data-tile-label="Conditions">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Conditions
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1171,11 +1205,11 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="conditions-panel" style="font-size:.82rem;line-height:1.4">—</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="funding" data-tile-label="Funding rates">
         <h3>Funding Rates</h3>
         <div id="funding-rates-panel" style="font-size:.82rem">—</div>
       </div>
-      <div class="section market-board">
+      <div class="section market-board" data-tile="market" data-tile-label="Market board">
         <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
           <span>Market Board</span>
           <button class="icon-btn" title="Open market board" onclick="showMarketBoardPopup()">⌕</button>
@@ -1576,6 +1610,7 @@ function showScreen(name) {
     activeTabRole = null;
     document.getElementById('island-tabs').innerHTML = '';
     restoreLayoutPrefs();
+    initTiles();
   }
 }
 
@@ -1856,8 +1891,12 @@ function selectRole(roleName) {
   const panel = document.getElementById('bid-panel');
   panel.classList.remove('hidden');
   document.getElementById('bid-panel-role').textContent = roleName;
+  // Show an existing bid for editing; otherwise the box opens empty
+  // (input convention, #114) and focus lands in it ready to type.
   const current = myBids[roleName] || 0;
-  document.getElementById('bid-amount').value = current;
+  const bidInput = document.getElementById('bid-amount');
+  bidInput.value = current > 0 ? current : '';
+  bidInput.focus();
   document.getElementById('bid-msg').textContent = '';
 }
 
@@ -3373,6 +3412,7 @@ function renderGameState() {
   buildIslandTabs(gameState.players);
 
   const roles = playerRoles(me);
+  applyRoleTileDefaults(roles);
   const tabRole = activeTabRole || roles[0] || null;
   const isConsolidated = tabRole === 'ALL';
 
@@ -3591,6 +3631,116 @@ function renderGameState() {
     document.getElementById('market-panel').innerHTML =
       renderMarketTable(gameState.market, true) + renderBarterMarket(true);
   }
+
+  renderTradeFinder();
+}
+
+// ==================== TRADE FINDER (UI v2 phase 1, #114) ====================
+// Searches every island's inventory (the payload is public information,
+// including AI seats) so players can locate goods and pick a counterparty.
+// Negotiation actions (chat / structured deals) arrive with phase 3.
+let _tfMode = 'have';
+
+function setTradeFinderMode(mode) {
+  _tfMode = mode;
+  renderTradeFinder();
+}
+
+function renderTradeFinder() {
+  if (!gameState) return;
+  const searchEl = document.getElementById('tf-search');
+  const out = document.getElementById('tf-results');
+  if (!searchEl || !out) return;
+
+  // Searchable resource set: market commodities + anything any island holds.
+  const resSet = new Set(Object.keys(gameState.market || {}));
+  gameState.players.forEach(p =>
+    Object.keys(p.inventory || {}).forEach(r => resSet.add(r)));
+  document.getElementById('tf-resources').innerHTML =
+    [...resSet].sort().map(r => `<option value="${esc(r)}">`).join('');
+
+  document.getElementById('tf-mode-have')?.classList.toggle('tf-active', _tfMode === 'have');
+  document.getElementById('tf-mode-need')?.classList.toggle('tf-active', _tfMode === 'need');
+
+  const me = myPlayerIdx !== null ? gameState.players[myPlayerIdx] : null;
+  const aiBadge = p => p.is_ai ? '<span class="tf-ai-badge">🤖 AI</span>' : '';
+
+  if (_tfMode === 'need') {
+    // Reverse view: standing needs (from the barter board) that overlap
+    // with what I currently hold — my best sales leads.
+    const myInv = (me && me.inventory) || {};
+    const needs = (gameState.barter_market?.needs || [])
+      .filter(n => !me || n.player !== me.name);
+    if (!needs.length) {
+      out.innerHTML = '<span style="color:var(--dim)">No island has posted needs right now.</span>';
+      return;
+    }
+    const rows = needs.map(n => {
+      const matched = (n.needs || []).map(txt => {
+        const hit = Object.keys(myInv).find(r => txt.includes(r));
+        return hit
+          ? `<span class="tf-needs">▶ ${esc(txt)} — you hold ${myInv[hit]} ${esc(hit)}</span>`
+          : `<span style="color:var(--dim)">${esc(txt)}</span>`;
+      }).join('<br>');
+      const pd = gameState.players.find(p => p.name === n.player) || {};
+      const rolesTxt = Array.isArray(n.roles) ? n.roles.join(', ') : String(n.roles || '');
+      return `<tr><td><b>${esc(n.player)}</b>${aiBadge(pd)}</td>
+        <td style="color:var(--dim)">${esc(rolesTxt)}</td>
+        <td>${matched}</td></tr>`;
+    }).join('');
+    out.innerHTML = `<table class="comp-table">
+      <thead><tr><th>Player</th><th>Role</th><th>Needs (▶ = you can supply)</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+    return;
+  }
+
+  const q = (searchEl.value || '').trim().toLowerCase();
+  if (!q) {
+    out.innerHTML = '<span style="color:var(--dim)">Type a resource to find who holds it.</span>';
+    return;
+  }
+  const matches = [...resSet].filter(r => r.toLowerCase().includes(q));
+  if (!matches.length) {
+    out.innerHTML = `<span style="color:var(--dim)">No resource matches “${esc(searchEl.value)}”.</span>`;
+    return;
+  }
+  const res = matches.find(r => r.toLowerCase() === q) || matches[0];
+  const mkt = (gameState.market || {})[res] || {};
+  const priceRef = [
+    mkt.bid_price != null ? `bid ${Number(mkt.bid_price).toFixed(2)}` : null,
+    mkt.ask_price != null ? `ask ${Number(mkt.ask_price).toFixed(2)}` : null,
+    mkt.price != null ? `ref ${Number(mkt.price).toFixed(2)}` : null,
+  ].filter(Boolean).join(' · ');
+
+  // Standing needs index — flag holders who ALSO need this resource (they
+  // may be stockpiling) and non-holders who want it (competition for it).
+  const needsRes = new Set(
+    (gameState.barter_market?.needs || [])
+      .filter(n => (n.needs || []).some(t => t.includes(res)))
+      .map(n => n.player));
+
+  const holders = gameState.players
+    .map((p, i) => ({ p, i, qty: (p.inventory || {})[res] || 0 }))
+    .filter(h => h.qty > 0 && h.i !== myPlayerIdx)
+    .sort((a, b) => b.qty - a.qty);
+  const myQty = (me && me.inventory && me.inventory[res]) || 0;
+
+  let html = `<div style="margin-bottom:.35rem">
+    <strong style="color:var(--heading)">${esc(res)}</strong>
+    <span style="color:var(--dim)"> — market: ${priceRef || 'no quotes'} · you hold ${myQty}</span></div>`;
+  if (!holders.length) {
+    html += `<span style="color:var(--dim)">No other island holds ${esc(res)} right now.</span>`;
+  } else {
+    html += `<table class="comp-table">
+      <thead><tr><th>Player</th><th>Role</th><th style="text-align:right">Holds</th><th></th></tr></thead>
+      <tbody>${holders.map(({ p, qty }) => `
+        <tr><td><b>${esc(p.name)}</b>${aiBadge(p)}</td>
+          <td style="color:var(--dim)">${esc(displayRoles(playerRoles(p), true))}</td>
+          <td style="text-align:right;color:var(--gold)">${qty}</td>
+          <td>${needsRes.has(p.name) ? '<span class="tf-needs" title="This island has posted a need for this resource — it may not want to sell">also needs it</span>' : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
+  }
+  out.innerHTML = html;
 }
 
 function artTimeOfDay(season) {
@@ -4637,12 +4787,25 @@ function showPlayerPicker(msg) {
      <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
+// Input convention (#114): number capture boxes open empty (range/suggestion
+// in the placeholder) — reject an empty or non-numeric submit instead of
+// silently sending a default.
+function submitNumberInput(id) {
+  const el = document.getElementById(id);
+  const v = el ? el.value.trim() : '';
+  if (v === '' || isNaN(Number(v))) {
+    if (el) { el.style.borderColor = 'var(--red)'; el.focus(); }
+    return;
+  }
+  sendResponse(v);
+}
+
 function showQuantityInput(msg) {
   _activePromptType = 'dialog';
   showDlg(msg.prompt, `
-    <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}" placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
-      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('qty-in').value)">OK</button>
+      <button class="btn-primary" style="flex:1" onclick="submitNumberInput('qty-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
@@ -4650,15 +4813,15 @@ function showQuantityInput(msg) {
 
 function showDollopInput(msg) {
   _activePromptType = 'dialog';
-  const prefill = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
-  const hint = prefill > 0
-    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Pre-filled with the current best price — adjust if you wish.</div>`
+  const suggest = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
+  const hint = suggest > 0
+    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Current best price: ${suggest} Dp — type your amount.</div>`
     : '';
   showDlg(msg.prompt, `
     ${hint}
-    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.01" value="${prefill}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="dp-in" inputmode="decimal" min="0" max="${msg.max}" step="0.01" placeholder="${suggest > 0 ? suggest : `0–${msg.max}`}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
-      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
+      <button class="btn-primary" style="flex:1" onclick="submitNumberInput('dp-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
@@ -4712,15 +4875,13 @@ function _renderMarketBuyRow(res, d, focusResource) {
   const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
   const bidQty = d.bid_quantity ?? 0;
   const bidPrice = d.bid_price;
-  // Place-Bid price prefills with the FORMULA (fair reference) price,
-  // not the resting ask.  2026-05-27 playtest (Comet #6): "Food showed
-  // 17.18 but the bid was calculated at 40.00/unit" — the old behaviour
-  // prefilled the bid with the ask price, so when a resting ask sat far
-  // above fair value the bid field showed a confusingly-high number
-  // that didn't match the reference price the player saw elsewhere.
-  // "Buy Now" remains the at-ask path (data-price=askPrice on the
-  // mkt-qty-in input); "Place Bid" is a limit order so it should start
-  // from fair value and let the player raise it to clear if they choose.
+  // Place-Bid price suggests the FORMULA (fair reference) price, not the
+  // resting ask.  2026-05-27 playtest (Comet #6): "Food showed 17.18 but
+  // the bid was calculated at 40.00/unit" — suggesting the ask price
+  // confused players when a resting ask sat far above fair value.
+  // Input convention (#114): the suggestion lives in the placeholder, the
+  // box itself opens empty; submitMarketBuy falls back to the placeholder
+  // when a quantity is entered with no explicit price.
   const bidPrefill = (d.formula_price ? Number(d.formula_price).toFixed(2)
                       : (askQty && askPrice ? Number(askPrice).toFixed(2) : 0));
   const focusClass = (focusResource && res === focusResource) ? ' class="mkt-row-focus"' : '';
@@ -4730,8 +4891,8 @@ function _renderMarketBuyRow(res, d, focusResource) {
     <td>${bidQty || '—'}</td>
     <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
     <td>${askQty || '—'}</td>
-    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="mkt-bid-qty" data-res="${esc(res)}" min="0" placeholder="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" inputmode="decimal" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" placeholder="${bidPrefill}" title="Your bid price per unit — empty uses the fair-value reference shown" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
   </tr>`;
 }
 
@@ -4863,7 +5024,11 @@ function submitMarketBuy() {
   document.querySelectorAll('.mkt-bid-qty').forEach(inp => {
     const qty = Math.max(0, parseInt(inp.value) || 0);
     const priceInput = document.querySelector(`.mkt-bid-price[data-res="${inp.dataset.res}"]`);
-    const price = priceInput ? Math.max(0, parseFloat(priceInput.value) || 0) : 0;
+    // Empty price box falls back to the fair-value suggestion shown in the
+    // placeholder (input convention, #114).
+    const price = priceInput
+      ? Math.max(0, parseFloat(priceInput.value) || parseFloat(priceInput.placeholder) || 0)
+      : 0;
     if (qty > 0 && price > 0) bids[inp.dataset.res] = { quantity: qty, price };
   });
   if (Object.keys(orders).length === 0 && Object.keys(bids).length === 0) {
@@ -4880,7 +5045,23 @@ function showDlg(title, bodyHtml, className = '') {
   document.getElementById('dlg-title').textContent = title;
   document.getElementById('dlg-body').innerHTML = bodyHtml;
   document.getElementById('overlay').classList.add('active');
+  // Input convention (#114): land in the first capture box, ready to type.
+  // Tab/Shift-Tab then walks the panel's boxes in DOM order.
+  requestAnimationFrame(() => {
+    const first = dialog.querySelector(
+      'input:not([disabled]):not([type=checkbox]):not([type=radio]), textarea:not([disabled])');
+    if (first) first.focus();
+  });
 }
+
+// Enter in any capture box triggers the dialog's primary action (never from
+// a textarea, where Enter inserts a newline).
+document.getElementById('dialog').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  const primary = document.getElementById('dialog').querySelector(
+    '.popup-footer .btn-gold, .popup-footer .btn-primary, #dlg-body .btn-gold, #dlg-body .btn-primary');
+  if (primary) { e.preventDefault(); primary.click(); }
+});
 
 // Standardized info-popup shell (Phase 6 of the UX review).
 // Used by read-only or action-on-confirm popups (Production Constraints,
@@ -4932,6 +5113,31 @@ function _logCategory(text) {
   return 'other';
 }
 
+// Log windowing (UI v2 phase 1, #114): the DOM keeps at most LOG_DOM_MAX
+// lines; older nodes are detached into _logEarlier and restored on demand,
+// so a long game can't grow the page without bound.
+const LOG_DOM_MAX = 300;
+const _logEarlier = [];   // detached line nodes, oldest first
+
+function _logEarlierBtn(log) {
+  let btn = document.getElementById('log-earlier-btn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'log-earlier-btn';
+    btn.className = 'lf-btn';
+    btn.style.cssText = 'display:block;margin:.25rem 0';
+    btn.onclick = () => {
+      const anchor = btn.nextSibling;
+      _logEarlier.forEach(n => log.insertBefore(n, anchor));
+      _logEarlier.length = 0;
+      btn.remove();
+    };
+    const bar = document.getElementById('log-filter-bar');
+    log.insertBefore(btn, bar ? bar.nextSibling : log.firstChild);
+  }
+  return btn;
+}
+
 function addLog(text, cls = '') {
   const log = document.getElementById('event-log');
   const div = document.createElement('div');
@@ -4948,6 +5154,14 @@ function addLog(text, cls = '') {
   }
   div.textContent = text;
   log.appendChild(div);
+  const lines = log.querySelectorAll('.g-log-line');
+  const excess = lines.length - LOG_DOM_MAX;
+  for (let k = 0; k < excess; k++) {
+    _logEarlier.push(lines[k]);
+    lines[k].remove();
+  }
+  if (excess > 0)
+    _logEarlierBtn(log).textContent = `⟲ Show ${_logEarlier.length} earlier lines`;
   log.scrollTop = log.scrollHeight;
 }
 
@@ -5013,6 +5227,132 @@ function restoreLayoutPrefs() {
     const hidden = JSON.parse(localStorage.getItem('it_layout_hidden') || '[]');
     if (Array.isArray(hidden)) applyLayoutState(hidden);
   } catch (e) {}
+}
+
+// --- Tile system (UI v2 phase 1, #114): per-tile collapse / hide / reorder
+// + role-aware defaults.  Persisted under it_tiles_v1; independent of the
+// #99 region-level it_layout_hidden key, which keeps working unchanged.
+const TILE_STORE_KEY = 'it_tiles_v1';
+// Tiles a role rarely consults open collapsed (one click away, never gone).
+// Multi-role players get the INTERSECTION — a tile stays open if any of
+// their roles wants it.
+const ROLE_TILE_DEFAULTS = {
+  Farmer:       ['funding', 'loans'],
+  Miner:        ['funding', 'insurance'],
+  Transporter:  ['funding', 'insurance'],
+  Manufacturer: ['funding', 'insurance'],
+  Educator:     ['insurance'],
+  Banker:       ['capacity', 'hints'],
+  Doctor:       ['funding'],
+};
+
+function _tileStore() {
+  try { return JSON.parse(localStorage.getItem(TILE_STORE_KEY)) || null; }
+  catch (e) { return null; }
+}
+function _tileSaveFromDom() {
+  const s = { order: {}, collapsed: [], hidden: [] };
+  document.querySelectorAll('.g-side, .g-main, .g-info').forEach(col => {
+    const colKey = (col.className.match(/g-(side|main|info)/) || [])[1];
+    if (colKey)
+      s.order[colKey] = [...col.querySelectorAll('[data-tile]')].map(el => el.dataset.tile);
+  });
+  document.querySelectorAll('[data-tile]').forEach(el => {
+    if (el.classList.contains('tile-collapsed')) s.collapsed.push(el.dataset.tile);
+    if (el.classList.contains('tile-hidden')) s.hidden.push(el.dataset.tile);
+  });
+  try { localStorage.setItem(TILE_STORE_KEY, JSON.stringify(s)); } catch (e) {}
+}
+function _tileEl(id) { return document.querySelector(`[data-tile="${id}"]`); }
+function _tileSyncUi(el) {
+  const id = el.dataset.tile;
+  const btn = el.querySelector('.tile-ctl .tc-collapse');
+  if (btn) btn.textContent = el.classList.contains('tile-collapsed') ? '＋' : '—';
+  const cb = document.getElementById('lp-tile-' + id);
+  if (cb) cb.checked = !el.classList.contains('tile-hidden');
+}
+function tileToggleCollapse(id) {
+  const el = _tileEl(id);
+  if (!el) return;
+  el.classList.toggle('tile-collapsed');
+  _tileSyncUi(el);
+  _tileSaveFromDom();
+}
+function tileToggleHidden(id) {
+  const el = _tileEl(id);
+  if (!el) return;
+  el.classList.toggle('tile-hidden');
+  _tileSyncUi(el);
+  _tileSaveFromDom();
+}
+function tileMove(id, dir) {
+  const el = _tileEl(id);
+  if (!el) return;
+  const sibs = [...el.parentElement.querySelectorAll(':scope > [data-tile]')];
+  const i = sibs.indexOf(el);
+  const j = i + dir;
+  if (j < 0 || j >= sibs.length) return;
+  if (dir < 0) el.parentElement.insertBefore(el, sibs[j]);
+  else el.parentElement.insertBefore(sibs[j], el);
+  _tileSaveFromDom();
+}
+function restoreTilePrefs() {
+  const s = _tileStore();
+  if (!s) return;
+  Object.entries(s.order || {}).forEach(([colKey, ids]) => {
+    const col = document.querySelector('.g-' + colKey);
+    if (!col) return;
+    ids.forEach(id => {
+      const el = col.querySelector(`[data-tile="${id}"]`);
+      if (el) col.appendChild(el);  // re-append in saved order
+    });
+  });
+  (s.collapsed || []).forEach(id => _tileEl(id)?.classList.add('tile-collapsed'));
+  (s.hidden || []).forEach(id => _tileEl(id)?.classList.add('tile-hidden'));
+  document.querySelectorAll('[data-tile]').forEach(_tileSyncUi);
+}
+function initTiles() {
+  document.querySelectorAll('[data-tile]').forEach(el => {
+    const h3 = el.querySelector('h3');
+    if (!h3 || h3.querySelector('.tile-ctl')) return;
+    const id = el.dataset.tile;
+    const ctl = document.createElement('span');
+    ctl.className = 'tile-ctl';
+    ctl.innerHTML =
+      `<button title="Move up" onclick="tileMove('${id}',-1)">▲</button>` +
+      `<button title="Move down" onclick="tileMove('${id}',1)">▼</button>` +
+      `<button class="tc-collapse" title="Collapse / expand" onclick="tileToggleCollapse('${id}')">—</button>`;
+    h3.appendChild(ctl);
+  });
+  const list = document.getElementById('lp-tiles');
+  if (list) {
+    list.innerHTML = [...document.querySelectorAll('[data-tile]')].map(el => `
+      <div class="lp-row" onclick="tileToggleHidden('${el.dataset.tile}')">
+        <input type="checkbox" id="lp-tile-${el.dataset.tile}" checked
+               onclick="event.stopPropagation();tileToggleHidden('${el.dataset.tile}')">
+        ${el.dataset.tileLabel || el.dataset.tile}
+      </div>`).join('');
+  }
+  restoreTilePrefs();
+}
+// Role-aware defaults — applied once per page load, and only when the player
+// has never customized tiles (no it_tiles_v1 key).  Not persisted, so a
+// future role change re-derives them.
+let _roleTileDefaultsApplied = false;
+function applyRoleTileDefaults(roles) {
+  if (_roleTileDefaultsApplied || _tileStore() || !roles || !roles.length) return;
+  _roleTileDefaultsApplied = true;
+  let collapsed = null;
+  roles.forEach(r => {
+    const set = new Set(ROLE_TILE_DEFAULTS[r] || []);
+    collapsed = collapsed === null
+      ? set
+      : new Set([...collapsed].filter(t => set.has(t)));
+  });
+  (collapsed ? [...collapsed] : []).forEach(id => {
+    const el = _tileEl(id);
+    if (el) { el.classList.add('tile-collapsed'); _tileSyncUi(el); }
+  });
 }
 
 function syncServerLog(msg) {
