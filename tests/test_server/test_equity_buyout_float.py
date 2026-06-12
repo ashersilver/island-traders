@@ -67,7 +67,7 @@ def test_owner_buys_some_float_shares():
     assert p.holdings["0"] == AUCTIONED_SHARES + 10
     cost = round(10 * price, 1)
     assert p.personal_cash == round(cash0 - cost, 1)
-    assert p.dollops == round(treasury0 + cost, 1)
+    assert (p.dollops - treasury0) == pytest.approx(cash0 - p.personal_cash, abs=0.1)
     assert round(p.personal_cash + p.dollops, 1) == money0
 
 

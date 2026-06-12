@@ -2476,8 +2476,9 @@ class GameManager:
 
         # Execute primary issuance: personal cash becomes island treasury cash;
         # shares move unissued -> owner; holdings mirror the cap table.
+        total_liquid = round(player.personal_cash + player.dollops, 1)
         player.personal_cash = round(player.personal_cash - cost, 1)
-        player.dollops = round(player.dollops + cost, 1)
+        player.dollops = round(total_liquid - player.personal_cash, 1)
         player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
         player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
 

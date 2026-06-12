@@ -27,6 +27,11 @@ stake while injecting cash into their own island; the implementation preserves
 the maintainer's primary-issuance rule and asserts money-supply neutrality
 instead.
 
+**Verification.** Full suite: 684 passed. Calibration sanity
+(`--games 1000 --seed 42`): Farmer 9.7%, Miner 20.5%, Transporter 12.1%,
+Educator 18.0%, Banker 17.4%, Manufacturer 11.8%, Doctor 10.5%; closing money
+supply 5,742.6 Dp (-45.3%).
+
 ### codex/p3-calibration-112
 
 Version bump: `0.1.2-dev.2026-06-12.1`
