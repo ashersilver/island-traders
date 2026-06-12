@@ -2804,17 +2804,21 @@ class GameManager:
                     for pol in p.insurance_policies if pol.active
                 ],
             }
-            lobby_player = next(
-                (lp for lp in room.players if lp.player_id == player_id),
+            # Inventory is public information for every seat — including AI
+            # islands, so the Trade Finder can surface them as trading
+            # partners (UI v2 phase 1, #114). Previously inventory was
+            # omitted when the *requester* was an AI seat. `is_ai` flags the
+            # seat itself so the UI can badge AI islands.
+            seat_lp = next(
+                (lp for lp in room.players
+                 if lp.player_id == engine_to_lobby.get(p.player_id)),
                 None
             )
-            if lobby_player and not lobby_player.is_human:
-                pass
-            else:
-                pd["inventory"] = {
-                    r.value: p.inventory.get(r)
-                    for r in ResourceType if p.inventory.get(r) > 0
-                }
+            pd["is_ai"] = bool(seat_lp and not seat_lp.is_human)
+            pd["inventory"] = {
+                r.value: p.inventory.get(r)
+                for r in ResourceType if p.inventory.get(r) > 0
+            }
             # Production capacity panel + constraint data
             pd["capacity"] = self._player_capacity(
                 p,

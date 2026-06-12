@@ -5,6 +5,39 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/brave-mestorf-6582fd — UI v2 phase 1 (#114)
+
+Version bump: `0.1.2-dev.2026-06-12.3`
+
+**Tile layout (per-tile control + role-aware defaults).** Every dashboard
+panel is now a tile with hover controls: ▲▼ reorder within its column,
+collapse/expand, and show/hide via the ▦ Layout menu's new "Tiles" list.
+Preferences persist in localStorage (`it_tiles_v1`, independent of the #99
+region keys). First-time players get role-aware defaults — e.g. a Banker
+opens with Funding Rates expanded and Production Capacity collapsed; a
+Farmer the other way round. Multi-role players keep a tile open if any of
+their roles wants it.
+
+**Trade Finder.** New tile under All Players: type a resource to see every
+island holding it (quantity, roles, AI badge, market bid/ask reference,
+"also needs it" warning), or flip to "They need mine" to see standing barter
+needs you can supply. Backed by a `game_state` change: inventories are now
+included for AI seats too (previously omitted for AI requesters), with a new
+`is_ai` flag per player.
+
+**Input conventions.** Number capture boxes no longer open pre-populated:
+quantity/dollop prompts, auction bids and the Market Buy grid open empty with
+the range or fair-value suggestion shown as a placeholder. Focus lands in the
+first box, Tab walks the boxes, Enter submits, and an empty Place-Bid price
+falls back to the displayed fair-value reference.
+
+**Event log windowing.** The log keeps at most 300 lines in the DOM; older
+lines detach behind a "⟲ Show earlier lines" button, so long games no longer
+grow the page without bound.
+
+Design + roadmap: `requirements/ui-v2-modular-design-2026-06-12.md`
+(phases 2–4: order/training batch desks, chat rooms with deal cards, AI chat
+push). Mockup: `requirements/mockups/ui-v2-modular.html`.
 ### codex/unissued-recap-ai-financing-106
 
 Version bump: `0.1.2-dev.2026-06-12.2`
@@ -34,7 +67,7 @@ supply 5,742.6 Dp (-45.3%).
 
 ### codex/p3-calibration-112
 
-Version bump: `0.1.2-dev.2026-06-12.1`
+Version bump: `0.1.2-dev.2026-06-12.3`
 
 **P3 calibration follow-up: Doctor restored, win-rate spread tightened.** The
 P3 household demand loop is now tuned for release: household Food demand gives
