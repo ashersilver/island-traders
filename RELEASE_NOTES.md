@@ -5,6 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.2 — 2026-06-12
+
+Second point release. The headline is the **economy rebalance** reaching a
+balanced state, plus a large UI/usability pass.
+
+**Economy.** The full mechanism+demand arc landed: market-maker bid/ask spread +
+finite depth (P1), per-band payroll redirected into household cash (P2/P3), an AI
+revenue-opportunity advisory (#98), and **consumer demand for end products**
+(Goods/HealthServices/Vaccine/Food via the household-spending loop, #84). After a
+calibration pass (#112) all seven roles now finish within **9.8–20.5%** win rate
+around the 14.3% target (was 2.8–29.4 mid-arc). Ownership rules changed: the 40%
+non-auctioned capital is **authorized-but-unissued** — an owner buying it is a
+primary issuance that adds to island cash + share capital (#107) — and a
+cash-short AI now **borrows or recapitalizes** instead of stalling (#108).
+
+**UI / usability.** Modular tile dashboard (reorder/collapse/show-hide, role-aware
+defaults, presets), a **Trade Finder** (find who holds/needs a resource, AI seats
+now discoverable), hideable + filterable game log with windowing, disaster
+pop-ups (problem/impact/duration), a net-worth breakdown panel, and consistent
+empty+placeholder number inputs.
+
+**Other.** Multi-role LLM agents (all 7 roles) in the agents repo; the
+season-countdown desync fix (seasons no longer end before the on-screen timer);
+supply-chain liveness + money-supply instrumentation in the sim runner.
+
+**Known issue.** Win-rate balance is solved, but total money in circulation still
+contracts ~45% over a game — a future faucet/tuning item, not a gameplay blocker.
+
 ### claude/brave-mestorf-6582fd — UI v2 phase 1 (#114)
 
 Version bump: `0.1.2-dev.2026-06-12.3`
