@@ -1,3 +1,5 @@
+import pytest
+
 from island_traders.engine.ai import AIStrategy
 from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
@@ -140,7 +142,10 @@ def test_farmer_ai_packages_food_for_visible_human_demand():
     farmer.receive_resources(ResourceType.GRAIN, 3)
     farmer.receive_resources(ResourceType.PRODUCE, 3)
     farmer.receive_resources(ResourceType.FISH, 3)
-    market.post_bid(buyer, ResourceType.FOOD, 25.0, 3)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    farmer.receive_resources(ResourceType.OIL, 1)
+    bid_price = round(market.current_price(ResourceType.FOOD) * 1.6, 2)
+    market.post_bid(buyer, ResourceType.FOOD, bid_price, 3)
 
     actions = ai.take_turn(
         farmer,
@@ -155,7 +160,7 @@ def test_farmer_ai_packages_food_for_visible_human_demand():
     )
 
     assert buyer.inventory.get(ResourceType.FOOD) == 3
-    assert farmer.dollops == 105.0
+    assert farmer.dollops == pytest.approx(30.0 + bid_price * 3)
     assert any("produced" in action and "Food" in action for action in actions)
 
 

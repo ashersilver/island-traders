@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/p3-calibration-112
+
+Version bump: `0.1.2-dev.2026-06-12.1`
+
+**P3 calibration follow-up: Doctor restored, win-rate spread tightened.** The
+P3 household demand loop is now tuned for release: household Food demand gives
+Farmers a funded end-product customer, Doctor HealthServices/Vaccine pricing is
+back in line with the new funded demand, the Transporter’s post-P3 uplift is
+trimmed, Miner commodity pricing is softened slightly, and the formula
+market-maker spread is narrowed from 12% to 8%. Acceptance calibration:
+1000 games at seed 42 produced Farmer 9.8%, Miner 20.5%, Transporter 12.1%,
+Educator 18.0%, Banker 17.4%, Manufacturer 11.7%, Doctor 10.5%; closing money
+supply was 5,742.4 Dp (-45.3%). Food, Goods, HealthServices, and Vaccine all
+trade off zero.
+
 ### codex/p3-consumer-demand-84
 
 Version bump: `0.1.2-dev.2026-06-11.4`
