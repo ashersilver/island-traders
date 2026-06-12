@@ -5,6 +5,141 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.2 — 2026-06-12
+
+Second point release. The headline is the **economy rebalance** reaching a
+balanced state, plus a large UI/usability pass.
+
+**Economy.** The full mechanism+demand arc landed: market-maker bid/ask spread +
+finite depth (P1), per-band payroll redirected into household cash (P2/P3), an AI
+revenue-opportunity advisory (#98), and **consumer demand for end products**
+(Goods/HealthServices/Vaccine/Food via the household-spending loop, #84). After a
+calibration pass (#112) all seven roles now finish within **9.8–20.5%** win rate
+around the 14.3% target (was 2.8–29.4 mid-arc). Ownership rules changed: the 40%
+non-auctioned capital is **authorized-but-unissued** — an owner buying it is a
+primary issuance that adds to island cash + share capital (#107) — and a
+cash-short AI now **borrows or recapitalizes** instead of stalling (#108).
+
+**UI / usability.** Modular tile dashboard (reorder/collapse/show-hide, role-aware
+defaults, presets), a **Trade Finder** (find who holds/needs a resource, AI seats
+now discoverable), hideable + filterable game log with windowing, disaster
+pop-ups (problem/impact/duration), a net-worth breakdown panel, and consistent
+empty+placeholder number inputs.
+
+**Other.** Multi-role LLM agents (all 7 roles) in the agents repo; the
+season-countdown desync fix (seasons no longer end before the on-screen timer);
+supply-chain liveness + money-supply instrumentation in the sim runner.
+
+**Known issue.** Win-rate balance is solved, but total money in circulation still
+contracts ~45% over a game — a future faucet/tuning item, not a gameplay blocker.
+
+### claude/brave-mestorf-6582fd — UI v2 phase 1 (#114)
+
+Version bump: `0.1.2-dev.2026-06-12.3`
+
+**Tile layout (per-tile control + role-aware defaults).** Every dashboard
+panel is now a tile with hover controls: ▲▼ reorder within its column,
+collapse/expand, and show/hide via the ▦ Layout menu's new "Tiles" list.
+Preferences persist in localStorage (`it_tiles_v1`, independent of the #99
+region keys). First-time players get role-aware defaults — e.g. a Banker
+opens with Funding Rates expanded and Production Capacity collapsed; a
+Farmer the other way round. Multi-role players keep a tile open if any of
+their roles wants it.
+
+**Trade Finder.** New tile under All Players: type a resource to see every
+island holding it (quantity, roles, AI badge, market bid/ask reference,
+"also needs it" warning), or flip to "They need mine" to see standing barter
+needs you can supply. Backed by a `game_state` change: inventories are now
+included for AI seats too (previously omitted for AI requesters), with a new
+`is_ai` flag per player.
+
+**Input conventions.** Number capture boxes no longer open pre-populated:
+quantity/dollop prompts, auction bids and the Market Buy grid open empty with
+the range or fair-value suggestion shown as a placeholder. Focus lands in the
+first box, Tab walks the boxes, Enter submits, and an empty Place-Bid price
+falls back to the displayed fair-value reference.
+
+**Event log windowing.** The log keeps at most 300 lines in the DOM; older
+lines detach behind a "⟲ Show earlier lines" button, so long games no longer
+grow the page without bound.
+
+Design + roadmap: `requirements/ui-v2-modular-design-2026-06-12.md`
+(phases 2–4: order/training batch desks, chat rooms with deal cards, AI chat
+push). Mockup: `requirements/mockups/ui-v2-modular.html`.
+### codex/unissued-recap-ai-financing-106
+
+Version bump: `0.1.2-dev.2026-06-12.2`
+
+**Unissued-share recapitalization + AI cash-shortfall financing.** The 40%
+reserve equity is now modeled and displayed as authorized-but-unissued shares,
+not externally held public float. Buying those shares is now a primary
+issuance: investor personal cash decreases, island treasury cash increases by
+the same amount, and the cap table/holdings issue the shares to the owner.
+Legacy saves with `"public"` cap-table entries migrate to `"unissued"` on load.
+
+**AI financing.** Cash-short AI islands now proactively finance operating needs:
+they first try a bounded borrower-initiated bank loan from an available Banker
+(AI or human), then recapitalize by issuing unissued shares if the owner has
+personal cash above reserve. Only after both paths fail do they stay stalled.
+
+**Note.** The brief requested both primary issuance and near-neutral owner net
+worth. Those are not exactly compatible when an owner moves from 60% to a larger
+stake while injecting cash into their own island; the implementation preserves
+the maintainer's primary-issuance rule and asserts money-supply neutrality
+instead.
+
+**Verification.** Full suite: 684 passed. Calibration sanity
+(`--games 1000 --seed 42`): Farmer 9.7%, Miner 20.5%, Transporter 12.1%,
+Educator 18.0%, Banker 17.4%, Manufacturer 11.8%, Doctor 10.5%; closing money
+supply 5,742.6 Dp (-45.3%).
+
+### codex/p3-calibration-112
+
+Version bump: `0.1.2-dev.2026-06-12.3`
+
+**P3 calibration follow-up: Doctor restored, win-rate spread tightened.** The
+P3 household demand loop is now tuned for release: household Food demand gives
+Farmers a funded end-product customer, Doctor HealthServices/Vaccine pricing is
+back in line with the new funded demand, the Transporter’s post-P3 uplift is
+trimmed, Miner commodity pricing is softened slightly, and the formula
+market-maker spread is narrowed from 12% to 8%. Acceptance calibration:
+1000 games at seed 42 produced Farmer 9.8%, Miner 20.5%, Transporter 12.1%,
+Educator 18.0%, Banker 17.4%, Manufacturer 11.7%, Doctor 10.5%; closing money
+supply was 5,742.4 Dp (-45.3%). Food, Goods, HealthServices, and Vaccine all
+trade off zero.
+
+### codex/p3-consumer-demand-84
+
+Version bump: `0.1.2-dev.2026-06-11.4`
+
+**Economy P3: household cash and funded end-product demand.** Payroll now moves
+from island treasury into a per-island household cash pool instead of vanishing;
+households spend that cash on Goods, HealthServices, and Vaccine from producer
+offers, with unmet demand posted before producer turns so AI sellers can react.
+Household cash is counted in money supply and island wealth, and the dashboard
+surfaces it in the player payload and wealth breakdown. Manufacturer now has a
+Goods product line and a small opening Goods stock, while Healthcare end-product
+prices were nudged upward for the new funded-demand market. Calibration sanity
+check: 1000 games at seed 42 closed at 5,739.3 Dp (-45.3%, improved from the
+prior -52.8% baseline) with Goods (569), HealthServices (23,619), and Vaccine
+(5,492) traded off zero; Farmer remains a known low-win-rate follow-up for the
+next rebalance pass.
+
+### claude/fix-season-countdown-desync
+
+Version bump: `0.1.2-dev.2026-06-11.2`
+
+**Fix: season ending before the on-screen countdown finished.** The authoritative
+season timer started when the server *broadcast* `season_start`, but each client
+started its countdown when it *received* that message — so the server's deadline
+fell a little before the client's visible 0 (worse on a throttled/background
+tab), making timed seasons appear to end early. Two changes: (1) `season_start`
+now carries `server_now` + `timer_end`, and the client syncs its countdown to the
+server clock instead of starting fresh at message-receipt; (2) the server adds a
+small grace (`_SEASON_TIMER_GRACE_SECONDS = 1.5`) so the authoritative timer
+never fires before a client's countdown reaches 0. Ready-only seasons and the
+pause/resume timer bump are unaffected.
+
 ## 0.1.1 — 2026-06-11
 
 First point release since `0.1.0`. Rolls up ~2 weeks of `pre-release` work into

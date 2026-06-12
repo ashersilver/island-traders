@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.1"
+APP_VERSION: str = "0.1.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -15,7 +15,7 @@ CURRENCY_SYMBOL = "Dp"       # display symbol
 # `current_price` remains the fair reference; formula-market buys pay the ask
 # premium and formula-market sells receive the bid discount. Player order-book
 # trades keep their posted prices.
-MARKET_MAKER_SPREAD: float = 0.12
+MARKET_MAKER_SPREAD: float = 0.08
 MARKET_MAKER_DEPTH_PER_RESOURCE: int = 50
 
 # Per-season payroll by active-worker band (P2, 2026-06-11). Trainees and
@@ -91,7 +91,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # for the full institutional-cash-pool model (future implementation).
     "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
     # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
-    "Manufacturer":  {"FarmMachinery": 2,                             # to sell
+    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4,                 # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
@@ -100,24 +100,24 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                18.0,
-    "Fish":                15.0,
-    "Grain":               12.0,
-    "Produce":             15.0,
+    "Food":                22.0,
+    "Fish":                16.0,
+    "Grain":               13.0,
+    "Produce":             16.0,
     "Meat":                16.2,
     "Ore":                 12.0,
-    "Metal":               20.0,
-    "Oil":                 16.0,
+    "Metal":               19.0,
+    "Oil":                 15.0,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
-    "Freight":             22.0,   # was 16.5; Transporter uplift
+    "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
     "Goods":               30.0,
-    "HealthServices":      18.0,   # was 31.5; Doctor/Educator value gap reduction
-    "Vaccine":             22.0,   # was 36.75; same
+    "HealthServices":      34.0,   # #112 restores clinical pricing for funded demand
+    "Vaccine":             40.0,   # #112 restores preventive-care pricing
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
@@ -125,7 +125,7 @@ BASE_PRICES: dict[str, float] = {
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      24.0,   # was 18.7; Transporter uplift
+    "PassengerSeats":      23.0,   # #112 trims prior Transporter uplift
     # Educator IP
     "Patents":             32.0,   # was 47.5; curtail Patent compounding
 }
@@ -137,11 +137,10 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
-    # Rebalance 2026-06-02: Transporter was the lowest-value role (553 Dp/s vs
-    # ~1300 average). Doubled Freight and doubled PassengerSeats production so
-    # the Transporter is competitive without chart distortion.
-    "Transporter":   {"Freight": 3.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "PassengerSeats": 1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    # Rebalance 2026-06-02 lifted Transporter output; #112 trims that uplift
+    # after P3 demand made shipping overperform.
+    "Transporter":   {"Freight": 3.25 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+                      "PassengerSeats": 1.05 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Courses are classroom slots the Educator sells/uses for training.  They
     # are produced each season (scaled by workforce skill / capacity, so they
     # taper if the academic faculty is gutted) — previously they were absent
@@ -247,6 +246,15 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 2,   # large steel frames; shipped on flatbeds
         "desc":             "Tractors & Farm Machinery",
     },
+    "Goods": {
+        "inputs":           {"Metal": 1, "Oil": 1},
+        "output":           "Goods",
+        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "skilled":          2,
+        "unskilled":        2,
+        "freight_per_unit": 1,
+        "desc":             "Consumer Goods",
+    },
     "MiningEquipment": {
         "inputs":           {"Metal": 3, "Oil": 2},
         "output":           "MiningEquipment",
@@ -277,6 +285,22 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "freight_per_unit": 0,   # self-propelled / delivered under own power
         "desc":             "Transportation Equipment",
     },
+}
+
+# P3 consumer demand loop. Payroll accumulates in Player.household_cash; these
+# constants convert resident cash into funded end-product purchases.
+CONSUMER_GOODS_BASE_UNITS_PER_100_POP: int = 1
+CONSUMER_FOOD_BASE_UNITS_PER_100_POP: int = 1
+CONSUMER_GOODS_WEALTH_STEP_DOLLOPS: float = 1200.0
+CONSUMER_GOODS_WEALTH_STEP_UNITS: int = 1
+CONSUMER_STRUCTURAL_ADVISORY_WEIGHT: float = 0.4
+CONSUMER_HEALTH_BASE_SEASONAL_UNITS: dict[str, int] = {
+    "Summer": 1,
+    "Winter": 1,
+}
+CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
+CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
+    "Autumn": 1,
 }
 
 # How strongly prices respond to supply/demand imbalance

@@ -32,7 +32,7 @@ from ..models.role import ROLES
 from ..models.training import TrainingStatus
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
-    AUCTIONED_SHARES, PUBLIC_HOLDER,
+    AUCTIONED_SHARES, UNISSUED_HOLDER,
 )
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import LoanStatus, posted_funding_rates
@@ -2419,9 +2419,11 @@ class GameManager:
         msg: dict,
         websocket,
     ) -> None:
-        """Equity Phase 3: the controlling owner buys public-float shares of
-        their own island at live fair value, paid from personal cash (the cash
-        leaves the game, like the auction bid).  Message: {shares:int}."""
+        """The controlling owner buys unissued shares of their own island.
+
+        This is a primary issuance: investor personal cash becomes island
+        treasury cash. Message: {shares:int}.
+        """
         room = self.rooms.get(room_id)
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
@@ -2439,7 +2441,7 @@ class GameManager:
         # Only the controlling owner may buy their island's float.
         if player.cap_table.held_by(owner_key) < AUCTIONED_SHARES:
             await websocket.send_text(json.dumps({
-                "type": "error", "message": "Only the controlling owner can buy this float."
+                "type": "error", "message": "Only the controlling owner can buy unissued shares."
             }))
             return
 
@@ -2447,11 +2449,11 @@ class GameManager:
             shares = int(msg.get("shares", 0))
         except (TypeError, ValueError):
             shares = 0
-        available = player.cap_table.public_float()
+        available = player.cap_table.unissued()
         shares = min(max(0, shares), available)
         if shares <= 0:
             await websocket.send_text(json.dumps({
-                "type": "error", "message": "No public-float shares to buy."
+                "type": "error", "message": "No unissued shares to buy."
             }))
             return
 
@@ -2472,10 +2474,12 @@ class GameManager:
             }))
             return
 
-        # Execute: cash leaves the game (paid to imaginary public holders);
-        # shares move public -> owner; holdings mirror the cap table.
+        # Execute primary issuance: personal cash becomes island treasury cash;
+        # shares move unissued -> owner; holdings mirror the cap table.
+        total_liquid = round(player.personal_cash + player.dollops, 1)
         player.personal_cash = round(player.personal_cash - cost, 1)
-        player.cap_table.transfer(PUBLIC_HOLDER, owner_key, shares)
+        player.dollops = round(total_liquid - player.personal_cash, 1)
+        player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
         player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
 
         await websocket.send_text(json.dumps({
@@ -2661,6 +2665,7 @@ class GameManager:
                 # --- Equity (Phase 2b): two balance sheets + ownership ---
                 "treasury": round(p.dollops, 1),          # island operating cash (alias of dollops)
                 "personal_cash": round(p.personal_cash, 1),  # investor wallet
+                "household_cash": round(p.household_cash, 1),
                 "net_worth": round(
                     p.net_worth(
                         share_price_by_island,
@@ -2671,10 +2676,10 @@ class GameManager:
                 "owns_pct": round(
                     p.cap_table.fraction(str(p.player_id)) * 100, 1
                 ) if p.cap_table else None,
-                "public_float_pct": round(
-                    (p.cap_table.public_float() / 100) * 100, 1
+                "unissued_pct": round(
+                    (p.cap_table.unissued() / 100) * 100, 1
                 ) if p.cap_table else None,
-                "public_float_shares": p.cap_table.public_float() if p.cap_table else 0,
+                "unissued_shares": p.cap_table.unissued() if p.cap_table else 0,
                 "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
                 "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
                 "shareholder_loan_receivable": round(
@@ -2799,17 +2804,21 @@ class GameManager:
                     for pol in p.insurance_policies if pol.active
                 ],
             }
-            lobby_player = next(
-                (lp for lp in room.players if lp.player_id == player_id),
+            # Inventory is public information for every seat — including AI
+            # islands, so the Trade Finder can surface them as trading
+            # partners (UI v2 phase 1, #114). Previously inventory was
+            # omitted when the *requester* was an AI seat. `is_ai` flags the
+            # seat itself so the UI can badge AI islands.
+            seat_lp = next(
+                (lp for lp in room.players
+                 if lp.player_id == engine_to_lobby.get(p.player_id)),
                 None
             )
-            if lobby_player and not lobby_player.is_human:
-                pass
-            else:
-                pd["inventory"] = {
-                    r.value: p.inventory.get(r)
-                    for r in ResourceType if p.inventory.get(r) > 0
-                }
+            pd["is_ai"] = bool(seat_lp and not seat_lp.is_human)
+            pd["inventory"] = {
+                r.value: p.inventory.get(r)
+                for r in ResourceType if p.inventory.get(r) > 0
+            }
             # Production capacity panel + constraint data
             pd["capacity"] = self._player_capacity(
                 p,
@@ -3319,6 +3328,11 @@ class GameManager:
             "season": season_name,
             "season_index": season_index,
             "timer_seconds": secs,        # 0 = Ready-only mode
+            # Authoritative timing so clients sync their countdown to the server
+            # clock instead of starting it at message-receipt (avoids the "season
+            # ended before my countdown finished" desync).
+            "server_now": round(time.time(), 3),
+            "timer_end": round(room.season_timer_end, 3) if secs > 0 else 0,
             "active_humans": list(humans),
         })
 
@@ -3393,9 +3407,19 @@ class GameManager:
             "season": season_name,
         })
 
+    # Grace added to the server-side season countdown so the authoritative timer
+    # never fires *before* a client's visible countdown reaches 0. The client
+    # starts its countdown when it receives `season_start` (broadcast + network
+    # + render latency after the server starts its clock), so without this the
+    # season could resolve while players still see a few seconds left. The
+    # season_start payload also carries `server_now` + `timer_end` so clients can
+    # sync their display to the server clock; this grace covers the residual
+    # latency + the client's 250ms tick/rounding.
+    _SEASON_TIMER_GRACE_SECONDS: float = 1.5
+
     async def _season_timer(self, room_id: str, seconds: int) -> None:
-        """Sleep for the season window, then force-end any pending turns."""
-        await asyncio.sleep(seconds)
+        """Sleep for the season window (plus grace), then force-end pending turns."""
+        await asyncio.sleep(max(0.0, seconds) + self._SEASON_TIMER_GRACE_SECONDS)
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
             return
