@@ -5,6 +5,7 @@ from math import ceil
 
 from ..constants import (
     BASE_PRICES,
+    CONSUMER_FOOD_BASE_UNITS_PER_100_POP,
     CONSUMER_GOODS_BASE_UNITS_PER_100_POP,
     CONSUMER_GOODS_WEALTH_STEP_DOLLOPS,
     CONSUMER_GOODS_WEALTH_STEP_UNITS,
@@ -40,6 +41,10 @@ def consumer_demand_plan(
     population_units = max(0, ceil(player.population / 100))
     units: dict[ResourceType, int] = {}
     if population_units > 0:
+        food_units = population_units * CONSUMER_FOOD_BASE_UNITS_PER_100_POP
+        if food_units > 0:
+            units[ResourceType.FOOD] = food_units
+
         wealth_steps = int(max(0.0, player.dollops) // CONSUMER_GOODS_WEALTH_STEP_DOLLOPS)
         goods_units = (
             population_units * CONSUMER_GOODS_BASE_UNITS_PER_100_POP

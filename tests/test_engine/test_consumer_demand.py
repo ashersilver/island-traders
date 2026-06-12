@@ -60,6 +60,7 @@ def test_consumer_demand_plan_scales_goods_and_seasonal_health_vaccine():
     summer = consumer_demand_plan(player, "Summer", casualties=2).units
     autumn = consumer_demand_plan(player, "Autumn").units
 
+    assert summer[ResourceType.FOOD] == 2
     assert summer[ResourceType.GOODS] == 3
     assert summer[ResourceType.HEALTH_SERVICES] == 4
     assert autumn[ResourceType.VACCINE] == 2
