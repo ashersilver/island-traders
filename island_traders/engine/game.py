@@ -249,10 +249,11 @@ class Game:
 
     def _total_money_supply(self) -> float:
         """Total liquid Dollops in circulation: every island's operating
-        treasury plus every investor's personal cash.  Loans and trades only
-        move Dollops between these balances, so this is conserved except where
-        the formula market mints (sell) or burns (buy) cash."""
-        return sum(p.dollops + p.personal_cash for p in self.players)
+        treasury, every investor's personal cash, and resident household cash.
+        Loans, payroll, and player trades only move Dollops between these
+        balances, so this is conserved except where the formula market mints
+        (sell) or burns (buy) cash."""
+        return sum(p.dollops + p.personal_cash + p.household_cash for p in self.players)
 
     def _seasonal_payroll_due(self, player: Player) -> float:
         return round(
@@ -266,10 +267,10 @@ class Game:
     def _process_payroll(self, year: int, season: int) -> None:
         """Charge per-season wages for active home workers.
 
-        Payroll is a pure Dollops sink: active staff must be paid each season,
-        while trainees and contracted-away staff are excluded because they are
-        not available to the home island. Shortfalls are logged but do not add a
-        layoff/morale rule in this pass.
+        Payroll moves Dollops from the island treasury to resident household
+        cash. Trainees and contracted-away staff are excluded because they are
+        not available to the home island. Shortfalls are logged but do not add
+        a layoff/morale rule in this pass.
         """
         _ = (year, season)  # kept for log-hook symmetry with other processors
         for player in self.players:
@@ -278,10 +279,11 @@ class Game:
                 continue
             paid = min(player.dollops, due)
             player.dollops = round(player.dollops - paid, 2)
+            player.household_cash = round(player.household_cash + paid, 2)
             if paid >= due:
                 self.io.print(
                     f"[PAYROLL] {player.name}: paid {CURRENCY_SYMBOL}{paid:.2f} "
-                    f"for active workforce wages."
+                    f"to household wages."
                 )
             else:
                 shortfall = round(due - paid, 2)
@@ -602,6 +604,7 @@ class Game:
             "role_names": [r.name for r in p.roles],
             "is_human": p.is_human,
             "dollops": p.dollops,
+            "household_cash": p.household_cash,
             "production_capacity": p.production_capacity,
             "population": p.population,
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
@@ -798,6 +801,7 @@ class Game:
                 name=pd["name"],
                 roles=roles,
                 dollops=pd["dollops"],
+                household_cash=pd.get("household_cash", 0.0),
                 is_human=pd["is_human"],
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),

@@ -21,6 +21,7 @@ from ..models.profession import (
     WorkerBand, EngineerSpecialty, band_of,
 )
 from ..engine.workforce_events import apply_workplace_risks
+from ..engine.consumer import consumer_demand_plan, buy_household_goods_from_offers
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
     STARTING_WORKERS_BY_PROFESSION,
@@ -152,11 +153,14 @@ class TurnManager:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         self._consume_and_post_sustenance()
+        self._post_consumer_demand_signals(season_name, risk_reports)
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
         else:
             results = self._run_season_sequential(year, season_index, event_results)
+
+        self._process_consumer_demand(season_name, risk_reports)
 
         # Loan repayment processing moved to AFTER the action phase
         # (2026-05-27 brief, Codex Player report: "an earlier mature
@@ -173,6 +177,53 @@ class TurnManager:
         self.market.reset_period_signals()
         self.market.tick_shocks()
         return results
+
+    def _process_consumer_demand(self, season_name: str, risk_reports: list) -> None:
+        casualties_by_player = {
+            report.player_id: len(report.injured_worker_ids) + len(report.fatality_worker_ids)
+            for report in risk_reports
+        }
+        for player in self.players:
+            if player.household_cash <= 0:
+                continue
+            plan = consumer_demand_plan(
+                player,
+                season_name,
+                casualties=casualties_by_player.get(player.player_id, 0),
+            )
+            if not plan.units:
+                continue
+            result = buy_household_goods_from_offers(
+                player,
+                self.market,
+                plan.units,
+                post_unmet=False,
+            )
+            if result.spent > 0:
+                parts = ", ".join(
+                    f"{qty}x {rtype.value}" for rtype, qty in result.bought.items()
+                )
+                self.io.print(
+                    f"[CONSUMER DEMAND] {player.name} households spent "
+                    f"{CURRENCY_SYMBOL}{result.spent:.2f} on {parts}."
+                )
+
+    def _post_consumer_demand_signals(self, season_name: str, risk_reports: list) -> None:
+        casualties_by_player = {
+            report.player_id: len(report.injured_worker_ids) + len(report.fatality_worker_ids)
+            for report in risk_reports
+        }
+        for player in self.players:
+            if player.household_cash <= 0:
+                continue
+            plan = consumer_demand_plan(
+                player,
+                season_name,
+                casualties=casualties_by_player.get(player.player_id, 0),
+            )
+            for rtype, qty in plan.units.items():
+                if qty > 0:
+                    self.market.post_demand(rtype, qty)
 
     def _apply_event(self, player: Player, event: EventResult) -> None:
         """Pre-turn event application (announce, damage counters, price shocks)."""

@@ -37,8 +37,6 @@ AI_EQUIPMENT_INPUTS = {
     ResourceType.TRANSPORT_EQUIPMENT,
 }
 AI_LIST_ONLY_WITH_BID = {
-    ResourceType.HEALTH_SERVICES,
-    ResourceType.VACCINE,
     ResourceType.PATENTS,
     ResourceType.PASSENGER_SEATS,
 }
