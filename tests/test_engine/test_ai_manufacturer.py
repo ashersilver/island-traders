@@ -68,11 +68,11 @@ def test_revenue_opportunities_rank_ai_farmer_structural_farm_machinery_demand()
     assert farm["inputs_to_stockpile"] == {
         "Metal": 2,
         "Oil": 1,
-        "Freight": 6,
+        "Freight": 1,
     }
 
 
-def test_ai_manufacturer_selects_farm_machinery_for_ai_farmer_without_bid():
+def test_ai_manufacturer_selects_goods_over_speculative_ai_equipment_without_bid():
     ai = AIStrategy()
     manufacturer = _manufacturer()
     farmer = _player(2, "Farmer")
@@ -85,7 +85,7 @@ def test_ai_manufacturer_selects_farm_machinery_for_ai_farmer_without_bid():
         season_name="Spring",
     )
 
-    assert chosen == "FarmMachinery"
+    assert chosen == "Goods"
 
 
 def test_ai_manufacturer_sticky_when_scores_within_ten_percent(monkeypatch):

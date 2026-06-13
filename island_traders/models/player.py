@@ -19,6 +19,12 @@ class InsufficientFundsError(Exception):
     pass
 
 
+EQUIPMENT_RESOURCE_CAPITAL: dict[ResourceType, tuple[str, str]] = {
+    ResourceType.FARM_MACHINERY: ("Farmer", "farmer.tractor"),
+    ResourceType.MINING_EQUIPMENT: ("Miner", "miner.excavator"),
+}
+
+
 def _allocate_raw_meals(
     meals_needed: int, grain: int, produce: int, fish: int, meat: int,
 ) -> tuple[int, dict[ResourceType, int]]:
@@ -563,8 +569,33 @@ class Player:
     def give_resources(self, rtype: ResourceType, qty: int) -> None:
         self.inventory = self.inventory.subtract(rtype, qty)
 
-    def receive_resources(self, rtype: ResourceType, qty: int) -> None:
+    def receive_resources(
+        self,
+        rtype: ResourceType,
+        qty: int,
+        *,
+        acquired_tick: int = 0,
+        install_equipment: bool = True,
+    ) -> None:
+        if qty <= 0:
+            return
+        if install_equipment and self._install_equipment_resource(
+            rtype, qty, acquired_tick
+        ):
+            return
         self.inventory = self.inventory.add(rtype, qty)
+
+    def _install_equipment_resource(
+        self, rtype: ResourceType, qty: int, acquired_tick: int
+    ) -> bool:
+        mapping = EQUIPMENT_RESOURCE_CAPITAL.get(rtype)
+        if mapping is None:
+            return False
+        role_name, item_id = mapping
+        if not any(role.name == role_name for role in self.roles):
+            return False
+        self.add_capital(item_id, qty, acquired_tick=acquired_tick)
+        return True
 
     def spend_dollops(self, amount: float) -> None:
         if self.dollops < amount:

@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/equipment-capital-smelting-124-125
+
+Version bump: `0.1.3-dev.2026-06-12.3`
+
+**Equipment is durable capital, not a seasonal consumable.** Farmers no longer
+burn `FarmMachinery` and Miners no longer burn `MiningEquipment` as production
+inputs; those manufactured resources now install as durable capital for the
+matching producer when acquired, preserving the Manufacturer's equipment market
+without letting a tractor stockout zero food production.
+
+**Metal now smelts from Ore + Oil.** Miner `Metal` output consumes Ore and Oil as
+an output-specific smelting input, so Metal production is tied to prior Ore
+supply instead of appearing as a free co-product.
+
 ### codex/order-training-batch-114
 
 Version bump: `0.1.3-dev.2026-06-12.2`

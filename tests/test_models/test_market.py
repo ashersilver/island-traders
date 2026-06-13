@@ -436,6 +436,49 @@ def test_supply_and_demand_counters_decrement_on_cancelled_orders():
     assert m.demand[ResourceType.FOOD] == 1
 
 
+def test_expired_season_offer_refunds_unsold_resources():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 2)
+    market.set_season(0, 0)
+    offer = market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 2)
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 0
+
+    market.set_season(0, 1)
+    market.expire_season_offers()
+
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 2
+    assert market.supply.get(ResourceType.FARM_MACHINERY, 0) == 0
+
+
+def test_expire_current_season_offer_refunds_at_season_close():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    market.set_season(0, 0)
+    offer = market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 1)
+
+    market.expire_season_offers(expire_current=True)
+
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 1
+
+
+def test_open_offer_value_counts_seller_escrowed_inventory():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 2)
+    market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 2)
+
+    value = market.open_offer_value(
+        seller.player_id,
+        {ResourceType.FARM_MACHINERY: 50.0},
+    )
+
+    assert value == 100.0
+
+
 def test_market_emits_and_drains_events():
     m = Market()
     seller = make_player(1, "Miner", dollops=200.0)
@@ -466,3 +509,34 @@ def test_market_emits_fill_event_on_buy():
     assert fills and fills[0]["resource"] == "Ore"
     assert fills[0]["side"] == "ask" and fills[0]["quantity"] == 3
     assert fills[0]["actor"] == buyer.name
+
+
+def test_equipment_bought_from_market_installs_as_farmer_capital():
+    market = Market()
+    market.set_season(1, 2)
+    manufacturer = make_player(1, "Manufacturer")
+    farmer = make_player(2, "Farmer", dollops=500.0)
+    manufacturer.receive_resources(ResourceType.FARM_MACHINERY, 2)
+
+    market.post_offer(manufacturer, ResourceType.FARM_MACHINERY, 45.0, 2)
+    paid, bought = market.buy_from_offers(farmer, ResourceType.FARM_MACHINERY, 1)
+
+    assert paid == 45.0
+    assert bought == 1
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert farmer.capital_count("farmer.tractor") == 1
+    assert farmer.capital_acquired_ticks["farmer.tractor"] == [6]
+    assert manufacturer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+
+
+def test_mining_equipment_bought_from_market_installs_as_miner_capital():
+    market = Market()
+    manufacturer = make_player(1, "Manufacturer")
+    miner = make_player(2, "Miner", dollops=500.0)
+    manufacturer.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
+
+    market.post_offer(manufacturer, ResourceType.MINING_EQUIPMENT, 55.0, 1)
+    market.buy_from_offers(miner, ResourceType.MINING_EQUIPMENT, 1)
+
+    assert miner.inventory.get(ResourceType.MINING_EQUIPMENT) == 0
+    assert miner.capital_count("miner.excavator") == 1
