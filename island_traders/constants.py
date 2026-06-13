@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.3-dev.2026-06-12.2"
+APP_VERSION: str = "0.1.3-dev.2026-06-12.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -70,9 +70,14 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 #       Spring and Summer of Year 1 before needing to buy from other islands
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    # Farmer: Spring outputs to sell + 2 seasons of inputs
+    # Farmer: Spring outputs to sell + inputs
     "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
-                      "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
+                      # INTERIM (#124): FarmMachinery is wrongly a consumed input
+                      # (1/season, hard-gated → no machinery means zero food and
+                      # the whole chain starves).  Until equipment becomes durable
+                      # capital, start the Farmer with a full-game buffer so food
+                      # never stalls on machinery.  Oil stays a normal traded input.
+                      "FarmMachinery": 15, "Oil": 2},
     # Miner: partial output to sell + 2 seasons of inputs
     "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
                       "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input

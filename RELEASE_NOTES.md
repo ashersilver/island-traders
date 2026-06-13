@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### claude/fix-season-timer-resync
 
-Version bump: `0.1.3-dev.2026-06-12.2`
+Version bump: `0.1.3-dev.2026-06-12.4`
 
 **Fix: different season countdowns per tab + season ending before the countdown.**
 The action-phase countdown was only ever synced from the one-shot `season_start`
@@ -19,6 +19,31 @@ client re-syncs `seasonTimerEnd` from every snapshot (clock-offset corrected), s
 all tabs track the same server clock and the displayed countdown matches the real
 deadline. Complements the earlier grace fix (the server still ends ~1.5s after the
 on-screen 0, never before).
+
+### claude/interim-farmer-equipment-buffer
+
+Version bump: `0.1.3-dev.2026-06-12.3`
+
+**Interim: Farmer starts with a full-game FarmMachinery buffer (15, was 2).**
+Stop-gap for #124 — FarmMachinery is currently a per-season *consumed* input that
+hard-gates production, so a Farmer stockout zeroes Food and starves the whole
+archipelago. Until equipment becomes durable capital, the Farmer opens with
+enough machinery to cover a full game so food never stalls on it. Oil remains a
+normal traded input.
+
+### codex/order-training-batch-114
+
+Version bump: `0.1.3-dev.2026-06-12.2`
+
+**UI v2 phase 2 engine seams: Order Desk and Training Desk batches.** Added a
+unified `TradingEngine.execute_order_list(...)` basket executor for buy/sell
+orders with per-row results, preserving sequential market semantics and letting
+failed rows reject without aborting the rest. Added `order_batch` and
+`training_batch` WebSocket handlers that return `*_batch_result` payloads with
+the submitted `batch_ref`; training rows call the existing
+`TrainingRegistry.propose(...)` and return normal `batch_id`s, leaving the
+Educator counter-offer/approval flow unchanged. UI integration is a live server
+contract; no dashboard tile wiring is included in this branch.
 
 ## 0.1.2 — 2026-06-12
 
