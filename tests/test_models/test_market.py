@@ -518,10 +518,10 @@ def test_equipment_bought_from_market_installs_as_farmer_capital():
     farmer = make_player(2, "Farmer", dollops=500.0)
     manufacturer.receive_resources(ResourceType.FARM_MACHINERY, 2)
 
-    market.post_offer(manufacturer, ResourceType.FARM_MACHINERY, 45.0, 2)
+    market.post_offer(manufacturer, ResourceType.FARM_MACHINERY, 60.0, 2)
     paid, bought = market.buy_from_offers(farmer, ResourceType.FARM_MACHINERY, 1)
 
-    assert paid == 45.0
+    assert paid == 60.0
     assert bought == 1
     assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
     assert farmer.capital_count("farmer.tractor") == 1
@@ -535,7 +535,7 @@ def test_mining_equipment_bought_from_market_installs_as_miner_capital():
     miner = make_player(2, "Miner", dollops=500.0)
     manufacturer.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
 
-    market.post_offer(manufacturer, ResourceType.MINING_EQUIPMENT, 55.0, 1)
+    market.post_offer(manufacturer, ResourceType.MINING_EQUIPMENT, 70.0, 1)
     market.buy_from_offers(miner, ResourceType.MINING_EQUIPMENT, 1)
 
     assert miner.inventory.get(ResourceType.MINING_EQUIPMENT) == 0

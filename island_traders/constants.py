@@ -122,8 +122,8 @@ BASE_PRICES: dict[str, float] = {
     "Vaccine":             40.0,   # #112 restores preventive-care pricing
     "Finance":             20.0,
     # ForgeHaven product lines
-    "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
-    "MiningEquipment":     55.0,   # drills, excavators, ore separators
+    "FarmMachinery":       60.0,   # installs as farmer.tractor capital
+    "MiningEquipment":     70.0,   # installs as miner.excavator capital
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services

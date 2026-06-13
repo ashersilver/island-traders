@@ -19,6 +19,11 @@ without letting a tractor stockout zero food production.
 an output-specific smelting input, so Metal production is tied to prior Ore
 supply instead of appearing as a free co-product.
 
+**Equipment prices now match installed capital value.** `FarmMachinery` and
+`MiningEquipment` are priced at the capital items they install as
+(`farmer.tractor` and `miner.excavator`), avoiding a buyer-side book-value lift
+when tradeable equipment turns into durable capital.
+
 ### codex/order-training-batch-114
 
 Version bump: `0.1.3-dev.2026-06-12.2`
