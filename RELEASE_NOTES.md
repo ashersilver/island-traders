@@ -5,6 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/interim-farmer-equipment-buffer
+
+Version bump: `0.1.3-dev.2026-06-12.3`
+
+**Interim: Farmer starts with a full-game FarmMachinery buffer (15, was 2).**
+Stop-gap for #124 — FarmMachinery is currently a per-season *consumed* input that
+hard-gates production, so a Farmer stockout zeroes Food and starves the whole
+archipelago. Until equipment becomes durable capital, the Farmer opens with
+enough machinery to cover a full game so food never stalls on it. Oil remains a
+normal traded input.
+
 ### codex/order-training-batch-114
 
 Version bump: `0.1.3-dev.2026-06-12.2`
