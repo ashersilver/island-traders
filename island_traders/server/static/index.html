@@ -3250,6 +3250,7 @@ function handleMessage(msg) {
     case 'game_state':
       gameState = msg;
       syncServerLog(msg);
+      syncSeasonTimerFromState(msg);
       // Don't auto-jump to the game screen while the user is still on the
       // auction-result overlay or the Investing Phase screen.
       if (!document.getElementById('screen-auction').classList.contains('hidden')) {
@@ -4353,6 +4354,27 @@ function onSeasonStart(msg) {
   document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   if (showForMe && secs > 0) startSeasonTimer();
   addLog(`▶ ${msg.season} (Year ${msg.year}) action phase — ${secs > 0 ? secs + 's timer' : 'Ready-only mode'}.`, 'info');
+}
+
+// Re-sync the action-phase countdown from any game_state snapshot, so a tab
+// that joined/reconnected mid-season — or whose timer was clobbered by a
+// re-render — tracks the same authoritative server deadline as everyone else
+// (not just the one-shot season_start). Idempotent: safe to call every snapshot.
+function syncSeasonTimerFromState(msg) {
+  const end = +msg.season_timer_end || 0;
+  if (msg.season_phase === 'action' && end > 0 && msg.server_now) {
+    seasonPhase = 'action';
+    const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
+    seasonTimerEnd = end * 1000 + offsetMs;
+    const showForMe = seasonActiveHumans.has(myPlayerId);
+    document.getElementById('season-timer-box').classList.toggle('hidden', !showForMe);
+    if (showForMe && !seasonTimerInterval) startSeasonTimer();
+    else updateSeasonTimerUI();
+  } else if (msg.season_phase && msg.season_phase !== 'action') {
+    // Not in the action window (pre-season / resolved) — drop any stale timer.
+    seasonTimerEnd = 0;
+    stopSeasonTimer();
+  }
 }
 
 function onReadyUpdate(msg) {
