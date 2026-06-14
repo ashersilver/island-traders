@@ -265,12 +265,24 @@ button:active{transform:scale(.97)}
 /* ── GAME DASHBOARD ── */
 #screen-game{height:100vh;width:100vw;overflow:hidden}
 .game-grid{
-  display:grid;height:100vh;
+  display:grid;height:100vh;position:relative;
   grid-template-columns:280px 1fr 360px;
   grid-template-rows:48px 1fr 160px;
   grid-template-areas:"hdr hdr hdr" "side main info" "log log log";
   gap:2px;
 }
+/* Draggable column splitters (#114 follow-up): resize the left/right panels.
+   Positioned by JS (applyGridLayout); widths persist in localStorage. */
+.col-resizer{
+  position:absolute;top:48px;bottom:0;width:7px;z-index:40;
+  cursor:col-resize;background:transparent;transition:background .12s;
+}
+.col-resizer::after{
+  content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:3px;height:34px;border-radius:2px;background:var(--border);
+}
+.col-resizer:hover{background:rgba(10,189,227,.18)}
+.col-resizer:hover::after{background:var(--accent)}
 @media(max-width:1200px){
   .game-grid{
     grid-template-columns:1fr;
@@ -1609,8 +1621,11 @@ function showScreen(name) {
     builtTabsForRoles = null;
     activeTabRole = null;
     document.getElementById('island-tabs').innerHTML = '';
+    _loadColW();
     restoreLayoutPrefs();
     initTiles();
+    initResizers();
+    applyGridLayout();
   }
 }
 
@@ -3168,7 +3183,33 @@ function requestState() {
 }
 
 // ==================== MESSAGE HANDLERS ====================
+// Replay guard (#114 follow-up): the server replays the pending IO prompt on
+// every get_state, and sendResponse() fires requestState() at +120ms/+500ms
+// after each answer.  So a freshly-opened input dialog would be rebuilt 1-2
+// times, each rebuild detaching the focused field and wiping anything typed —
+// this is the "field showed 1–23 but I couldn't type over it, only the spinner
+// worked" bug.  If a replay carries the SAME prompt already on screen, ignore
+// it so focus and any in-progress input survive.
+const _DIALOG_PROMPTS = new Set([
+  'choose_quantity', 'choose_resource', 'choose_profession', 'choose_option',
+  'choose_player', 'confirm', 'ask_dollop_amount', 'ask_text', 'market_buy_bulk']);
+let _shownPromptSig = null;
+function _promptSig(msg) {
+  return [msg.type, msg.prompt || msg.player_name || '', msg.min, msg.max,
+          (msg.options || []).length, msg.default || ''].join('|');
+}
+
 function handleMessage(msg) {
+  if (_DIALOG_PROMPTS.has(msg.type)) {
+    const sig = _promptSig(msg);
+    if (sig === _shownPromptSig
+        && document.getElementById('overlay').classList.contains('active')) {
+      return;  // duplicate replay of the open dialog — keep focus + typed value
+    }
+    _shownPromptSig = sig;
+  } else if (msg.type === 'choose_action' || msg.type === 'choose_action_parked') {
+    _shownPromptSig = null;  // left the dialog context; next dialog is fresh
+  }
   switch(msg.type) {
     case 'room_update':
       if (currentRoom && msg.room) {
@@ -5059,11 +5100,31 @@ function showDlg(title, bodyHtml, className = '') {
   document.getElementById('overlay').classList.add('active');
   // Input convention (#114): land in the first capture box, ready to type.
   // Tab/Shift-Tab then walks the panel's boxes in DOM order.
-  requestAnimationFrame(() => {
-    const first = dialog.querySelector(
-      'input:not([disabled]):not([type=checkbox]):not([type=radio]), textarea:not([disabled])');
-    if (first) first.focus();
-  });
+  focusFirstInput(dialog);
+}
+
+// Focus the first capture box in a freshly-opened dialog.  A single
+// requestAnimationFrame is NOT enough: when a dialog re-opens immediately
+// after sendResponse()→hideOverlay() (e.g. the Produce flow: pick product →
+// choose_quantity), the overlay is mid visibility-transition at rAF time and
+// .focus() silently no-ops on a not-yet-visible element — leaving the player
+// staring at a placeholder they can't type over (only the spinner worked).
+// Retry until focus actually sticks, covering the ~200ms transition.
+function focusFirstInput(container) {
+  const first = container.querySelector(
+    'input:not([disabled]):not([type=checkbox]):not([type=radio]), textarea:not([disabled])');
+  if (!first) return;
+  let tries = 0;
+  const attempt = () => {
+    first.focus();
+    if (typeof first.select === 'function' && first.value) first.select();
+    if (document.activeElement === first || tries++ >= 8) return;
+    setTimeout(attempt, 40);
+  };
+  // setTimeout, not requestAnimationFrame: rAF is throttled to zero on a
+  // background tab, so an rAF-scheduled focus silently never fires when the
+  // player tabs away mid-prompt.  setTimeout still runs.
+  setTimeout(attempt, 0);
 }
 
 // Enter in any capture box triggers the dialog's primary action (never from
@@ -5194,6 +5255,78 @@ const LAYOUT_PRESETS = {
   'focus':  ['side', 'info', 'log'],
 };
 function _grid() { return document.querySelector('.game-grid'); }
+// --- Resizable side panels (#114 follow-up) -------------------------------
+// The left/right columns are mouse-draggable so a cramped panel can be given
+// room instead of wrapping.  Widths persist in localStorage and compose with
+// the hide toggles + the mobile single-column breakpoint.
+const COLW_KEY = 'it_colwidths_v1';
+const COLW_MIN = 180;
+let _colW = { side: 280, info: 360 };
+function _loadColW() {
+  let loaded = false;
+  try {
+    const s = JSON.parse(localStorage.getItem(COLW_KEY));
+    if (s && s.side > 0 && s.info > 0) { _colW = { side: s.side, info: s.info }; loaded = true; }
+  } catch (e) {}
+  if (!loaded) {  // seed from the old responsive defaults for big screens
+    if (window.innerWidth >= 3000) _colW = { side: 380, info: 480 };
+    else if (window.innerWidth >= 2560) _colW = { side: 340, info: 432 };
+  }
+}
+function _saveColW() {
+  try { localStorage.setItem(COLW_KEY, JSON.stringify(_colW)); } catch (e) {}
+}
+function applyGridLayout() {
+  const g = _grid();
+  if (!g) return;
+  const sideH = document.getElementById('rsz-side');
+  const infoH = document.getElementById('rsz-info');
+  // Mobile: defer entirely to the CSS single-column breakpoint.
+  if (window.innerWidth <= 1200) {
+    g.style.gridTemplateColumns = '';
+    if (sideH) sideH.style.display = 'none';
+    if (infoH) infoH.style.display = 'none';
+    return;
+  }
+  const sideHidden = g.classList.contains('hide-side');
+  const infoHidden = g.classList.contains('hide-info');
+  const sw = sideHidden ? 0 : _colW.side;
+  const iw = infoHidden ? 0 : _colW.info;
+  g.style.gridTemplateColumns = `${sw}px 1fr ${iw}px`;
+  if (sideH) { sideH.style.display = sideHidden ? 'none' : 'block'; sideH.style.left = (sw - 3) + 'px'; }
+  if (infoH) { infoH.style.display = infoHidden ? 'none' : 'block'; infoH.style.right = (iw - 3) + 'px'; }
+}
+function initResizers() {
+  const g = _grid();
+  if (!g || document.getElementById('rsz-side')) return;
+  const mk = (id) => { const d = document.createElement('div'); d.id = id; d.className = 'col-resizer'; d.title = 'Drag to resize · double-click to reset'; g.appendChild(d); return d; };
+  const sideH = mk('rsz-side'), infoH = mk('rsz-info');
+  const startDrag = (which) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX, startW = _colW[which];
+    const maxW = g.getBoundingClientRect().width * 0.5;
+    document.body.style.userSelect = 'none';
+    const onMove = (ev) => {
+      const delta = which === 'side' ? (ev.clientX - startX) : (startX - ev.clientX);
+      _colW[which] = Math.round(Math.max(COLW_MIN, Math.min(startW + delta, maxW)));
+      applyGridLayout();
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      _saveColW();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+  sideH.addEventListener('mousedown', startDrag('side'));
+  infoH.addEventListener('mousedown', startDrag('info'));
+  sideH.addEventListener('dblclick', () => { _colW.side = 280; applyGridLayout(); _saveColW(); });
+  infoH.addEventListener('dblclick', () => { _colW.info = 360; applyGridLayout(); _saveColW(); });
+  window.addEventListener('resize', applyGridLayout);
+}
+
 function applyLayoutState(hidden) {
   const g = _grid();
   if (!g) return;
@@ -5202,6 +5335,7 @@ function applyLayoutState(hidden) {
     const cb = document.getElementById('lp-' + p);
     if (cb) cb.checked = !hidden.includes(p);
   });
+  applyGridLayout();  // recompute column widths + splitter positions
   try { localStorage.setItem('it_layout_hidden', JSON.stringify(hidden)); } catch (e) {}
 }
 function _currentHidden() {

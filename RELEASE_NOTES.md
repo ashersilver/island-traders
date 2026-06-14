@@ -5,6 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
+
+Version bump: `0.1.3-dev.2026-06-12.2`
+
+Follow-up to the UI v2 phase-1 input work, from playtest feedback:
+
+**Quantity capture boxes now reliably accept typing.** The Produce (and any
+other) quantity field showed its `1–23` range hint but couldn't be typed over —
+only the spinner arrows worked. Two causes: (1) the server replays the pending
+prompt on every `get_state`, and `sendResponse()` fires a `get_state` at
++120ms/+500ms after each answer, so a freshly-opened dialog was rebuilt 1–2
+times — detaching the focused field and wiping anything typed; (2) auto-focus
+was scheduled via `requestAnimationFrame`, which is throttled to zero on a
+background tab. Fixes: an idempotency guard ignores a replayed prompt identical
+to the one already open (preserving focus + in-progress input), and focus is now
+scheduled via `setTimeout` with a short retry so it lands reliably.
+
+**Left/right panels are mouse-resizable.** Draggable splitters sit on the
+inner edges of the side and info columns; drag to resize, double-click to reset.
+Widths persist in localStorage (`it_colwidths_v1`) and compose with the
+hide/collapse toggles and the mobile single-column breakpoint — so a cramped
+panel can be widened instead of wrapping.
+
 ## 0.1.2 — 2026-06-12
 
 Second point release. The headline is the **economy rebalance** reaching a
