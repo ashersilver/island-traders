@@ -1,7 +1,9 @@
 from island_traders.constants import (
-    BASE_PRODUCTION, STARTING_INVENTORY, PRODUCTION_INPUTS,
+    BASE_PRICES, BASE_PRODUCTION, STARTING_INVENTORY, PRODUCTION_INPUTS,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
+    OUTPUT_PRODUCTION_INPUTS,
 )
+from island_traders.constants_capacity import CAPITAL_CATALOGUE
 
 
 def test_oil_starting_buffers_reflect_role_demand():
@@ -20,6 +22,22 @@ def test_oil_starting_buffers_reflect_role_demand():
 def test_miner_oil_is_reduced_and_metal_is_available():
     assert BASE_PRODUCTION["Miner"]["Oil"] == 40
     assert BASE_PRODUCTION["Miner"]["Metal"] == 20
+
+
+def test_equipment_is_durable_capital_not_consumed_inputs():
+    for season in FARMER_SEASONAL_CONVERSION.values():
+        assert "FarmMachinery" not in season["inputs"]
+    assert "MiningEquipment" not in PRODUCTION_INPUTS["Miner"]
+
+
+def test_tradeable_equipment_prices_match_installed_capital_value():
+    catalogue = {item.item_id: item for item in CAPITAL_CATALOGUE}
+    assert BASE_PRICES["FarmMachinery"] == catalogue["farmer.tractor"].cost
+    assert BASE_PRICES["MiningEquipment"] == catalogue["miner.excavator"].cost
+
+
+def test_metal_is_smelting_output_from_ore_and_oil():
+    assert OUTPUT_PRODUCTION_INPUTS["Miner"]["Metal"] == {"Ore": 2, "Oil": 1}
 
 
 def test_transporter_uses_food_not_fish_for_provisions():

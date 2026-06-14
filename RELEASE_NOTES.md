@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
 
-Version bump: `0.1.3-dev.2026-06-12.2`
+Version bump: `0.1.3-dev.2026-06-12.7`
 
 Follow-up to the UI v2 phase-1 input work, from playtest feedback:
 
@@ -27,6 +27,71 @@ inner edges of the side and info columns; drag to resize, double-click to reset.
 Widths persist in localStorage (`it_colwidths_v1`) and compose with the
 hide/collapse toggles and the mobile single-column breakpoint — so a cramped
 panel can be widened instead of wrapping.
+### codex/equipment-capital-smelting-124-125
+
+Version bump: `0.1.3-dev.2026-06-12.6`
+
+**Equipment is durable capital, not a seasonal consumable.** Farmers no longer
+burn `FarmMachinery` and Miners no longer burn `MiningEquipment` as production
+inputs; those manufactured resources now install as durable capital for the
+matching producer when acquired, preserving the Manufacturer's equipment market
+without letting a tractor stockout zero food production.
+
+**Metal now smelts from Ore + Oil.** Miner `Metal` output consumes Ore and Oil as
+an output-specific smelting input, so Metal production is tied to prior Ore
+supply instead of appearing as a free co-product.
+
+**Equipment prices now match installed capital value.** `FarmMachinery` and
+`MiningEquipment` are priced at the capital items they install as
+(`farmer.tractor` and `miner.excavator`), avoiding a buyer-side book-value lift
+when tradeable equipment turns into durable capital.
+
+**Equipment warranties and failures.** AI-purchased capital now carries a
+Manufacturer warranty premium (20% per year). Unwarranted equipment rolls an
+annual age-based failure check; failed units are down until repaired. Repairs pay
+50% of the item value to the Manufacturer and consume Freight for spares
+delivery: ship repair returns next season, while Cargo Plane capacity enables
+same-season air repair.
+
+### claude/fix-season-timer-resync
+
+Version bump: `0.1.3-dev.2026-06-12.4`
+
+**Fix: different season countdowns per tab + season ending before the countdown.**
+The action-phase countdown was only ever synced from the one-shot `season_start`
+broadcast, so any tab that joined/reconnected mid-season — or whose timer was
+clobbered by a re-render — ran off a stale value, showing a different (often
+inflated) countdown than the real server deadline. The `game_state` snapshot now
+carries the authoritative `season_timer_end` (epoch) + `server_now`, and the
+client re-syncs `seasonTimerEnd` from every snapshot (clock-offset corrected), so
+all tabs track the same server clock and the displayed countdown matches the real
+deadline. Complements the earlier grace fix (the server still ends ~1.5s after the
+on-screen 0, never before).
+
+### claude/interim-farmer-equipment-buffer
+
+Version bump: `0.1.3-dev.2026-06-12.3`
+
+**Interim: Farmer starts with a full-game FarmMachinery buffer (15, was 2).**
+Stop-gap for #124 — FarmMachinery is currently a per-season *consumed* input that
+hard-gates production, so a Farmer stockout zeroes Food and starves the whole
+archipelago. Until equipment becomes durable capital, the Farmer opens with
+enough machinery to cover a full game so food never stalls on it. Oil remains a
+normal traded input.
+
+### codex/order-training-batch-114
+
+Version bump: `0.1.3-dev.2026-06-12.2`
+
+**UI v2 phase 2 engine seams: Order Desk and Training Desk batches.** Added a
+unified `TradingEngine.execute_order_list(...)` basket executor for buy/sell
+orders with per-row results, preserving sequential market semantics and letting
+failed rows reject without aborting the rest. Added `order_batch` and
+`training_batch` WebSocket handlers that return `*_batch_result` payloads with
+the submitted `batch_ref`; training rows call the existing
+`TrainingRegistry.propose(...)` and return normal `batch_id`s, leaving the
+Educator counter-offer/approval flow unchanged. UI integration is a live server
+contract; no dashboard tile wiring is included in this branch.
 
 ## 0.1.2 — 2026-06-12
 

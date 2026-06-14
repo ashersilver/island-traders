@@ -10,6 +10,7 @@ from ..constants import (
     MAX_PRICE_MULTIPLIER,
     MIN_PRICE_MULTIPLIER,
     PRICE_ELASTICITY,
+    SEASONS,
 )
 
 
@@ -167,7 +168,7 @@ class Market:
         price = self.market_maker_ask(rtype)
         total = price * qty
         buyer.spend_dollops(total)
-        buyer.receive_resources(rtype, qty)
+        buyer.receive_resources(rtype, qty, acquired_tick=self._current_tick())
         self._maker_supply[rtype] = available - qty
         self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
         self._maker_buy_depth[rtype] = depth - qty
@@ -208,6 +209,10 @@ class Market:
         self._maker_buy_depth = {}
         self._maker_sell_depth = {}
 
+    def _current_tick(self) -> int:
+        year, season = self._current_season_key
+        return year * len(SEASONS) + season
+
     def cancel_player_orders(self, player_id: int, rtype: ResourceType) -> None:
         """Cancel every standing bid AND ask by ``player_id`` on ``rtype``.
 
@@ -224,7 +229,9 @@ class Market:
                     and offer.remaining > 0):
                 qty = offer.remaining
                 if offer._seller is not None:
-                    offer._seller.receive_resources(rtype, qty)
+                    offer._seller.receive_resources(
+                        rtype, qty, acquired_tick=self._current_tick()
+                    )
                 offer.remaining = 0
                 self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
         for bid in self._bids:
@@ -337,7 +344,9 @@ class Market:
                 # Even the cheapest crossing ask is unaffordable — stop.
                 break
             buyer.spend_dollops(cost)
-            buyer.receive_resources(bid.resource, qty)
+            buyer.receive_resources(
+                bid.resource, qty, acquired_tick=self._current_tick()
+            )
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
@@ -378,7 +387,9 @@ class Market:
                 bid.remaining = 0
                 continue
             buyer.spend_dollops(cost)
-            buyer.receive_resources(offer.resource, qty)
+            buyer.receive_resources(
+                offer.resource, qty, acquired_tick=self._current_tick()
+            )
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
@@ -429,7 +440,7 @@ class Market:
             if buyer.dollops < cost:
                 break
             buyer.spend_dollops(cost)
-            buyer.receive_resources(rtype, qty)
+            buyer.receive_resources(rtype, qty, acquired_tick=self._current_tick())
             seller.receive_dollops(cost)
             ask.remaining -= qty
             bid.remaining -= qty
@@ -483,7 +494,7 @@ class Market:
             bought += take
             if offer._seller is not None and offer.seller_id != buyer.player_id:
                 offer._seller.receive_dollops(cost)
-        buyer.receive_resources(rtype, bought)
+        buyer.receive_resources(rtype, bought, acquired_tick=self._current_tick())
         self.post_demand(rtype, bought)
         if bought > 0:
             avg = total_cost / bought
@@ -524,7 +535,7 @@ class Market:
         sold = 0
         for bid, buyer, take, cost in fills:
             buyer.spend_dollops(cost)
-            buyer.receive_resources(rtype, take)
+            buyer.receive_resources(rtype, take, acquired_tick=self._current_tick())
             seller.receive_dollops(cost)
             bid.remaining -= take
             total_paid += cost
@@ -560,12 +571,42 @@ class Market:
             }
         return result
 
-    def expire_season_offers(self) -> None:
+    def open_offer_value(
+        self,
+        seller_id: int,
+        prices: dict[ResourceType, float],
+    ) -> float:
+        """Inventory value still owned by a seller but escrowed in live asks."""
+        return sum(
+            offer.remaining * prices.get(offer.resource, self.current_price(offer.resource))
+            for offer in self._offers
+            if offer.seller_id == seller_id and offer.remaining > 0
+        )
+
+    def expire_season_offers(self, *, expire_current: bool = False) -> None:
         for offer in self._offers:
-            if offer.remaining > 0 and offer.season_key != self._current_season_key:
+            if offer.remaining > 0 and (
+                expire_current or offer.season_key != self._current_season_key
+            ):
+                if offer._seller is not None:
+                    offer._seller.receive_resources(
+                        offer.resource,
+                        offer.remaining,
+                        acquired_tick=self._current_tick(),
+                    )
+                self.supply[offer.resource] = max(
+                    0,
+                    self.supply.get(offer.resource, 0) - offer.remaining,
+                )
                 offer.remaining = 0
         for bid in self._bids:
-            if bid.remaining > 0 and bid.season_key != self._current_season_key:
+            if bid.remaining > 0 and (
+                expire_current or bid.season_key != self._current_season_key
+            ):
+                self.demand[bid.resource] = max(
+                    0,
+                    self.demand.get(bid.resource, 0) - bid.remaining,
+                )
                 bid.remaining = 0
 
     def reset_period_signals(self) -> None:

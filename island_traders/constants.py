@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.3-dev.2026-06-12.2"
+APP_VERSION: str = "0.1.3-dev.2026-06-12.7"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -70,12 +70,14 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 #       Spring and Summer of Year 1 before needing to buy from other islands
 # This gives every player breathing room to establish trade relationships.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    # Farmer: Spring outputs to sell + 2 seasons of inputs
+    # Farmer: Spring outputs to sell + 2 seasons of fuel. FarmMachinery is
+    # durable capital now, not a consumable inventory buffer.
     "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
-                      "FarmMachinery": 2, "Oil": 2},                  # 2 seasons: 1 each per season
-    # Miner: partial output to sell + 2 seasons of inputs
+                      "Oil": 2},
+    # Miner: partial output to sell + 2 seasons of consumable inputs.
+    # MiningEquipment is durable capital now, not a consumable inventory buffer.
     "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
-                      "Freight": 2, "MiningEquipment": 2},            # 2 seasons of each input
+                      "Freight": 2},
     # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
                       "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
@@ -101,13 +103,13 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
     "Food":                22.0,
-    "Fish":                16.0,
-    "Grain":               13.0,
-    "Produce":             16.0,
+    "Fish":                12.0,
+    "Grain":               10.0,
+    "Produce":             12.0,
     "Meat":                16.2,
-    "Ore":                 12.0,
-    "Metal":               19.0,
-    "Oil":                 15.0,
+    "Ore":                  5.0,
+    "Metal":                9.0,
+    "Oil":                  6.0,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
@@ -115,13 +117,13 @@ BASE_PRICES: dict[str, float] = {
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":               30.0,
-    "HealthServices":      34.0,   # #112 restores clinical pricing for funded demand
-    "Vaccine":             40.0,   # #112 restores preventive-care pricing
+    "Goods":               40.0,
+    "HealthServices":      30.0,
+    "Vaccine":             35.0,
     "Finance":             20.0,
     # ForgeHaven product lines
-    "FarmMachinery":       45.0,   # tractors, ploughs, harvesters
-    "MiningEquipment":     55.0,   # drills, excavators, ore separators
+    "FarmMachinery":       60.0,   # installs as farmer.tractor capital
+    "MiningEquipment":     70.0,   # installs as miner.excavator capital
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
@@ -170,8 +172,8 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
 # Manufacturer uses MANUFACTURER_PRODUCT_LINES keyed by chosen product line).
 PRODUCTION_INPUTS: dict[str, dict[str, int]] = {
-    "Farmer":        {"FarmMachinery": 1, "Oil": 1},          # machinery + fuel
-    "Miner":         {"Oil": 1, "Freight": 1, "MiningEquipment": 1},
+    "Farmer":        {"Oil": 1},          # fuel; equipment is durable capital
+    "Miner":         {"Oil": 1, "Freight": 1},
     "Transporter":   {"Oil": 2, "Food": 1},   # jet fuel (self-refined from Oil) + crew provisions
     "Educator":      {},
     # Banker has no per-season production input — they make money from loan
@@ -192,6 +194,9 @@ OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
     "Educator": {
         "Patents": {"Reagents": 1},
     },
+    "Miner": {
+        "Metal": {"Ore": 2, "Oil": 1},
+    },
 }
 
 # Per-season input→output table for the Farmer island.
@@ -199,25 +204,25 @@ OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
 # Inputs are consumed and outputs produced exactly as listed; workforce/event modifiers still apply.
 FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     "Spring": {
-        "inputs":  {"FarmMachinery": 1, "Oil": 1},
+        "inputs":  {"Oil": 1},
         "outputs": {"Grain": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Produce": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # planting underway; good fishing
     },
     "Summer": {
-        "inputs":  {"FarmMachinery": 1, "Oil": 1},
+        "inputs":  {"Oil": 1},
         "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Produce": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Fish": round(4.8 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # peak fishing; crops growing
     },
     "Autumn": {
-        "inputs":  {"FarmMachinery": 1, "Oil": 1},
+        "inputs":  {"Oil": 1},
         "outputs": {"Grain": round(9.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Produce": round(7.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Fish": round(2.4 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # bumper harvest; fishing winds down
     },
     "Winter": {
-        "inputs":  {"FarmMachinery": 1, "Oil": 1},
+        "inputs":  {"Oil": 1},
         "outputs": {"Grain": round(3.6 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Produce": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER),
                     "Fish": round(1.2 * PRODUCER_PRODUCTIVITY_MULTIPLIER)},   # stores drawn down; minimal production
@@ -231,7 +236,9 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
 # Each entry:
 #   inputs         – Metal and Oil consumed per production run
 #   output         – resource type produced (str matching ResourceType value)
-#   qty            – units produced per run (before event/workforce modifiers)
+#   qty            – units produced per run (before event/workforce modifiers).
+#                    Durable equipment lines are board-scale units; Goods
+#                    remains a bulk commodity line.
 #   skilled        – skilled workers required (AssemblyWorker or Engineer)
 #   unskilled      – unskilled workers required
 #   freight_per_unit – Freight consumed to ship each unit produced (0 = no surcharge)
@@ -240,16 +247,16 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "FarmMachinery": {
         "inputs":           {"Metal": 2, "Oil": 1},
         "output":           "FarmMachinery",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              4,
         "skilled":          2,   # AssemblyWorkers to weld and fit
         "unskilled":        3,   # general labour for sub-assembly
-        "freight_per_unit": 2,   # large steel frames; shipped on flatbeds
+        "freight_per_unit": 1,   # durable board-scale unit; shipped on flatbeds
         "desc":             "Tractors & Farm Machinery",
     },
     "Goods": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "Goods",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,
         "unskilled":        2,
         "freight_per_unit": 1,
@@ -258,10 +265,10 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "MiningEquipment": {
         "inputs":           {"Metal": 3, "Oil": 2},
         "output":           "MiningEquipment",
-        "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              3,
         "skilled":          3,   # Engineers to spec heavy drilling rigs
         "unskilled":        2,
-        "freight_per_unit": 3,   # heaviest line; specialist transport
+        "freight_per_unit": 1,   # durable board-scale unit; specialist transport
         "desc":             "Mining Equipment",
     },
     # Reagents (formerly "LaboratoryEquipment") moved to the Medical Sciences
@@ -270,16 +277,16 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "MedicalDevices": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "MedicalDevices",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              4,
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
         "unskilled":        1,   # minimal general labour
-        "freight_per_unit": 1,   # small, high-value items
+        "freight_per_unit": 1,   # durable board-scale unit; high-value items
         "desc":             "Medical & Dental Devices",
     },
     "TransportEquipment": {
         "inputs":           {"Metal": 2, "Oil": 2},
         "output":           "TransportEquipment",
-        "qty":              2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              3,
         "skilled":          2,
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
@@ -455,6 +462,21 @@ DEFAULT_SERVICE_LIFE_SEASONS: int = 20
 # `maintenance_per_season` is 0.0 (no override): charge this fraction of
 # the item's purchase cost per owned unit per season.  Tunable.
 DEFAULT_MAINTENANCE_FRACTION: float = 0.03
+
+# Equipment warranty + failure model (#130, 2026-06-12).  Warranties are sold
+# by the Manufacturer and charged annually.  Unwarranted equipment rolls an
+# annual age-based failure check; failed units need paid repair parts plus
+# Freight spares delivery before they contribute capacity again.
+EQUIPMENT_WARRANTY_ANNUAL_RATE: float = 0.20
+EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR: dict[int, float] = {
+    1: 0.05,
+    2: 0.15,
+    3: 0.40,
+}
+EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.50
+EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
+EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
+EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -29,6 +29,147 @@ class TradingEngine:
     def get_quote(self, rtype: ResourceType, qty: int) -> float:
         return round(self.market.current_price(rtype) * qty, 2)
 
+    def execute_order_list(
+        self,
+        player: Player,
+        orders,
+        players: list[Player] | None = None,
+    ) -> list[dict]:
+        """Execute buy/sell orders in submission order with per-row results."""
+        results: list[dict] = []
+        players = players or [player]
+        for index, raw_order in enumerate(orders or []):
+            side = str((raw_order or {}).get("side", "")).lower()
+            resource_value = (raw_order or {}).get("resource")
+            try:
+                rtype = (
+                    resource_value
+                    if isinstance(resource_value, ResourceType)
+                    else ResourceType(str(resource_value))
+                )
+                qty = int((raw_order or {}).get("quantity", 0))
+                limit_raw = (raw_order or {}).get("limit_price", None)
+                limit_price = (
+                    None if limit_raw in (None, "", 0, 0.0) else float(limit_raw)
+                )
+                if side not in ("buy", "sell"):
+                    raise ValueError("side must be buy or sell")
+                if qty <= 0:
+                    raise ValueError("quantity must be positive")
+                if limit_price is not None and limit_price <= 0:
+                    raise ValueError("limit_price must be positive")
+            except Exception as exc:
+                results.append(self._order_result(
+                    index, side, str(resource_value or ""), "rejected", 0,
+                    None, 0.0, str(exc),
+                ))
+                continue
+
+            try:
+                if side == "buy":
+                    result = self._execute_buy_order(index, player, rtype, qty, limit_price)
+                else:
+                    result = self._execute_sell_order(
+                        index, player, rtype, qty, limit_price, players
+                    )
+            except Exception as exc:
+                result = self._order_result(
+                    index, side, rtype.value, "rejected", 0, None, 0.0, str(exc)
+                )
+            results.append(result)
+        return results
+
+    def _execute_buy_order(
+        self,
+        index: int,
+        player: Player,
+        rtype: ResourceType,
+        qty: int,
+        limit_price: float | None,
+    ) -> dict:
+        before_cash = player.dollops
+        if limit_price is None:
+            total_cost, bought = self.market.buy_from_offers(player, rtype, qty)
+            return self._order_result(
+                index, "buy", rtype.value, "filled", bought,
+                self._avg_price(total_cost, bought), -round(total_cost, 2), "",
+            )
+
+        bid = self.market.post_bid(player, rtype, limit_price, qty)
+        filled = bid.quantity - bid.remaining
+        spent = round(before_cash - player.dollops, 2)
+        if filled == qty:
+            status = "filled"
+            reason = ""
+        else:
+            status = "partial"
+            reason = f"resting bid for {bid.remaining}"
+        return self._order_result(
+            index, "buy", rtype.value, status, filled,
+            self._avg_price(spent, filled), -spent, reason,
+        )
+
+    def _execute_sell_order(
+        self,
+        index: int,
+        player: Player,
+        rtype: ResourceType,
+        qty: int,
+        limit_price: float | None,
+        players: list[Player],
+    ) -> dict:
+        before_cash = player.dollops
+        if limit_price is None:
+            total_paid, sold = self.market.sell_to_bids(player, rtype, qty, players)
+            return self._order_result(
+                index, "sell", rtype.value, "filled", sold,
+                self._avg_price(total_paid, sold), round(total_paid, 2), "",
+            )
+
+        offer = self.market.post_offer(player, rtype, limit_price, qty)
+        filled = offer.quantity - offer.remaining
+        received = round(player.dollops - before_cash, 2)
+        if filled == qty:
+            status = "filled"
+            reason = ""
+        else:
+            status = "partial"
+            reason = f"resting offer for {offer.remaining}"
+        return self._order_result(
+            index, "sell", rtype.value, status, filled,
+            self._avg_price(received, filled), received, reason,
+        )
+
+    @staticmethod
+    def _avg_price(total: float, qty: int) -> float | None:
+        if qty <= 0:
+            return None
+        return round(total / qty, 2)
+
+    @staticmethod
+    def _order_result(
+        index: int,
+        side: str,
+        resource: str,
+        status: str,
+        quantity: int,
+        unit_price: float | None,
+        total: float,
+        reason: str = "",
+    ) -> dict:
+        result = {
+            "index": index,
+            "side": side,
+            "resource": resource,
+            "status": status,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "total": round(total, 2),
+        }
+        if reason:
+            result["reason"] = reason
+        return result
+
     # --- Peer-to-peer deals ---
 
     def propose_deal(
@@ -70,7 +211,12 @@ class TradingEngine:
         )
 
     def accept_deal(
-        self, deal: DealProposal, acceptor: Player, proposer: Player
+        self,
+        deal: DealProposal,
+        acceptor: Player,
+        proposer: Player,
+        *,
+        acquired_tick: int = 0,
     ) -> None:
         # Re-validate both sides before any mutation
         if deal.offer_resource and deal.offer_qty > 0:
@@ -91,10 +237,18 @@ class TradingEngine:
         # Atomic transfers
         if deal.offer_resource and deal.offer_qty > 0:
             proposer.give_resources(deal.offer_resource, deal.offer_qty)
-            acceptor.receive_resources(deal.offer_resource, deal.offer_qty)
+            acceptor.receive_resources(
+                deal.offer_resource,
+                deal.offer_qty,
+                acquired_tick=acquired_tick,
+            )
         if deal.request_resource and deal.request_qty > 0:
             acceptor.give_resources(deal.request_resource, deal.request_qty)
-            proposer.receive_resources(deal.request_resource, deal.request_qty)
+            proposer.receive_resources(
+                deal.request_resource,
+                deal.request_qty,
+                acquired_tick=acquired_tick,
+            )
         if deal.gold_sweetener > 0:
             proposer.spend_dollops(deal.gold_sweetener)
             acceptor.receive_dollops(deal.gold_sweetener)
