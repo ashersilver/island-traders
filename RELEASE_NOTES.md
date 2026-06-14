@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
 
-Version bump: `0.1.3-dev.2026-06-12.7`
+Version bump: `0.1.4-dev.2026-06-14.2`
 
 Follow-up to the UI v2 phase-1 input work, from playtest feedback:
 
@@ -27,6 +27,65 @@ inner edges of the side and info columns; drag to resize, double-click to reset.
 Widths persist in localStorage (`it_colwidths_v1`) and compose with the
 hide/collapse toggles and the mobile single-column breakpoint — so a cramped
 panel can be widened instead of wrapping.
+
+## 0.1.3 — 2026-06-14
+
+Third point release. The headline is the **equipment-as-durable-capital arc**
+completing in a calibration-sane state, plus an agent-interaction ingestion
+endpoint.
+
+**Equipment economy (#124 / #125 / #130).** Manufactured equipment
+(`FarmMachinery`, `MiningEquipment`) is now **durable capital** — bought once and
+installed for the matching producer, not burned as a per-season input — so a
+tractor stockout can no longer zero out food production. **Metal now smelts from
+Ore + Oil** instead of appearing as a free co-product. To replace the recurring
+equipment market that durability removed, the Manufacturer now earns **warranty
+premiums (~20%/yr)** on installed capital; **unwarranted equipment fails on an
+age-rising hazard** (5% / 15% / 40% in years 1/2/3), and repairs pay **50% of
+item value to the Manufacturer** plus **Freight to the Transporter** for spares
+delivery (ship = next-season return; Cargo Plane capacity = same-season air
+repair). After this arc, calibration (`--games 1000 --seed 42`) shows the
+Manufacturer recovered from **0% → 8.1%** and all seven roles viable (8.1–20.3%
+win, avg wealth tight at 3106–3623 Dp), with Freight trade up ~3× (592 → 1665).
+
+**Agent interaction ingestion (#133).** New
+`POST/GET /api/rooms/{room_id}/agent-interactions` endpoint lets external LLM
+agent processes publish transcript-style interaction records to the server (per-
+room in-memory ring buffer, 2 000 max) for an observer UI, without coupling the
+server to the agents repo's files.
+
+**Other.** Season-countdown desync fix (re-syncs from `game_state`, so seasons no
+longer end before the on-screen timer and all tabs agree); interim Farmer
+starting buffer of 15 FarmMachinery; order/training batch engine seams (#114
+phase 2).
+
+**Known issue.** Win-rate balance is healthy but not yet a perfect 1/7 (Farmer/
+Miner run hot, Manufacturer/Educator cool) and money in circulation still
+contracts ~45% over a game — both future tuning items, not gameplay blockers.
+
+### claude/zealous-ellis-8deb83
+
+Branch: `claude/zealous-ellis-8deb83`
+Target: `pre-release`
+Version bump: `0.1.3-dev.2026-06-12.7`
+
+**Agent interaction ingestion endpoint (`/api/rooms/{room_id}/agent-interactions`)**:
+External LLM agent processes (the `island-traders-agents` repo) can now publish
+their transcript-style interaction records to the game server over HTTP, instead
+of the server reading JSONL files out of the agents repo (which would couple the
+two projects). The server stores records in a per-room in-memory ring buffer
+(2 000 max, oldest evicted) and serves them back for an observer UI.
+
+- `POST /api/rooms/{room_id}/agent-interactions` — accepts `{"events": [...]}`,
+  a bare JSON array, or a single event object.
+- `GET /api/rooms/{room_id}/agent-interactions?limit=&since_seq=` — returns
+  stored records with optional cap and incremental (`since_seq`) filtering.
+- Both routes are documented in the OpenAPI schema under the **Game Flow** tag.
+- No authentication: intended for local / trusted agent processes only.
+- Transcript generation/publishing stays in `island-traders-agents`; this is the
+  ingestion/store/serve half. A future Mongo-backed store can pull from here.
+- Tests: `tests/test_server/test_agent_interactions.py` (POST/GET, ring-buffer
+  eviction, missing room, `since_seq` filtering, accumulation across posts).
 ### codex/equipment-capital-smelting-124-125
 
 Version bump: `0.1.3-dev.2026-06-12.6`
