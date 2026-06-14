@@ -125,6 +125,37 @@ re-sync; the *trading-stops-early* problem persists.)
 
 ---
 
+## DEFECT 3 (frontend — Claude-owned) — season countdown freezes while a native dialog is open
+
+**Symptom (maintainer):** "Every time an alert appears on the screen the timer
+stops — the timer should continue."
+
+**Root cause (confirmed).** The season countdown is driven by
+`setInterval(updateSeasonTimerUI, 250)` (`server/static/index.html:4534`), and
+`updateSeasonTimerUI` recomputes remaining time from the server epoch deadline
+each tick (`remain = max(0, round((seasonTimerEnd − effectiveNowMs())/1000))`,
+index.html:4541). The remaining alerts/dialogs are **native blocking calls**
+(`alert()`, `confirm()`, `prompt()`) which halt the JS main thread, so *no*
+`setInterval` can fire while one is open → the countdown visually freezes.
+
+**Not a server problem.** `seasonTimerEnd` is an epoch deadline; the season still
+ends on schedule server-side, and on dismissal the next tick snaps the display to
+the correct (lower) value. The bug is purely the *visual* freeze of a blocking
+dialog (distinct from the deliberate host-pause freeze at index.html:1270, and
+distinct from DEFECT 2).
+
+**Native-dialog sites to replace** (index.html): `prompt()` for training
+counter-offers (2618, 2620); `confirm()` for leave (1791); `alert()` for errors /
+guarantee-price explainer / log download (1664, 1692, 1778, 1786, 1798, 2045,
+5513, 5520, 5534).
+
+**Fix.** Replace blocking `alert/confirm/prompt` with the app's existing
+non-blocking custom modal/toast pattern so the event loop (and the countdown)
+keeps running while a message is on screen. **Frontend-only; Claude owns this** —
+listed here so the batch is complete. Does not need Codex.
+
+---
+
 ## TUNING 1 — Training food demand is ~10× the per-capita base rate
 
 **Maintainer:** "The additional food requirement for training is 1×Food per
