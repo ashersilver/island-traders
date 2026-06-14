@@ -115,6 +115,16 @@ if BaseModel is not None:
             ge=0,
             description="Pre-season ready timer length in seconds.",
         )
+        debug_starting_inventory: dict[str, dict[str, int]] | None = Field(
+            None,
+            description=(
+                "TEST/DEBUG ONLY. Role name -> {resource: qty} overrides added "
+                "to a player's opening inventory at game launch (e.g. "
+                "{'Farmer': {'Food': 200}} so food production doesn't cloud a "
+                "test). Resource names are matched case-insensitively. Presence "
+                "marks the room as a debug room; omit in real games."
+            ),
+        )
 
 
     class JoinByCodeRequest(BaseModel):
@@ -350,6 +360,9 @@ class GameRoom:
     auction_timer_seconds: int = AUCTION_DURATION_SECONDS
     season_timer_seconds: int = DEFAULT_SEASON_TIMER     # 0 = no timer
     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER  # 0 = skip
+    # TEST/DEBUG ONLY: role -> {resource: qty} opening-inventory overrides,
+    # applied at game launch. Non-empty marks this as a debug room.
+    debug_starting_inventory: dict[str, dict[str, int]] = field(default_factory=dict)
     status: str = "waiting"  # waiting | auction | guarantee | investing | running | finished
     players: list[LobbyPlayer] = field(default_factory=list)
     creator_id: str = ""
@@ -466,6 +479,7 @@ class GameManager:
                     auction_timer_seconds: int = AUCTION_DURATION_SECONDS,
                     season_timer_seconds: int = DEFAULT_SEASON_TIMER,
                     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER,
+                    debug_starting_inventory: dict[str, dict[str, int]] | None = None,
                     room_id: str | None = None) -> GameRoom:
         # Playtest quick-seat: a caller may pin a deterministic room ID so all
         # seven tabs can be pre-composed before the room exists.  Only honoured
@@ -488,6 +502,7 @@ class GameManager:
             auction_timer_seconds=int(auction_timer_seconds),
             season_timer_seconds=int(season_timer_seconds),
             pre_season_timer_seconds=int(pre_season_timer_seconds),
+            debug_starting_inventory=dict(debug_starting_inventory or {}),
             creator_id=creator_id,
         )
         room.players.append(LobbyPlayer(player_id=creator_id, name=creator_name))
@@ -1531,6 +1546,39 @@ class GameManager:
                         payments_made=1,
                         last_payment_year=0,
                     )
+
+        # TEST/DEBUG: apply role-keyed opening-inventory overrides (e.g. start
+        # the Farmer with 200 Food so food production doesn't cloud a test).
+        # Only fires for debug rooms (non-empty mapping); resource names are
+        # matched case-insensitively against ResourceType. Logged loudly so a
+        # seeded game is never mistaken for a real one.
+        if room.debug_starting_inventory:
+            res_by_lower = {rt.value.lower(): rt for rt in ResourceType}
+            for p in game.players:
+                for role in p.roles:
+                    overrides = room.debug_starting_inventory.get(role.name)
+                    if not overrides:
+                        continue
+                    for res_name, qty in overrides.items():
+                        rt = res_by_lower.get(str(res_name).strip().lower())
+                        if rt is None:
+                            logger.warning(
+                                "Room %s debug inventory: unknown resource %r "
+                                "for role %s — skipped.",
+                                room_id, res_name, role.name,
+                            )
+                            continue
+                        try:
+                            amount = int(qty)
+                        except (TypeError, ValueError):
+                            continue
+                        if amount <= 0:
+                            continue
+                        p.receive_resources(rt, amount)
+                        logger.warning(
+                            "[DEBUG SEED] Room %s: %s (%s) granted %d %s at launch.",
+                            room_id, p.name, role.name, amount, rt.value,
+                        )
 
         def _broadcast_state():
             state = self.get_game_state(room_id)
@@ -3889,6 +3937,7 @@ def create_app() -> FastAPI:
             auction_timer_seconds=body.auction_timer_seconds,
             season_timer_seconds=body.season_timer_seconds,
             pre_season_timer_seconds=body.pre_season_timer_seconds,
+            debug_starting_inventory=body.debug_starting_inventory,
         )
         return JSONResponse(room.to_dict())
 

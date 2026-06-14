@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
 
-Version bump: `0.1.4-dev.2026-06-14.2`
+Version bump: `0.1.4-dev.2026-06-14.3`
 
 Follow-up to the UI v2 phase-1 input work, from playtest feedback:
 
@@ -27,6 +27,20 @@ inner edges of the side and info columns; drag to resize, double-click to reset.
 Widths persist in localStorage (`it_colwidths_v1`) and compose with the
 hide/collapse toggles and the mobile single-column breakpoint — so a cramped
 panel can be widened instead of wrapping.
+
+### claude/debug-starting-inventory
+
+Version bump: `0.1.4-dev.2026-06-14.2`
+
+**TEST/DEBUG: role-keyed opening-inventory override (`startfood` affordance).**
+A room can be created with per-role starting-inventory overrides so a resource
+doesn't cloud a balance test — e.g. start the Farmer with 200 Food. From the
+Create Room screen, append URL params: `?startrole=Farmer&startfood=200`
+(any number of `start<resource>=N` params; resource names match
+case-insensitively; `startrole` defaults to `Farmer`). The override is applied
+at game launch and logged loudly (`[DEBUG SEED]`). Rooms created without these
+params are unaffected (presence of an override is what marks a debug room).
+Refs #138.
 
 ## 0.1.3 — 2026-06-14
 
