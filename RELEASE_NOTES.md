@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/equipment-capital-smelting-124-125
 
-Version bump: `0.1.3-dev.2026-06-12.3`
+Version bump: `0.1.3-dev.2026-06-12.5`
 
 **Equipment is durable capital, not a seasonal consumable.** Farmers no longer
 burn `FarmMachinery` and Miners no longer burn `MiningEquipment` as production
@@ -23,6 +23,32 @@ supply instead of appearing as a free co-product.
 `MiningEquipment` are priced at the capital items they install as
 (`farmer.tractor` and `miner.excavator`), avoiding a buyer-side book-value lift
 when tradeable equipment turns into durable capital.
+
+### claude/fix-season-timer-resync
+
+Version bump: `0.1.3-dev.2026-06-12.4`
+
+**Fix: different season countdowns per tab + season ending before the countdown.**
+The action-phase countdown was only ever synced from the one-shot `season_start`
+broadcast, so any tab that joined/reconnected mid-season — or whose timer was
+clobbered by a re-render — ran off a stale value, showing a different (often
+inflated) countdown than the real server deadline. The `game_state` snapshot now
+carries the authoritative `season_timer_end` (epoch) + `server_now`, and the
+client re-syncs `seasonTimerEnd` from every snapshot (clock-offset corrected), so
+all tabs track the same server clock and the displayed countdown matches the real
+deadline. Complements the earlier grace fix (the server still ends ~1.5s after the
+on-screen 0, never before).
+
+### claude/interim-farmer-equipment-buffer
+
+Version bump: `0.1.3-dev.2026-06-12.3`
+
+**Interim: Farmer starts with a full-game FarmMachinery buffer (15, was 2).**
+Stop-gap for #124 — FarmMachinery is currently a per-season *consumed* input that
+hard-gates production, so a Farmer stockout zeroes Food and starves the whole
+archipelago. Until equipment becomes durable capital, the Farmer opens with
+enough machinery to cover a full game so food never stalls on it. Oil remains a
+normal traded input.
 
 ### codex/order-training-batch-114
 
