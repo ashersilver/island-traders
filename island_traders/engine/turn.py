@@ -128,6 +128,10 @@ class TurnManager:
         # Optional callback fired with player.player_id when their turn thread
         # completes (used by the server to track ready/done state).
         self.on_player_turn_complete = None
+        # Optional callback fired after all parallel turn threads complete but
+        # before run_season returns. The web server uses this to hold timed
+        # seasons open until the advertised deadline.
+        self.wait_for_parallel_season_release = None
 
     def run_season(
         self,
@@ -315,6 +319,12 @@ class TurnManager:
         # 4. Wait for every human turn thread to complete.
         for t in threads:
             t.join()
+        cb = self.wait_for_parallel_season_release
+        if cb:
+            try:
+                cb(year, season_index)
+            except Exception as exc:  # noqa: BLE001
+                self.io.print(f"[ERROR] timed season hold failed: {exc}")
         return results
 
     def execute_turn(

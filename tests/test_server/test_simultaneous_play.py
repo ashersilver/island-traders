@@ -367,6 +367,29 @@ def test_turn_manager_parallel_mode_dispatch():
     assert results == []
 
 
+def test_parallel_turn_manager_calls_release_hook_after_threads_complete():
+    from island_traders.engine.turn import TurnManager
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.engine.trading import TradingEngine
+    from island_traders.models.market import Market
+    from island_traders.cli.prompts import FakeIOAdapter
+    from island_traders.models.deal import DealLedger
+
+    market = Market()
+    tm = TurnManager(
+        players=[],
+        production_engine=ProductionEngine(),
+        trading_engine=TradingEngine(market, DealLedger()),
+        market=market,
+        io_adapter=FakeIOAdapter(),
+    )
+    calls = []
+    tm.wait_for_parallel_season_release = lambda y, s: calls.append((y, s))
+
+    assert tm._run_season_parallel(2, 3, {}) == []
+    assert calls == [(2, 3)]
+
+
 def test_concurrent_ensure_player_does_not_create_duplicate_events():
     """Regression: two threads calling _ensure_player simultaneously for the
     same pid must not create separate Event/Lock objects (bug #2 root cause)."""
