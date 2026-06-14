@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.4-dev.2026-06-14.3"
+APP_VERSION: str = "0.1.4-dev.2026-06-14.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -309,6 +309,8 @@ CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
 CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
     "Autumn": 1,
 }
+HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
+CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3

@@ -34,6 +34,7 @@ from ..constants import (
     ACTUARIAL_EVALUATION_COST, WORKPLACE_RISK,
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
+    CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
     REPURPOSE_WORKER_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -206,6 +207,26 @@ class TurnManager:
                 post_unmet=False,
             )
             if result.spent > 0:
+                delivery_units = sum(result.bought.values())
+                if delivery_units and CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT > 0:
+                    transporter = next(
+                        (
+                            candidate for candidate in self.players
+                            if any(role.name == "Transporter" for role in candidate.roles)
+                        ),
+                        None,
+                    )
+                    if transporter is not None:
+                        fee = round(
+                            delivery_units * CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
+                            2,
+                        )
+                        transporter.receive_dollops(fee)
+                        self.io.print(
+                            f"[CONSUMER DELIVERY] {transporter.name} earned "
+                            f"{CURRENCY_SYMBOL}{fee:.2f} moving {delivery_units} "
+                            "household unit(s)."
+                        )
                 parts = ", ".join(
                     f"{qty}x {rtype.value}" for rtype, qty in result.bought.items()
                 )
