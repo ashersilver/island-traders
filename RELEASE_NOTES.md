@@ -5,6 +5,41 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.4 — 2026-06-14
+
+Fourth point release. The headline is a **live-playtest defect batch** (#138) that
+made AI/mixed games unplayable, plus the supporting frontend and tooling fixes.
+
+**Workforce no longer collapses → the supply chain stays alive (#138).** The
+biggest fix: in AI/mixed games the productive islands used to lose their whole
+workforce (the Miner's casualty rate drove it to zero workers → **no Oil ever
+produced** → the Farmer couldn't make food → chain-wide starvation). `WORKPLACE_RISK`
+is re-tuned to survivable levels (and the previously risk-free Educator/Banker/Doctor
+now carry a small background risk so the producers aren't uniquely exposed), and the
+**AI now trains replacement skilled workers** instead of bleeding out. Calibration
+(`--games 1000 --seed 42`): Oil/Ore/Metal produced again, all seven roles viable,
+money supply contraction eased (−44.6% → −40.2%).
+
+**Timed seasons stay open for their full clock (#138).** A timed action season is
+now held open until its advertised timer expires even when every turn-thread has
+finished, so the market no longer goes quiet (or the season end) well before the
+countdown — with new server-side timer instrumentation to diagnose it.
+
+**The on-screen countdown no longer freezes (#138).** Native `alert/confirm/prompt`
+dialogs blocked the browser event loop, freezing the season countdown whenever a
+message appeared. All of them are replaced with non-blocking toasts/modals.
+
+**Training food load right-sized (#138).** Per-trainee campus food dropped from
+1.0 → 0.2 Food/season, closer to the per-capita base rate.
+
+**Other.** Agent-interaction ingestion endpoint (#133); quantity-box typing fix +
+mouse-resizable side panels (#114); a `startfood` test/debug affordance for
+isolating economy tests (`?startrole=Farmer&startfood=200`).
+
+**Known issue.** Win-rate balance is healthy (all roles 8.9–20.1%, none dead) but
+not yet a tight 1/7, and money in circulation still contracts ~40% over a game —
+both ongoing tuning levers, not blockers.
+
 ### codex/playtest-defects-tuning-138
 
 Version bump: `0.1.4-dev.2026-06-14.5`
