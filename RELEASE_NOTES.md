@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/playtest-defects-tuning-138
 
-Version bump: `0.1.4-dev.2026-06-14.4`
+Version bump: `0.1.4-dev.2026-06-14.5`
 
 **Playtest defect + tuning batch (#138).** Productive-island workplace risks are
 retuned to survivable levels, high-risk AI islands now buy Life/Medical cover
@@ -18,6 +18,31 @@ even if all turn threads finish early. Campus trainee food load is reduced to
 0.2 Food per trainee per season. The calibration pass adds a small household
 activity income floor and credits the Transporter for delivery work on household
 end-product purchases.
+
+### claude/non-blocking-dialogs — season countdown no longer freezes on alerts (#138 Defect 3)
+
+Version bump: `0.1.4-dev.2026-06-14.4`
+
+**The season countdown kept stopping whenever a message appeared on screen.**
+Cause: several messages used the browser's native `alert()` / `confirm()` /
+`prompt()`, which block the JavaScript main thread — so the `setInterval`-driven
+countdown couldn't tick while one was open (the server-side season clock was
+unaffected; the on-screen number just froze and then jumped on dismissal).
+
+All twelve native dialogs are replaced with non-blocking equivalents that never
+stall the event loop:
+
+- **Toasts** for transient notices/errors (room create/join/leave/AI/auction
+  errors, log-download messages) — auto-dismissing, top-centre.
+- **A confirm modal** for "Leave game?".
+- **A single prompt modal** for the Educator counter-offer (price + optional
+  message in one form, replacing two sequential native prompts).
+- **An info modal** for the guarantee-price explainer.
+
+These use their own overlay, separate from the in-game IO-prompt overlay, so they
+never disturb an active production/market dialog. Verified in-browser: a
+`setInterval` ticked 120× while a modal was open (a native `confirm()` would have
+frozen it at 0). Refs #138.
 
 ### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
 
