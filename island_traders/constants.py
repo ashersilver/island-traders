@@ -757,13 +757,13 @@ REPURPOSE_WORKER_COST: float = 25.0
 # per staff member per season when the player hasn't set their own price.
 #
 # STAFFING_FOOD_PER_STAFF_PER_SEASON — extra Food/meals the host island
-# must provide for each visiting staff member each season (in addition to
-# their standard workforce sustenance).
+# must provide for each visiting staff member or visiting trainee each season
+# (in addition to their standard workforce sustenance).
 #
 # STAFFING_MAX_DURATION_SEASONS — upper bound on any single contract
 # (prevents staff from being away indefinitely).
 STAFFING_BASE_FEE_PER_STAFF_PER_SEASON: float = 20.0
-STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 1.0
+STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 0.2
 STAFFING_MAX_DURATION_SEASONS: int = 4
 
 # ---------------------------------------------------------------------------

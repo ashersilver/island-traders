@@ -39,7 +39,8 @@ from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
-    TOTAL_STARTING_POPULATION,
+    TOTAL_STARTING_POPULATION, PEOPLE_PER_MEAL,
+    STAFFING_FOOD_PER_STAFF_PER_SEASON,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -3164,15 +3165,20 @@ class GameManager:
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
-            campus_extra = (
+            campus_food_units = (
                 game.training.visiting_trainees(p.player_id)
-                if any(r.name == "Educator" for r in p.roles) else 0
+                * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                if any(r.name == "Educator" for r in p.roles) else 0.0
             )
             # Add visiting medical staff to the extra_residents count so
             # the host island's sustenance calculation includes them.
             staffing = getattr(game, "staffing", None)
             if staffing:
-                campus_extra += staffing.visiting_staff(p.player_id)
+                campus_food_units += (
+                    staffing.visiting_staff(p.player_id)
+                    * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                )
+            campus_extra = campus_food_units * PEOPLE_PER_MEAL
             # Sustenance basket alert (2026-05-25 model): aggregate the
             # whole basket into a single "meals runway" figure rather
             # than one alert per resource. Inventory is fungible across
