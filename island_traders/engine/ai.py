@@ -18,6 +18,9 @@ from ..constants import (
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
     MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
+    EQUIPMENT_AI_WARRANTY_MIN_COST,
+    EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_WARRANTY_ANNUAL_RATE,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role
@@ -386,6 +389,7 @@ class AIStrategy:
         player: Player,
         year: int,
         season_index: int,
+        other_players: list[Player] | None = None,
     ) -> list[str]:
         seen: set[str] = set()
         unclaimed = []
@@ -399,13 +403,33 @@ class AIStrategy:
         if not unclaimed:
             return []
         item = min(unclaimed, key=lambda catalogue_item: catalogue_item.cost)
-        if player.dollops <= item.cost * 2:
+        premium = (
+            round(item.cost * EQUIPMENT_WARRANTY_ANNUAL_RATE, 2)
+            if item.cost >= EQUIPMENT_AI_WARRANTY_MIN_COST else 0.0
+        )
+        if player.dollops <= (item.cost + premium) * 2:
             return []
         player.dollops -= item.cost
         current_tick = year * 4 + season_index
         player.add_capital(item.item_id, 1, acquired_tick=current_tick)
+        warranty_note = ""
+        if premium > 0:
+            player.add_capital_warranty(item.item_id, 1)
+            manufacturer = next(
+                (
+                    candidate for candidate in (other_players or [])
+                    if candidate.player_id != player.player_id
+                    and any(r.name == "Manufacturer" for r in candidate.roles)
+                ),
+                None,
+            )
+            if manufacturer is not None and player.dollops >= premium:
+                player.spend_dollops(premium)
+                manufacturer.receive_dollops(premium)
+                warranty_note = f" + {premium:.0f} Dp warranty"
         return [
             f"[AI] {player.name} invested {item.cost:.0f} Dp in {item.name}"
+            f"{warranty_note}"
         ]
 
     def _ai_offer_insurance(
@@ -691,7 +715,23 @@ class AIStrategy:
                 and player.capital_count(item_id) <= 0
             ):
                 inputs[resource] = max(inputs.get(resource, 0), 1)
+        unresolved_repairs = sum(
+            max(0, count - self._repair_in_progress_count(player, item_id))
+            for item_id, count in player.failed_capital.items()
+        )
+        if unresolved_repairs > 0:
+            inputs[ResourceType.FREIGHT] = max(
+                inputs.get(ResourceType.FREIGHT, 0),
+                unresolved_repairs * EQUIPMENT_REPAIR_SHIP_FREIGHT,
+            )
         return inputs
+
+    def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
+        return sum(
+            int(entry.get("count", 1))
+            for entry in player.capital_repair_in_progress
+            if entry.get("item_id") == item_id
+        )
 
     def _farmer_visible_human_demand_output(
         self,
@@ -874,7 +914,9 @@ class AIStrategy:
             )
         )
         actions.extend(
-            self._ai_invest_unclaimed_catalogue_item(player, year, season_index)
+            self._ai_invest_unclaimed_catalogue_item(
+                player, year, season_index, other_players
+            )
         )
 
         inputs_needed = self._inputs_for_ai_purchase(player, season_name, chosen_line)

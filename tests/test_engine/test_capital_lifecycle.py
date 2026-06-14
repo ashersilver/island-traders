@@ -4,11 +4,16 @@ from __future__ import annotations
 from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.constants import (
     DEFAULT_SERVICE_LIFE_SEASONS, DEFAULT_MAINTENANCE_FRACTION,
+    EQUIPMENT_FAILURE_REPAIR_FRACTION,
+    EQUIPMENT_REPAIR_AIR_FREIGHT,
+    EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_WARRANTY_ANNUAL_RATE,
     STARTING_AGED_CAPITAL,
 )
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.models.capacity import CapitalItem, find_item
+from island_traders.models.resource import ResourceType
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +83,30 @@ def _farmer_game(starting_dollops: float = 1500.0) -> Game:
     return game
 
 
+class _FixedRng:
+    def __init__(self, values: list[float]):
+        self.values = list(values)
+
+    def random(self) -> float:
+        if self.values:
+            return self.values.pop(0)
+        return 1.0
+
+
+def _service_game() -> Game:
+    config = GameConfig(
+        num_years=2,
+        player_specs=[
+            PlayerSpec(name="Owner", role_names=["Educator"], is_human=False),
+            PlayerSpec(name="Forge", role_names=["Manufacturer"], is_human=False),
+            PlayerSpec(name="Hauler", role_names=["Transporter"], is_human=False),
+        ],
+    )
+    game = Game(config, FakeIOAdapter())
+    game.setup()
+    return game
+
+
 def test_setup_seeds_farmer_with_aged_combine_harvester():
     game = _farmer_game()
     p = game.players[0]
@@ -128,3 +157,106 @@ def test_unmaintained_resets_each_season():
     p.dollops = 1500.0
     game._process_capital_maintenance(year=0, season=1)
     assert p.unmaintained_capital == {}
+
+
+def test_warranty_premium_debits_owner_and_credits_manufacturer_annually():
+    game = _service_game()
+    owner, manufacturer, _ = game.players
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=0)
+    owner.add_capital_warranty(item.item_id, 1)
+
+    owner_start = owner.dollops
+    manufacturer_start = manufacturer.dollops
+    game._process_capital_maintenance(year=0, season=0)
+
+    premium = item.cost * EQUIPMENT_WARRANTY_ANNUAL_RATE
+    maintenance = item.cost * DEFAULT_MAINTENANCE_FRACTION
+    assert manufacturer.dollops == manufacturer_start + premium
+    assert abs(owner.dollops - (owner_start - premium - maintenance)) < 1e-9
+    assert owner.capital_warranties[item.item_id] == 1
+
+
+def test_uninsured_failure_pays_manufacturer_and_ship_freight_with_downtime():
+    game = _service_game()
+    owner, manufacturer, transporter = game.players
+    game.turn_manager._rng = _FixedRng([0.0])
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=-8)
+    owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    manufacturer_start = manufacturer.dollops
+    transporter_start = transporter.dollops
+    freight_credit = game.market.current_price(ResourceType.FREIGHT)
+
+    game._process_capital_maintenance(year=0, season=3)
+
+    repair_fee = item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+    assert manufacturer.dollops == manufacturer_start + repair_fee
+    assert transporter.dollops == transporter_start + freight_credit
+    assert owner.inventory.get(ResourceType.FREIGHT) == 0
+    assert owner.failed_capital[item.item_id] == 1
+    assert owner.effective_capital_inventory().get(item.item_id, 0) == 0
+    assert owner.capital_repair_in_progress == [{
+        "item_id": item.item_id,
+        "count": 1,
+        "completes_at_tick": 4,
+    }]
+
+    game._process_capital_maintenance(year=1, season=0)
+    assert owner.failed_capital.get(item.item_id, 0) == 0
+    assert owner.capital_repair_in_progress == []
+    assert owner.effective_capital_inventory().get(item.item_id, 0) == 1
+
+
+def test_uninsured_failure_stays_down_when_owner_cannot_pay_repair():
+    game = _service_game()
+    owner, manufacturer, _ = game.players
+    game.turn_manager._rng = _FixedRng([0.0])
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=-8)
+    owner.dollops = 1.0
+    manufacturer_start = manufacturer.dollops
+
+    game._process_capital_maintenance(year=0, season=3)
+
+    assert manufacturer.dollops == manufacturer_start
+    assert owner.failed_capital[item.item_id] == 1
+    assert owner.capital_repair_in_progress == []
+    assert owner.effective_capital_inventory().get(item.item_id, 0) == 0
+
+
+def test_cargo_plane_allows_same_season_air_repair():
+    game = _service_game()
+    owner, manufacturer, transporter = game.players
+    game.turn_manager._rng = _FixedRng([0.0])
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=-8)
+    owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_AIR_FREIGHT)
+    transporter.add_capital("transporter.cargo_plane", 1, acquired_tick=0)
+    transporter.add_capital_warranty("transporter.cargo_plane", 1)
+    manufacturer_start = manufacturer.dollops
+    transporter_start = transporter.dollops
+    freight_credit = (
+        game.market.current_price(ResourceType.FREIGHT)
+        * EQUIPMENT_REPAIR_AIR_FREIGHT
+    )
+    cargo_plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    assert cargo_plane is not None
+    cargo_plane_maintenance = cargo_plane.cost * DEFAULT_MAINTENANCE_FRACTION
+
+    game._process_capital_maintenance(year=0, season=3)
+
+    repair_fee = item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+    assert manufacturer.dollops == manufacturer_start + repair_fee
+    assert (
+        transporter.dollops
+        == transporter_start + freight_credit - cargo_plane_maintenance
+    )
+    assert owner.inventory.get(ResourceType.FREIGHT) == 0
+    assert owner.failed_capital.get(item.item_id, 0) == 0
+    assert owner.capital_repair_in_progress == []
+    assert owner.effective_capital_inventory().get(item.item_id, 0) == 1

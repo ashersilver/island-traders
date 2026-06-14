@@ -180,6 +180,14 @@ class Player:
     # Unmaintained units contribute 0 capacity until paid; reset by the
     # next season's maintenance step.  Not persisted in save files.
     unmaintained_capital: dict[str, int] = field(default_factory=dict)
+    # Equipment warranties (#130): item_id -> warranted unit count.  Warranted
+    # units pay an annual premium to the Manufacturer and do not roll failure.
+    capital_warranties: dict[str, int] = field(default_factory=dict)
+    # Failed equipment units that contribute 0 capacity until repaired.
+    failed_capital: dict[str, int] = field(default_factory=dict)
+    # Paid ship repairs that complete on a future tick.  Each entry:
+    # {"item_id": str, "count": int, "completes_at_tick": int}.
+    capital_repair_in_progress: list[dict] = field(default_factory=list)
     # Active patents this player has bought, keyed by output resource name.
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.
@@ -230,10 +238,15 @@ class Player:
         ``unmaintained_capital`` counts — unmaintained units contribute
         zero capacity until paid (Phase C capital lifecycle).
         """
-        if not self.unmaintained_capital:
+        if not self.unmaintained_capital and not self.failed_capital:
             return self.capital_inventory
         return {
-            item_id: max(0, count - self.unmaintained_capital.get(item_id, 0))
+            item_id: max(
+                0,
+                count
+                - self.unmaintained_capital.get(item_id, 0)
+                - self.failed_capital.get(item_id, 0),
+            )
             for item_id, count in self.capital_inventory.items()
         }
 
@@ -242,6 +255,35 @@ class Player:
         self.capital_inventory[item_id] = self.capital_inventory.get(item_id, 0) + count
         ticks = self.capital_acquired_ticks.setdefault(item_id, [])
         ticks.extend([acquired_tick] * count)
+
+    def add_capital_warranty(self, item_id: str, count: int = 1) -> int:
+        """Warranty up to ``count`` owned, unwarranted units of ``item_id``."""
+        owned = self.capital_inventory.get(item_id, 0)
+        current = self.capital_warranties.get(item_id, 0)
+        add = max(0, min(count, owned - current))
+        if add > 0:
+            self.capital_warranties[item_id] = current + add
+        return add
+
+    def mark_capital_failed(self, item_id: str, count: int = 1) -> int:
+        """Mark up to ``count`` in-service units down for repair."""
+        owned = self.capital_inventory.get(item_id, 0)
+        failed = self.failed_capital.get(item_id, 0)
+        add = max(0, min(count, owned - failed))
+        if add > 0:
+            self.failed_capital[item_id] = failed + add
+        return add
+
+    def complete_capital_repair(self, item_id: str, count: int = 1) -> int:
+        failed = self.failed_capital.get(item_id, 0)
+        repaired = max(0, min(count, failed))
+        if repaired > 0:
+            remaining = failed - repaired
+            if remaining:
+                self.failed_capital[item_id] = remaining
+            else:
+                self.failed_capital.pop(item_id, None)
+        return repaired
 
     def remove_capital(self, item_id: str, count: int = 1) -> int:
         """Remove up to `count` of a capital item (e.g. destroyed by event).
@@ -257,6 +299,17 @@ class Player:
                     self.capital_acquired_ticks.pop(item_id, None)
             if self.capital_inventory[item_id] == 0:
                 del self.capital_inventory[item_id]
+            remaining = self.capital_inventory.get(item_id, 0)
+            if self.capital_warranties.get(item_id, 0) > remaining:
+                if remaining:
+                    self.capital_warranties[item_id] = remaining
+                else:
+                    self.capital_warranties.pop(item_id, None)
+            if self.failed_capital.get(item_id, 0) > remaining:
+                if remaining:
+                    self.failed_capital[item_id] = remaining
+                else:
+                    self.failed_capital.pop(item_id, None)
         return n
 
     def capital_count(self, item_id: str) -> int:

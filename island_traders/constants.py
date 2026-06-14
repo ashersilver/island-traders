@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.3-dev.2026-06-12.5"
+APP_VERSION: str = "0.1.3-dev.2026-06-12.6"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -103,13 +103,13 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
     "Food":                22.0,
-    "Fish":                16.0,
-    "Grain":               13.0,
-    "Produce":             16.0,
+    "Fish":                12.0,
+    "Grain":               10.0,
+    "Produce":             12.0,
     "Meat":                16.2,
-    "Ore":                  6.5,
-    "Metal":               11.0,
-    "Oil":                  8.0,
+    "Ore":                  5.0,
+    "Metal":                9.0,
+    "Oil":                  6.0,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
@@ -117,9 +117,9 @@ BASE_PRICES: dict[str, float] = {
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":               30.0,
-    "HealthServices":      34.0,   # #112 restores clinical pricing for funded demand
-    "Vaccine":             40.0,   # #112 restores preventive-care pricing
+    "Goods":               40.0,
+    "HealthServices":      30.0,
+    "Vaccine":             35.0,
     "Finance":             20.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
@@ -247,7 +247,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "FarmMachinery": {
         "inputs":           {"Metal": 2, "Oil": 1},
         "output":           "FarmMachinery",
-        "qty":              3,
+        "qty":              4,
         "skilled":          2,   # AssemblyWorkers to weld and fit
         "unskilled":        3,   # general labour for sub-assembly
         "freight_per_unit": 1,   # durable board-scale unit; shipped on flatbeds
@@ -256,7 +256,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "Goods": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "Goods",
-        "qty":              3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+        "qty":              5 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
         "skilled":          2,
         "unskilled":        2,
         "freight_per_unit": 1,
@@ -265,7 +265,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "MiningEquipment": {
         "inputs":           {"Metal": 3, "Oil": 2},
         "output":           "MiningEquipment",
-        "qty":              2,
+        "qty":              3,
         "skilled":          3,   # Engineers to spec heavy drilling rigs
         "unskilled":        2,
         "freight_per_unit": 1,   # durable board-scale unit; specialist transport
@@ -277,7 +277,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "MedicalDevices": {
         "inputs":           {"Metal": 1, "Oil": 1},
         "output":           "MedicalDevices",
-        "qty":              3,
+        "qty":              4,
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
         "unskilled":        1,   # minimal general labour
         "freight_per_unit": 1,   # durable board-scale unit; high-value items
@@ -286,7 +286,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
     "TransportEquipment": {
         "inputs":           {"Metal": 2, "Oil": 2},
         "output":           "TransportEquipment",
-        "qty":              2,
+        "qty":              3,
         "skilled":          2,
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
@@ -462,6 +462,21 @@ DEFAULT_SERVICE_LIFE_SEASONS: int = 20
 # `maintenance_per_season` is 0.0 (no override): charge this fraction of
 # the item's purchase cost per owned unit per season.  Tunable.
 DEFAULT_MAINTENANCE_FRACTION: float = 0.03
+
+# Equipment warranty + failure model (#130, 2026-06-12).  Warranties are sold
+# by the Manufacturer and charged annually.  Unwarranted equipment rolls an
+# annual age-based failure check; failed units need paid repair parts plus
+# Freight spares delivery before they contribute capacity again.
+EQUIPMENT_WARRANTY_ANNUAL_RATE: float = 0.20
+EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR: dict[int, float] = {
+    1: 0.05,
+    2: 0.15,
+    3: 0.40,
+}
+EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.50
+EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
+EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
+EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
 
 
 # ---------------------------------------------------------------------------

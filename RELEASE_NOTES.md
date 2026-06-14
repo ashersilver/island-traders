@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/equipment-capital-smelting-124-125
 
-Version bump: `0.1.3-dev.2026-06-12.5`
+Version bump: `0.1.3-dev.2026-06-12.6`
 
 **Equipment is durable capital, not a seasonal consumable.** Farmers no longer
 burn `FarmMachinery` and Miners no longer burn `MiningEquipment` as production
@@ -23,6 +23,13 @@ supply instead of appearing as a free co-product.
 `MiningEquipment` are priced at the capital items they install as
 (`farmer.tractor` and `miner.excavator`), avoiding a buyer-side book-value lift
 when tradeable equipment turns into durable capital.
+
+**Equipment warranties and failures.** AI-purchased capital now carries a
+Manufacturer warranty premium (20% per year). Unwarranted equipment rolls an
+annual age-based failure check; failed units are down until repaired. Repairs pay
+50% of the item value to the Manufacturer and consume Freight for spares
+delivery: ship repair returns next season, while Cargo Plane capacity enables
+same-season air repair.
 
 ### claude/fix-season-timer-resync
 
