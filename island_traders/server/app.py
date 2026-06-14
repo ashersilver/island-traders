@@ -1994,6 +1994,8 @@ class GameManager:
                 "name":        item.name,
                 "role":        item.role,
                 "count":       count,
+                "warrantied":  p.capital_warranties.get(item_id, 0),
+                "failed":      p.failed_capital.get(item_id, 0),
                 "description": item.description,
             })
         # Items still arriving
@@ -2011,11 +2013,26 @@ class GameManager:
             if current_tick is not None:
                 rendered["seasons_remaining"] = max(0, arrives_at - current_tick)
             in_transit.append(rendered)
+        repairs_in_progress = []
+        for entry in p.capital_repair_in_progress:
+            rendered = dict(entry)
+            item = find_item(CAPITAL_CATALOGUE, entry.get("item_id", ""))
+            if item:
+                rendered["name"] = item.name
+                rendered["role"] = item.role
+                rendered["description"] = item.description
+            completes_at = int(entry.get("completes_at_tick", 0))
+            rendered["completion_year"] = completes_at // len(SEASONS) + 1
+            rendered["completion_season"] = SEASONS[completes_at % len(SEASONS)]
+            if current_tick is not None:
+                rendered["seasons_remaining"] = max(0, completes_at - current_tick)
+            repairs_in_progress.append(rendered)
 
         return {
             "outputs":         outputs,
             "capital_owned":   capital_owned,
             "capital_in_transit": in_transit,
+            "capital_repair_in_progress": repairs_in_progress,
             "band_counts":     band_counts,
             "engineer_specialties": specialty_payload(p),
         }

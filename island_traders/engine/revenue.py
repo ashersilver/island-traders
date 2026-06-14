@@ -15,7 +15,7 @@ from ..constants import (
     SKILLED_PROFESSIONS,
 )
 from ..models.market import Market
-from ..models.player import Player
+from ..models.player import EQUIPMENT_RESOURCE_CAPITAL, Player
 from ..models.resource import ResourceType
 from .consumer import structural_consumer_demand_units
 
@@ -40,8 +40,12 @@ def _structural_demand_units(
     season_name: str,
 ) -> float:
     total = 0.0
+    equipment_mapping = EQUIPMENT_RESOURCE_CAPITAL.get(output)
     for consumer in all_players:
         for role in consumer.roles:
+            if equipment_mapping is not None and role.name == equipment_mapping[0]:
+                item_id = equipment_mapping[1]
+                total += 1.0 if consumer.capital_count(item_id) <= 0 else 0.25
             if role.name == "Farmer":
                 inputs = FARMER_SEASONAL_CONVERSION.get(season_name, {}).get("inputs", {})
             elif role.name == "Manufacturer":
@@ -150,7 +154,19 @@ def revenue_opportunities(
         unit_margin = round(unit_price - unit_input_cost, 2)
         structural = _structural_demand_units(output, all_players, season_name)
         live_bid = _live_bid_units(market, output)
-        demand = max(structural, live_bid)
+        visible_supply = sum(
+            offer.remaining for offer in market.available_offers(output)
+        )
+        supply_memory = getattr(player, "ai_equipment_supply_memory", {})
+        remembered_supply = supply_memory.get(output.value, 0)
+        unmet_structural = max(
+            0.0,
+            structural
+            - player.inventory.get(output)
+            - visible_supply
+            - remembered_supply,
+        )
+        demand = max(unmet_structural, live_bid)
         recommended_qty = min(int(qty), int(ceil(demand))) if demand > 0 else 0
         if recommended_qty > 0:
             runs = max(1, ceil(recommended_qty / qty))
