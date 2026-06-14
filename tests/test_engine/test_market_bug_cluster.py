@@ -56,7 +56,8 @@ def test_same_price_bid_then_ask_crosses():
 
     assert ask.remaining == 0, "Same-price ask should fully cross the resting bid"
     assert bid.remaining == 0
-    assert buyer.inventory.get(ResourceType.FARM_MACHINERY) == 6
+    assert buyer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert buyer.capital_count("farmer.tractor") == 6
     assert seller.dollops == pytest.approx(54.0)  # 6 × 9
 
 
@@ -73,7 +74,8 @@ def test_same_price_ask_then_bid_crosses():
 
     assert ask.remaining == 0
     assert bid.remaining == 0
-    assert buyer.inventory.get(ResourceType.FARM_MACHINERY) == 6
+    assert buyer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert buyer.capital_count("farmer.tractor") == 6
 
 
 def test_bid_below_ask_does_not_cross():

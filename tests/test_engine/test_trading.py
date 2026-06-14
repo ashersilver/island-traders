@@ -94,3 +94,29 @@ def test_gold_sweetener_deal(engine, farmer, banker):
     # Banker pays no gold; farmer offers food for nothing (gift/test)
     engine.accept_deal(deal, acceptor=banker, proposer=farmer)
     assert banker.inventory.get(ResourceType.FOOD) == 2
+
+
+def test_accept_deal_installs_equipment_for_producer(engine):
+    manufacturer = Player(3, "Forge", [ROLES["Manufacturer"]], 100.0, is_human=False)
+    farmer = Player(4, "Farm", [ROLES["Farmer"]], 200.0, is_human=False)
+    manufacturer.receive_resources(ResourceType.FARM_MACHINERY, 1)
+
+    deal = engine.propose_deal(
+        manufacturer,
+        farmer,
+        ResourceType.FARM_MACHINERY,
+        1,
+        None,
+        0,
+        0.0,
+    )
+    engine.accept_deal(
+        deal,
+        acceptor=farmer,
+        proposer=manufacturer,
+        acquired_tick=7,
+    )
+
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert farmer.capital_count("farmer.tractor") == 1
+    assert farmer.capital_acquired_ticks["farmer.tractor"] == [7]

@@ -9,7 +9,7 @@ Release notes are required before merging a feature/fix branch into
 
 Branch: `claude/zealous-ellis-8deb83`
 Target: `pre-release`
-Version bump: `0.1.3-dev.2026-06-12.5`
+Version bump: `0.1.3-dev.2026-06-12.7`
 
 **Agent interaction ingestion endpoint (`/api/rooms/{room_id}/agent-interactions`)**:
 External LLM agent processes (the `island-traders-agents` repo) can now publish
@@ -28,6 +28,32 @@ two projects). The server stores records in a per-room in-memory ring buffer
   ingestion/store/serve half. A future Mongo-backed store can pull from here.
 - Tests: `tests/test_server/test_agent_interactions.py` (POST/GET, ring-buffer
   eviction, missing room, `since_seq` filtering, accumulation across posts).
+
+### codex/equipment-capital-smelting-124-125
+
+Version bump: `0.1.3-dev.2026-06-12.6`
+
+**Equipment is durable capital, not a seasonal consumable.** Farmers no longer
+burn `FarmMachinery` and Miners no longer burn `MiningEquipment` as production
+inputs; those manufactured resources now install as durable capital for the
+matching producer when acquired, preserving the Manufacturer's equipment market
+without letting a tractor stockout zero food production.
+
+**Metal now smelts from Ore + Oil.** Miner `Metal` output consumes Ore and Oil as
+an output-specific smelting input, so Metal production is tied to prior Ore
+supply instead of appearing as a free co-product.
+
+**Equipment prices now match installed capital value.** `FarmMachinery` and
+`MiningEquipment` are priced at the capital items they install as
+(`farmer.tractor` and `miner.excavator`), avoiding a buyer-side book-value lift
+when tradeable equipment turns into durable capital.
+
+**Equipment warranties and failures.** AI-purchased capital now carries a
+Manufacturer warranty premium (20% per year). Unwarranted equipment rolls an
+annual age-based failure check; failed units are down until repaired. Repairs pay
+50% of the item value to the Manufacturer and consume Freight for spares
+delivery: ship repair returns next season, while Cargo Plane capacity enables
+same-season air repair.
 
 ### claude/fix-season-timer-resync
 

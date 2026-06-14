@@ -211,7 +211,12 @@ class TradingEngine:
         )
 
     def accept_deal(
-        self, deal: DealProposal, acceptor: Player, proposer: Player
+        self,
+        deal: DealProposal,
+        acceptor: Player,
+        proposer: Player,
+        *,
+        acquired_tick: int = 0,
     ) -> None:
         # Re-validate both sides before any mutation
         if deal.offer_resource and deal.offer_qty > 0:
@@ -232,10 +237,18 @@ class TradingEngine:
         # Atomic transfers
         if deal.offer_resource and deal.offer_qty > 0:
             proposer.give_resources(deal.offer_resource, deal.offer_qty)
-            acceptor.receive_resources(deal.offer_resource, deal.offer_qty)
+            acceptor.receive_resources(
+                deal.offer_resource,
+                deal.offer_qty,
+                acquired_tick=acquired_tick,
+            )
         if deal.request_resource and deal.request_qty > 0:
             acceptor.give_resources(deal.request_resource, deal.request_qty)
-            proposer.receive_resources(deal.request_resource, deal.request_qty)
+            proposer.receive_resources(
+                deal.request_resource,
+                deal.request_qty,
+                acquired_tick=acquired_tick,
+            )
         if deal.gold_sweetener > 0:
             proposer.spend_dollops(deal.gold_sweetener)
             acceptor.receive_dollops(deal.gold_sweetener)

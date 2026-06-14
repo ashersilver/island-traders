@@ -3000,7 +3000,12 @@ class TurnManager:
                     req_qty * prices.get(req_r, 0) if req_r else 0
                 ) + max(-sweetener, 0)
                 if requested_val <= offered_val * 1.1:
-                    self.trading.accept_deal(deal, target, player)
+                    self.trading.accept_deal(
+                        deal,
+                        target,
+                        player,
+                        acquired_tick=result.year * len(SEASONS) + result.season,
+                    )
                     self.io.print(f"  {target.name} accepted the deal.")
                     result.actions_taken.append("deal:accepted")
                 else:
@@ -3033,7 +3038,12 @@ class TurnManager:
             )
             if self.io.confirm(f"{summary}\nAccept this deal?"):
                 try:
-                    self.trading.accept_deal(deal, acceptor=player, proposer=proposer)
+                    self.trading.accept_deal(
+                        deal,
+                        acceptor=player,
+                        proposer=proposer,
+                        acquired_tick=result.year * len(SEASONS) + result.season,
+                    )
                     self.io.print(f"  Accepted deal #{deal.deal_id}.")
                     result.actions_taken.append(f"deal:accepted:{deal.deal_id}")
                 except Exception as exc:
