@@ -774,14 +774,15 @@ STAFFING_MAX_DURATION_SEASONS: int = 4
 # fatality_rate: probability per season that ONE skilled/experienced worker dies.
 # Medical insurance halves injury_rate; Life insurance pays a death benefit on fatality.
 WORKPLACE_RISK: dict[str, dict[str, float]] = {
-    "Farmer":       {"injury_rate": 0.08, "fatality_rate": 0.04},   # machinery accidents
-    "Miner":        {"injury_rate": 0.14, "fatality_rate": 0.08},   # collapses, gases
-    "Transporter":  {"injury_rate": 0.07, "fatality_rate": 0.03},   # vehicle accidents
-    "Manufacturer": {"injury_rate": 0.10, "fatality_rate": 0.05},   # industrial accidents
-    # Low-risk roles — no workplace risk rolls applied
-    "Educator":     {"injury_rate": 0.0,  "fatality_rate": 0.0},
-    "Banker":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
-    "Doctor":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
+    "Farmer":       {"injury_rate": 0.035, "fatality_rate": 0.012},  # machinery accidents
+    "Miner":        {"injury_rate": 0.060, "fatality_rate": 0.025},  # collapses, gases
+    "Transporter":  {"injury_rate": 0.030, "fatality_rate": 0.010},  # vehicle accidents
+    "Manufacturer": {"injury_rate": 0.045, "fatality_rate": 0.018},  # industrial accidents
+    # Low-risk roles still carry a small background workplace risk so the
+    # productive islands are not uniquely exposed to workforce attrition.
+    "Educator":     {"injury_rate": 0.005, "fatality_rate": 0.001},
+    "Banker":       {"injury_rate": 0.005, "fatality_rate": 0.001},
+    "Doctor":       {"injury_rate": 0.005, "fatality_rate": 0.001},
 }
 
 # Seasons a policy stays valid after purchase (4 = one full year).
