@@ -1627,6 +1627,26 @@ async function createRoom() {
   const seasonTimer = +(v('c-season-timer') || 120);
   const preSeasonTimer = +(v('c-preseason-timer') || 30);
 
+  // TEST/DEBUG: ?startrole=Farmer&startfood=200&startoil=50 seeds the named
+  // role's opening inventory so a resource doesn't cloud a test. Any number of
+  // start<resource>=N params are honoured; the server matches resource names
+  // case-insensitively. Omit these in real games (presence marks a debug room).
+  const debugInv = (() => {
+    const sp = new URLSearchParams(window.location.search);
+    const role = sp.get('startrole') || 'Farmer';
+    const inv = {};
+    for (const [key, val] of sp.entries()) {
+      const m = /^start(.+)$/i.exec(key);
+      if (!m || key.toLowerCase() === 'startrole') continue;
+      const qty = parseInt(val, 10);
+      if (Number.isFinite(qty) && qty > 0) inv[m[1]] = qty;
+    }
+    return Object.keys(inv).length ? { [role]: inv } : null;
+  })();
+  if (debugInv) {
+    console.warn('[DEBUG SEED] creating debug room with starting inventory', debugInv);
+  }
+
   try {
     const room = await apiFetch('/api/rooms', 'POST', {
       name: roomName, max_players: maxPlayers, num_years: numYears,
@@ -1635,6 +1655,7 @@ async function createRoom() {
       auction_timer_seconds: auctionTimer,
       season_timer_seconds: seasonTimer,
       pre_season_timer_seconds: preSeasonTimer,
+      ...(debugInv ? { debug_starting_inventory: debugInv } : {}),
     });
     myPlayerId = room.players[0].player_id;
     rememberIdentity(name, room);

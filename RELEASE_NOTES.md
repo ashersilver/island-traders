@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/debug-starting-inventory
+
+Version bump: `0.1.4-dev.2026-06-14.2`
+
+**TEST/DEBUG: role-keyed opening-inventory override (`startfood` affordance).**
+A room can be created with per-role starting-inventory overrides so a resource
+doesn't cloud a balance test — e.g. start the Farmer with 200 Food. From the
+Create Room screen, append URL params: `?startrole=Farmer&startfood=200`
+(any number of `start<resource>=N` params; resource names match
+case-insensitively; `startrole` defaults to `Farmer`). The override is applied
+at game launch and logged loudly (`[DEBUG SEED]`). Rooms created without these
+params are unaffected (presence of an override is what marks a debug room).
+Refs #138.
+
 ## 0.1.3 — 2026-06-14
 
 Third point release. The headline is the **equipment-as-durable-capital arc**
