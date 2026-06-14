@@ -252,6 +252,19 @@ def test_all_ready_does_not_end_timed_action_season_early():
     assert room.all_ready_task is None
 
 
+def test_timed_action_season_hold_waits_until_timer_deadline():
+    mgr = GameManager()
+    mgr._SEASON_TIMER_GRACE_SECONDS = 0.0
+    room = _make_room(mgr, status="running")
+    room.season_phase = "action"
+    room.season_timer_end = time.time() + 0.05
+
+    start = time.time()
+    mgr._wait_for_timed_season_release(room.room_id, 0, 0)
+
+    assert time.time() - start >= 0.04
+
+
 def test_pause_cancels_auction_timer_task():
     """The asyncio timer future stored on auction._timer_task must be cancelled."""
     mgr = GameManager()

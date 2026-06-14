@@ -27,6 +27,7 @@ from island_traders.models.training import (
     TrainingRegistry, TrainingStatus, away_seasons,
 )
 from island_traders.models.workforce import Workforce
+from island_traders.constants import STAFFING_FOOD_PER_STAFF_PER_SEASON
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 
 TECHNICAL_WORKSHOP_ITEM = "educator.technical_workshop"
@@ -307,6 +308,10 @@ def test_campus_load_raises_education_island_sustenance_demand():
     farmer_meals = farmer.meals_needed()
     expected_food_demand = farmer_meals + educator_with_visitors
     assert tm.market.demand.get(ResourceType.FOOD, 0) == expected_food_demand
+
+
+def test_campus_food_load_is_near_per_capita_base_rate():
+    assert 0.1 <= STAFFING_FOOD_PER_STAFF_PER_SEASON <= 0.25
 
 
 def test_manager_returns_without_settling():

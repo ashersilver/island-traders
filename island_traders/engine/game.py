@@ -39,6 +39,7 @@ from ..constants import (
     CURRENCY_SYMBOL,
     BASE_PRICES,
     PAYROLL_WAGE_BY_BAND,
+    HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 
@@ -299,6 +300,30 @@ class Game:
                     f"{CURRENCY_SYMBOL}{shortfall:.2f} unpaid."
                 )
 
+    def _process_household_activity_stimulus(self, year: int, season: int) -> None:
+        """Mint a small household income floor tied to active local employment.
+
+        Payroll recirculates island treasury, but playtest calibration still
+        showed a large money-supply drain from maintenance, external funding,
+        and other non-player sinks. This household-side faucet keeps consumer
+        demand funded without handing operating cash directly to producers.
+        """
+        _ = (year, season)
+        rate = HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA
+        if rate <= 0:
+            return
+        for player in self.players:
+            if player.workforce.active_count <= 0:
+                continue
+            amount = round(max(0, player.population) * rate, 2)
+            if amount <= 0:
+                continue
+            player.household_cash = round(player.household_cash + amount, 2)
+            self.io.print(
+                f"[HOUSEHOLDS] {player.name}: received "
+                f"{CURRENCY_SYMBOL}{amount:.2f} in local activity income."
+            )
+
     def run(self) -> GameSummary:
         # Opening balance, before any season runs (resumed games append from
         # wherever they left off — the series stays monotonic in season order).
@@ -312,6 +337,7 @@ class Game:
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
                 self._process_payroll(year, season_index)
+                self._process_household_activity_stimulus(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
                 )

@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.4-dev.2026-06-14.4"
+APP_VERSION: str = "0.1.4-dev.2026-06-14.5"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -309,6 +309,8 @@ CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
 CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
     "Autumn": 1,
 }
+HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
+CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3
@@ -757,13 +759,13 @@ REPURPOSE_WORKER_COST: float = 25.0
 # per staff member per season when the player hasn't set their own price.
 #
 # STAFFING_FOOD_PER_STAFF_PER_SEASON — extra Food/meals the host island
-# must provide for each visiting staff member each season (in addition to
-# their standard workforce sustenance).
+# must provide for each visiting staff member or visiting trainee each season
+# (in addition to their standard workforce sustenance).
 #
 # STAFFING_MAX_DURATION_SEASONS — upper bound on any single contract
 # (prevents staff from being away indefinitely).
 STAFFING_BASE_FEE_PER_STAFF_PER_SEASON: float = 20.0
-STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 1.0
+STAFFING_FOOD_PER_STAFF_PER_SEASON: float = 0.2
 STAFFING_MAX_DURATION_SEASONS: int = 4
 
 # ---------------------------------------------------------------------------
@@ -774,14 +776,15 @@ STAFFING_MAX_DURATION_SEASONS: int = 4
 # fatality_rate: probability per season that ONE skilled/experienced worker dies.
 # Medical insurance halves injury_rate; Life insurance pays a death benefit on fatality.
 WORKPLACE_RISK: dict[str, dict[str, float]] = {
-    "Farmer":       {"injury_rate": 0.08, "fatality_rate": 0.04},   # machinery accidents
-    "Miner":        {"injury_rate": 0.14, "fatality_rate": 0.08},   # collapses, gases
-    "Transporter":  {"injury_rate": 0.07, "fatality_rate": 0.03},   # vehicle accidents
-    "Manufacturer": {"injury_rate": 0.10, "fatality_rate": 0.05},   # industrial accidents
-    # Low-risk roles — no workplace risk rolls applied
-    "Educator":     {"injury_rate": 0.0,  "fatality_rate": 0.0},
-    "Banker":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
-    "Doctor":       {"injury_rate": 0.0,  "fatality_rate": 0.0},
+    "Farmer":       {"injury_rate": 0.035, "fatality_rate": 0.012},  # machinery accidents
+    "Miner":        {"injury_rate": 0.060, "fatality_rate": 0.025},  # collapses, gases
+    "Transporter":  {"injury_rate": 0.030, "fatality_rate": 0.010},  # vehicle accidents
+    "Manufacturer": {"injury_rate": 0.045, "fatality_rate": 0.018},  # industrial accidents
+    # Low-risk roles still carry a small background workplace risk so the
+    # productive islands are not uniquely exposed to workforce attrition.
+    "Educator":     {"injury_rate": 0.005, "fatality_rate": 0.001},
+    "Banker":       {"injury_rate": 0.005, "fatality_rate": 0.001},
+    "Doctor":       {"injury_rate": 0.005, "fatality_rate": 0.001},
 }
 
 # Seasons a policy stays valid after purchase (4 = one full year).

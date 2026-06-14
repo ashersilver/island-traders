@@ -5,6 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/playtest-defects-tuning-138
+
+Version bump: `0.1.4-dev.2026-06-14.5`
+
+**Playtest defect + tuning batch (#138).** Productive-island workplace risks are
+retuned to survivable levels, high-risk AI islands now buy Life/Medical cover
+when solvent, and AI producers file replacement-training requests when critical
+professions fall below staffing plan. Timed web seasons now log timestamped
+season lifecycle events and hold the action phase open until `season_timer_end`
+even if all turn threads finish early. Campus trainee food load is reduced to
+0.2 Food per trainee per season. The calibration pass adds a small household
+activity income floor and credits the Transporter for delivery work on household
+end-product purchases.
+
 ### claude/non-blocking-dialogs — season countdown no longer freezes on alerts (#138 Defect 3)
 
 Version bump: `0.1.4-dev.2026-06-14.4`

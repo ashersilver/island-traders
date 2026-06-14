@@ -9,6 +9,7 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
+from ..models.training import TrainingCapacityError, away_seasons
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
 from ..models.equity import UNISSUED_HOLDER, fair_value, share_price
@@ -18,6 +19,7 @@ from ..constants import (
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
     MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
+    STARTING_WORKERS_BY_PROFESSION, TRAINEE_FOOD_ACCOM_PER_SEASON,
     EQUIPMENT_AI_WARRANTY_MIN_COST,
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
@@ -46,6 +48,11 @@ AI_LIST_ONLY_WITH_BID = {
     ResourceType.PATENTS,
     ResourceType.PASSENGER_SEATS,
 }
+AI_REPLACEMENT_TRAINING_ROLES = {"Farmer", "Miner", "Transporter", "Manufacturer"}
+AI_TRAINING_CASH_RESERVE = 75.0
+AI_INSURANCE_CASH_RESERVE = 125.0
+AI_INSURANCE_MIN_INJURY_RATE = 0.02
+AI_INSURANCE_MIN_FATALITY_RATE = 0.005
 
 
 class AIStrategy:
@@ -449,9 +456,11 @@ class AIStrategy:
         for target in other_players:
             if target.player_id == banker.player_id or target.is_human:
                 continue
+            if not self._needs_ai_workplace_insurance(target):
+                continue
             for role in target.roles:
                 risk = WORKPLACE_RISK.get(role.name, {})
-                if not risk.get("injury_rate") and not risk.get("fatality_rate"):
+                if not self._risk_is_insurable_for_ai(risk):
                     continue
                 for policy_type in ("life", "medical"):
                     if target.has_active_insurance(policy_type, year, season_index):
@@ -476,6 +485,184 @@ class AIStrategy:
                         f"[AI] {banker.name} issued {policy_type} insurance to "
                         f"{target.name} for {premium:.0f} Dp"
                     )
+        return actions
+
+    def _risk_is_insurable_for_ai(self, risk: dict[str, float]) -> bool:
+        return (
+            risk.get("injury_rate", 0.0) >= AI_INSURANCE_MIN_INJURY_RATE
+            or risk.get("fatality_rate", 0.0) >= AI_INSURANCE_MIN_FATALITY_RATE
+        )
+
+    def _needs_ai_workplace_insurance(self, player: Player) -> bool:
+        return any(
+            self._risk_is_insurable_for_ai(WORKPLACE_RISK.get(role.name, {}))
+            for role in player.roles
+        )
+
+    def _ai_buy_workplace_insurance(
+        self,
+        player: Player,
+        other_players: list[Player],
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        if player.is_human or any(role.name == "Banker" for role in player.roles):
+            return []
+        if not self._needs_ai_workplace_insurance(player):
+            return []
+        banker = next(
+            (
+                candidate for candidate in self._candidate_bankers(
+                    other_players, exclude_player_id=player.player_id
+                )
+                if not candidate.is_human
+                and candidate.workforce.count_profession(Profession.ACTUARY.value) > 0
+            ),
+            None,
+        )
+        if banker is None:
+            return []
+
+        actions: list[str] = []
+        purchased_tick = year * 4 + season_index
+        expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
+        for policy_type in ("life", "medical"):
+            if player.has_active_insurance(policy_type, year, season_index):
+                continue
+            premium = INSURANCE_BASE_PREMIUM[policy_type]
+            if player.dollops < premium + AI_INSURANCE_CASH_RESERVE:
+                continue
+            if banker.dollops < ACTUARIAL_EVALUATION_COST:
+                continue
+            player.spend_dollops(premium)
+            banker.receive_dollops(premium)
+            banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
+            policy = InsurancePolicy(
+                policy_id=len(player.insurance_policies) + 1,
+                policy_type=policy_type,
+                holder_player_id=player.player_id,
+                banker_player_id=banker.player_id,
+                premium_paid=premium,
+                purchased_tick=purchased_tick,
+                expires_at_tick=expires_at,
+            )
+            player.add_insurance_policy(policy)
+            actions.append(
+                f"[AI] {player.name} bought {policy_type} insurance from "
+                f"{banker.name} for {premium:.0f} Dp"
+            )
+        return actions
+
+    def _ai_training_skill_deficits(self, player: Player, training_registry) -> dict[str, int]:
+        required: dict[str, int] = {}
+        for role in player.roles:
+            if role.name not in AI_REPLACEMENT_TRAINING_ROLES:
+                continue
+            for profession, count in STARTING_WORKERS_BY_PROFESSION.get(role.name, []):
+                required[profession] = required.get(profession, 0) + count
+        if not required:
+            return {}
+
+        current: dict[str, int] = {}
+        for worker in player.workforce.workers:
+            current[worker.profession] = current.get(worker.profession, 0) + 1
+        if training_registry is not None:
+            workers_by_id = {worker.worker_id: worker for worker in player.workforce.workers}
+            for req in training_registry.active_for_player(player.player_id):
+                incoming = sum(
+                    1
+                    for worker_id in req.worker_ids
+                    if workers_by_id.get(worker_id)
+                    and workers_by_id[worker_id].profession == Profession.UNSKILLED.value
+                )
+                current[req.target_profession] = current.get(req.target_profession, 0) + incoming
+
+        return {
+            profession: needed - current.get(profession, 0)
+            for profession, needed in required.items()
+            if needed > current.get(profession, 0)
+        }
+
+    def _ai_request_replacement_training(
+        self,
+        player: Player,
+        other_players: list[Player],
+        market: Market,
+        training_registry,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        if player.is_human or training_registry is None:
+            return []
+        deficits = self._ai_training_skill_deficits(player, training_registry)
+        if not deficits:
+            return []
+
+        educators = [
+            candidate for candidate in other_players
+            if candidate.player_id != player.player_id
+            and any(role.name == "Educator" for role in candidate.roles)
+        ]
+        if not educators:
+            return []
+        educator = educators[0]
+
+        needed_workers = sum(deficits.values())
+        unskilled_ids = [
+            worker_id for worker_id in player.workforce.get_unskilled_ids(needed_workers)
+            if worker_id not in training_registry.reserved_worker_ids(player.player_id)
+        ]
+        shortage = max(0, needed_workers - len(unskilled_ids))
+        if shortage > 0 and player.available_unskilled > 0:
+            recruited = player.recruit_workers(min(shortage, player.available_unskilled))
+            if recruited:
+                unskilled_ids = [
+                    worker_id for worker_id in player.workforce.get_unskilled_ids(needed_workers)
+                    if worker_id not in training_registry.reserved_worker_ids(player.player_id)
+                ]
+        if not unskilled_ids:
+            return []
+
+        actions: list[str] = []
+        worker_offset = 0
+        ticket_price = market.current_price(ResourceType.PASSENGER_SEATS)
+        capacity = training_registry.capacity_summary(year, season_index)
+        for profession, deficit in deficits.items():
+            remaining_capacity = capacity.get(profession, {}).get("remaining", 0)
+            count = min(deficit, remaining_capacity, len(unskilled_ids) - worker_offset)
+            if count <= 0:
+                continue
+            worker_ids = unskilled_ids[worker_offset:worker_offset + count]
+            duration = away_seasons(profession)
+            fee = round(
+                20.0 * count
+                + TRAINEE_FOOD_ACCOM_PER_SEASON * count * duration
+                + ticket_price * count,
+                1,
+            )
+            if player.dollops < fee + AI_TRAINING_CASH_RESERVE:
+                break
+            try:
+                req = training_registry.propose(
+                    requester_id=player.player_id,
+                    worker_ids=worker_ids,
+                    educator_id=educator.player_id,
+                    dollops_to_educator=fee,
+                    target_profession=profession,
+                    year=year,
+                    season=season_index,
+                    transport_mode="air_ticket",
+                    duration_seasons=duration,
+                )
+            except TrainingCapacityError:
+                continue
+            worker_offset += count
+            actions.append(
+                f"[AI] {player.name} requested replacement training "
+                f"batch #{req.batch_id}: {count}x {profession}"
+            )
+            if worker_offset >= len(unskilled_ids):
+                break
         return actions
 
     def _choose_product_line(
@@ -911,6 +1098,16 @@ class AIStrategy:
             self._ai_take_loan_if_short(
                 player, market, other_players, loan_ledger, season_name,
                 year, season_index, chosen_line,
+            )
+        )
+        actions.extend(
+            self._ai_buy_workplace_insurance(
+                player, other_players, year, season_index
+            )
+        )
+        actions.extend(
+            self._ai_request_replacement_training(
+                player, other_players, market, training_registry, year, season_index
             )
         )
         actions.extend(
