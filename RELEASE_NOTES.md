@@ -5,6 +5,30 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/zealous-ellis-8deb83
+
+Branch: `claude/zealous-ellis-8deb83`
+Target: `pre-release`
+Version bump: `0.1.3-dev.2026-06-12.7`
+
+**Agent interaction ingestion endpoint (`/api/rooms/{room_id}/agent-interactions`)**:
+External LLM agent processes (the `island-traders-agents` repo) can now publish
+their transcript-style interaction records to the game server over HTTP, instead
+of the server reading JSONL files out of the agents repo (which would couple the
+two projects). The server stores records in a per-room in-memory ring buffer
+(2 000 max, oldest evicted) and serves them back for an observer UI.
+
+- `POST /api/rooms/{room_id}/agent-interactions` — accepts `{"events": [...]}`,
+  a bare JSON array, or a single event object.
+- `GET /api/rooms/{room_id}/agent-interactions?limit=&since_seq=` — returns
+  stored records with optional cap and incremental (`since_seq`) filtering.
+- Both routes are documented in the OpenAPI schema under the **Game Flow** tag.
+- No authentication: intended for local / trusted agent processes only.
+- Transcript generation/publishing stays in `island-traders-agents`; this is the
+  ingestion/store/serve half. A future Mongo-backed store can pull from here.
+- Tests: `tests/test_server/test_agent_interactions.py` (POST/GET, ring-buffer
+  eviction, missing room, `since_seq` filtering, accumulation across posts).
+
 ### codex/equipment-capital-smelting-124-125
 
 Version bump: `0.1.3-dev.2026-06-12.6`
