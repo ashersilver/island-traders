@@ -8,13 +8,14 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.training import TrainingRegistry
 from island_traders.models.equity import AUCTIONED_SHARES, CapTable
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.simulation.runner import _SilentIO
-from island_traders.constants import STARTING_DOLLOPS
+from island_traders.constants import STARTING_DOLLOPS, WORKPLACE_RISK
 
 
 def make_player(pid, name, role_names, dollops=300.0, is_human=False):
@@ -49,6 +50,68 @@ def test_banker_ai_does_not_auto_charge_humans_or_itself_for_insurance():
     assert human.insurance_policies == []
     assert banker.insurance_policies == []
     assert any("Miner AI" in action and "insurance" in action for action in actions)
+
+
+def test_workplace_risk_retune_is_survivable_for_productive_roles():
+    assert WORKPLACE_RISK["Miner"]["fatality_rate"] <= 0.025
+    assert WORKPLACE_RISK["Miner"]["injury_rate"] <= 0.060
+    assert WORKPLACE_RISK["Farmer"]["fatality_rate"] <= 0.012
+    assert WORKPLACE_RISK["Manufacturer"]["fatality_rate"] <= 0.018
+    assert WORKPLACE_RISK["Educator"]["fatality_rate"] > 0.0
+
+
+def test_high_risk_ai_buys_workplace_insurance_when_solvent():
+    ai = AIStrategy()
+    market = Market()
+    miner = make_player(1, "Miner AI", ["Miner"], dollops=500.0)
+    banker = make_player(2, "Banker AI", ["Banker"], dollops=500.0)
+    banker.workforce.add_workers(
+        1, training_level=1, profession=Profession.ACTUARY.value
+    )
+
+    actions = ai.take_turn(
+        miner,
+        market,
+        [miner, banker],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    policy_types = {policy.policy_type for policy in miner.insurance_policies}
+    assert {"life", "medical"} <= policy_types
+    assert any("bought life insurance" in action for action in actions)
+
+
+def test_ai_requests_replacement_training_for_staffing_deficit():
+    ai = AIStrategy()
+    market = Market()
+    training = TrainingRegistry()
+    miner = make_player(1, "Miner AI", ["Miner"], dollops=800.0)
+    educator = make_player(2, "Educator AI", ["Educator"], dollops=800.0)
+    miner.workforce.workers.clear()
+    miner.workforce.add_workers(5, profession=Profession.UNSKILLED.value)
+
+    actions = ai.take_turn(
+        miner,
+        market,
+        [miner, educator],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        training_registry=training,
+    )
+
+    requests = training.active_for_player(miner.player_id)
+    assert requests
+    assert any(req.target_profession == Profession.MINER.value for req in requests)
+    assert any("requested replacement training" in action for action in actions)
 
 
 def test_ai_keeps_required_input_reserve_when_listing_outputs():

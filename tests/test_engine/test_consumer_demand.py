@@ -13,6 +13,7 @@ from island_traders.models.player import Player
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 from island_traders.models.deal import DealLedger
+from island_traders.constants import CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT
 
 
 def test_household_cash_buys_end_products_from_producer_offers():
@@ -97,12 +98,13 @@ def test_total_wealth_counts_household_cash_as_island_wealth():
 def test_turn_manager_processes_household_demand_after_ai_listings():
     buyer = Player(1, "Residents", [ROLES["Farmer"]], 100.0, is_human=False)
     seller = Player(2, "Clinic", [ROLES["Doctor"]], 10.0, is_human=False)
+    transporter = Player(3, "Cargo", [ROLES["Transporter"]], 5.0, is_human=False)
     buyer.household_cash = 18.0
     seller.receive_resources(ResourceType.HEALTH_SERVICES, 1)
     market = Market()
     market.post_offer(seller, ResourceType.HEALTH_SERVICES, 18.0, 1)
     tm = TurnManager(
-        [buyer, seller],
+        [buyer, seller, transporter],
         ProductionEngine(),
         TradingEngine(market, DealLedger()),
         market,
@@ -113,3 +115,4 @@ def test_turn_manager_processes_household_demand_after_ai_listings():
 
     assert buyer.household_cash == 0.0
     assert seller.dollops == 28.0
+    assert transporter.dollops == 5.0 + CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT

@@ -27,11 +27,14 @@ from ..constants import (
     STARTING_WORKERS_BY_PROFESSION,
     MANUFACTURER_PRODUCT_LINES, MAX_CLASS_SIZE_PER_COURSE,
     TRAINEE_FOOD_ACCOM_PER_SEASON,
+    PEOPLE_PER_MEAL,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD,
     ACTUARIAL_EVALUATION_COST, WORKPLACE_RISK,
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
+    STAFFING_FOOD_PER_STAFF_PER_SEASON,
+    CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
     REPURPOSE_WORKER_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -128,6 +131,10 @@ class TurnManager:
         # Optional callback fired with player.player_id when their turn thread
         # completes (used by the server to track ready/done state).
         self.on_player_turn_complete = None
+        # Optional callback fired after all parallel turn threads complete but
+        # before run_season returns. The web server uses this to hold timed
+        # seasons open until the advertised deadline.
+        self.wait_for_parallel_season_release = None
 
     def run_season(
         self,
@@ -200,6 +207,26 @@ class TurnManager:
                 post_unmet=False,
             )
             if result.spent > 0:
+                delivery_units = sum(result.bought.values())
+                if delivery_units and CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT > 0:
+                    transporter = next(
+                        (
+                            candidate for candidate in self.players
+                            if any(role.name == "Transporter" for role in candidate.roles)
+                        ),
+                        None,
+                    )
+                    if transporter is not None:
+                        fee = round(
+                            delivery_units * CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
+                            2,
+                        )
+                        transporter.receive_dollops(fee)
+                        self.io.print(
+                            f"[CONSUMER DELIVERY] {transporter.name} earned "
+                            f"{CURRENCY_SYMBOL}{fee:.2f} moving {delivery_units} "
+                            "household unit(s)."
+                        )
                 parts = ", ".join(
                     f"{qty}x {rtype.value}" for rtype, qty in result.bought.items()
                 )
@@ -315,6 +342,12 @@ class TurnManager:
         # 4. Wait for every human turn thread to complete.
         for t in threads:
             t.join()
+        cb = self.wait_for_parallel_season_release
+        if cb:
+            try:
+                cb(year, season_index)
+            except Exception as exc:  # noqa: BLE001
+                self.io.print(f"[ERROR] timed season hold failed: {exc}")
         return results
 
     def execute_turn(
@@ -474,9 +507,14 @@ class TurnManager:
         until they return home (Education Phase 3 ↔ §21).
         """
         for player in self.players:
-            extra_residents = (
+            visiting_trainees = (
                 self.training.visiting_trainees(player.player_id)
                 if any(r.name == "Educator" for r in player.roles) else 0
+            )
+            extra_residents = (
+                visiting_trainees
+                * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                * PEOPLE_PER_MEAL
             )
             absent_residents = self.training.trainees_away_from_home(player.player_id)
             meals = player.meals_needed(
@@ -2089,9 +2127,10 @@ class TurnManager:
             return
         on_campus = self.training.visiting_trainees(player.player_id)
         if on_campus:
+            food_demand = on_campus * STAFFING_FOOD_PER_STAFF_PER_SEASON
             self.io.print(
                 f"  Campus load: {on_campus} visiting trainee(s) on the Education "
-                f"Island this season → +{on_campus} Food demand until they return."
+                f"Island this season → +{food_demand:.1f} Food demand until they return."
             )
         current_tick = year * len(SEASONS) + SEASONS.index(season_name)
         pending = self.training.sorted_pending_for_educator(player.player_id)

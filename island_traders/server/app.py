@@ -39,7 +39,8 @@ from ..models.loan import LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
-    TOTAL_STARTING_POPULATION,
+    TOTAL_STARTING_POPULATION, PEOPLE_PER_MEAL,
+    STAFFING_FOOD_PER_STAFF_PER_SEASON,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -114,6 +115,16 @@ if BaseModel is not None:
             30,
             ge=0,
             description="Pre-season ready timer length in seconds.",
+        )
+        debug_starting_inventory: dict[str, dict[str, int]] | None = Field(
+            None,
+            description=(
+                "TEST/DEBUG ONLY. Role name -> {resource: qty} overrides added "
+                "to a player's opening inventory at game launch (e.g. "
+                "{'Farmer': {'Food': 200}} so food production doesn't cloud a "
+                "test). Resource names are matched case-insensitively. Presence "
+                "marks the room as a debug room; omit in real games."
+            ),
         )
 
 
@@ -350,6 +361,9 @@ class GameRoom:
     auction_timer_seconds: int = AUCTION_DURATION_SECONDS
     season_timer_seconds: int = DEFAULT_SEASON_TIMER     # 0 = no timer
     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER  # 0 = skip
+    # TEST/DEBUG ONLY: role -> {resource: qty} opening-inventory overrides,
+    # applied at game launch. Non-empty marks this as a debug room.
+    debug_starting_inventory: dict[str, dict[str, int]] = field(default_factory=dict)
     status: str = "waiting"  # waiting | auction | guarantee | investing | running | finished
     players: list[LobbyPlayer] = field(default_factory=list)
     creator_id: str = ""
@@ -466,6 +480,7 @@ class GameManager:
                     auction_timer_seconds: int = AUCTION_DURATION_SECONDS,
                     season_timer_seconds: int = DEFAULT_SEASON_TIMER,
                     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER,
+                    debug_starting_inventory: dict[str, dict[str, int]] | None = None,
                     room_id: str | None = None) -> GameRoom:
         # Playtest quick-seat: a caller may pin a deterministic room ID so all
         # seven tabs can be pre-composed before the room exists.  Only honoured
@@ -488,6 +503,7 @@ class GameManager:
             auction_timer_seconds=int(auction_timer_seconds),
             season_timer_seconds=int(season_timer_seconds),
             pre_season_timer_seconds=int(pre_season_timer_seconds),
+            debug_starting_inventory=dict(debug_starting_inventory or {}),
             creator_id=creator_id,
         )
         room.players.append(LobbyPlayer(player_id=creator_id, name=creator_name))
@@ -1469,11 +1485,24 @@ class GameManager:
                 (lp for lp, ep in room.lobby_to_engine_id.items() if ep == engine_pid),
                 None,
             )
+            logger.info(
+                "[season-timer] player_turn_complete room=%s engine_pid=%s "
+                "lobby_pid=%s epoch=%.3f timer_end=%.3f phase=%s",
+                room_id,
+                engine_pid,
+                lobby_pid,
+                time.time(),
+                room.season_timer_end,
+                room.season_phase,
+            )
             if lobby_pid:
                 room.season_human_done.add(lobby_pid)
                 self._broadcast_ready_update(room)
 
         game.turn_manager.on_player_turn_complete = _on_player_done
+        game.turn_manager.wait_for_parallel_season_release = (
+            lambda y, s: self._wait_for_timed_season_release(room_id, y, s)
+        )
 
         # Hook season-start/end so we can install/refresh the timer + ready UI.
         game.before_season = lambda y, s: self._on_season_start(room_id, y, s)
@@ -1531,6 +1560,39 @@ class GameManager:
                         payments_made=1,
                         last_payment_year=0,
                     )
+
+        # TEST/DEBUG: apply role-keyed opening-inventory overrides (e.g. start
+        # the Farmer with 200 Food so food production doesn't cloud a test).
+        # Only fires for debug rooms (non-empty mapping); resource names are
+        # matched case-insensitively against ResourceType. Logged loudly so a
+        # seeded game is never mistaken for a real one.
+        if room.debug_starting_inventory:
+            res_by_lower = {rt.value.lower(): rt for rt in ResourceType}
+            for p in game.players:
+                for role in p.roles:
+                    overrides = room.debug_starting_inventory.get(role.name)
+                    if not overrides:
+                        continue
+                    for res_name, qty in overrides.items():
+                        rt = res_by_lower.get(str(res_name).strip().lower())
+                        if rt is None:
+                            logger.warning(
+                                "Room %s debug inventory: unknown resource %r "
+                                "for role %s — skipped.",
+                                room_id, res_name, role.name,
+                            )
+                            continue
+                        try:
+                            amount = int(qty)
+                        except (TypeError, ValueError):
+                            continue
+                        if amount <= 0:
+                            continue
+                        p.receive_resources(rt, amount)
+                        logger.warning(
+                            "[DEBUG SEED] Room %s: %s (%s) granted %d %s at launch.",
+                            room_id, p.name, role.name, amount, rt.value,
+                        )
 
         def _broadcast_state():
             state = self.get_game_state(room_id)
@@ -3103,15 +3165,20 @@ class GameManager:
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
-            campus_extra = (
+            campus_food_units = (
                 game.training.visiting_trainees(p.player_id)
-                if any(r.name == "Educator" for r in p.roles) else 0
+                * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                if any(r.name == "Educator" for r in p.roles) else 0.0
             )
             # Add visiting medical staff to the extra_residents count so
             # the host island's sustenance calculation includes them.
             staffing = getattr(game, "staffing", None)
             if staffing:
-                campus_extra += staffing.visiting_staff(p.player_id)
+                campus_food_units += (
+                    staffing.visiting_staff(p.player_id)
+                    * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                )
+            campus_extra = campus_food_units * PEOPLE_PER_MEAL
             # Sustenance basket alert (2026-05-25 model): aggregate the
             # whole basket into a single "meals runway" figure rather
             # than one alert per resource. Inventory is fungible across
@@ -3534,6 +3601,17 @@ class GameManager:
         room.all_ready_task = None   # reset any stale grace task from prior season
         secs = max(0, int(room.season_timer_seconds))
         room.season_timer_end = (time.time() + secs) if secs > 0 else 0.0
+        logger.info(
+            "[season-timer] season_start room=%s year=%s season=%s "
+            "epoch=%.3f timer_end=%.3f seconds=%s active_humans=%s",
+            room_id,
+            year + 1,
+            season_name,
+            time.time(),
+            room.season_timer_end,
+            secs,
+            sorted(humans),
+        )
 
         self._thread_safe_broadcast(room_id, {
             "type": "season_start",
@@ -3614,6 +3692,14 @@ class GameManager:
             room.all_ready_task.cancel()
             room.all_ready_task = None
         season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
+        logger.info(
+            "[season-timer] season_resolved room=%s year=%s season=%s "
+            "epoch=%.3f",
+            room_id,
+            year + 1,
+            season_name,
+            time.time(),
+        )
         self._thread_safe_broadcast(room_id, {
             "type": "season_resolved",
             "year": year + 1,
@@ -3630,18 +3716,75 @@ class GameManager:
     # latency + the client's 250ms tick/rounding.
     _SEASON_TIMER_GRACE_SECONDS: float = 1.5
 
+    def _wait_for_timed_season_release(
+        self, room_id: str, year: int, season_index: int
+    ) -> None:
+        """Hold an action season open until its advertised timer has expired.
+
+        In simultaneous play the engine turn threads can all finish before the
+        human-facing timer. Without this hold, run_season returns and advances
+        the game even though clients still show trading time remaining.
+        """
+        room = self.rooms.get(room_id)
+        if not room or room.season_phase != "action" or room.season_timer_end <= 0:
+            return
+        logger.info(
+            "[season-timer] all_turn_threads_complete room=%s year=%s season=%s "
+            "epoch=%.3f timer_end=%.3f",
+            room_id,
+            year + 1,
+            SEASONS[season_index] if season_index < len(SEASONS) else season_index,
+            time.time(),
+            room.season_timer_end,
+        )
+        while True:
+            room = self.rooms.get(room_id)
+            if not room or room.status != "running" or room.season_phase != "action":
+                return
+            if room.season_timer_end <= 0:
+                return
+            release_at = room.season_timer_end + self._SEASON_TIMER_GRACE_SECONDS
+            remaining = release_at - time.time()
+            if remaining <= 0:
+                logger.info(
+                    "[season-timer] timed_season_release room=%s epoch=%.3f "
+                    "timer_end=%.3f",
+                    room_id,
+                    time.time(),
+                    room.season_timer_end,
+                )
+                return
+            time.sleep(min(0.5, remaining))
+
     async def _season_timer(self, room_id: str, seconds: int) -> None:
         """Sleep for the season window (plus grace), then force-end pending turns."""
         await asyncio.sleep(max(0.0, seconds) + self._SEASON_TIMER_GRACE_SECONDS)
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
             return
+        logger.info(
+            "[season-timer] _season_timer_fire room=%s epoch=%.3f "
+            "timer_end=%.3f seconds=%s",
+            room_id,
+            time.time(),
+            room.season_timer_end,
+            seconds,
+        )
         # Only fire if the season is still active (turn threads haven't all
         # finished). interrupt_all unblocks every pending IO prompt with None,
         # which causes choose_action to return END_TURN and exit each loop.
         room.io_adapter.interrupt_all()
+        logger.info(
+            "[season-timer] season_timeout_broadcast room=%s epoch=%.3f "
+            "timer_end=%.3f",
+            room_id,
+            time.time(),
+            room.season_timer_end,
+        )
         self._thread_safe_broadcast(room_id, {
             "type": "season_timeout",
+            "server_now": round(time.time(), 3),
+            "timer_end": round(room.season_timer_end, 3),
         })
 
     # Grace period (seconds) between "all humans ready" and the actual
@@ -3657,6 +3800,16 @@ class GameManager:
         if not room or not room.io_adapter:
             return
         room.all_ready_task = None
+        logger.info(
+            "[season-timer] _delayed_interrupt_check room=%s epoch=%.3f "
+            "timer_end=%.3f phase=%s ready=%s active=%s",
+            room_id,
+            time.time(),
+            room.season_timer_end,
+            room.season_phase,
+            sorted(room.season_ready_set),
+            sorted(room.season_active_humans),
+        )
         # Only interrupt if the season is still active and all active humans
         # are still in the ready set (someone may have clicked Undo during
         # the grace window).
@@ -3665,6 +3818,13 @@ class GameManager:
                 and not room.paused
                 and room.season_active_humans
                 and room.season_ready_set >= room.season_active_humans):
+            logger.info(
+                "[season-timer] _delayed_interrupt_fire room=%s epoch=%.3f "
+                "timer_end=%.3f",
+                room_id,
+                time.time(),
+                room.season_timer_end,
+            )
             room.io_adapter.interrupt_all()
 
     def _broadcast_ready_update(self, room: "GameRoom") -> None:
@@ -3889,6 +4049,7 @@ def create_app() -> FastAPI:
             auction_timer_seconds=body.auction_timer_seconds,
             season_timer_seconds=body.season_timer_seconds,
             pre_season_timer_seconds=body.pre_season_timer_seconds,
+            debug_starting_inventory=body.debug_starting_inventory,
         )
         return JSONResponse(room.to_dict())
 

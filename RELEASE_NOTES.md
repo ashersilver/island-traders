@@ -5,6 +5,117 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+## 0.1.4 — 2026-06-14
+
+Fourth point release. The headline is a **live-playtest defect batch** (#138) that
+made AI/mixed games unplayable, plus the supporting frontend and tooling fixes.
+
+**Workforce no longer collapses → the supply chain stays alive (#138).** The
+biggest fix: in AI/mixed games the productive islands used to lose their whole
+workforce (the Miner's casualty rate drove it to zero workers → **no Oil ever
+produced** → the Farmer couldn't make food → chain-wide starvation). `WORKPLACE_RISK`
+is re-tuned to survivable levels (and the previously risk-free Educator/Banker/Doctor
+now carry a small background risk so the producers aren't uniquely exposed), and the
+**AI now trains replacement skilled workers** instead of bleeding out. Calibration
+(`--games 1000 --seed 42`): Oil/Ore/Metal produced again, all seven roles viable,
+money supply contraction eased (−44.6% → −40.2%).
+
+**Timed seasons stay open for their full clock (#138).** A timed action season is
+now held open until its advertised timer expires even when every turn-thread has
+finished, so the market no longer goes quiet (or the season end) well before the
+countdown — with new server-side timer instrumentation to diagnose it.
+
+**The on-screen countdown no longer freezes (#138).** Native `alert/confirm/prompt`
+dialogs blocked the browser event loop, freezing the season countdown whenever a
+message appeared. All of them are replaced with non-blocking toasts/modals.
+
+**Training food load right-sized (#138).** Per-trainee campus food dropped from
+1.0 → 0.2 Food/season, closer to the per-capita base rate.
+
+**Other.** Agent-interaction ingestion endpoint (#133); quantity-box typing fix +
+mouse-resizable side panels (#114); a `startfood` test/debug affordance for
+isolating economy tests (`?startrole=Farmer&startfood=200`).
+
+**Known issue.** Win-rate balance is healthy (all roles 8.9–20.1%, none dead) but
+not yet a tight 1/7, and money in circulation still contracts ~40% over a game —
+both ongoing tuning levers, not blockers.
+
+### codex/playtest-defects-tuning-138
+
+Version bump: `0.1.4-dev.2026-06-14.5`
+
+**Playtest defect + tuning batch (#138).** Productive-island workplace risks are
+retuned to survivable levels, high-risk AI islands now buy Life/Medical cover
+when solvent, and AI producers file replacement-training requests when critical
+professions fall below staffing plan. Timed web seasons now log timestamped
+season lifecycle events and hold the action phase open until `season_timer_end`
+even if all turn threads finish early. Campus trainee food load is reduced to
+0.2 Food per trainee per season. The calibration pass adds a small household
+activity income floor and credits the Transporter for delivery work on household
+end-product purchases.
+
+### claude/non-blocking-dialogs — season countdown no longer freezes on alerts (#138 Defect 3)
+
+Version bump: `0.1.4-dev.2026-06-14.4`
+
+**The season countdown kept stopping whenever a message appeared on screen.**
+Cause: several messages used the browser's native `alert()` / `confirm()` /
+`prompt()`, which block the JavaScript main thread — so the `setInterval`-driven
+countdown couldn't tick while one was open (the server-side season clock was
+unaffected; the on-screen number just froze and then jumped on dismissal).
+
+All twelve native dialogs are replaced with non-blocking equivalents that never
+stall the event loop:
+
+- **Toasts** for transient notices/errors (room create/join/leave/AI/auction
+  errors, log-download messages) — auto-dismissing, top-centre.
+- **A confirm modal** for "Leave game?".
+- **A single prompt modal** for the Educator counter-offer (price + optional
+  message in one form, replacing two sequential native prompts).
+- **An info modal** for the guarantee-price explainer.
+
+These use their own overlay, separate from the in-game IO-prompt overlay, so they
+never disturb an active production/market dialog. Verified in-browser: a
+`setInterval` ticked 120× while a modal was open (a native `confirm()` would have
+frozen it at 0). Refs #138.
+
+### claude/ui-input-resize-fixes — capture-box + resizable-panel fixes (#114)
+
+Version bump: `0.1.4-dev.2026-06-14.3`
+
+Follow-up to the UI v2 phase-1 input work, from playtest feedback:
+
+**Quantity capture boxes now reliably accept typing.** The Produce (and any
+other) quantity field showed its `1–23` range hint but couldn't be typed over —
+only the spinner arrows worked. Two causes: (1) the server replays the pending
+prompt on every `get_state`, and `sendResponse()` fires a `get_state` at
++120ms/+500ms after each answer, so a freshly-opened dialog was rebuilt 1–2
+times — detaching the focused field and wiping anything typed; (2) auto-focus
+was scheduled via `requestAnimationFrame`, which is throttled to zero on a
+background tab. Fixes: an idempotency guard ignores a replayed prompt identical
+to the one already open (preserving focus + in-progress input), and focus is now
+scheduled via `setTimeout` with a short retry so it lands reliably.
+
+**Left/right panels are mouse-resizable.** Draggable splitters sit on the
+inner edges of the side and info columns; drag to resize, double-click to reset.
+Widths persist in localStorage (`it_colwidths_v1`) and compose with the
+hide/collapse toggles and the mobile single-column breakpoint — so a cramped
+panel can be widened instead of wrapping.
+
+### claude/debug-starting-inventory
+
+Version bump: `0.1.4-dev.2026-06-14.2`
+
+**TEST/DEBUG: role-keyed opening-inventory override (`startfood` affordance).**
+A room can be created with per-role starting-inventory overrides so a resource
+doesn't cloud a balance test — e.g. start the Farmer with 200 Food. From the
+Create Room screen, append URL params: `?startrole=Farmer&startfood=200`
+(any number of `start<resource>=N` params; resource names match
+case-insensitively; `startrole` defaults to `Farmer`). The override is applied
+at game launch and logged loudly (`[DEBUG SEED]`). Rooms created without these
+params are unaffected (presence of an override is what marks a debug room).
+Refs #138.
+
 ## 0.1.3 — 2026-06-14
 
 Third point release. The headline is the **equipment-as-durable-capital arc**
@@ -63,7 +174,6 @@ two projects). The server stores records in a per-room in-memory ring buffer
   ingestion/store/serve half. A future Mongo-backed store can pull from here.
 - Tests: `tests/test_server/test_agent_interactions.py` (POST/GET, ring-buffer
   eviction, missing room, `since_seq` filtering, accumulation across posts).
-
 ### codex/equipment-capital-smelting-124-125
 
 Version bump: `0.1.3-dev.2026-06-12.6`

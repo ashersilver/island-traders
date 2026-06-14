@@ -3,6 +3,7 @@ from island_traders.engine.game import Game, GameConfig
 from island_traders.models.player import Player
 from island_traders.models.profession import Profession
 from island_traders.models.role import ROLES
+from island_traders.constants import HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA
 
 
 def _payroll_game(player: Player) -> Game:
@@ -56,3 +57,18 @@ def test_payroll_shortfall_pays_available_cash_without_removing_workers():
     assert game.io.printed == [
         "[PAYROLL SHORTFALL] Broke Island: paid Dp0.50 of Dp1.00; Dp0.50 unpaid."
     ]
+
+
+def test_household_activity_stimulus_funds_active_workforce_households():
+    active = Player(0, "Active", [ROLES["Farmer"]], 20.0, is_human=False)
+    active.population = 50
+    active.workforce.add_workers(1, profession=Profession.UNSKILLED.value)
+    empty = Player(1, "Empty", [ROLES["Miner"]], 20.0, is_human=False)
+    empty.population = 50
+    game = Game(GameConfig([]), FakeIOAdapter())
+    game.players = [active, empty]
+
+    game._process_household_activity_stimulus(0, 0)
+
+    assert active.household_cash == 50 * HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA
+    assert empty.household_cash == 0.0
