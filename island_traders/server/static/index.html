@@ -554,6 +554,50 @@ button:active{transform:scale(.97)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 .popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+
+/* ---- Non-blocking message layer (toasts + message modal) ----
+   Native alert()/confirm()/prompt() block the JS main thread, which freezes
+   the setInterval-driven season countdown.  These replacements never block,
+   so the timer keeps ticking.  A separate overlay (#msg-overlay) from the
+   IO-prompt overlay (#overlay) avoids clobbering an active game prompt. */
+#toast-stack{
+  position:fixed;top:.75rem;left:50%;transform:translateX(-50%);
+  z-index:400;display:flex;flex-direction:column;gap:.4rem;
+  max-width:min(520px,94vw);pointer-events:none;
+}
+.toast{
+  pointer-events:auto;background:var(--panel);border:1px solid var(--border);
+  border-left:4px solid var(--accent);border-radius:8px;
+  padding:.6rem .85rem;font-size:.82rem;color:var(--text);
+  box-shadow:0 6px 24px rgba(0,0,0,.35);
+  display:flex;gap:.6rem;align-items:flex-start;
+  animation:toast-in .18s ease-out;
+}
+.toast.error{border-left-color:var(--red)}
+.toast.success{border-left-color:var(--green)}
+.toast.info{border-left-color:var(--accent)}
+.toast .toast-msg{flex:1;white-space:pre-line;line-height:1.35}
+.toast .toast-x{cursor:pointer;color:var(--dim);font-weight:700;line-height:1}
+.toast.leaving{animation:toast-out .2s ease-in forwards}
+@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
+
+#msg-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
+  z-index:300;align-items:center;justify-content:center;
+}
+#msg-overlay.active{display:flex}
+#msg-dialog{
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;
+  padding:1.5rem;min-width:300px;max-width:90vw;max-height:90vh;overflow:auto;
+}
+#msg-dialog h3{color:var(--heading);margin-bottom:.85rem;font-size:1rem}
+#msg-dialog .msg-body{font-size:.85rem;line-height:1.45;white-space:pre-line}
+#msg-dialog label{display:block;font-size:.76rem;color:var(--dim);margin:.7rem 0 .2rem}
+#msg-dialog input[type=number],#msg-dialog input[type=text],#msg-dialog textarea{
+  width:100%;padding:.5rem;box-sizing:border-box;background:var(--bg);
+  border:1px solid var(--border);color:var(--text);border-radius:6px;
+}
 /* Personnel popup + general popup section styling (Phase 3) */
 .popup-section{margin-bottom:1rem}
 .popup-section:last-child{margin-bottom:0}
@@ -1250,6 +1294,17 @@ button:active{transform:scale(.97)}
   </div>
 </div>
 
+<!-- Non-blocking message layer (toasts + message modal). Separate from the
+     IO-prompt overlay above so it never disturbs an active game prompt, and
+     never blocks the event loop (the season countdown keeps ticking). -->
+<div id="toast-stack"></div>
+<div id="msg-overlay">
+  <div id="msg-dialog">
+    <h3 id="msg-title"></h3>
+    <div id="msg-content"></div>
+  </div>
+</div>
+
 <script>
 // ==================== STATE ====================
 const SERVER_ORIGIN = window.location.protocol === 'file:'
@@ -1676,7 +1731,7 @@ async function createRoom() {
     rememberIdentity(name, room);
     enterWaiting(room);
   } catch(e) {
-    alert(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`);
+    showToast(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`, { type: 'error', ms: 8000 });
   }
 }
 
@@ -1704,7 +1759,7 @@ async function joinRoomById(roomId) {
     rememberIdentity(name, data.room);
     enterWaiting(data.room);
   } catch(e) {
-    alert('Could not join room.');
+    showToast('Could not join room.', { type: 'error' });
   }
 }
 
@@ -1790,7 +1845,7 @@ async function addAI() {
     const updated = await apiFetch(`/api/rooms/${currentRoomId}`);
     renderWaitingRoom(updated);
   } catch(e) {
-    alert('Failed to add AI player: ' + e.message);
+    showToast('Failed to add AI player: ' + e.message, { type: 'error' });
   }
 }
 
@@ -1798,19 +1853,26 @@ async function startAuction() {
   try {
     await apiFetch(`/api/rooms/${currentRoomId}/auction/start`, 'POST');
   } catch(e) {
-    alert('Cannot start auction: ' + e.message);
+    showToast('Cannot start auction: ' + e.message, { type: 'error' });
   }
 }
 
-async function leaveRoom() {
-  if (!confirm('Leave this game? You will be removed from the room.')) return;
+function leaveRoom() {
+  // Non-blocking confirm (native confirm() would freeze the season countdown).
+  showConfirmModal('Leave game?', 'Leave this game? You will be removed from the room.', {
+    confirmLabel: 'Leave', cancelLabel: 'Stay', danger: true,
+    onConfirm: _doLeaveRoom,
+  });
+}
+
+async function _doLeaveRoom() {
   const roomId = currentRoomId, playerId = myPlayerId;
   try {
     if (roomId && playerId) {
       await apiFetch(`/api/rooms/${roomId}/leave`, 'POST', {player_id: playerId});
     }
   } catch(e) {
-    alert('Could not leave the room: ' + e.message);
+    showToast('Could not leave the room: ' + e.message, { type: 'error' });
     return;
   }
   // Tear down the socket without triggering the auto-reconnect, reset identity,
@@ -2057,7 +2119,7 @@ function onIslandGuaranteeState(gs) {
     subEl.innerHTML =
       `You ended the auction without an island. ` +
       `Choose one to take from an AI player that won extras — the AI must sell at the price shown below. ` +
-      `<a href="#" onclick="event.preventDefault();alert(GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
+      `<a href="#" onclick="event.preventDefault();showInfoModal('How the price is calculated', GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
     actionsEl.classList.remove('hidden');
     spectatorEl.classList.add('hidden');
     offersEl.innerHTML = offers.map(o => {
@@ -2629,16 +2691,31 @@ function respondTrainingCounter(batchId, action) {
   } else if (action === 'reject') {
     sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'reject' });
   } else {
-    // Prompt for counter price — show a simple overlay input
-    const price = prompt('Your counter-offer to the Educator (Dp):', '');
-    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) return;
-    const msg = prompt('Message to Educator (optional):', '') || '';
-    sendWsMessage({
-      type: 'training_counter_response',
-      batch_id: batchId,
-      action: 'counter',
-      new_fee: parseFloat(price),
-      message: msg,
+    // Non-blocking counter-offer form (native prompt() would freeze the
+    // season countdown). One modal collects both the price and the message.
+    showPromptModal('Counter-offer to the Educator', {
+      submitLabel: 'Send counter',
+      fields: [
+        {
+          name: 'price', label: 'Your counter-offer (Dp)', type: 'number',
+          placeholder: 'e.g. 80',
+          validate: (v) => (isNaN(parseFloat(v)) || parseFloat(v) <= 0)
+            ? 'Enter a counter-offer greater than 0.' : null,
+        },
+        {
+          name: 'message', label: 'Message to Educator (optional)',
+          type: 'textarea', optional: true,
+        },
+      ],
+      onSubmit: (vals) => {
+        sendWsMessage({
+          type: 'training_counter_response',
+          batch_id: batchId,
+          action: 'counter',
+          new_fee: parseFloat(vals.price),
+          message: vals.message || '',
+        });
+      },
     });
   }
 }
@@ -5135,6 +5212,117 @@ function submitMarketBuy() {
   }
 }
 
+// ---- Non-blocking message helpers (replace native alert/confirm/prompt) ----
+// Native alert()/confirm()/prompt() block the JS main thread, so the
+// setInterval-driven season countdown can't tick while one is open (the
+// "timer stops when an alert appears" bug, #138). These never block, and use
+// their own #msg-overlay so they don't disturb an active IO game prompt.
+
+function showToast(message, opts = {}) {
+  const { type = 'info', ms = 4500 } = opts;
+  const stack = document.getElementById('toast-stack');
+  if (!stack) { console.log('[toast]', message); return; }
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const msg = document.createElement('div');
+  msg.className = 'toast-msg';
+  msg.textContent = message;
+  const x = document.createElement('span');
+  x.className = 'toast-x';
+  x.textContent = '×';
+  const dismiss = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 200); };
+  x.onclick = dismiss;
+  el.appendChild(msg);
+  el.appendChild(x);
+  stack.appendChild(el);
+  if (ms > 0) setTimeout(dismiss, ms);
+  return el;
+}
+
+let _msgModalOnCancel = null;
+
+function _closeMsgModal() {
+  const ov = document.getElementById('msg-overlay');
+  if (ov) ov.classList.remove('active');
+  const content = document.getElementById('msg-content');
+  if (content) content.innerHTML = '';
+  _msgModalOnCancel = null;
+}
+
+function _openMsgModal(title, contentHtml, { onCancel = null } = {}) {
+  document.getElementById('msg-title').textContent = title;
+  document.getElementById('msg-content').innerHTML = contentHtml;
+  document.getElementById('msg-overlay').classList.add('active');
+  _msgModalOnCancel = onCancel;
+  focusFirstInput(document.getElementById('msg-dialog'));
+}
+
+function showInfoModal(title, message) {
+  _openMsgModal(title,
+    `<div class="msg-body">${esc(message)}</div>
+     <div class="popup-footer"><button class="btn-primary" id="msg-ok">Close</button></div>`);
+  document.getElementById('msg-ok').onclick = _closeMsgModal;
+}
+
+function showConfirmModal(title, message, opts = {}) {
+  const { onConfirm = null, onCancel = null,
+          confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = opts;
+  _openMsgModal(title,
+    `<div class="msg-body">${esc(message)}</div>
+     <div class="popup-footer">
+       <button class="btn-ghost" id="msg-cancel">${esc(cancelLabel)}</button>
+       <button class="${danger ? 'btn-reject' : 'btn-gold'}" id="msg-confirm">${esc(confirmLabel)}</button>
+     </div>`, { onCancel });
+  document.getElementById('msg-cancel').onclick = () => { _closeMsgModal(); if (onCancel) onCancel(); };
+  document.getElementById('msg-confirm').onclick = () => { _closeMsgModal(); if (onConfirm) onConfirm(); };
+}
+
+function showPromptModal(title, opts = {}) {
+  const { fields = [], onSubmit = null, onCancel = null,
+          submitLabel = 'OK', cancelLabel = 'Cancel', intro = '' } = opts;
+  const fieldHtml = fields.map((f, i) => {
+    const id = `msg-field-${i}`;
+    const ctl = f.type === 'textarea'
+      ? `<textarea id="${id}" rows="2" placeholder="${esc(f.placeholder || '')}">${esc(f.value || '')}</textarea>`
+      : `<input id="${id}" type="${f.type || 'text'}" placeholder="${esc(f.placeholder || '')}" value="${esc(f.value || '')}">`;
+    return `<label for="${id}">${esc(f.label || f.name)}</label>${ctl}`;
+  }).join('');
+  _openMsgModal(title,
+    `${intro ? `<div class="msg-body">${esc(intro)}</div>` : ''}
+     ${fieldHtml}
+     <div class="popup-footer">
+       <button class="btn-ghost" id="msg-cancel">${esc(cancelLabel)}</button>
+       <button class="btn-gold" id="msg-submit">${esc(submitLabel)}</button>
+     </div>`, { onCancel });
+  const submit = () => {
+    const values = {};
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const raw = (document.getElementById(`msg-field-${i}`).value || '').trim();
+      if (!f.optional && raw === '') { showToast(`${f.label || f.name} is required.`, { type: 'error' }); return; }
+      if (f.validate) { const err = f.validate(raw); if (err) { showToast(err, { type: 'error' }); return; } }
+      values[f.name] = raw;
+    }
+    _closeMsgModal();
+    if (onSubmit) onSubmit(values);
+  };
+  document.getElementById('msg-cancel').onclick = () => { _closeMsgModal(); if (onCancel) onCancel(); };
+  document.getElementById('msg-submit').onclick = submit;
+  document.getElementById('msg-dialog').onkeydown = (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); }
+  };
+}
+
+// Backdrop click + ESC dismiss the message modal (counts as cancel).
+document.getElementById('msg-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'msg-overlay') { const cb = _msgModalOnCancel; _closeMsgModal(); if (cb) cb(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('msg-overlay').classList.contains('active')) {
+    const cb = _msgModalOnCancel; _closeMsgModal(); if (cb) cb();
+  }
+});
+
 function showDlg(title, bodyHtml, className = '') {
   const dialog = document.getElementById('dialog');
   dialog.className = className ? `dialog ${className}` : 'dialog';
@@ -5644,14 +5832,14 @@ function restoreActionMenu() {
 // 2026-05-27 playtest ask for offline debugging.
 async function downloadGameLog() {
   if (!currentRoom || !currentRoom.room_id) {
-    alert("Join a room first — there's no game log to download yet.");
+    showToast("Join a room first — there's no game log to download yet.", { type: 'info' });
     return;
   }
   try {
     const resp = await fetch(`/api/rooms/${currentRoom.room_id}/log`);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      alert(`Could not download log: ${err.error || resp.statusText}`);
+      showToast(`Could not download log: ${err.error || resp.statusText}`, { type: 'error' });
       return;
     }
     const text = await resp.text();
@@ -5665,7 +5853,7 @@ async function downloadGameLog() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (exc) {
-    alert(`Log download failed: ${exc}`);
+    showToast(`Log download failed: ${exc}`, { type: 'error' });
   }
 }
 
