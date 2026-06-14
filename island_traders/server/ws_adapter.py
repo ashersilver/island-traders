@@ -249,7 +249,7 @@ class WebSocketIOAdapter(IOAdapter):
         if send_fn:
             send_fn(msg)
 
-    def _send_and_wait(self, msg: dict, timeout: float = 300) -> object:
+    def _send_and_wait(self, msg: dict, timeout: float | None = None) -> object:
         pid = self._active_pid()
         if pid is None:
             # No active player on this thread — fall back to defaults.
@@ -280,7 +280,7 @@ class WebSocketIOAdapter(IOAdapter):
             self._player_responses[pid] = None
             self._player_pending_msgs.pop(pid, None)
 
-        if not signalled:
+        if timeout is not None and not signalled:
             logger.warning(
                 "Player %d: _send_and_wait timed out after %.0fs for %s",
                 pid, timeout, msg.get("type", "?"),
