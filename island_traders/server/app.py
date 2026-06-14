@@ -29,7 +29,7 @@ from ..engine.revenue import revenue_opportunities
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.training import TrainingStatus
+from ..models.training import TrainingCapacityError, TrainingStatus
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
     AUCTIONED_SHARES, UNISSUED_HOLDER,
@@ -45,7 +45,7 @@ from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
 
 try:
-    from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
     from pydantic import BaseModel, Field
@@ -398,6 +398,10 @@ class GameRoom:
     # advance the game state until resume.
     paused: bool = False
     paused_at: float = 0.0  # epoch time the current pause began
+
+    # Ring buffer of agent interaction events POSTed by external agent processes.
+    # Capped at _AGENT_INTERACTIONS_MAX to avoid unbounded growth.
+    agent_interactions: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = {
@@ -1994,6 +1998,8 @@ class GameManager:
                 "name":        item.name,
                 "role":        item.role,
                 "count":       count,
+                "warrantied":  p.capital_warranties.get(item_id, 0),
+                "failed":      p.failed_capital.get(item_id, 0),
                 "description": item.description,
             })
         # Items still arriving
@@ -2011,11 +2017,26 @@ class GameManager:
             if current_tick is not None:
                 rendered["seasons_remaining"] = max(0, arrives_at - current_tick)
             in_transit.append(rendered)
+        repairs_in_progress = []
+        for entry in p.capital_repair_in_progress:
+            rendered = dict(entry)
+            item = find_item(CAPITAL_CATALOGUE, entry.get("item_id", ""))
+            if item:
+                rendered["name"] = item.name
+                rendered["role"] = item.role
+                rendered["description"] = item.description
+            completes_at = int(entry.get("completes_at_tick", 0))
+            rendered["completion_year"] = completes_at // len(SEASONS) + 1
+            rendered["completion_season"] = SEASONS[completes_at % len(SEASONS)]
+            if current_tick is not None:
+                rendered["seasons_remaining"] = max(0, completes_at - current_tick)
+            repairs_in_progress.append(rendered)
 
         return {
             "outputs":         outputs,
             "capital_owned":   capital_owned,
             "capital_in_transit": in_transit,
+            "capital_repair_in_progress": repairs_in_progress,
             "band_counts":     band_counts,
             "engineer_specialties": specialty_payload(p),
         }
@@ -2411,6 +2432,186 @@ class GameManager:
                         room_id, educator_lobby_id,
                         self.get_game_state(room_id, educator_lobby_id) or {},
                     )
+
+    async def _handle_order_batch(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        batch_ref = msg.get("batch_ref")
+        if not room or not room.game or room.status != "running":
+            await websocket.send_text(json.dumps({
+                "type": "order_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "order_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Player not in game.",
+            }))
+            return
+        orders = msg.get("orders") or []
+        results = room.game.turn_manager.trading.execute_order_list(
+            player,
+            orders,
+            room.game.players,
+        )
+        await websocket.send_text(json.dumps({
+            "type": "order_batch_result",
+            "batch_ref": batch_ref,
+            "results": results,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_training_batch(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        batch_ref = msg.get("batch_ref")
+        if not room or not room.game or room.status != "running":
+            await websocket.send_text(json.dumps({
+                "type": "training_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Game is not running.",
+            }))
+            return
+        requester = self._engine_player_for_lobby(room, lobby_player_id)
+        if requester is None:
+            await websocket.send_text(json.dumps({
+                "type": "training_batch_result",
+                "batch_ref": batch_ref,
+                "results": [],
+                "error": "Player not in game.",
+            }))
+            return
+
+        year = getattr(room, "current_year_index", 0)
+        season = getattr(room, "current_season_index", 0)
+        results = []
+        for index, row in enumerate(msg.get("requests") or []):
+            results.append(
+                self._submit_training_batch_row(room, requester, row or {}, index, year, season)
+            )
+
+        await websocket.send_text(json.dumps({
+            "type": "training_batch_result",
+            "batch_ref": batch_ref,
+            "results": results,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    def _submit_training_batch_row(
+        self,
+        room,
+        requester: Player,
+        row: dict,
+        index: int,
+        year: int,
+        season: int,
+    ) -> dict:
+        try:
+            profession = str(row.get("profession", "")).strip()
+            count = int(row.get("count", 0))
+            if not profession:
+                raise ValueError("profession is required")
+            if count <= 0:
+                raise ValueError("count must be positive")
+            educator = self._resolve_training_educator(room, requester, row)
+            if educator is None:
+                raise ValueError("No Educator player in this game.")
+            if not any(role.name == "Educator" for role in educator.roles):
+                raise ValueError("campus_player_id must identify an Educator.")
+            worker_ids = self._select_training_workers(
+                requester,
+                count,
+                room.game.training,
+            )
+            if len(worker_ids) < count:
+                raise ValueError(
+                    f"Only {len(worker_ids)} eligible worker(s) available."
+                )
+            transport_mode = str(row.get("transport_mode") or "air_ticket")
+            if educator.player_id == requester.player_id:
+                transport_mode = "self_training"
+            tickets = int(row.get("tickets_supplied_by_requester", 0) or 0)
+            fee = float(row.get("dollops_to_educator", row.get("fee", 0.0)) or 0.0)
+            specialty = str(row.get("specialty", row.get("engineer_specialty", "")) or "")
+            duration = room.game.turn_manager._training_duration_for_selection(
+                profession,
+                worker_ids,
+                requester,
+                specialty,
+            )
+            req = room.game.training.propose(
+                requester_id=requester.player_id,
+                worker_ids=worker_ids,
+                educator_id=educator.player_id,
+                dollops_to_educator=fee,
+                target_profession=profession,
+                year=year,
+                season=season,
+                transport_mode=transport_mode,
+                tickets_supplied_by_requester=tickets,
+                engineer_specialty=specialty,
+                duration_seasons=duration,
+            )
+            return {
+                "index": index,
+                "status": "submitted",
+                "batch_id": req.batch_id,
+            }
+        except (TrainingCapacityError, ValueError, TypeError) as exc:
+            return {"index": index, "status": "rejected", "reason": str(exc)}
+
+    def _select_training_workers(self, requester: Player, count: int, training) -> list[int]:
+        trainable = requester.workforce.get_trainable_ids(requester.workforce.active_count)
+        committed = training.reserved_worker_ids(requester.player_id)
+        return [worker_id for worker_id in trainable if worker_id not in committed][:count]
+
+    def _resolve_training_educator(self, room, requester: Player, row: dict) -> Player | None:
+        campus_id = row.get("campus_player_id", row.get("educator_id"))
+        if campus_id is not None:
+            try:
+                engine_id = int(campus_id)
+            except (TypeError, ValueError):
+                engine_id = (room.lobby_to_engine_id or {}).get(str(campus_id))
+            return next((p for p in room.game.players if p.player_id == engine_id), None)
+        if any(role.name == "Educator" for role in requester.roles):
+            return requester
+        return next(
+            (
+                player for player in room.game.players
+                if any(role.name == "Educator" for role in player.roles)
+            ),
+            None,
+        )
+
+    def _engine_player_for_lobby(self, room, lobby_player_id: str) -> Player | None:
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            return None
+        return next(
+            (player for player in room.game.players if player.player_id == engine_pid),
+            None,
+        )
 
     async def _handle_buy_out_float(
         self,
@@ -2989,6 +3190,18 @@ class GameManager:
             "status": room.status,
             "year": current_year,
             "season": current_season,
+            # Authoritative season-timer state so ANY tab (late join, reconnect,
+            # mid-season re-render) syncs its countdown to the server clock — not
+            # just the one-shot season_start broadcast. server_now lets the client
+            # correct for clock offset; season_timer_end is the epoch deadline
+            # (0 = no active action-phase timer).
+            "season_phase": room.season_phase,
+            "server_now": round(time.time(), 3),
+            "season_timer_end": (
+                round(room.season_timer_end, 3)
+                if (room.season_phase == "action" and room.season_timer_end > 0)
+                else 0
+            ),
             "funding_rates": {
                 str(term): round(rate * 100, 2)
                 for term, rate in posted_funding_rates(
@@ -3472,6 +3685,51 @@ class GameManager:
             "timer_remaining": timer_rem,
         })
 
+    # ---- Agent interaction store ----
+
+    _AGENT_INTERACTIONS_MAX = 2000  # max records kept per room
+
+    def post_agent_interactions(self, room_id: str, events: list[dict]) -> dict:
+        """Append agent interaction records to the room's in-memory store.
+
+        Called by the POST /api/rooms/{room_id}/agent-interactions route.
+        Records are kept in arrival order; the oldest are evicted once the
+        ring buffer reaches _AGENT_INTERACTIONS_MAX.  The caller (an external
+        agent process) is responsible for including useful fields such as
+        ``run_id``, ``seq``, ``timestamp``, ``direction``, ``kind``, and
+        ``message_type`` — see the transcript format in island-traders-agents.
+        """
+        room = self.rooms.get(room_id)
+        if room is None:
+            return {"error": "Room not found"}
+        if not isinstance(events, list):
+            return {"error": "events must be a list"}
+        room.agent_interactions.extend(events)
+        excess = len(room.agent_interactions) - self._AGENT_INTERACTIONS_MAX
+        if excess > 0:
+            del room.agent_interactions[:excess]
+        return {"accepted": len(events), "total": len(room.agent_interactions)}
+
+    def get_agent_interactions(
+        self, room_id: str, limit: int = 100, since_seq: int = 0
+    ) -> dict | None:
+        """Return agent interaction records for the room.
+
+        ``since_seq`` filters to records whose ``seq`` field is strictly
+        greater than the given value (0 = return all).  ``limit`` caps the
+        number of returned records (0 = no cap).
+        """
+        room = self.rooms.get(room_id)
+        if room is None:
+            return None
+        events: list[dict] = room.agent_interactions
+        if since_seq > 0:
+            events = [e for e in events if e.get("seq", 0) > since_seq]
+        total = len(room.agent_interactions)
+        if limit > 0:
+            events = events[-limit:]
+        return {"events": events, "total": total}
+
     def submit_ready(self, room_id: str, lobby_player_id: str, ready: bool = True) -> dict:
         """Mark a player as Ready (or unready) for the current season phase.
 
@@ -3864,6 +4122,65 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.post(
+        "/api/rooms/{room_id}/agent-interactions",
+        tags=["Game Flow"],
+        summary="Ingest agent interaction events",
+        description="External LLM agent processes POST transcript-style interaction "
+                    "records here; stored in a room-scoped ring buffer for the observer UI.",
+    )
+    async def post_agent_interactions(room_id: str, request: Request):
+        """Ingest agent interaction events from an external LLM agent process.
+
+        Accepts a JSON object ``{"events": [...]}`` or a bare JSON array.
+        A single-event object is also accepted for convenience.
+
+        Records are stored in a room-scoped ring buffer (2 000 max) and
+        served by the GET endpoint below.  No authentication: intended for
+        local / trusted agent processes only.
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        if isinstance(body, list):
+            events = body
+        elif isinstance(body, dict) and "events" in body:
+            events = body["events"]
+            if not isinstance(events, list):
+                return JSONResponse({"error": "events must be an array"}, status_code=400)
+        elif isinstance(body, dict):
+            events = [body]
+        else:
+            return JSONResponse({"error": "Expected JSON object or array"}, status_code=400)
+
+        result = manager.post_agent_interactions(room_id, events)
+        if "error" in result:
+            return JSONResponse(result, status_code=404)
+        return JSONResponse(result)
+
+    @app.get(
+        "/api/rooms/{room_id}/agent-interactions",
+        tags=["Game Flow"],
+        summary="Fetch agent interaction events",
+        description="Returns stored agent interaction records for the room, "
+                    "with optional limit and since_seq filters.",
+    )
+    async def get_agent_interactions(
+        room_id: str, limit: int = 100, since_seq: int = 0
+    ):
+        """Return agent interaction records for the room.
+
+        Query params:
+        - ``limit``: max records to return (default 100, 0 = no cap)
+        - ``since_seq``: only return records with seq > this value (0 = all)
+        """
+        result = manager.get_agent_interactions(room_id, limit=limit, since_seq=since_seq)
+        if result is None:
+            return JSONResponse({"error": "Room not found"}, status_code=404)
+        return JSONResponse(result)
+
     @app.get(
         "/api/roles",
         tags=["Reference"],
@@ -4034,6 +4351,14 @@ def create_app() -> FastAPI:
                     })
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "order_batch":
+                    await manager._handle_order_batch(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "training_batch":
+                    await manager._handle_training_batch(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "buy_out_float":

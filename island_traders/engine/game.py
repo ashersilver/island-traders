@@ -27,6 +27,11 @@ from ..constants import (
     STARTING_WORKERS_BY_PROFESSION,
     WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
     DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
+    EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR,
+    EQUIPMENT_FAILURE_REPAIR_FRACTION,
+    EQUIPMENT_REPAIR_AIR_FREIGHT,
+    EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_WARRANTY_ANNUAL_RATE,
     BASE_BIRTH_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
@@ -37,7 +42,7 @@ from ..constants import (
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 
-SAVE_VERSION = 6
+SAVE_VERSION = 7
 
 # Renamed resources: old save inventory key -> current key (2026-06-02).
 LEGACY_RESOURCE_IDS: dict[str, str] = {
@@ -385,6 +390,10 @@ class Game:
         for player in self.players:
             # Reset transient unmaintained state at the start of the season.
             player.unmaintained_capital = {}
+            self._complete_capital_repairs(player, current_tick, catalogue)
+            self._attempt_pending_capital_repairs(player, current_tick, catalogue)
+            if season == 0:
+                self._process_equipment_warranty_premiums(player, catalogue)
 
             # 1) Expiry — remove units past their service life (oldest first).
             for item_id in list(player.capital_inventory.keys()):
@@ -430,6 +439,204 @@ class Game:
                         f"season (insufficient Dp); contributes 0 capacity "
                         f"until paid."
                     )
+
+            if season == len(SEASONS) - 1:
+                self._process_equipment_failures(player, current_tick, catalogue)
+
+    def _role_player(self, role_name: str) -> Player | None:
+        return next(
+            (p for p in self.players if any(r.name == role_name for r in p.roles)),
+            None,
+        )
+
+    def _capital_rng(self):
+        if self.turn_manager is not None:
+            return self.turn_manager._rng
+        import random
+        return random
+
+    def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
+        return sum(
+            int(entry.get("count", 1))
+            for entry in player.capital_repair_in_progress
+            if entry.get("item_id") == item_id
+        )
+
+    def _complete_capital_repairs(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        remaining: list[dict] = []
+        for entry in player.capital_repair_in_progress:
+            if int(entry.get("completes_at_tick", 0)) > current_tick:
+                remaining.append(entry)
+                continue
+            item_id = str(entry.get("item_id", ""))
+            count = int(entry.get("count", 1))
+            repaired = player.complete_capital_repair(item_id, count)
+            item = catalogue.get(item_id)
+            if repaired and item is not None:
+                self.io.print(
+                    f"\n[CAPITAL REPAIRED] {player.name}: {repaired} × "
+                    f"{item.name} returned to service."
+                )
+        player.capital_repair_in_progress = remaining
+
+    def _process_equipment_warranty_premiums(
+        self,
+        player: Player,
+        catalogue: dict[str, object],
+    ) -> None:
+        manufacturer = self._role_player("Manufacturer")
+        if manufacturer is None or manufacturer.player_id == player.player_id:
+            return
+        for item_id, count in list(player.capital_warranties.items()):
+            item = catalogue.get(item_id)
+            owned = player.capital_inventory.get(item_id, 0)
+            covered = min(count, owned)
+            if item is None or covered <= 0:
+                player.capital_warranties.pop(item_id, None)
+                continue
+            per_unit = round(item.cost * EQUIPMENT_WARRANTY_ANNUAL_RATE, 2)
+            paid = 0
+            for _ in range(covered):
+                if player.dollops < per_unit:
+                    break
+                player.spend_dollops(per_unit)
+                manufacturer.receive_dollops(per_unit)
+                paid += 1
+            if paid < count:
+                if paid:
+                    player.capital_warranties[item_id] = paid
+                else:
+                    player.capital_warranties.pop(item_id, None)
+            if paid:
+                self.io.print(
+                    f"\n[WARRANTY] {player.name}: paid "
+                    f"{CURRENCY_SYMBOL}{per_unit * paid:.2f} to "
+                    f"{manufacturer.name} for {paid} × {item.name} warranty."
+                )
+
+    def _failure_probability_for_age(self, age_seasons: int) -> float:
+        age_year = max(1, age_seasons // len(SEASONS) + 1)
+        max_year = max(EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR)
+        return EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR.get(
+            age_year,
+            EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR[max_year],
+        )
+
+    def _process_equipment_failures(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        rng = self._capital_rng()
+        for item_id, count in list(player.capital_inventory.items()):
+            item = catalogue.get(item_id)
+            if item is None:
+                continue
+            warranted = min(player.capital_warranties.get(item_id, 0), count)
+            failed = min(player.failed_capital.get(item_id, 0), count)
+            in_service_uninsured = max(0, count - warranted - failed)
+            if in_service_uninsured <= 0:
+                continue
+            ticks = list(player.capital_acquired_ticks.get(item_id, []))
+            if len(ticks) < count:
+                ticks.extend([0] * (count - len(ticks)))
+            candidate_ticks = ticks[warranted:warranted + in_service_uninsured]
+            failures = 0
+            for acquired_tick in candidate_ticks:
+                age = max(0, current_tick - acquired_tick)
+                if rng.random() < self._failure_probability_for_age(age):
+                    failures += 1
+            for _ in range(failures):
+                if player.mark_capital_failed(item_id, 1):
+                    self.io.print(
+                        f"\n[CAPITAL FAILURE] {player.name}: 1 × {item.name} "
+                        f"failed and is down until repaired."
+                    )
+                    self._attempt_capital_repair(player, item, current_tick)
+
+    def _attempt_pending_capital_repairs(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        for item_id, failed in list(player.failed_capital.items()):
+            unresolved = failed - self._repair_in_progress_count(player, item_id)
+            if unresolved <= 0:
+                continue
+            item = catalogue.get(item_id)
+            if item is None:
+                continue
+            for _ in range(unresolved):
+                if not self._attempt_capital_repair(player, item, current_tick):
+                    break
+
+    def _has_air_repair_capacity(self) -> bool:
+        transporter = self._role_player("Transporter")
+        if transporter is None:
+            return False
+        return transporter.effective_capital_inventory().get(
+            "transporter.cargo_plane", 0
+        ) > 0
+
+    def _credit_freight_to_transporter(self, freight_qty: int) -> None:
+        transporter = self._role_player("Transporter")
+        if transporter is None or freight_qty <= 0:
+            return
+        credit = round(self.market.current_price(ResourceType.FREIGHT) * freight_qty, 2)
+        transporter.receive_dollops(credit)
+        if self.resource_flow is not None:
+            self.resource_flow.record_consumed(ResourceType.FREIGHT, freight_qty)
+            self.resource_flow.record_traded(ResourceType.FREIGHT, freight_qty)
+
+    def _attempt_capital_repair(
+        self,
+        player: Player,
+        item,
+        current_tick: int,
+    ) -> bool:
+        manufacturer = self._role_player("Manufacturer")
+        repair_fee = round(item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2)
+        air = self._has_air_repair_capacity()
+        freight_qty = (
+            EQUIPMENT_REPAIR_AIR_FREIGHT if air else EQUIPMENT_REPAIR_SHIP_FREIGHT
+        )
+        if player.dollops < repair_fee:
+            return False
+        if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
+            return False
+
+        player.spend_dollops(repair_fee)
+        if manufacturer is not None:
+            manufacturer.receive_dollops(repair_fee)
+        player.give_resources(ResourceType.FREIGHT, freight_qty)
+        self._credit_freight_to_transporter(freight_qty)
+
+        if air:
+            player.complete_capital_repair(item.item_id, 1)
+            self.io.print(
+                f"[CAPITAL REPAIR] {player.name}: repaired 1 × {item.name} "
+                f"same-season by air for {CURRENCY_SYMBOL}{repair_fee:.2f} "
+                f"+ {freight_qty} Freight."
+            )
+        else:
+            player.capital_repair_in_progress.append({
+                "item_id": item.item_id,
+                "count": 1,
+                "completes_at_tick": current_tick + 1,
+            })
+            self.io.print(
+                f"[CAPITAL REPAIR] {player.name}: shipped repair parts for "
+                f"1 × {item.name}; returns next season for "
+                f"{CURRENCY_SYMBOL}{repair_fee:.2f} + {freight_qty} Freight."
+            )
+        return True
 
     def _process_retirements(self, year: int, season: int) -> None:
         """Age every island's workers one season; remove retirees.
@@ -615,6 +822,9 @@ class Game:
                 item_id: list(ticks) for item_id, ticks in p.capital_acquired_ticks.items()
             },
             "capital_in_transit": list(p.capital_in_transit),
+            "capital_warranties": dict(p.capital_warranties),
+            "failed_capital": dict(p.failed_capital),
+            "capital_repair_in_progress": list(p.capital_repair_in_progress),
             "active_patents": {k: list(v) for k, v in p.active_patents.items()},
             "personal_cash": p.personal_cash,
             "holdings": dict(p.holdings),
@@ -815,6 +1025,15 @@ class Game:
                 ),
                 capital_in_transit=_migrate_capital_in_transit(
                     pd.get("capital_in_transit", [])
+                ),
+                capital_warranties=_migrate_capital_inventory(
+                    pd.get("capital_warranties", {})
+                ),
+                failed_capital=_migrate_capital_inventory(
+                    pd.get("failed_capital", {})
+                ),
+                capital_repair_in_progress=_migrate_capital_in_transit(
+                    pd.get("capital_repair_in_progress", [])
                 ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
                 personal_cash=pd.get("personal_cash", 0.0),
