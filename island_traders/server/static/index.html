@@ -1642,6 +1642,22 @@ function parseQuickSeat() {
   if (!isCreate && !isJoin) return null;
   const roomName = p.get('room') || p.get('join') || code || '';
   if (!roomName) return null;
+  // TEST/DEBUG: start<resource>=N seeds opening inventory for the role being
+  // taken (e.g. startfood=200 → Farmer starts with 200 Food). `startrole`
+  // overrides the keyed role; defaults to the bid `role`, else Farmer. Note we
+  // must exclude `startcapital`/`startrole`, which also begin with "start".
+  const debugInv = (() => {
+    const role = p.get('startrole') || p.get('role') || 'Farmer';
+    const RESERVED = new Set(['startrole', 'startcapital']);
+    const inv = {};
+    for (const [key, val] of p.entries()) {
+      const m = /^start(.+)$/i.exec(key);
+      if (!m || RESERVED.has(key.toLowerCase())) continue;
+      const qty = parseInt(val, 10);
+      if (Number.isFinite(qty) && qty > 0) inv[m[1]] = qty;
+    }
+    return Object.keys(inv).length ? { [role]: inv } : null;
+  })();
   return {
     mode: isCreate ? 'create' : 'join',
     roomName,
@@ -1653,6 +1669,7 @@ function parseQuickSeat() {
     invest: p.get('invest') || null,
     capital: p.get('startcapital') ? parseFloat(p.get('startcapital')) : null,
     season: p.get('season') ? parseInt(p.get('season'), 10) : null,
+    debugInv,
     bidPlaced: false,
     investDone: false,
   };
@@ -1704,6 +1721,7 @@ async function quickSeatStart() {
       };
       if (quickSeat.capital != null) body.starting_capital = quickSeat.capital;
       if (quickSeat.season != null) body.season_timer_seconds = quickSeat.season;
+      if (quickSeat.debugInv) body.debug_starting_inventory = quickSeat.debugInv;
       const room = await apiFetch('/api/rooms', 'POST', body);
       myPlayerId = room.players[0].player_id;
       rememberIdentity(quickSeat.name, room);
