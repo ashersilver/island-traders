@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Island Traders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:      #070f1e;
@@ -745,6 +748,87 @@ button:active{transform:scale(.97)}
 .depflow-lbl{font-family:inherit;font-size:12px;fill:var(--heading,#e8eaf6);font-weight:600}
 .depflow-res{font-family:inherit;font-size:10px;fill:var(--gold,#e7c05d)}
 .depflow-arrow{fill:none;stroke-width:1.5;marker-end:url(#arrowhead)}
+
+/* ============================================================
+   UI v3 — "dark prestige" theme shell (phase 1).
+   Appended last so it layers over the base styles. Scoped to the
+   default (dark) theme via :root:not([data-theme="day"]) so the
+   Bright Lagoon day theme keeps its existing solid styling.
+   Structure/behaviour unchanged — purely visual. A body.fx-off
+   class (reduce-effects toggle) drops blur/glow for long sessions.
+   ============================================================ */
+:root:not([data-theme="day"]){
+  --bg:#05080f; --panel:#0c1726; --panel2:#11203455; --border:#24364f;
+  --text:#c2d2e6; --heading:#f0f6ff; --accent:#22d3ee; --gold:#f6b93b;
+  --green:#34e0a1; --red:#ff5d6c; --dim:#6a809b; --radius:14px;
+  --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.07);
+  --stroke:rgba(255,255,255,.09); --stroke-2:rgba(255,255,255,.16);
+}
+:root:not([data-theme="day"]) body{
+  font-family:'Sora',system-ui,-apple-system,sans-serif;
+  background:
+    radial-gradient(1100px 640px at 12% -8%, rgba(34,211,238,.13), transparent 60%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(246,185,59,.12), transparent 55%),
+    radial-gradient(900px 760px at 50% 124%, rgba(80,120,255,.10), transparent 60%),
+    linear-gradient(180deg,#070d18,#05080f 60%,#04060c);
+  background-attachment:fixed;
+}
+:root:not([data-theme="day"]) body.fx-off{background:#070d18}
+
+/* glass columns + header */
+:root:not([data-theme="day"]) .g-hdr{
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+  border-bottom:1px solid var(--stroke);backdrop-filter:blur(14px);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset;
+}
+:root:not([data-theme="day"]) .g-side,
+:root:not([data-theme="day"]) .g-info{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  backdrop-filter:blur(10px);border-color:var(--stroke);
+}
+:root:not([data-theme="day"]) .g-main{background:transparent}
+:root:not([data-theme="day"]) .g-log{
+  background:rgba(3,7,13,.66);border-top:1px solid var(--stroke);backdrop-filter:blur(8px);
+}
+body.fx-off .g-hdr,body.fx-off .g-side,body.fx-off .g-info,body.fx-off .g-log{backdrop-filter:none}
+
+/* every panel becomes a glass card */
+:root:not([data-theme="day"]) .section{
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--stroke);border-radius:var(--radius);
+  padding:.7rem .8rem;margin-bottom:.7rem;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -32px #000;
+}
+:root:not([data-theme="day"]) .section h3{
+  font-family:'Sora',sans-serif;color:var(--dim);font-weight:600;
+  letter-spacing:.12em;border-bottom:1px solid var(--stroke);
+}
+:root:not([data-theme="day"]) .stat{padding:.2rem 0}
+:root:not([data-theme="day"]) .stat .val{color:var(--heading)}
+
+/* tabular-mono numerals for the figures that matter */
+:root:not([data-theme="day"]) .stat .val,
+:root:not([data-theme="day"]) .comp-table td,
+:root:not([data-theme="day"]) .g-hdr .wealth,
+:root:not([data-theme="day"]) #s-networth,
+:root:not([data-theme="day"]) #s-dollops,
+:root:not([data-theme="day"]) #s-personal-cash{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;
+}
+
+/* net-worth hero in the header */
+:root:not([data-theme="day"]) .g-hdr .wealth{
+  color:var(--gold);font-weight:600;font-size:1.18rem;letter-spacing:.01em;
+  text-shadow:0 0 22px rgba(246,185,59,.45);
+}
+body.fx-off .g-hdr .wealth{text-shadow:none}
+
+/* refine the tile control + buttons to match */
+:root:not([data-theme="day"]) .btn-gold{
+  box-shadow:0 0 22px -8px rgba(246,185,59,.7);
+}
+:root:not([data-theme="day"]) .market-board .icon-btn:hover,
+:root:not([data-theme="day"]) .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -1103,6 +1187,9 @@ button:active{transform:scale(.97)}
             <div class="lp-row" onclick="togglePanel('side')"><input type="checkbox" id="lp-side" onclick="event.stopPropagation()"> Left sidebar</div>
             <div class="lp-row" onclick="togglePanel('info')"><input type="checkbox" id="lp-info" onclick="event.stopPropagation()"> Right info</div>
             <div class="lp-row" onclick="togglePanel('log')"><input type="checkbox" id="lp-log" onclick="event.stopPropagation()"> Game log</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Display</div>
+            <div class="lp-row" onclick="toggleReduceEffects()"><input type="checkbox" id="lp-fx" onclick="event.stopPropagation();toggleReduceEffects()"> Reduce effects (blur &amp; glow)</div>
             <div class="lp-sep"></div>
             <div class="lp-head">Tiles</div>
             <div id="lp-tiles"></div>
@@ -5621,7 +5708,21 @@ function restoreLayoutPrefs() {
     if (f) setLogFilter(f);
     const hidden = JSON.parse(localStorage.getItem('it_layout_hidden') || '[]');
     if (Array.isArray(hidden)) applyLayoutState(hidden);
+    applyReduceEffects(localStorage.getItem('it_reduce_fx') === '1');
   } catch (e) {}
+}
+
+// Reduce-effects toggle (UI v3 phase 1): drop the prestige blur/glow for
+// long sessions or low-power machines.  Persisted in localStorage.
+function applyReduceEffects(on) {
+  document.body.classList.toggle('fx-off', !!on);
+  const cb = document.getElementById('lp-fx');
+  if (cb) cb.checked = !!on;
+}
+function toggleReduceEffects() {
+  const on = !document.body.classList.contains('fx-off');
+  applyReduceEffects(on);
+  try { localStorage.setItem('it_reduce_fx', on ? '1' : '0'); } catch (e) {}
 }
 
 // --- Tile system (UI v2 phase 1, #114): per-tile collapse / hide / reorder

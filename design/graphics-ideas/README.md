@@ -19,4 +19,9 @@ rather than here.
 
 ## Batches
 
-(none yet)
+- `claude-design-handoff-2026-06/` — Claude Design export (procedural isometric
+  island renderer: `engine/`, `data/`, `lib/alpha-sierra.css`, prototype HTML,
+  `screenshots/`). Style approved; its vector island graphics were judged less
+  sophisticated than the cinematic concept renders. Superseded by the **hybrid**
+  direction: cinematic render as base + a live overlay layer (built-equipment
+  pins, weather FX, season tint). Mockup: `requirements/mockups/ui-v4-hybrid-island.html`.
