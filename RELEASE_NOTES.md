@@ -5,6 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-v3-phase2-island-hero — visual redesign phase 2: cinematic island hero
+
+Version bump: `0.1.5-dev.2026-06-15.2`
+
+Stacks on phase 1. Promotes the island artwork from a 34%-opacity background
+wash to a **cinematic hero banner** crowning the "your island" column: the
+role's day/night render with a gradient scrim, the island name + role (with
+icon), a day/night + season tag, and at-a-glance Workers / Capacity chips
+overlaid. Reuses the existing `ROLE_ART` map and day/night selection — no new
+assets. The hero is a normal tile (hideable from ▦ Layout); the action area is
+untouched. Live overlay (built-equipment pins, weather FX) and the Build &
+Develop panel are still later phases.
+
 ### claude/ui-v3-dark-prestige — visual redesign phase 1: theme shell
 
 Version bump: `0.1.5-dev.2026-06-15.1`
