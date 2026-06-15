@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/fix-season-prompt-timeout — hidden 5-minute prompt timeout (commit dab1057)
+
+Version bump: `0.1.5-dev.2026-06-14.2` (back-filled by the integrator — the fix
+was fast-forwarded onto pre-release without a notes entry or `.N` bump).
+
+**The action/trading menu ended ~180s early in long seasons.** Root cause:
+`WebSocketIOAdapter._send_and_wait()` had a hard-coded 300-second default
+timeout, so an idle `choose_action` prompt in an 8-minute (480s) season returned
+`END_TURN` after 5 minutes — exactly 180s before the visible season timer
+expired. Fixed by defaulting the timeout to `None`, so online prompts wait until
+an explicit response, Ready/Done Trading, reconnect/replay, or the real
+season-timer interrupt. This is the precise fix for the recurring "trading stops
+with 180s to go" defect (complements the #138 timed-season hold-open backstop).
+Regression test: `test_default_prompt_wait_has_no_hidden_five_minute_timeout`.
+
 ## 0.1.4 — 2026-06-14
 
 Fourth point release. The headline is a **live-playtest defect batch** (#138) that
