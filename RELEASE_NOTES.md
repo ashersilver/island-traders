@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/quickseat-startfood — startfood works on quick-start URLs
+
+Version bump: `0.1.5-dev.2026-06-14.3`
+
+**The `startfood` (and any `start<resource>=N`) test affordance now works on the
+quick-start URL flow**, not just the manual Create Room form. The quick-seat path
+(`?create=1&room=…&role=…&startfood=200`) built its own create payload in
+`parseQuickSeat()`/`quickSeatStart()` and never read the `start<resource>` params,
+so the override was silently dropped. It now parses them (keyed to the bid `role`,
+overridable with `startrole=`; `startcapital`/`startrole` correctly excluded from
+resource detection) and sends `debug_starting_inventory` in the create body.
+`GameRoom.to_dict()` now also surfaces `debug_starting_inventory` so a playtester
+can confirm a debug room seeded the right inventory. Verified in-browser:
+`?…&startfood=200&startoil=15` → server stores `{Farmer: {food: 200, oil: 15}}`.
+
 ### codex/fix-season-prompt-timeout — hidden 5-minute prompt timeout (commit dab1057)
 
 Version bump: `0.1.5-dev.2026-06-14.2` (back-filled by the integrator — the fix
