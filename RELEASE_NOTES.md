@@ -5,6 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-v3-phase4-build-develop — visual redesign phase 4: Build & Develop panel
+
+Version bump: `0.1.5-dev.2026-06-15.4`
+
+Final phase of the UI v3 redesign. Adds a persistent **Build & Develop** tile
+to the island column: the role's full capital catalogue split into **Built**
+(owned equipment, with count; failed units flagged red) and **Available**
+(buildable items with cost, delivery time, cash-only / requires-equipment, and
+a "Required" badge for mandatory capital). A header **＋ Build…** button
+launches the existing Purchase Equipment action. The catalogue comes from a new
+`capacity.capital_catalogue` payload field (role items + owned/failed/mandatory
+from `CAPITAL_CATALOGUE` + `MANDATORY_MINIMUM_INVESTMENT`); no new game
+mechanics — it's a richer front door to the equipment the engine already
+models, and it pairs with the hero's equipment pins from phase 3.
+
 ### claude/ui-v3-phase3-live-overlay — visual redesign phase 3: live island overlay
 
 Version bump: `0.1.5-dev.2026-06-15.3`

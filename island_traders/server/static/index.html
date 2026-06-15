@@ -884,6 +884,21 @@ body.fx-off .ih-pins .pdot{animation:none}
   font-size:10px;font-weight:600;color:#fff;background:rgba(8,14,24,.88);border:1px solid rgba(255,255,255,.2);
   border-radius:7px;padding:2px 7px;opacity:0;transition:opacity .15s;pointer-events:none;text-shadow:0 1px 4px #000}
 .ih-pins .pin:hover .plab{opacity:1}
+
+/* ---- UI v3 phase 4: Build & Develop panel ---- */
+.bd-head{font-size:.64rem;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);margin:.5rem 0 .15rem;font-weight:600}
+.bd-head:first-child{margin-top:0}
+.bd-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.05)}
+.bd-row .bx{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex-shrink:0}
+.bd-row.owned .bx{background:rgba(52,224,161,.16);border:1px solid rgba(52,224,161,.4);color:var(--green)}
+.bd-row.owned.failed .bx{background:rgba(255,93,108,.16);border:1px solid rgba(255,93,108,.45);color:var(--red)}
+.bd-row.avail .bx{background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.28);color:var(--dim)}
+.bd-row .bd-body{flex:1;min-width:0}
+.bd-row .bd-name{font-size:.8rem;color:var(--heading);font-weight:500;display:flex;align-items:center;gap:6px}
+.bd-row.owned.failed .bd-name{color:#ffb3ba}
+.bd-row .bd-sub{font-size:.68rem;color:var(--dim)}
+.bd-row .bd-req{font-size:.58rem;font-weight:600;letter-spacing:.3px;padding:1px 5px;border-radius:5px;background:rgba(246,185,59,.16);color:#ffd98a;border:1px solid rgba(246,185,59,.35)}
+.bd-row .bd-cost{font-size:.74rem;font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',ui-monospace,monospace;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -1355,6 +1370,15 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
+      </div>
+      <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          🏗 Build &amp; Develop
+          <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
+                  onclick="sendResponse('purchase_capital')"
+                  title="Buy capital equipment (available on your turn)">＋ Build…</button>
+        </h3>
+        <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
       </div>
       <div class="section" data-tile="insurance" data-tile-label="Insurance">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -2602,6 +2626,46 @@ function roleShortName(role) {
 
 function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
+}
+
+// UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
+// the island can still build (from capacity.capital_catalogue). The header
+// "＋ Build…" button launches the existing Purchase Equipment action.
+function renderBuildDevelop(me) {
+  const el = document.getElementById('build-develop-list');
+  if (!el) return;
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  if (!cat.length) {
+    el.innerHTML = '<span style="color:var(--dim)">No buildable equipment for this island.</span>';
+    return;
+  }
+  const owned = cat.filter(c => c.owned > 0);
+  const avail = cat.filter(c => c.owned <= 0);
+  let html = '';
+  if (owned.length) {
+    html += '<div class="bd-head">Built</div>' + owned.map(c => {
+      const failed = c.failed > 0;
+      const sub = failed ? `${c.failed} failed — needs repair`
+        : (c.cash_only ? 'cash-only' : esc(c.role));
+      return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
+        <div class="bx">${failed ? '⚠' : '✓'}</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''}</div>
+          <div class="bd-sub">${sub}</div></div></div>`;
+    }).join('');
+  }
+  if (avail.length) {
+    html += '<div class="bd-head">Available</div>' + avail.map(c => {
+      const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+      const sub = (c.cash_only ? 'cash-only' : 'requires equipment') + ' · ' + arrival;
+      const req = c.mandatory ? '<span class="bd-req">Required</span>' : '';
+      return `<div class="bd-row avail" title="${esc(c.description || '')}">
+        <div class="bx">＋</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)} ${req}</div>
+          <div class="bd-sub">${sub}</div></div>
+        <div class="bd-cost">${c.cost} Dp</div></div>`;
+    }).join('');
+  }
+  el.innerHTML = html;
 }
 
 function renderCapacityPanel(capacity) {
@@ -3927,6 +3991,7 @@ function renderGameState() {
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+  renderBuildDevelop(me);
   renderDecisionHints(me, tabRole);
   renderFundingRates();
 
