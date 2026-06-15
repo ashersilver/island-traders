@@ -2097,9 +2097,39 @@ class GameManager:
                 rendered["seasons_remaining"] = max(0, completes_at - current_tick)
             repairs_in_progress.append(rendered)
 
+        # Build & Develop catalogue (UI v3 phase 4): every capital item this
+        # island's role(s) can build, with owned / failed / mandatory state, so
+        # the dashboard can render a persistent Build & Develop panel instead
+        # of only exposing the catalogue inside the Purchase Equipment prompt.
+        from ..models.capacity import items_for_role as _items_for_role
+        from ..constants_capacity import MANDATORY_MINIMUM_INVESTMENT as _MANDATORY
+        mandatory_ids: set[str] = set()
+        for role in p.roles:
+            mandatory_ids.update(_MANDATORY.get(role.name, []))
+        capital_catalogue = []
+        seen_cat: set[str] = set()
+        for role in p.roles:
+            for item in _items_for_role(CAPITAL_CATALOGUE, role.name):
+                if item.item_id in seen_cat:
+                    continue
+                seen_cat.add(item.item_id)
+                capital_catalogue.append({
+                    "item_id":          item.item_id,
+                    "name":             item.name,
+                    "role":             item.role,
+                    "cost":             round(item.cost),
+                    "cash_only":        bool(item.effects.get("cash_only", False)),
+                    "delivery_seasons": item.delivery_seasons,
+                    "description":      item.description,
+                    "owned":            p.capital_inventory.get(item.item_id, 0),
+                    "failed":           p.failed_capital.get(item.item_id, 0),
+                    "mandatory":        item.item_id in mandatory_ids,
+                })
+
         return {
             "outputs":         outputs,
             "capital_owned":   capital_owned,
+            "capital_catalogue": capital_catalogue,
             "capital_in_transit": in_transit,
             "capital_repair_in_progress": repairs_in_progress,
             "band_counts":     band_counts,
