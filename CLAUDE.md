@@ -41,6 +41,16 @@ folder on this computer when working alongside Codex.
 - Git discipline: never `--no-verify`, never `--amend`, never force-push;
   always new commits. Promotion `pre-release` → `master` only on explicit
   request.
+- **No direct pushes / fast-forwards to `pre-release`.** Every change reaches
+  `pre-release` through a PR. Codex hands off a branch ("branch X at commit Y —
+  ready to integrate") and the integrator (Claude) opens/merges the PR. A fix
+  fast-forwarded straight onto `pre-release` silently skips the three things the
+  PR flow guarantees — the `RELEASE_NOTES.md` entry, the `APP_VERSION` `.N`
+  bump, and the integrator's verify pass (full suite + spot-check) — so the next
+  release ships undocumented, mis-versioned work. If it happens anyway, the
+  integrator back-fills notes + version, but routing through a PR keeps it
+  automatic. (Standing order added 2026-06-14 after `dab1057` landed by
+  fast-forward.)
 
 ### Versioning
 `APP_VERSION` is `0.1.0-dev.YYYY-MM-DD.N` in `island_traders/constants.py`;
