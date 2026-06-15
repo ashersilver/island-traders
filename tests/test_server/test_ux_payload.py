@@ -155,6 +155,35 @@ def test_training_pipeline_shape():
     assert batch["counter_message"] is None
 
 
+def test_personnel_training_counts_group_by_target_profession():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    educator, farmer = players
+    worker = farmer.workforce.add_workers(1)[0]
+    worker_id = worker.worker_id
+    req = room.game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=25.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+        year=0,
+        season=0,
+        transport_mode="transporter",
+    )
+    room.game.training.educator_approve(req.batch_id)
+    room.game.training.arrange_transport(req.batch_id, transporter_id=educator.player_id)
+    room.game.training.dispatch(req.batch_id, year=0, season=0)
+    farmer.workforce.dispatch_for_training([worker_id])
+
+    state = mgr.get_game_state(room.room_id, "p1")
+    farmer_data = next(p for p in state["players"] if p["player_id"] == farmer.player_id)
+    professions = farmer_data["workforce_professions"]
+
+    assert professions[Profession.FARMING_TECHNICIAN.value]["training"] == 1
+    assert professions.get(Profession.UNSKILLED.value, {}).get("training", 0) == 0
+    assert farmer_data["workforce_training_bands"]["Technician"] == 1
+
+
 def test_training_pipeline_empty():
     mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
 

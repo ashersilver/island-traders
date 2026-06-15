@@ -2239,6 +2239,16 @@ class GameManager:
             })
         return pipeline
 
+    def _training_targets_for_player(
+        self,
+        game: Game,
+        player_id: int,
+    ) -> dict[int, str]:
+        training = getattr(game, "training", None)
+        if not training:
+            return {}
+        return training.dispatched_training_targets(player_id)
+
     def _staffing_contracts_for_player(
         self,
         game: "Game",
@@ -2921,6 +2931,7 @@ class GameManager:
         players_data = []
         for p in game.players:
             loan_book = banker_loan_book_status(p)
+            training_targets = self._training_targets_for_player(game, p.player_id)
             pd = {
                 "player_id": p.player_id,
                 "lobby_player_id": engine_to_lobby.get(p.player_id),
@@ -3006,8 +3017,12 @@ class GameManager:
                 "workforce_count": p.workforce.count,
                 "workforce_active": len(p.workforce.active_workers),
                 "workforce_bands": p.workforce.band_summary(),
-                "workforce_training_bands": p.workforce.training_band_summary(),
-                "workforce_professions": p.workforce.profession_summary(),
+                "workforce_training_bands": p.workforce.training_band_summary(
+                    training_targets
+                ),
+                "workforce_professions": p.workforce.profession_summary(
+                    training_targets
+                ),
                 "training_pipeline": self._training_pipeline_for_player(
                     game,
                     p.player_id,
