@@ -431,6 +431,9 @@ class GameRoom:
             "auction_timer_seconds": self.auction_timer_seconds,
             "season_timer_seconds": self.season_timer_seconds,
             "pre_season_timer_seconds": self.pre_season_timer_seconds,
+            # TEST/DEBUG override (empty in normal games); surfaced so a
+            # playtester can confirm a debug room seeded the right inventory.
+            "debug_starting_inventory": self.debug_starting_inventory,
             "status": self.status,
             "paused": self.paused,
             "player_count": len([p for p in self.players if p.is_human]),
