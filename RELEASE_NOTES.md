@@ -5,6 +5,30 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-v3-dark-prestige — visual redesign phase 1: theme shell
+
+Version bump: `0.1.5-dev.2026-06-15.1`
+
+First phase of the "dark prestige" visual redesign (the look approved from the
+`requirements/mockups/ui-v3-*` / `ui-v4-hybrid-island.html` mockups). Purely
+visual — layout, structure, and behaviour are unchanged; tiles, resizable
+panels, Trade Finder, and the log all keep working.
+
+- Layered gradient backdrop + translucent **glass panels** (blur, fine
+  borders, soft depth) across the header, side, and info columns; every
+  dashboard section becomes a glass card.
+- **Net worth** is now the gold hero readout (glow), with `IBM Plex Mono`
+  tabular figures on the numbers that matter; `Sora` for headings/body.
+- New **Reduce effects** toggle (▦ Layout → Display) drops the blur/glow for
+  long sessions or low-power machines; persisted in localStorage.
+- Scoped to the default dark theme via `:root:not([data-theme="day"])` — the
+  Bright Lagoon day theme keeps its existing styling.
+
+Later phases (not in this PR): the cinematic island hero, the live overlay
+layer (built-equipment pins, weather/disaster FX, season tint), and the
+Build & Develop panel. Design direction + handoff archived under
+`design/graphics-ideas/claude-design-handoff-2026-06/`.
+
 ### codex/fix-season-prompt-timeout — hidden 5-minute prompt timeout (commit dab1057)
 
 Version bump: `0.1.5-dev.2026-06-14.2` (back-filled by the integrator — the fix
