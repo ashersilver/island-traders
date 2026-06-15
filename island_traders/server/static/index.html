@@ -829,6 +829,61 @@ body.fx-off .g-hdr .wealth{text-shadow:none}
 }
 :root:not([data-theme="day"]) .market-board .icon-btn:hover,
 :root:not([data-theme="day"]) .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---- UI v3 phase 2: cinematic island hero (left column crown) ---- */
+.island-hero-sec{padding:0!important;overflow:hidden}
+.island-hero{position:relative;height:188px;border-radius:inherit;overflow:hidden}
+.island-hero .ih-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  transition:transform .6s ease}
+.island-hero:hover .ih-art{transform:scale(1.04)}
+body.fx-off .island-hero .ih-art{transition:none}
+body.fx-off .island-hero:hover .ih-art{transform:none}
+.island-hero .ih-scrim{position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(5,8,15,.12) 0,transparent 30%,rgba(5,8,15,.5) 70%,rgba(5,8,15,.94) 100%)}
+.island-hero .ih-tag{position:absolute;top:9px;left:9px;display:flex;gap:6px;font-size:10px}
+.island-hero .ih-tag span{padding:3px 8px;border-radius:999px;background:rgba(8,14,24,.6);
+  border:1px solid rgba(255,255,255,.18);color:#ffd98a;backdrop-filter:blur(6px);white-space:nowrap}
+body.fx-off .island-hero .ih-tag span,
+body.fx-off .island-hero .ih-chips .c{backdrop-filter:none}
+.island-hero .ih-meta{position:absolute;left:11px;right:10px;bottom:9px;display:flex;align-items:flex-end;gap:8px}
+.island-hero .ih-text{flex:1;min-width:0}
+.island-hero .ih-role{font-size:10.5px;color:#ffd98a;text-shadow:0 1px 8px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.island-hero .ih-name{font-size:15.5px;font-weight:600;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);line-height:1.15}
+.island-hero .ih-chips{display:flex;gap:6px;flex-shrink:0}
+.island-hero .ih-chips .c{padding:5px 8px;border-radius:10px;background:rgba(8,14,24,.55);
+  border:1px solid rgba(255,255,255,.18);text-align:center;backdrop-filter:blur(6px)}
+.island-hero .ih-chips .c .k{font-size:8px;letter-spacing:.4px;text-transform:uppercase;color:#9fb2c9}
+.island-hero .ih-chips .c .v{font-size:12.5px;font-weight:600;color:#eef5ff;font-family:'IBM Plex Mono',ui-monospace,monospace}
+
+/* ---- UI v3 phase 3: live overlay (season tint, disaster FX, equipment pins) ---- */
+.island-hero .ih-tint{position:absolute;inset:0;pointer-events:none;mix-blend-mode:soft-light;opacity:.85;transition:background .5s}
+.island-hero[data-season="Spring"] .ih-tint{background:linear-gradient(180deg,rgba(120,230,150,.30),transparent 72%)}
+.island-hero[data-season="Summer"] .ih-tint{background:linear-gradient(180deg,rgba(255,200,90,.32),transparent 72%)}
+.island-hero[data-season="Autumn"] .ih-tint{background:linear-gradient(180deg,rgba(232,128,56,.34),transparent 72%)}
+.island-hero[data-season="Winter"] .ih-tint{background:linear-gradient(180deg,rgba(120,180,255,.30),transparent 72%)}
+body.fx-off .island-hero .ih-tint{display:none}
+.island-hero .ih-fx{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s}
+.island-hero.ih-disrupted .ih-fx{opacity:1;box-shadow:inset 0 0 70px rgba(255,60,80,.55);animation:heroflicker 3.6s infinite}
+@keyframes heroflicker{0%,100%{opacity:.85}45%{opacity:1}48%{opacity:.55}52%{opacity:.95}}
+body.fx-off .island-hero.ih-disrupted .ih-fx{animation:none;opacity:.6}
+.island-hero .ih-fxchip{position:absolute;top:9px;right:9px;z-index:7;display:none;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;color:#ffd2d6;
+  background:rgba(40,10,14,.7);border:1px solid rgba(255,93,108,.55);backdrop-filter:blur(6px)}
+.island-hero.ih-disrupted .ih-fxchip{display:flex}
+body.fx-off .island-hero .ih-fxchip{backdrop-filter:none}
+.island-hero .ih-pins{position:absolute;inset:0;pointer-events:none}
+.ih-pins .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto}
+.ih-pins .pdot{width:11px;height:11px;border-radius:50%;border:1.5px solid #fff;margin:auto;
+  background:radial-gradient(circle at 35% 30%,#ffd98a,#f6b93b);
+  box-shadow:0 0 0 3px rgba(246,185,59,.22),0 0 12px rgba(246,185,59,.85);animation:pinpulse 5s ease-in-out infinite}
+.ih-pins .pin.failed .pdot{background:radial-gradient(circle at 35% 30%,#ff9aa2,#ff5d6c);
+  box-shadow:0 0 0 3px rgba(255,93,108,.22),0 0 12px rgba(255,93,108,.85)}
+body.fx-off .ih-pins .pdot{animation:none}
+@keyframes pinpulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.ih-pins .plab{position:absolute;left:50%;bottom:150%;transform:translateX(-50%);white-space:nowrap;
+  font-size:10px;font-weight:600;color:#fff;background:rgba(8,14,24,.88);border:1px solid rgba(255,255,255,.2);
+  border-radius:7px;padding:2px 7px;opacity:0;transition:opacity .15s;pointer-events:none;text-shadow:0 1px 4px #000}
+.ih-pins .pin:hover .plab{opacity:1}
 </style>
 </head>
 <body>
@@ -1226,6 +1281,24 @@ body.fx-off .g-hdr .wealth{text-shadow:none}
     </div>
 
     <div class="g-side">
+      <div class="section island-hero-sec" data-tile="hero" data-tile-label="Island hero" style="display:none">
+        <div class="island-hero" id="island-hero">
+          <img class="ih-art" id="hero-art" alt="" decoding="async">
+          <div class="ih-tint"></div>
+          <div class="ih-scrim"></div>
+          <div class="ih-fx"></div>
+          <div class="ih-pins" id="hero-pins"></div>
+          <div class="ih-tag" id="hero-tag"></div>
+          <div class="ih-fxchip" id="hero-fxchip"></div>
+          <div class="ih-meta">
+            <div class="ih-text">
+              <div class="ih-role" id="hero-role"></div>
+              <div class="ih-name" id="hero-name"></div>
+            </div>
+            <div class="ih-chips" id="hero-chips"></div>
+          </div>
+        </div>
+      </div>
       <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
       <div class="section" data-tile="status" data-tile-label="Island status">
         <h3><span id="tab-island-name">My Island</span></h3>
@@ -3564,8 +3637,10 @@ function handleMessage(msg) {
       addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
       break;
     case 'season_events':
+      _lastSeasonEvents = msg;           // feed the hero's live disaster FX (phase 3)
       renderConditionsPanel(msg);
       maybeShowDisasterModal(msg);
+      if (gameState && myPlayerIdx !== null) renderGameState();
       break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
@@ -3670,6 +3745,9 @@ function renderGameState() {
 
   document.getElementById('tab-island-name').textContent = islandLabel;
   updateMainIslandArt(tabRole, roles, gameState.season);
+  const heroRole = (tabRole === 'ALL') ? (roles[0] || null) : tabRole;
+  const heroRoleLabel = isConsolidated ? displayRoles(roles) : heroRole;
+  updateIslandHero(islandLabel, heroRoleLabel, gameState.season, me, heroRole);
   document.getElementById('s-role').textContent = isConsolidated
     ? displayRoles(roles)
     : (roleDisplayName(tabRole) || '—');
@@ -3992,6 +4070,102 @@ function renderTradeFinder() {
 
 function artTimeOfDay(season) {
   return (season === 'Autumn' || season === 'Winter') ? 'night' : 'day';
+}
+
+// UI v3 phase 3: live overlay state + helpers.
+// Last season_events message, so the hero can show a disaster FX layer.
+let _lastSeasonEvents = null;
+
+// Approximate pin anchor positions (x%, y%) over each role's render, keyed by
+// capital item_id.  Pins only appear for capital the island actually owns and
+// that has an anchor here; positions are eyeballed per render and can be
+// fine-tuned later without touching logic.
+const ROLE_PIN_ANCHORS = {
+  Miner: {'miner.excavator':{x:30,y:48,label:'Excavator'},'miner.crusher':{x:47,y:42,label:'Crusher'},
+    'miner.oil_rig':{x:70,y:55,label:'Oil Rig'},'miner.refinery':{x:81,y:44,label:'Refinery'},
+    'miner.enhanced_crusher_smelter':{x:57,y:62,label:'Smelter'}},
+  Farmer: {'farmer.tractor':{x:50,y:52,label:'Tractor'},'farmer.fishing_boat':{x:24,y:67,label:'Fishing Boat'},
+    'farmer.harvester':{x:64,y:46,label:'Harvester'},'farmer.livestock_barn':{x:38,y:40,label:'Barn'},
+    'farmer.storage_building':{x:72,y:38,label:'Storage'},'farmer.industrial_kitchen':{x:56,y:60,label:'Kitchen'},
+    'common.kitchen':{x:56,y:60,label:'Kitchen'},'common.industrial_kitchen':{x:56,y:60,label:'Kitchen'}},
+  Transporter: {'transporter.cargo_ship':{x:50,y:63,label:'Cargo Ship'},'transporter.cargo_plane':{x:30,y:34,label:'Cargo Plane'},
+    'transporter.passenger_liner':{x:68,y:58,label:'Liner'},'transporter.passenger_plane':{x:42,y:30,label:'Passenger Plane'}},
+  Educator: {'educator.lecture_hall':{x:42,y:46,label:'Lecture Hall'},'educator.library':{x:60,y:42,label:'Library'},
+    'educator.research_lab':{x:73,y:52,label:'Research Lab'},'educator.computer_cluster':{x:30,y:52,label:'Computers'},
+    'educator.technical_workshop':{x:52,y:61,label:'Workshop'}},
+  Banker: {'banker.vault':{x:44,y:48,label:'Vault'},'banker.trading_floor':{x:60,y:42,label:'Trading Floor'},
+    'banker.underwriting_desk':{x:30,y:52,label:'Underwriting'},'banker.reinsurance_treaty':{x:73,y:50,label:'Reinsurance'}},
+  Manufacturer: {'manufacturer.assembly_line':{x:46,y:50,label:'Assembly Line'},'manufacturer.foundry':{x:30,y:44,label:'Foundry'},
+    'manufacturer.precision_workshop':{x:64,y:46,label:'Precision Shop'},'manufacturer.shipyard':{x:73,y:61,label:'Shipyard'}},
+  Doctor: {'doctor.hospital_ward':{x:46,y:46,label:'Hospital Ward'},'doctor.operating_theatre':{x:60,y:42,label:'Operating Theatre'},
+    'doctor.vaccine_lab':{x:73,y:52,label:'Vaccine Lab'},'doctor.reagent_lab':{x:30,y:52,label:'Reagent Lab'},
+    'doctor.cold_chain_storage':{x:52,y:62,label:'Cold Chain'}},
+};
+
+function renderHeroPins(role, me) {
+  const wrap = document.getElementById('hero-pins');
+  if (!wrap) return;
+  const anchors = (role && ROLE_PIN_ANCHORS[role]) || {};
+  const owned = (me && me.capacity && me.capacity.capital_owned) || [];
+  wrap.innerHTML = owned.map(it => {
+    const a = anchors[it.item_id];
+    if (!a) return '';
+    const failed = (it.failed || 0) > 0;
+    const lab = a.label + (it.count > 1 ? ` ×${it.count}` : '') + (failed ? ' — failed' : '');
+    return `<div class="pin${failed ? ' failed' : ''}" style="left:${a.x}%;top:${a.y}%" title="${esc(lab)}">`
+      + `<div class="pdot"></div><div class="plab">${esc(lab)}</div></div>`;
+  }).join('');
+}
+
+function applyHeroDisruption(heroEl, me) {
+  const chip = document.getElementById('hero-fxchip');
+  let disrupted = false, text = '';
+  const events = _lastSeasonEvents && _lastSeasonEvents.events;
+  if (events && me) {
+    const ev = Object.values(events).find(e => e.player_name === me.name);
+    if (ev) {
+      if (ev.outage) { disrupted = true; text = '⚡ Outage'; }
+      else if (ev.natural_disaster) { disrupted = true; text = '⛈ Disaster'; }
+      else if (typeof ev.yield_modifier === 'number' && ev.yield_modifier < 0.5) {
+        disrupted = true; text = `⚠ Yield ${Math.round(ev.yield_modifier * 100)}%`;
+      }
+    }
+  }
+  if (heroEl) heroEl.classList.toggle('ih-disrupted', disrupted);
+  if (chip) chip.textContent = disrupted ? text : '';
+}
+
+// UI v3 phase 2: the cinematic island hero banner crowning the left column.
+// Reuses ROLE_ART + day/night; mirrors the live name/role/season + a couple
+// of at-a-glance stats over the render.
+function updateIslandHero(name, roleLabel, season, me, role) {
+  const sec = document.querySelector('.island-hero-sec');
+  if (!sec) return;
+  const art = role && ROLE_ART[role];
+  if (!art) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const mode = artTimeOfDay(season);
+  const url = art[mode] || art.day || art.night;
+  const img = document.getElementById('hero-art');
+  if (img && img.getAttribute('src') !== url) img.src = url;
+  const ROLE_EMOJI = {Farmer:'🌾',Miner:'⛏',Transporter:'🚢',Educator:'🎓',Banker:'🏦',Manufacturer:'🏭',Doctor:'⚕'};
+  document.getElementById('hero-name').textContent = name || '';
+  const emoji = ROLE_EMOJI[roleLabel] ? ROLE_EMOJI[roleLabel] + ' ' : '';
+  document.getElementById('hero-role').textContent = emoji + (roleLabel || '');
+  document.getElementById('hero-tag').innerHTML =
+    `<span>${mode === 'night' ? '🌙 Night' : '☀ Day'}</span>` +
+    (season ? `<span>${esc(season)}</span>` : '');
+  const chips = document.getElementById('hero-chips');
+  if (chips && me) {
+    chips.innerHTML =
+      `<div class="c"><div class="k">Workers</div><div class="v">${me.workforce_active}/${me.workforce_count}</div></div>` +
+      `<div class="c"><div class="k">Capacity</div><div class="v">${me.production_capacity}%</div></div>`;
+  }
+  // phase 3 live overlay: season tint, equipment pins, disaster FX
+  const heroEl = document.getElementById('island-hero');
+  if (heroEl) heroEl.setAttribute('data-season', season || '');
+  renderHeroPins(role, me);
+  applyHeroDisruption(heroEl, me);
 }
 
 function updateMainIslandArt(tabRole, roles, season) {

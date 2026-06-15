@@ -5,6 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/ui-v3-phase3-live-overlay — visual redesign phase 3: live island overlay
+
+Version bump: `0.1.5-dev.2026-06-15.3`
+
+Stacks on phase 2. Makes the island hero *react to live game state* with three
+composited overlay layers:
+
+- **Equipment pins** — glowing markers placed over the render for the capital
+  the island actually owns (from `capacity.capital_owned`), anchored per role
+  by `item_id`; failed equipment shows a red pin, and each pin reveals its name
+  (and count) on hover.
+- **Disaster FX** — when the player's island is under an outage / natural
+  disaster / heavy yield hit this season (read from `season_events`), the hero
+  gets a flickering red vignette and a condition chip.
+- **Season tint** — a soft seasonal colour wash (spring/summer/autumn/winter)
+  over the render.
+
+All three respect the reduce-effects toggle (tint hidden, flicker/pulse stilled).
+Pin anchor positions are eyeballed per render and can be fine-tuned later
+without touching logic. Phase 4 (Build & Develop panel) is still to come.
+
+### claude/ui-v3-phase2-island-hero — visual redesign phase 2: cinematic island hero
+
+Version bump: `0.1.5-dev.2026-06-15.2`
+
+Stacks on phase 1. Promotes the island artwork from a 34%-opacity background
+wash to a **cinematic hero banner** crowning the "your island" column: the
+role's day/night render with a gradient scrim, the island name + role (with
+icon), a day/night + season tag, and at-a-glance Workers / Capacity chips
+overlaid. Reuses the existing `ROLE_ART` map and day/night selection — no new
+assets. The hero is a normal tile (hideable from ▦ Layout); the action area is
+untouched. Live overlay (built-equipment pins, weather FX) and the Build &
+Develop panel are still later phases.
+
 ### claude/ui-v3-dark-prestige — visual redesign phase 1: theme shell
 
 Version bump: `0.1.5-dev.2026-06-15.1`
