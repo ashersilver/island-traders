@@ -5,6 +5,24 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/correctness-balance-154-155 — training accounting + calibration
+
+Version bump: `0.1.5-dev.2026-06-15.4`
+
+Fixes the `in_training` flag leak and retunes the corrected economy.
+
+- Separates one-season workplace injury absence from true university training,
+  so injuries no longer appear as "in training" or permanently deflate active
+  worker counts.
+- Reconciles workforce `in_training` flags against dispatched training batches,
+  clearing orphaned flags and repairing missing dispatched flags before returns.
+- Personnel summaries now group in-training workers by target profession, so the
+  staffing table agrees with the training pipeline.
+- Calibration adds earmarked household vouchers for Courses and Goods, trims
+  Ore/Oil/Metal administered prices, and nudges Finance up while trimming
+  HealthServices/Vaccine. The 1000-game seed-42 run moved role wins into the
+  target band and eased money-supply contraction from -39.0% to -29.6%.
+
 ### claude/ui-v3-phase3-live-overlay — visual redesign phase 3: live island overlay
 
 Version bump: `0.1.5-dev.2026-06-15.3`

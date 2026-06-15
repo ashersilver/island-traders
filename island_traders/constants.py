@@ -3,7 +3,7 @@
 # so playtesters can quote a version when reporting bugs.  Bump on each
 # pre-release merge that's worth marking; mirror in pyproject.toml when
 # tagging a release.
-APP_VERSION: str = "0.1.5-dev.2026-06-15.3"
+APP_VERSION: str = "0.1.5-dev.2026-06-15.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -107,9 +107,9 @@ BASE_PRICES: dict[str, float] = {
     "Grain":               10.0,
     "Produce":             12.0,
     "Meat":                16.2,
-    "Ore":                  5.0,
-    "Metal":                9.0,
-    "Oil":                  6.0,
+    "Ore":                  4.5,
+    "Metal":                8.0,
+    "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
@@ -118,9 +118,9 @@ BASE_PRICES: dict[str, float] = {
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
     "Goods":               40.0,
-    "HealthServices":      30.0,
-    "Vaccine":             35.0,
-    "Finance":             20.0,
+    "HealthServices":      28.5,
+    "Vaccine":             33.5,
+    "Finance":             22.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
     "MiningEquipment":     70.0,   # installs as miner.excavator capital
@@ -300,6 +300,7 @@ CONSUMER_GOODS_BASE_UNITS_PER_100_POP: int = 1
 CONSUMER_FOOD_BASE_UNITS_PER_100_POP: int = 1
 CONSUMER_GOODS_WEALTH_STEP_DOLLOPS: float = 1200.0
 CONSUMER_GOODS_WEALTH_STEP_UNITS: int = 1
+CONSUMER_GOODS_VOUCHER_PER_UNIT: float = 20.0
 CONSUMER_STRUCTURAL_ADVISORY_WEIGHT: float = 0.4
 CONSUMER_HEALTH_BASE_SEASONAL_UNITS: dict[str, int] = {
     "Summer": 1,
@@ -309,6 +310,13 @@ CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
 CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
     "Autumn": 1,
 }
+CONSUMER_EDUCATION_SEASONAL_UNITS: dict[str, int] = {
+    "Spring": 1,
+    "Summer": 1,
+    "Autumn": 1,
+    "Winter": 1,
+}
+CONSUMER_EDUCATION_VOUCHER_PER_UNIT: float = 20.0
 HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
 CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
 

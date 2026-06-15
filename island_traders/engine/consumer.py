@@ -9,6 +9,7 @@ from ..constants import (
     CONSUMER_GOODS_BASE_UNITS_PER_100_POP,
     CONSUMER_GOODS_WEALTH_STEP_DOLLOPS,
     CONSUMER_GOODS_WEALTH_STEP_UNITS,
+    CONSUMER_EDUCATION_SEASONAL_UNITS,
     CONSUMER_HEALTH_BASE_SEASONAL_UNITS,
     CONSUMER_HEALTH_CASUALTY_UNITS,
     CONSUMER_VACCINE_SEASONAL_UNITS,
@@ -63,6 +64,11 @@ def consumer_demand_plan(
         vaccine_units *= population_units
         if vaccine_units > 0:
             units[ResourceType.VACCINE] = vaccine_units
+
+        education_units = CONSUMER_EDUCATION_SEASONAL_UNITS.get(season_name, 0)
+        education_units *= population_units
+        if education_units > 0:
+            units[ResourceType.COURSES] = education_units
     return ConsumerDemandPlan(units=units)
 
 
