@@ -7,9 +7,10 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/correctness-balance-154-155 — training accounting + calibration
 
-Version bump: `0.1.5-dev.2026-06-15.4`
+Version bump: `0.1.5-dev.2026-06-15.5` (was `.4` on the branch; reconciled to the
+next `.N` because UI v3 phase 4 took `.4` on `pre-release` first)
 
-Fixes the `in_training` flag leak and retunes the corrected economy.
+Fixes the `in_training` flag leak (#154) and retunes the corrected economy (#155).
 
 - Separates one-season workplace injury absence from true university training,
   so injuries no longer appear as "in training" or permanently deflate active
@@ -22,6 +23,21 @@ Fixes the `in_training` flag leak and retunes the corrected economy.
   Ore/Oil/Metal administered prices, and nudges Finance up while trimming
   HealthServices/Vaccine. The 1000-game seed-42 run moved role wins into the
   target band and eased money-supply contraction from -39.0% to -29.6%.
+
+### claude/ui-v3-phase4-build-develop — visual redesign phase 4: Build & Develop panel
+
+Version bump: `0.1.5-dev.2026-06-15.4`
+
+Final phase of the UI v3 redesign. Adds a persistent **Build & Develop** tile
+to the island column: the role's full capital catalogue split into **Built**
+(owned equipment, with count; failed units flagged red) and **Available**
+(buildable items with cost, delivery time, cash-only / requires-equipment, and
+a "Required" badge for mandatory capital). A header **＋ Build…** button
+launches the existing Purchase Equipment action. The catalogue comes from a new
+`capacity.capital_catalogue` payload field (role items + owned/failed/mandatory
+from `CAPITAL_CATALOGUE` + `MANDATORY_MINIMUM_INVESTMENT`); no new game
+mechanics — it's a richer front door to the equipment the engine already
+models, and it pairs with the hero's equipment pins from phase 3.
 
 ### claude/ui-v3-phase3-live-overlay — visual redesign phase 3: live island overlay
 
