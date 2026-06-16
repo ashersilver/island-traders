@@ -122,6 +122,32 @@ def test_interrupt_all_unblocks_every_pending_prompt():
     assert sorted(results) == [(0, None), (1, None), (2, None)]
 
 
+def test_default_prompt_wait_has_no_hidden_five_minute_timeout():
+    """Online prompts should be governed by the season timer, not a shorter
+    adapter timeout. Explicit timeout=... is still available for tests.
+    """
+    io = WebSocketIOAdapter(
+        "g2a", broadcast_fn=lambda m: None, player_send_fns={0: lambda m: None},
+    )
+    io.begin_season()
+
+    result = {}
+
+    def waiter():
+        io.set_active_player(0)
+        result["value"] = io._send_and_wait({"type": "choose_action"})
+
+    t = threading.Thread(target=waiter, daemon=True)
+    t.start()
+    time.sleep(0.35)
+
+    assert result == {}
+
+    io.interrupt_all()
+    t.join(timeout=1)
+    assert result["value"] is None
+
+
 def test_interrupted_confirm_cancels_instead_of_accepting():
     io = WebSocketIOAdapter(
         "g2b", broadcast_fn=lambda m: None, player_send_fns={0: lambda m: None},

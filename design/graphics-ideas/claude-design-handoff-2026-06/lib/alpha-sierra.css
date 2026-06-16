@@ -1,0 +1,313 @@
+/* ============================================================
+   ALPHA SIERRA CONSULTING — Design Tokens
+   colors_and_type.css
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ============================================================
+   COLOR TOKENS — Base Palette
+   ============================================================ */
+:root {
+  /* Primary Earthy Palette */
+  --c-sienna:        #C4603C;  /* Burnt Sienna — primary brand accent */
+  --c-sienna-dark:   #A84028;  /* Rust — darker sienna, hover states */
+  --c-sienna-light:  #D9836A;  /* Light Sienna — tint */
+  --c-sienna-subtle: #F5E6DF;  /* Sienna Wash — very light bg tint */
+
+  --c-raw:           #C8872A;  /* Raw Sienna — secondary warm accent */
+  --c-raw-dark:      #A86A18;  /* Raw Dark */
+  --c-raw-light:     #DBA84E;  /* Raw Light */
+  --c-raw-subtle:    #F7EDD8;  /* Raw Wash */
+
+  /* Neutrals */
+  --c-ink:           #1C1410;  /* Brown-Black Ink — primary text */
+  --c-ink-60:        rgba(28,20,16,0.6);
+  --c-ink-30:        rgba(28,20,16,0.3);
+  --c-ink-10:        rgba(28,20,16,0.1);
+
+  --c-earth:         #7A4A2C;  /* Deep Earth — mid brown */
+  --c-earth-light:   #A06A4A;  /* Earth Light */
+
+  --c-silver:        #9E9B94;  /* Warm Silver */
+  --c-silver-light:  #D4D0C8;  /* Silver Mist — borders */
+  --c-silver-subtle: #EDEBE6;  /* Silver Whisper — subtle bg */
+
+  --c-cream:         #F5EFE6;  /* Parchment — default light bg */
+  --c-white:         #FDFBF8;  /* Warm White */
+
+  /* ============================================================
+     SEMANTIC COLOR TOKENS
+     ============================================================ */
+  --color-bg:              var(--c-white);
+  --color-bg-alt:          var(--c-cream);
+  --color-bg-dark:         var(--c-ink);
+  --color-bg-accent:       var(--c-sienna);
+  --color-bg-accent-warm:  var(--c-raw);
+
+  --color-text:            var(--c-ink);
+  --color-text-secondary:  var(--c-earth);
+  --color-text-muted:      var(--c-silver);
+  --color-text-on-dark:    var(--c-cream);
+  --color-text-on-accent:  var(--c-white);
+
+  --color-border:          var(--c-silver-light);
+  --color-border-strong:   var(--c-silver);
+  --color-border-accent:   var(--c-sienna);
+
+  --color-link:            var(--c-sienna);
+  --color-link-hover:      var(--c-sienna-dark);
+
+  --color-primary:         var(--c-sienna);
+  --color-primary-hover:   var(--c-sienna-dark);
+  --color-secondary:       var(--c-raw);
+  --color-secondary-hover: var(--c-raw-dark);
+
+  /* Status */
+  --color-success:  #4A7C59;
+  --color-warning:  var(--c-raw);
+  --color-error:    #A83228;
+  --color-info:     #4A6E8C;
+
+  /* ============================================================
+     TYPOGRAPHY TOKENS
+     ============================================================ */
+  --font-display: 'Spectral', Georgia, 'Times New Roman', serif;
+  --font-body:    'DM Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:    'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+
+  /* Type Scale — Major Third (1.25×) from 16px base */
+  --text-xs:   0.64rem;   /* 10.24px */
+  --text-sm:   0.8rem;    /* 12.8px */
+  --text-base: 1rem;      /* 16px */
+  --text-md:   1.25rem;   /* 20px */
+  --text-lg:   1.563rem;  /* 25px */
+  --text-xl:   1.953rem;  /* 31.25px */
+  --text-2xl:  2.441rem;  /* 39px */
+  --text-3xl:  3.052rem;  /* 48.8px */
+  --text-4xl:  3.815rem;  /* 61px */
+  --text-5xl:  4.768rem;  /* 76.3px */
+
+  /* Font Weights */
+  --weight-light:    300;
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* Line Heights */
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.7;
+
+  /* Letter Spacing */
+  --tracking-tight:  -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide:   0.04em;
+  --tracking-wider:  0.08em;
+  --tracking-caps:   0.12em;
+
+  /* ============================================================
+     SPACING TOKENS — 8px base unit
+     ============================================================ */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  /* ============================================================
+     BORDER RADIUS
+     ============================================================ */
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --radius-full: 9999px;
+
+  /* ============================================================
+     SHADOWS
+     ============================================================ */
+  --shadow-sm:  0 1px 3px rgba(28,20,16,0.08);
+  --shadow-md:  0 2px 8px rgba(28,20,16,0.10);
+  --shadow-lg:  0 8px 24px rgba(28,20,16,0.12);
+  --shadow-xl:  0 16px 48px rgba(28,20,16,0.15);
+  --shadow-inset: inset 0 1px 3px rgba(28,20,16,0.08);
+
+  /* ============================================================
+     ANIMATION
+     ============================================================ */
+  --ease-standard:  cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in:        cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:       cubic-bezier(0, 0, 0.2, 1);
+
+  --duration-fast:    150ms;
+  --duration-base:    200ms;
+  --duration-slow:    350ms;
+  --duration-slower:  500ms;
+
+  /* ============================================================
+     LAYOUT
+     ============================================================ */
+  --max-width:     1200px;
+  --max-width-sm:  640px;
+  --max-width-md:  768px;
+  --max-width-lg:  1024px;
+  --grid-columns:  12;
+  --grid-gutter:   24px;
+}
+
+/* ============================================================
+   SEMANTIC ELEMENT STYLES
+   ============================================================ */
+
+/* Apply to :root or body */
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-size: var(--text-4xl);
+  font-weight: var(--weight-light);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--color-text);
+}
+
+h2, .h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-light);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+h3, .h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+}
+
+h4, .h4 {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
+}
+
+h5, .h5 {
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-wide);
+}
+
+h6, .h6 {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+p {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text);
+}
+
+.lead {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-light);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.caption {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  letter-spacing: var(--tracking-wide);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.overline {
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--c-sienna);
+}
+
+blockquote, .blockquote {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-light);
+  font-style: italic;
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-secondary);
+  border-left: 3px solid var(--c-sienna);
+  padding-left: var(--space-6);
+  margin: var(--space-8) 0;
+}
+
+code, .code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--c-silver-subtle);
+  color: var(--c-earth);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+}
+
+pre, .pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  background: var(--c-ink);
+  color: var(--c-cream);
+  padding: var(--space-6);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  line-height: var(--leading-relaxed);
+}
+
+a {
+  color: var(--color-link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color var(--duration-base) var(--ease-standard),
+              border-color var(--duration-base) var(--ease-standard);
+}
+
+a:hover {
+  color: var(--color-link-hover);
+  border-bottom-color: currentColor;
+}

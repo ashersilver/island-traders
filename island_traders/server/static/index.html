@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Island Traders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:      #070f1e;
@@ -745,6 +748,157 @@ button:active{transform:scale(.97)}
 .depflow-lbl{font-family:inherit;font-size:12px;fill:var(--heading,#e8eaf6);font-weight:600}
 .depflow-res{font-family:inherit;font-size:10px;fill:var(--gold,#e7c05d)}
 .depflow-arrow{fill:none;stroke-width:1.5;marker-end:url(#arrowhead)}
+
+/* ============================================================
+   UI v3 — "dark prestige" theme shell (phase 1).
+   Appended last so it layers over the base styles. Scoped to the
+   default (dark) theme via :root:not([data-theme="day"]) so the
+   Bright Lagoon day theme keeps its existing solid styling.
+   Structure/behaviour unchanged — purely visual. A body.fx-off
+   class (reduce-effects toggle) drops blur/glow for long sessions.
+   ============================================================ */
+:root:not([data-theme="day"]){
+  --bg:#05080f; --panel:#0c1726; --panel2:#11203455; --border:#24364f;
+  --text:#c2d2e6; --heading:#f0f6ff; --accent:#22d3ee; --gold:#f6b93b;
+  --green:#34e0a1; --red:#ff5d6c; --dim:#6a809b; --radius:14px;
+  --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.07);
+  --stroke:rgba(255,255,255,.09); --stroke-2:rgba(255,255,255,.16);
+}
+:root:not([data-theme="day"]) body{
+  font-family:'Sora',system-ui,-apple-system,sans-serif;
+  background:
+    radial-gradient(1100px 640px at 12% -8%, rgba(34,211,238,.13), transparent 60%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(246,185,59,.12), transparent 55%),
+    radial-gradient(900px 760px at 50% 124%, rgba(80,120,255,.10), transparent 60%),
+    linear-gradient(180deg,#070d18,#05080f 60%,#04060c);
+  background-attachment:fixed;
+}
+:root:not([data-theme="day"]) body.fx-off{background:#070d18}
+
+/* glass columns + header */
+:root:not([data-theme="day"]) .g-hdr{
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+  border-bottom:1px solid var(--stroke);backdrop-filter:blur(14px);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset;
+}
+:root:not([data-theme="day"]) .g-side,
+:root:not([data-theme="day"]) .g-info{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  backdrop-filter:blur(10px);border-color:var(--stroke);
+}
+:root:not([data-theme="day"]) .g-main{background:transparent}
+:root:not([data-theme="day"]) .g-log{
+  background:rgba(3,7,13,.66);border-top:1px solid var(--stroke);backdrop-filter:blur(8px);
+}
+body.fx-off .g-hdr,body.fx-off .g-side,body.fx-off .g-info,body.fx-off .g-log{backdrop-filter:none}
+
+/* every panel becomes a glass card */
+:root:not([data-theme="day"]) .section{
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--stroke);border-radius:var(--radius);
+  padding:.7rem .8rem;margin-bottom:.7rem;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -32px #000;
+}
+:root:not([data-theme="day"]) .section h3{
+  font-family:'Sora',sans-serif;color:var(--dim);font-weight:600;
+  letter-spacing:.12em;border-bottom:1px solid var(--stroke);
+}
+:root:not([data-theme="day"]) .stat{padding:.2rem 0}
+:root:not([data-theme="day"]) .stat .val{color:var(--heading)}
+
+/* tabular-mono numerals for the figures that matter */
+:root:not([data-theme="day"]) .stat .val,
+:root:not([data-theme="day"]) .comp-table td,
+:root:not([data-theme="day"]) .g-hdr .wealth,
+:root:not([data-theme="day"]) #s-networth,
+:root:not([data-theme="day"]) #s-dollops,
+:root:not([data-theme="day"]) #s-personal-cash{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;
+}
+
+/* net-worth hero in the header */
+:root:not([data-theme="day"]) .g-hdr .wealth{
+  color:var(--gold);font-weight:600;font-size:1.18rem;letter-spacing:.01em;
+  text-shadow:0 0 22px rgba(246,185,59,.45);
+}
+body.fx-off .g-hdr .wealth{text-shadow:none}
+
+/* refine the tile control + buttons to match */
+:root:not([data-theme="day"]) .btn-gold{
+  box-shadow:0 0 22px -8px rgba(246,185,59,.7);
+}
+:root:not([data-theme="day"]) .market-board .icon-btn:hover,
+:root:not([data-theme="day"]) .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---- UI v3 phase 2: cinematic island hero (left column crown) ---- */
+.island-hero-sec{padding:0!important;overflow:hidden}
+.island-hero{position:relative;height:188px;border-radius:inherit;overflow:hidden}
+.island-hero .ih-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  transition:transform .6s ease}
+.island-hero:hover .ih-art{transform:scale(1.04)}
+body.fx-off .island-hero .ih-art{transition:none}
+body.fx-off .island-hero:hover .ih-art{transform:none}
+.island-hero .ih-scrim{position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(5,8,15,.12) 0,transparent 30%,rgba(5,8,15,.5) 70%,rgba(5,8,15,.94) 100%)}
+.island-hero .ih-tag{position:absolute;top:9px;left:9px;display:flex;gap:6px;font-size:10px}
+.island-hero .ih-tag span{padding:3px 8px;border-radius:999px;background:rgba(8,14,24,.6);
+  border:1px solid rgba(255,255,255,.18);color:#ffd98a;backdrop-filter:blur(6px);white-space:nowrap}
+body.fx-off .island-hero .ih-tag span,
+body.fx-off .island-hero .ih-chips .c{backdrop-filter:none}
+.island-hero .ih-meta{position:absolute;left:11px;right:10px;bottom:9px;display:flex;align-items:flex-end;gap:8px}
+.island-hero .ih-text{flex:1;min-width:0}
+.island-hero .ih-role{font-size:10.5px;color:#ffd98a;text-shadow:0 1px 8px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.island-hero .ih-name{font-size:15.5px;font-weight:600;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);line-height:1.15}
+.island-hero .ih-chips{display:flex;gap:6px;flex-shrink:0}
+.island-hero .ih-chips .c{padding:5px 8px;border-radius:10px;background:rgba(8,14,24,.55);
+  border:1px solid rgba(255,255,255,.18);text-align:center;backdrop-filter:blur(6px)}
+.island-hero .ih-chips .c .k{font-size:8px;letter-spacing:.4px;text-transform:uppercase;color:#9fb2c9}
+.island-hero .ih-chips .c .v{font-size:12.5px;font-weight:600;color:#eef5ff;font-family:'IBM Plex Mono',ui-monospace,monospace}
+
+/* ---- UI v3 phase 3: live overlay (season tint, disaster FX, equipment pins) ---- */
+.island-hero .ih-tint{position:absolute;inset:0;pointer-events:none;mix-blend-mode:soft-light;opacity:.85;transition:background .5s}
+.island-hero[data-season="Spring"] .ih-tint{background:linear-gradient(180deg,rgba(120,230,150,.30),transparent 72%)}
+.island-hero[data-season="Summer"] .ih-tint{background:linear-gradient(180deg,rgba(255,200,90,.32),transparent 72%)}
+.island-hero[data-season="Autumn"] .ih-tint{background:linear-gradient(180deg,rgba(232,128,56,.34),transparent 72%)}
+.island-hero[data-season="Winter"] .ih-tint{background:linear-gradient(180deg,rgba(120,180,255,.30),transparent 72%)}
+body.fx-off .island-hero .ih-tint{display:none}
+.island-hero .ih-fx{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s}
+.island-hero.ih-disrupted .ih-fx{opacity:1;box-shadow:inset 0 0 70px rgba(255,60,80,.55);animation:heroflicker 3.6s infinite}
+@keyframes heroflicker{0%,100%{opacity:.85}45%{opacity:1}48%{opacity:.55}52%{opacity:.95}}
+body.fx-off .island-hero.ih-disrupted .ih-fx{animation:none;opacity:.6}
+.island-hero .ih-fxchip{position:absolute;top:9px;right:9px;z-index:7;display:none;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;color:#ffd2d6;
+  background:rgba(40,10,14,.7);border:1px solid rgba(255,93,108,.55);backdrop-filter:blur(6px)}
+.island-hero.ih-disrupted .ih-fxchip{display:flex}
+body.fx-off .island-hero .ih-fxchip{backdrop-filter:none}
+.island-hero .ih-pins{position:absolute;inset:0;pointer-events:none}
+.ih-pins .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto}
+.ih-pins .pdot{width:11px;height:11px;border-radius:50%;border:1.5px solid #fff;margin:auto;
+  background:radial-gradient(circle at 35% 30%,#ffd98a,#f6b93b);
+  box-shadow:0 0 0 3px rgba(246,185,59,.22),0 0 12px rgba(246,185,59,.85);animation:pinpulse 5s ease-in-out infinite}
+.ih-pins .pin.failed .pdot{background:radial-gradient(circle at 35% 30%,#ff9aa2,#ff5d6c);
+  box-shadow:0 0 0 3px rgba(255,93,108,.22),0 0 12px rgba(255,93,108,.85)}
+body.fx-off .ih-pins .pdot{animation:none}
+@keyframes pinpulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.ih-pins .plab{position:absolute;left:50%;bottom:150%;transform:translateX(-50%);white-space:nowrap;
+  font-size:10px;font-weight:600;color:#fff;background:rgba(8,14,24,.88);border:1px solid rgba(255,255,255,.2);
+  border-radius:7px;padding:2px 7px;opacity:0;transition:opacity .15s;pointer-events:none;text-shadow:0 1px 4px #000}
+.ih-pins .pin:hover .plab{opacity:1}
+
+/* ---- UI v3 phase 4: Build & Develop panel ---- */
+.bd-head{font-size:.64rem;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);margin:.5rem 0 .15rem;font-weight:600}
+.bd-head:first-child{margin-top:0}
+.bd-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.05)}
+.bd-row .bx{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex-shrink:0}
+.bd-row.owned .bx{background:rgba(52,224,161,.16);border:1px solid rgba(52,224,161,.4);color:var(--green)}
+.bd-row.owned.failed .bx{background:rgba(255,93,108,.16);border:1px solid rgba(255,93,108,.45);color:var(--red)}
+.bd-row.avail .bx{background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.28);color:var(--dim)}
+.bd-row .bd-body{flex:1;min-width:0}
+.bd-row .bd-name{font-size:.8rem;color:var(--heading);font-weight:500;display:flex;align-items:center;gap:6px}
+.bd-row.owned.failed .bd-name{color:#ffb3ba}
+.bd-row .bd-sub{font-size:.68rem;color:var(--dim)}
+.bd-row .bd-req{font-size:.58rem;font-weight:600;letter-spacing:.3px;padding:1px 5px;border-radius:5px;background:rgba(246,185,59,.16);color:#ffd98a;border:1px solid rgba(246,185,59,.35)}
+.bd-row .bd-cost{font-size:.74rem;font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',ui-monospace,monospace;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -1104,6 +1258,9 @@ button:active{transform:scale(.97)}
             <div class="lp-row" onclick="togglePanel('info')"><input type="checkbox" id="lp-info" onclick="event.stopPropagation()"> Right info</div>
             <div class="lp-row" onclick="togglePanel('log')"><input type="checkbox" id="lp-log" onclick="event.stopPropagation()"> Game log</div>
             <div class="lp-sep"></div>
+            <div class="lp-head">Display</div>
+            <div class="lp-row" onclick="toggleReduceEffects()"><input type="checkbox" id="lp-fx" onclick="event.stopPropagation();toggleReduceEffects()"> Reduce effects (blur &amp; glow)</div>
+            <div class="lp-sep"></div>
             <div class="lp-head">Tiles</div>
             <div id="lp-tiles"></div>
           </div>
@@ -1139,6 +1296,24 @@ button:active{transform:scale(.97)}
     </div>
 
     <div class="g-side">
+      <div class="section island-hero-sec" data-tile="hero" data-tile-label="Island hero" style="display:none">
+        <div class="island-hero" id="island-hero">
+          <img class="ih-art" id="hero-art" alt="" decoding="async">
+          <div class="ih-tint"></div>
+          <div class="ih-scrim"></div>
+          <div class="ih-fx"></div>
+          <div class="ih-pins" id="hero-pins"></div>
+          <div class="ih-tag" id="hero-tag"></div>
+          <div class="ih-fxchip" id="hero-fxchip"></div>
+          <div class="ih-meta">
+            <div class="ih-text">
+              <div class="ih-role" id="hero-role"></div>
+              <div class="ih-name" id="hero-name"></div>
+            </div>
+            <div class="ih-chips" id="hero-chips"></div>
+          </div>
+        </div>
+      </div>
       <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
       <div class="section" data-tile="status" data-tile-label="Island status">
         <h3><span id="tab-island-name">My Island</span></h3>
@@ -1195,6 +1370,15 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
+      </div>
+      <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          🏗 Build &amp; Develop
+          <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
+                  onclick="sendResponse('purchase_capital')"
+                  title="Buy capital equipment (available on your turn)">＋ Build…</button>
+        </h3>
+        <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
       </div>
       <div class="section" data-tile="insurance" data-tile-label="Insurance">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -1516,6 +1700,22 @@ function parseQuickSeat() {
   if (!isCreate && !isJoin) return null;
   const roomName = p.get('room') || p.get('join') || code || '';
   if (!roomName) return null;
+  // TEST/DEBUG: start<resource>=N seeds opening inventory for the role being
+  // taken (e.g. startfood=200 → Farmer starts with 200 Food). `startrole`
+  // overrides the keyed role; defaults to the bid `role`, else Farmer. Note we
+  // must exclude `startcapital`/`startrole`, which also begin with "start".
+  const debugInv = (() => {
+    const role = p.get('startrole') || p.get('role') || 'Farmer';
+    const RESERVED = new Set(['startrole', 'startcapital']);
+    const inv = {};
+    for (const [key, val] of p.entries()) {
+      const m = /^start(.+)$/i.exec(key);
+      if (!m || RESERVED.has(key.toLowerCase())) continue;
+      const qty = parseInt(val, 10);
+      if (Number.isFinite(qty) && qty > 0) inv[m[1]] = qty;
+    }
+    return Object.keys(inv).length ? { [role]: inv } : null;
+  })();
   return {
     mode: isCreate ? 'create' : 'join',
     roomName,
@@ -1527,6 +1727,7 @@ function parseQuickSeat() {
     invest: p.get('invest') || null,
     capital: p.get('startcapital') ? parseFloat(p.get('startcapital')) : null,
     season: p.get('season') ? parseInt(p.get('season'), 10) : null,
+    debugInv,
     bidPlaced: false,
     investDone: false,
   };
@@ -1578,6 +1779,7 @@ async function quickSeatStart() {
       };
       if (quickSeat.capital != null) body.starting_capital = quickSeat.capital;
       if (quickSeat.season != null) body.season_timer_seconds = quickSeat.season;
+      if (quickSeat.debugInv) body.debug_starting_inventory = quickSeat.debugInv;
       const room = await apiFetch('/api/rooms', 'POST', body);
       myPlayerId = room.players[0].player_id;
       rememberIdentity(quickSeat.name, room);
@@ -2424,6 +2626,46 @@ function roleShortName(role) {
 
 function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
+}
+
+// UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
+// the island can still build (from capacity.capital_catalogue). The header
+// "＋ Build…" button launches the existing Purchase Equipment action.
+function renderBuildDevelop(me) {
+  const el = document.getElementById('build-develop-list');
+  if (!el) return;
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  if (!cat.length) {
+    el.innerHTML = '<span style="color:var(--dim)">No buildable equipment for this island.</span>';
+    return;
+  }
+  const owned = cat.filter(c => c.owned > 0);
+  const avail = cat.filter(c => c.owned <= 0);
+  let html = '';
+  if (owned.length) {
+    html += '<div class="bd-head">Built</div>' + owned.map(c => {
+      const failed = c.failed > 0;
+      const sub = failed ? `${c.failed} failed — needs repair`
+        : (c.cash_only ? 'cash-only' : esc(c.role));
+      return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
+        <div class="bx">${failed ? '⚠' : '✓'}</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''}</div>
+          <div class="bd-sub">${sub}</div></div></div>`;
+    }).join('');
+  }
+  if (avail.length) {
+    html += '<div class="bd-head">Available</div>' + avail.map(c => {
+      const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+      const sub = (c.cash_only ? 'cash-only' : 'requires equipment') + ' · ' + arrival;
+      const req = c.mandatory ? '<span class="bd-req">Required</span>' : '';
+      return `<div class="bd-row avail" title="${esc(c.description || '')}">
+        <div class="bx">＋</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)} ${req}</div>
+          <div class="bd-sub">${sub}</div></div>
+        <div class="bd-cost">${c.cost} Dp</div></div>`;
+    }).join('');
+  }
+  el.innerHTML = html;
 }
 
 function renderCapacityPanel(capacity) {
@@ -3459,8 +3701,10 @@ function handleMessage(msg) {
       addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
       break;
     case 'season_events':
+      _lastSeasonEvents = msg;           // feed the hero's live disaster FX (phase 3)
       renderConditionsPanel(msg);
       maybeShowDisasterModal(msg);
+      if (gameState && myPlayerIdx !== null) renderGameState();
       break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
@@ -3565,6 +3809,9 @@ function renderGameState() {
 
   document.getElementById('tab-island-name').textContent = islandLabel;
   updateMainIslandArt(tabRole, roles, gameState.season);
+  const heroRole = (tabRole === 'ALL') ? (roles[0] || null) : tabRole;
+  const heroRoleLabel = isConsolidated ? displayRoles(roles) : heroRole;
+  updateIslandHero(islandLabel, heroRoleLabel, gameState.season, me, heroRole);
   document.getElementById('s-role').textContent = isConsolidated
     ? displayRoles(roles)
     : (roleDisplayName(tabRole) || '—');
@@ -3744,6 +3991,7 @@ function renderGameState() {
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+  renderBuildDevelop(me);
   renderDecisionHints(me, tabRole);
   renderFundingRates();
 
@@ -3887,6 +4135,102 @@ function renderTradeFinder() {
 
 function artTimeOfDay(season) {
   return (season === 'Autumn' || season === 'Winter') ? 'night' : 'day';
+}
+
+// UI v3 phase 3: live overlay state + helpers.
+// Last season_events message, so the hero can show a disaster FX layer.
+let _lastSeasonEvents = null;
+
+// Approximate pin anchor positions (x%, y%) over each role's render, keyed by
+// capital item_id.  Pins only appear for capital the island actually owns and
+// that has an anchor here; positions are eyeballed per render and can be
+// fine-tuned later without touching logic.
+const ROLE_PIN_ANCHORS = {
+  Miner: {'miner.excavator':{x:30,y:48,label:'Excavator'},'miner.crusher':{x:47,y:42,label:'Crusher'},
+    'miner.oil_rig':{x:70,y:55,label:'Oil Rig'},'miner.refinery':{x:81,y:44,label:'Refinery'},
+    'miner.enhanced_crusher_smelter':{x:57,y:62,label:'Smelter'}},
+  Farmer: {'farmer.tractor':{x:50,y:52,label:'Tractor'},'farmer.fishing_boat':{x:24,y:67,label:'Fishing Boat'},
+    'farmer.harvester':{x:64,y:46,label:'Harvester'},'farmer.livestock_barn':{x:38,y:40,label:'Barn'},
+    'farmer.storage_building':{x:72,y:38,label:'Storage'},'farmer.industrial_kitchen':{x:56,y:60,label:'Kitchen'},
+    'common.kitchen':{x:56,y:60,label:'Kitchen'},'common.industrial_kitchen':{x:56,y:60,label:'Kitchen'}},
+  Transporter: {'transporter.cargo_ship':{x:50,y:63,label:'Cargo Ship'},'transporter.cargo_plane':{x:30,y:34,label:'Cargo Plane'},
+    'transporter.passenger_liner':{x:68,y:58,label:'Liner'},'transporter.passenger_plane':{x:42,y:30,label:'Passenger Plane'}},
+  Educator: {'educator.lecture_hall':{x:42,y:46,label:'Lecture Hall'},'educator.library':{x:60,y:42,label:'Library'},
+    'educator.research_lab':{x:73,y:52,label:'Research Lab'},'educator.computer_cluster':{x:30,y:52,label:'Computers'},
+    'educator.technical_workshop':{x:52,y:61,label:'Workshop'}},
+  Banker: {'banker.vault':{x:44,y:48,label:'Vault'},'banker.trading_floor':{x:60,y:42,label:'Trading Floor'},
+    'banker.underwriting_desk':{x:30,y:52,label:'Underwriting'},'banker.reinsurance_treaty':{x:73,y:50,label:'Reinsurance'}},
+  Manufacturer: {'manufacturer.assembly_line':{x:46,y:50,label:'Assembly Line'},'manufacturer.foundry':{x:30,y:44,label:'Foundry'},
+    'manufacturer.precision_workshop':{x:64,y:46,label:'Precision Shop'},'manufacturer.shipyard':{x:73,y:61,label:'Shipyard'}},
+  Doctor: {'doctor.hospital_ward':{x:46,y:46,label:'Hospital Ward'},'doctor.operating_theatre':{x:60,y:42,label:'Operating Theatre'},
+    'doctor.vaccine_lab':{x:73,y:52,label:'Vaccine Lab'},'doctor.reagent_lab':{x:30,y:52,label:'Reagent Lab'},
+    'doctor.cold_chain_storage':{x:52,y:62,label:'Cold Chain'}},
+};
+
+function renderHeroPins(role, me) {
+  const wrap = document.getElementById('hero-pins');
+  if (!wrap) return;
+  const anchors = (role && ROLE_PIN_ANCHORS[role]) || {};
+  const owned = (me && me.capacity && me.capacity.capital_owned) || [];
+  wrap.innerHTML = owned.map(it => {
+    const a = anchors[it.item_id];
+    if (!a) return '';
+    const failed = (it.failed || 0) > 0;
+    const lab = a.label + (it.count > 1 ? ` ×${it.count}` : '') + (failed ? ' — failed' : '');
+    return `<div class="pin${failed ? ' failed' : ''}" style="left:${a.x}%;top:${a.y}%" title="${esc(lab)}">`
+      + `<div class="pdot"></div><div class="plab">${esc(lab)}</div></div>`;
+  }).join('');
+}
+
+function applyHeroDisruption(heroEl, me) {
+  const chip = document.getElementById('hero-fxchip');
+  let disrupted = false, text = '';
+  const events = _lastSeasonEvents && _lastSeasonEvents.events;
+  if (events && me) {
+    const ev = Object.values(events).find(e => e.player_name === me.name);
+    if (ev) {
+      if (ev.outage) { disrupted = true; text = '⚡ Outage'; }
+      else if (ev.natural_disaster) { disrupted = true; text = '⛈ Disaster'; }
+      else if (typeof ev.yield_modifier === 'number' && ev.yield_modifier < 0.5) {
+        disrupted = true; text = `⚠ Yield ${Math.round(ev.yield_modifier * 100)}%`;
+      }
+    }
+  }
+  if (heroEl) heroEl.classList.toggle('ih-disrupted', disrupted);
+  if (chip) chip.textContent = disrupted ? text : '';
+}
+
+// UI v3 phase 2: the cinematic island hero banner crowning the left column.
+// Reuses ROLE_ART + day/night; mirrors the live name/role/season + a couple
+// of at-a-glance stats over the render.
+function updateIslandHero(name, roleLabel, season, me, role) {
+  const sec = document.querySelector('.island-hero-sec');
+  if (!sec) return;
+  const art = role && ROLE_ART[role];
+  if (!art) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const mode = artTimeOfDay(season);
+  const url = art[mode] || art.day || art.night;
+  const img = document.getElementById('hero-art');
+  if (img && img.getAttribute('src') !== url) img.src = url;
+  const ROLE_EMOJI = {Farmer:'🌾',Miner:'⛏',Transporter:'🚢',Educator:'🎓',Banker:'🏦',Manufacturer:'🏭',Doctor:'⚕'};
+  document.getElementById('hero-name').textContent = name || '';
+  const emoji = ROLE_EMOJI[roleLabel] ? ROLE_EMOJI[roleLabel] + ' ' : '';
+  document.getElementById('hero-role').textContent = emoji + (roleLabel || '');
+  document.getElementById('hero-tag').innerHTML =
+    `<span>${mode === 'night' ? '🌙 Night' : '☀ Day'}</span>` +
+    (season ? `<span>${esc(season)}</span>` : '');
+  const chips = document.getElementById('hero-chips');
+  if (chips && me) {
+    chips.innerHTML =
+      `<div class="c"><div class="k">Workers</div><div class="v">${me.workforce_active}/${me.workforce_count}</div></div>` +
+      `<div class="c"><div class="k">Capacity</div><div class="v">${me.production_capacity}%</div></div>`;
+  }
+  // phase 3 live overlay: season tint, equipment pins, disaster FX
+  const heroEl = document.getElementById('island-hero');
+  if (heroEl) heroEl.setAttribute('data-season', season || '');
+  renderHeroPins(role, me);
+  applyHeroDisruption(heroEl, me);
 }
 
 function updateMainIslandArt(tabRole, roles, season) {
@@ -5603,7 +5947,21 @@ function restoreLayoutPrefs() {
     if (f) setLogFilter(f);
     const hidden = JSON.parse(localStorage.getItem('it_layout_hidden') || '[]');
     if (Array.isArray(hidden)) applyLayoutState(hidden);
+    applyReduceEffects(localStorage.getItem('it_reduce_fx') === '1');
   } catch (e) {}
+}
+
+// Reduce-effects toggle (UI v3 phase 1): drop the prestige blur/glow for
+// long sessions or low-power machines.  Persisted in localStorage.
+function applyReduceEffects(on) {
+  document.body.classList.toggle('fx-off', !!on);
+  const cb = document.getElementById('lp-fx');
+  if (cb) cb.checked = !!on;
+}
+function toggleReduceEffects() {
+  const on = !document.body.classList.contains('fx-off');
+  applyReduceEffects(on);
+  try { localStorage.setItem('it_reduce_fx', on ? '1' : '0'); } catch (e) {}
 }
 
 // --- Tile system (UI v2 phase 1, #114): per-tile collapse / hide / reorder

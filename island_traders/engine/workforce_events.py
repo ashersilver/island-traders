@@ -77,7 +77,7 @@ def apply_workplace_risks(
     """
     Roll injury and fatality events for each high-hazard player.
 
-    Injuries: the worker is flagged absent for this season (dispatch_for_training reuse).
+    Injuries: the worker is flagged absent for this season.
     Fatalities: the most-experienced skilled worker is permanently removed.
 
     Insurance effects:
@@ -121,7 +121,7 @@ def apply_workplace_risks(
                 injured_ids.append(worker.worker_id)
 
         if injured_ids:
-            player.workforce.dispatch_for_training(injured_ids)  # reuse "absent" mechanic
+            player.workforce.mark_absent(injured_ids)
             report.injured_worker_ids = injured_ids
 
         # --- Fatalities ---

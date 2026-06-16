@@ -35,6 +35,8 @@ from ..constants import (
     STAFFING_BASE_FEE_PER_STAFF_PER_SEASON, STAFFING_MAX_DURATION_SEASONS,
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
     CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
+    CONSUMER_EDUCATION_VOUCHER_PER_UNIT,
+    CONSUMER_GOODS_VOUCHER_PER_UNIT,
     REPURPOSE_WORKER_COST,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -191,8 +193,6 @@ class TurnManager:
             for report in risk_reports
         }
         for player in self.players:
-            if player.household_cash <= 0:
-                continue
             plan = consumer_demand_plan(
                 player,
                 season_name,
@@ -200,10 +200,70 @@ class TurnManager:
             )
             if not plan.units:
                 continue
+            desired = dict(plan.units)
+            education_units = desired.pop(ResourceType.COURSES, 0)
+            if (
+                education_units > 0
+                and CONSUMER_EDUCATION_VOUCHER_PER_UNIT > 0
+                and self.market.best_offer(ResourceType.COURSES) is not None
+            ):
+                voucher = round(
+                    education_units * CONSUMER_EDUCATION_VOUCHER_PER_UNIT,
+                    2,
+                )
+                player.household_cash = round(player.household_cash + voucher, 2)
+                course_result = buy_household_goods_from_offers(
+                    player,
+                    self.market,
+                    {ResourceType.COURSES: education_units},
+                    post_unmet=False,
+                )
+                unused_voucher = max(0.0, round(voucher - course_result.spent, 2))
+                if unused_voucher > 0:
+                    player.household_cash = round(
+                        max(0.0, player.household_cash - unused_voucher),
+                        2,
+                    )
+                if course_result.spent > 0:
+                    self.io.print(
+                        f"[CONSUMER DEMAND] {player.name} households spent "
+                        f"{CURRENCY_SYMBOL}{course_result.spent:.2f} on "
+                        f"{course_result.bought.get(ResourceType.COURSES, 0)}x "
+                        f"{ResourceType.COURSES.value}."
+                    )
+            goods_units = desired.pop(ResourceType.GOODS, 0)
+            if (
+                goods_units > 0
+                and CONSUMER_GOODS_VOUCHER_PER_UNIT > 0
+                and self.market.best_offer(ResourceType.GOODS) is not None
+            ):
+                voucher = round(goods_units * CONSUMER_GOODS_VOUCHER_PER_UNIT, 2)
+                player.household_cash = round(player.household_cash + voucher, 2)
+                goods_result = buy_household_goods_from_offers(
+                    player,
+                    self.market,
+                    {ResourceType.GOODS: goods_units},
+                    post_unmet=False,
+                )
+                unused_voucher = max(0.0, round(voucher - goods_result.spent, 2))
+                if unused_voucher > 0:
+                    player.household_cash = round(
+                        max(0.0, player.household_cash - unused_voucher),
+                        2,
+                    )
+                if goods_result.spent > 0:
+                    self.io.print(
+                        f"[CONSUMER DEMAND] {player.name} households spent "
+                        f"{CURRENCY_SYMBOL}{goods_result.spent:.2f} on "
+                        f"{goods_result.bought.get(ResourceType.GOODS, 0)}x "
+                        f"{ResourceType.GOODS.value}."
+                    )
+            if player.household_cash <= 0:
+                continue
             result = buy_household_goods_from_offers(
                 player,
                 self.market,
-                plan.units,
+                desired,
                 post_unmet=False,
             )
             if result.spent > 0:

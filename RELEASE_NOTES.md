@@ -5,6 +5,127 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/correctness-balance-154-155 — training accounting + calibration
+
+Version bump: `0.1.5-dev.2026-06-15.5` (was `.4` on the branch; reconciled to the
+next `.N` because UI v3 phase 4 took `.4` on `pre-release` first)
+
+Fixes the `in_training` flag leak (#154) and retunes the corrected economy (#155).
+
+- Separates one-season workplace injury absence from true university training,
+  so injuries no longer appear as "in training" or permanently deflate active
+  worker counts.
+- Reconciles workforce `in_training` flags against dispatched training batches,
+  clearing orphaned flags and repairing missing dispatched flags before returns.
+- Personnel summaries now group in-training workers by target profession, so the
+  staffing table agrees with the training pipeline.
+- Calibration adds earmarked household vouchers for Courses and Goods, trims
+  Ore/Oil/Metal administered prices, and nudges Finance up while trimming
+  HealthServices/Vaccine. The 1000-game seed-42 run moved role wins into the
+  target band and eased money-supply contraction from -39.0% to -29.6%.
+
+### claude/ui-v3-phase4-build-develop — visual redesign phase 4: Build & Develop panel
+
+Version bump: `0.1.5-dev.2026-06-15.4`
+
+Final phase of the UI v3 redesign. Adds a persistent **Build & Develop** tile
+to the island column: the role's full capital catalogue split into **Built**
+(owned equipment, with count; failed units flagged red) and **Available**
+(buildable items with cost, delivery time, cash-only / requires-equipment, and
+a "Required" badge for mandatory capital). A header **＋ Build…** button
+launches the existing Purchase Equipment action. The catalogue comes from a new
+`capacity.capital_catalogue` payload field (role items + owned/failed/mandatory
+from `CAPITAL_CATALOGUE` + `MANDATORY_MINIMUM_INVESTMENT`); no new game
+mechanics — it's a richer front door to the equipment the engine already
+models, and it pairs with the hero's equipment pins from phase 3.
+
+### claude/ui-v3-phase3-live-overlay — visual redesign phase 3: live island overlay
+
+Version bump: `0.1.5-dev.2026-06-15.3`
+
+Stacks on phase 2. Makes the island hero *react to live game state* with three
+composited overlay layers:
+
+- **Equipment pins** — glowing markers placed over the render for the capital
+  the island actually owns (from `capacity.capital_owned`), anchored per role
+  by `item_id`; failed equipment shows a red pin, and each pin reveals its name
+  (and count) on hover.
+- **Disaster FX** — when the player's island is under an outage / natural
+  disaster / heavy yield hit this season (read from `season_events`), the hero
+  gets a flickering red vignette and a condition chip.
+- **Season tint** — a soft seasonal colour wash (spring/summer/autumn/winter)
+  over the render.
+
+All three respect the reduce-effects toggle (tint hidden, flicker/pulse stilled).
+Pin anchor positions are eyeballed per render and can be fine-tuned later
+without touching logic. Phase 4 (Build & Develop panel) is still to come.
+
+### claude/ui-v3-phase2-island-hero — visual redesign phase 2: cinematic island hero
+
+Version bump: `0.1.5-dev.2026-06-15.2`
+
+Stacks on phase 1. Promotes the island artwork from a 34%-opacity background
+wash to a **cinematic hero banner** crowning the "your island" column: the
+role's day/night render with a gradient scrim, the island name + role (with
+icon), a day/night + season tag, and at-a-glance Workers / Capacity chips
+overlaid. Reuses the existing `ROLE_ART` map and day/night selection — no new
+assets. The hero is a normal tile (hideable from ▦ Layout); the action area is
+untouched. Live overlay (built-equipment pins, weather FX) and the Build &
+Develop panel are still later phases.
+
+### claude/ui-v3-dark-prestige — visual redesign phase 1: theme shell
+
+Version bump: `0.1.5-dev.2026-06-15.1`
+
+First phase of the "dark prestige" visual redesign (the look approved from the
+`requirements/mockups/ui-v3-*` / `ui-v4-hybrid-island.html` mockups). Purely
+visual — layout, structure, and behaviour are unchanged; tiles, resizable
+panels, Trade Finder, and the log all keep working.
+
+- Layered gradient backdrop + translucent **glass panels** (blur, fine
+  borders, soft depth) across the header, side, and info columns; every
+  dashboard section becomes a glass card.
+- **Net worth** is now the gold hero readout (glow), with `IBM Plex Mono`
+  tabular figures on the numbers that matter; `Sora` for headings/body.
+- New **Reduce effects** toggle (▦ Layout → Display) drops the blur/glow for
+  long sessions or low-power machines; persisted in localStorage.
+- Scoped to the default dark theme via `:root:not([data-theme="day"])` — the
+  Bright Lagoon day theme keeps its existing styling.
+
+Later phases (not in this PR): the cinematic island hero, the live overlay
+layer (built-equipment pins, weather/disaster FX, season tint), and the
+Build & Develop panel. Design direction + handoff archived under
+`design/graphics-ideas/claude-design-handoff-2026-06/`.
+### claude/quickseat-startfood — startfood works on quick-start URLs
+
+Version bump: `0.1.5-dev.2026-06-14.3`
+
+**The `startfood` (and any `start<resource>=N`) test affordance now works on the
+quick-start URL flow**, not just the manual Create Room form. The quick-seat path
+(`?create=1&room=…&role=…&startfood=200`) built its own create payload in
+`parseQuickSeat()`/`quickSeatStart()` and never read the `start<resource>` params,
+so the override was silently dropped. It now parses them (keyed to the bid `role`,
+overridable with `startrole=`; `startcapital`/`startrole` correctly excluded from
+resource detection) and sends `debug_starting_inventory` in the create body.
+`GameRoom.to_dict()` now also surfaces `debug_starting_inventory` so a playtester
+can confirm a debug room seeded the right inventory. Verified in-browser:
+`?…&startfood=200&startoil=15` → server stores `{Farmer: {food: 200, oil: 15}}`.
+
+### codex/fix-season-prompt-timeout — hidden 5-minute prompt timeout (commit dab1057)
+
+Version bump: `0.1.5-dev.2026-06-14.2` (back-filled by the integrator — the fix
+was fast-forwarded onto pre-release without a notes entry or `.N` bump).
+
+**The action/trading menu ended ~180s early in long seasons.** Root cause:
+`WebSocketIOAdapter._send_and_wait()` had a hard-coded 300-second default
+timeout, so an idle `choose_action` prompt in an 8-minute (480s) season returned
+`END_TURN` after 5 minutes — exactly 180s before the visible season timer
+expired. Fixed by defaulting the timeout to `None`, so online prompts wait until
+an explicit response, Ready/Done Trading, reconnect/replay, or the real
+season-timer interrupt. This is the precise fix for the recurring "trading stops
+with 180s to go" defect (complements the #138 timed-season hold-open backstop).
+Regression test: `test_default_prompt_wait_has_no_hidden_five_minute_timeout`.
+
 ## 0.1.4 — 2026-06-14
 
 Fourth point release. The headline is a **live-playtest defect batch** (#138) that
