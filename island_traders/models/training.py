@@ -519,6 +519,19 @@ class TrainingRegistry:
             and r.status == TrainingStatus.DISPATCHED
         )
 
+    def dispatched_training_targets(self, requester_id: int) -> dict[int, str]:
+        """Map dispatched trainee worker IDs to their target profession."""
+        targets: dict[int, str] = {}
+        for req in self._requests:
+            if req.requester_id != requester_id or req.status != TrainingStatus.DISPATCHED:
+                continue
+            for worker_id in req.worker_ids:
+                targets[worker_id] = req.target_profession
+        return targets
+
+    def dispatched_worker_ids(self, requester_id: int) -> set[int]:
+        return set(self.dispatched_training_targets(requester_id))
+
     def reserved_worker_ids(self, requester_id: int) -> set[int]:
         """Workers already committed to non-terminal training requests."""
         reserved: set[int] = set()

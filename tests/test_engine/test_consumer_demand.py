@@ -58,9 +58,11 @@ def test_consumer_demand_plan_scales_goods_and_seasonal_health_vaccine():
     player = Player(1, "Island", [ROLES["Banker"]], 1300.0, is_human=False)
     player.population = 120
 
+    spring = consumer_demand_plan(player, "Spring").units
     summer = consumer_demand_plan(player, "Summer", casualties=2).units
     autumn = consumer_demand_plan(player, "Autumn").units
 
+    assert spring[ResourceType.COURSES] == 2
     assert summer[ResourceType.FOOD] == 2
     assert summer[ResourceType.GOODS] == 3
     assert summer[ResourceType.HEALTH_SERVICES] == 4
@@ -116,3 +118,47 @@ def test_turn_manager_processes_household_demand_after_ai_listings():
     assert buyer.household_cash == 0.0
     assert seller.dollops == 28.0
     assert transporter.dollops == 5.0 + CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT
+
+
+def test_consumer_education_voucher_funds_course_demand():
+    buyer = Player(1, "Residents", [ROLES["Farmer"]], 100.0, is_human=False)
+    seller = Player(2, "Campus", [ROLES["Educator"]], 10.0, is_human=False)
+    buyer.population = 50
+    buyer.household_cash = 0.0
+    seller.receive_resources(ResourceType.COURSES, 1)
+    market = Market()
+    market.post_offer(seller, ResourceType.COURSES, 20.0, 1)
+    tm = TurnManager(
+        [buyer, seller],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        market,
+        FakeIOAdapter(),
+    )
+
+    tm._process_consumer_demand("Spring", [])
+
+    assert buyer.household_cash == 0.0
+    assert seller.dollops == 30.0
+
+
+def test_consumer_goods_voucher_funds_goods_demand():
+    buyer = Player(1, "Residents", [ROLES["Farmer"]], 100.0, is_human=False)
+    seller = Player(2, "Forge", [ROLES["Manufacturer"]], 10.0, is_human=False)
+    buyer.population = 50
+    buyer.household_cash = 0.0
+    seller.receive_resources(ResourceType.GOODS, 1)
+    market = Market()
+    market.post_offer(seller, ResourceType.GOODS, 20.0, 1)
+    tm = TurnManager(
+        [buyer, seller],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        market,
+        FakeIOAdapter(),
+    )
+
+    tm._process_consumer_demand("Spring", [])
+
+    assert buyer.household_cash == 0.0
+    assert seller.dollops == 30.0

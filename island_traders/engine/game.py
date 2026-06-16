@@ -356,6 +356,7 @@ class Game:
                     except Exception:
                         pass
                 self.turn_manager.run_season(year, season_index, event_results)
+                self._advance_temporary_absences()
                 cb = getattr(self, "after_season", None)
                 if cb:
                     try:
@@ -684,8 +685,19 @@ class Game:
                 f"\n[RETIREMENT] {player.name}: {len(retired)} worker(s) "
                 f"retired ({professions}). Recruit + retrain to replace."
             )
+        self._reconcile_training_flags()
+
+    def _reconcile_training_flags(self) -> None:
+        for player in self.players:
+            expected = self.training.dispatched_worker_ids(player.player_id)
+            player.workforce.reconcile_training_flags(expected)
+
+    def _advance_temporary_absences(self) -> None:
+        for player in self.players:
+            player.workforce.advance_absences()
 
     def _process_training_returns(self, year: int, season: int) -> None:
+        self._reconcile_training_flags()
         player_map = {p.player_id: p for p in self.players}
         returned_batches = self.training.process_returns(year, season)
         for batch in returned_batches:
@@ -721,6 +733,7 @@ class Game:
                     f"rejoin the roster"
                     f"{f' ({missing_text})' if missing_text else ''}."
                 )
+        self._reconcile_training_flags()
 
     def _process_staffing_returns(self, year: int, season: int) -> None:
         """Return visiting medical staff to their home island at contract end."""
@@ -865,6 +878,7 @@ class Game:
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
                         "on_contract": w.on_contract,
+                        "absent_seasons": w.absent_seasons,
                         "settling_seasons": w.settling_seasons,
                         "age_seasons": w.age_seasons,
                         "has_mba": w.has_mba,
@@ -1084,6 +1098,7 @@ class Game:
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
                     on_contract=w.get("on_contract", False),
+                    absent_seasons=w.get("absent_seasons", 0),
                     settling_seasons=w.get("settling_seasons", 0),
                     age_seasons=w.get("age_seasons", 0),
                     has_mba=w.get("has_mba", False),

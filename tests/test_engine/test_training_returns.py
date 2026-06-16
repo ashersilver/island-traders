@@ -158,7 +158,41 @@ def test_three_trainees_return_home_with_new_profession():
     assert all(worker.training_level == 1 for worker in returned)
 
 
-def test_return_hook_logs_failed_return_when_worker_was_never_dispatched():
+def test_training_reconcile_clears_orphaned_in_training_flag_when_batch_removed():
+    game = _farmer_educator_game()
+    farmer, educator = game.players
+    worker = _pick_unskilled_worker(farmer)
+    worker_id = worker.worker_id
+
+    req = game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=20.0,
+        target_profession=Profession.NURSE.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+    game.training.educator_approve(req.batch_id)
+    game.training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
+    farmer.workforce.dispatch_for_training([worker_id])
+
+    assert farmer.workforce.training_count == 1
+
+    game.training.drop_worker(worker_id)
+    assert worker.in_training
+
+    game._reconcile_training_flags()
+
+    assert not worker.in_training
+    assert farmer.workforce.training_count == 0
+    assert farmer.workforce.training_count == len(
+        game.training.dispatched_worker_ids(farmer.player_id)
+    )
+
+
+def test_return_hook_repairs_missing_dispatched_flag_before_return():
     game = _farmer_educator_game()
     farmer, educator = game.players
     worker = _pick_unskilled_worker(farmer)
@@ -180,8 +214,9 @@ def test_return_hook_logs_failed_return_when_worker_was_never_dispatched():
 
     output = "\n".join(game.io.printed)
     assert "Request #0 complete" in output
-    assert "Return warning for request #0" in output
-    assert "did not rejoin the roster" in output
+    assert "Return warning for request #0" not in output
+    assert not worker.in_training
+    assert worker.profession == Profession.NURSE.value
 
 
 def test_dispatched_trainees_eat_on_campus_not_at_home():
