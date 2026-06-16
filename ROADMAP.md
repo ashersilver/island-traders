@@ -13,29 +13,31 @@ ready. Items marked ✦ are Claude's suggestions not yet tracked as a GitHub
 issue; open one before starting the work. Items marked ~~like this~~ shipped
 since the last roadmap update.
 
-**Current pre-release version:** `0.1.5-dev.2026-06-15.5`
+**Current version:** `0.1.5-dev.2026-06-15.5` (`island_traders/constants.py`).
+Note: `pyproject.toml` still reads `0.1.4` — see Phase 0 (version reconciliation).
 
 ---
 
-## Recently Shipped (since roadmap was first drafted, 2026-06-16)
+## Recently Shipped (as of 2026-06-16)
 
 | Item | Issue / PR | Notes |
 |------|------------|-------|
-| UI v3 Phase 1 — dark prestige shell | [#150](https://github.com/ashersilver/island-traders/issues/149) | Glass panels, backdrop, fonts, gold net-worth hero |
-| UI v3 Phases 2 & 3 — cinematic islands + live overlay | [#153](https://github.com/ashersilver/island-traders/issues/149) | Framed island hero, equipment pins, disaster FX, season tint |
-| UI v3 Phase 4 — Build & Develop panel | [#156](https://github.com/ashersilver/island-traders/issues/149) | Capital catalogue tile (Built / Available), ＋ Build… button |
-| Simulation calibration | [#155](https://github.com/ashersilver/island-traders/issues/155) | Win-rate spread 12.3–16.6% (target ≈1/7); resolved by PR #160 |
-| Training `in_training` flag leak fix | [#154](https://github.com/ashersilver/island-traders/issues/154) | Personnel "In training" now reconciles against dispatch batches |
+| `README.md` | — | Substantial project README already in repo (install, quickstart, play, simulate, print, test, tune) |
+| UI v3 Phase 1 — dark prestige shell | [PR #150](https://github.com/ashersilver/island-traders/pull/150) (sub-task of [#149](https://github.com/ashersilver/island-traders/issues/149)) | Glass panels, backdrop, fonts, gold net-worth hero |
+| UI v3 Phases 2 & 3 — cinematic islands + live overlay | [PR #153](https://github.com/ashersilver/island-traders/pull/153) (sub-task of [#149](https://github.com/ashersilver/island-traders/issues/149)) | Framed island hero, equipment pins, disaster FX, season tint |
+| UI v3 Phase 4 — Build & Develop panel | [PR #156](https://github.com/ashersilver/island-traders/pull/156) (sub-task of [#149](https://github.com/ashersilver/island-traders/issues/149)) | Capital catalogue tile (Built / Available), ＋ Build… button |
+| Simulation calibration | [#155](https://github.com/ashersilver/island-traders/issues/155) (PR #160) | Win-rate spread 12.3–16.6% (target ≈1/7) |
+| Training `in_training` flag leak fix | [#154](https://github.com/ashersilver/island-traders/issues/154) (PR #160) | Personnel "In training" now reconciles against dispatch batches |
 | P1 — Market-maker spread + finite depth | [#82](https://github.com/ashersilver/island-traders/issues/82) | Bid/ask spread; orders consume depth |
 | P2 — Payroll (per-season wages) | [#83](https://github.com/ashersilver/island-traders/issues/83) | Workers cost Dollops every season |
 | P3 — Consumer demand for end products | [#84](https://github.com/ashersilver/island-traders/issues/84) | External buyers create a demand floor |
 | P7 — Net-worth scoring-driver panel | [#86](https://github.com/ashersilver/island-traders/issues/86) | UI panel breaking down each player's score |
-| Durable equipment model | [#124](https://github.com/ashersilver/island-traders/issues/124) | Equipment is capital, not a per-season consumable |
-| Metal smelting from Ore | [#125](https://github.com/ashersilver/island-traders/issues/125) | Metal smelted from Ore + energy, not a free co-product |
-| Equipment warranties + failure model | [#130](https://github.com/ashersilver/island-traders/issues/130) | Manufacturer recurring revenue; failure events |
-| Agent-interactions endpoint | [#132](https://github.com/ashersilver/island-traders/issues/132) | Observer UI can ingest agent moves in real time |
+| Durable equipment model | [#124](https://github.com/ashersilver/island-traders/issues/124) (PR #129) | FarmMachinery/MiningEquipment are durable capital, not per-season consumables |
+| Metal smelting from Ore | [#125](https://github.com/ashersilver/island-traders/issues/125) (PR #129) | Metal smelted from Ore + energy, not a free co-product |
+| Equipment warranties + failure model | [#130](https://github.com/ashersilver/island-traders/issues/130) (PR #129) | Manufacturer recurring revenue; failure events |
+| Agent-interactions endpoint | [#132](https://github.com/ashersilver/island-traders/issues/132) (PR #133) | Observer UI can ingest agent moves in real time |
 | Engineer training speciality | [#78](https://github.com/ashersilver/island-traders/issues/78) | 3-season base + optional 4th-season speciality |
-| Science-track reagent gating | [#76](https://github.com/ashersilver/island-traders/issues/76) | Reagents gate science/medical training |
+| Science-track Reagent gating | [#76](https://github.com/ashersilver/island-traders/issues/76) | Reagents gate science/medical training |
 | New professions (Actuary, Tradesman, Med Researcher, Med Tech) | [#75](https://github.com/ashersilver/island-traders/issues/75) | Four new profession types added |
 | Bank Actuaries | [#24](https://github.com/ashersilver/island-traders/issues/24) | Actuary profession available for Banking island |
 
@@ -48,8 +50,8 @@ known easy wins before adding new features.
 
 | Item | Issue | Notes |
 |------|-------|-------|
-| Write `README.md` | *(CLAUDE.md §Pending)* | Install, quickstart, play, simulate, print, test, tune — see CLAUDE.md for full outline |
-| Fix `RULES.md` Doctor numbers | *(CLAUDE.md §Pending)* | 6 total workers (2 Doctors + 4 Nurses), not 12/10 |
+| Reconcile version metadata | *(no issue yet)* | `pyproject.toml` reads `0.1.4` while `constants.py` reads `0.1.5-dev.2026-06-15.5`. Decide the canonical source and align (or document the dev-vs-release split in `requirements/release-process.md`) |
+| Fix stale Doctor-workforce comment in `constants.py` | *(no issue yet)* | The comment at `constants.py` (`STARTING_WORKERS_BY_PROFESSION` Doctor block) still says "encoded simply as 2 Doctors + 4 Nurses". The code and `RULES.md` already use **2 Doctors + 2 Nurses + 2 Medical Orderlies** (6 total). Update the comment to match |
 | Role complexity index | [#27](https://github.com/ashersilver/island-traders/issues/27) | Add High/Medium/Low activity index to "How to Play" so players can factor role effort into island bidding |
 | Training bookings — batch UI | [#158](https://github.com/ashersilver/island-traders/issues/158) | Request training for multiple workers + job types in one dialog; include air tickets option |
 
@@ -107,11 +109,11 @@ resources that create strategic interdependencies between islands.
 
 | Item | Issue | Notes |
 |------|-------|-------|
-| Lumber Mill | [#159](https://github.com/ashersilver/island-traders/issues/159) | Any island plants a forest (5 Produce; 2-year grow); Lumber Mill requires Forestry Technicians + Foreman; raw timber shippable to an island with a mill; lumber used in construction and products; mill byproducts improve reagent yield |
+| Lumber Mill | [#159](https://github.com/ashersilver/island-traders/issues/159) | Any island plants a forest (5 Produce; 2-year grow); Lumber Mill requires Forestry Technicians + Foreman; raw timber shippable to an island with a mill; lumber used in construction and products; mill byproducts improve Reagent yield |
 | Fertiliser plant | [#42](https://github.com/ashersilver/island-traders/issues/42) | Convert Oil → Fertiliser (requires Engineer + Patent); improves Farmer grain/produce yield |
 | Air Freight | [#51](https://github.com/ashersilver/island-traders/issues/51) | Transporter purchases freight aircraft + trains ≥2 Pilots; enables same-turn heavy capital delivery; requires Oil + Freight Insurance from Banker |
 | Manufacturing MPS | [#43](https://github.com/ashersilver/island-traders/issues/43) | Production schedule for large capital items: bill of materials, resource queue, season-count lead time; some items need patents or engineers; delivery via cargo aircraft or +1 season by sea |
-| Order book for capital equipment | [#63](https://github.com/ashersilver/island-traders/issues/63) | Manufacturer reviews and prioritises their order queue; bill of materials shown per order; reorderable priority list |
+| Order book for capital equipment | [#63](https://github.com/ashersilver/island-traders/issues/63) | Manufacturer reviews and prioritises their order queue for named equipment (FarmMachinery, MiningEquipment, MedicalDevices, …); bill of materials shown per order; reorderable priority list |
 | Seed presets / scenario packs ✦ | *(new issue)* | Named YAML presets layered on `config/event_charts.yaml` (e.g. "oil shock", "doctor shortage") for consistent, repeatable playtesting without knowing the internals |
 
 ---
@@ -165,6 +167,11 @@ Update this file as part of the release notes PR for each batch of work.
 When an issue ships, move it to the "Recently Shipped" table at the top with
 the PR number and version. When a ✦ suggestion is formalised, open a GitHub
 issue and replace *(new issue)* with the link.
+
+Terminology note: the engine models **named capital equipment**
+(`FarmMachinery`, `MiningEquipment`, `MedicalDevices`, `LaboratoryEquipment`)
+and **Reagents** — there is no generic `CapitalEquipment` resource. Use the
+named-equipment + Reagents vocabulary in new docs and issues.
 
 Version scheme: `APP_VERSION = 0.1.0-dev.YYYY-MM-DD.N` in
 `island_traders/constants.py`. See `requirements/release-process.md` for the
