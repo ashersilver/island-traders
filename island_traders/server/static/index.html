@@ -1456,6 +1456,14 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="market-panel" onclick="showMarketBoardPopup()" style="cursor:pointer">—</div>
       </div>
+      <div class="section" data-tile="deals" data-tile-label="Deals">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>Deals <span id="deals-badge" class="deals-badge" style="display:none"></span></span>
+          <button class="btn-ghost btn-sm" style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openProposeDealDialog()" title="Propose a peer-to-peer deal">＋ Propose</button>
+        </h3>
+        <div id="deals-panel" onclick="openDealsDialog()" style="cursor:pointer;font-size:.82rem;line-height:1.4">—</div>
+      </div>
     </div>
 
     <div class="g-log" id="event-log" data-filter="all">
@@ -3719,6 +3727,17 @@ function handleMessage(msg) {
     case 'training_batch_result':
       onTrainingBatchResult(msg);
       break;
+    case 'deal_response':
+      onDealResponsePush(msg);
+      break;
+    case 'deal_propose_ack':
+      showToast('Deal proposed.', { type: 'success' });
+      break;
+    case 'deal_response_ack': {
+      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
+      showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
+      break;
+    }
     case 'pre_season_start':
       onPreSeasonStart(msg);
       break;
@@ -4059,6 +4078,7 @@ function renderGameState() {
       renderMarketTable(gameState.market, true) + renderBarterMarket(true);
   }
 
+  renderDealsPanel();
   renderTradeFinder();
 }
 
@@ -4582,6 +4602,221 @@ function renderMarketTable(market, compact = false) {
     <thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+}
+
+// ==================== PEER-TO-PEER DEALS (#167) ====================
+// Consumes the viewer-scoped game_state.deals_awaiting_me / my_deals payload
+// and the deal_propose / deal_respond / deal_response WS contracts. Lets a
+// player propose a deal, get notified when someone responds, and accept /
+// return (counter) / reject deals awaiting their response.
+function _myDealState() {
+  return {
+    awaiting: (gameState && gameState.deals_awaiting_me) || [],
+    mine: (gameState && gameState.my_deals) || [],
+  };
+}
+
+function _dealSideText(side) {
+  return side ? `${side.qty}× ${side.resource}` : 'nothing';
+}
+
+function _resourceSelect(id, resources, sel) {
+  return `<select id="${id}" style="flex:1">${resources.map(r =>
+    `<option value="${esc(r)}" ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>`;
+}
+
+function _dealResources() {
+  return Object.keys((gameState && gameState.market) || {}).sort();
+}
+
+function renderDealsPanel() {
+  const panel = document.getElementById('deals-panel');
+  const badge = document.getElementById('deals-badge');
+  if (!panel) return;
+  const { awaiting, mine } = _myDealState();
+  if (badge) {
+    if (awaiting.length) {
+      badge.textContent = awaiting.length;
+      badge.style.cssText = 'display:inline-block;background:var(--red);color:#fff;border-radius:999px;font-size:.66rem;font-weight:800;padding:.02rem .42rem;min-width:1.1em;text-align:center';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  const activeMine = mine.filter(d => d.status === 'pending' || d.status === 'returned');
+  if (!awaiting.length && !activeMine.length) {
+    panel.innerHTML = '<span style="color:var(--dim)">No deals awaiting you. Click ＋ Propose to start one.</span>';
+    return;
+  }
+  let html = '';
+  if (awaiting.length) html += `<div style="color:var(--gold);font-weight:700">${awaiting.length} awaiting your response</div>`;
+  if (activeMine.length) html += `<div style="color:var(--dim);margin-top:.2rem">${activeMine.length} of your proposals in play</div>`;
+  html += '<div style="color:var(--accent);margin-top:.25rem;font-size:.76rem">Click to review →</div>';
+  panel.innerHTML = html;
+}
+
+function _dealTermsHtml(d) {
+  const offer = _dealSideText(d.offer);
+  const req = _dealSideText(d.request);
+  const sweet = d.sweetener ? ` + ${d.sweetener} Dp` : '';
+  const msg = d.message ? `<div style="color:var(--dim);font-style:italic;margin-top:.25rem">“${esc(d.message)}”</div>` : '';
+  return `<div style="font-size:.84rem"><strong>${esc(d.proposer_name)}</strong> offers <strong>${esc(offer)}${esc(sweet)}</strong> `
+    + `in exchange for <strong>${esc(req)}</strong> from <strong>${esc(d.target_name)}</strong></div>${msg}`;
+}
+
+function _renderAwaitingDealCard(d) {
+  return `<div style="border:1px solid var(--gold);border-radius:8px;padding:.6rem;margin-bottom:.5rem;background:rgba(231,192,93,.06)">
+    ${_dealTermsHtml(d)}
+    <div style="display:flex;gap:.4rem;margin-top:.55rem">
+      <button class="btn-gold btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'accept')">Accept</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="openReturnDealDialog(${d.deal_id})">Return…</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'reject')">Reject</button>
+    </div>
+  </div>`;
+}
+
+function _renderMyDealCard(d) {
+  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)' }[d.status] || 'var(--dim)';
+  const awaiting = d.awaiting_name ? ` · awaiting ${esc(d.awaiting_name)}` : '';
+  return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.4rem">
+    ${_dealTermsHtml(d)}
+    <div style="margin-top:.35rem;font-size:.74rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}</div>
+  </div>`;
+}
+
+function openDealsDialog() {
+  const { awaiting, mine } = _myDealState();
+  let body = '<h4 style="margin:.2rem 0 .4rem">Awaiting your response</h4>';
+  body += awaiting.length
+    ? awaiting.map(_renderAwaitingDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem;margin-bottom:.6rem">Nothing right now.</div>';
+  body += '<h4 style="margin:.8rem 0 .4rem">Your proposals</h4>';
+  const mineSorted = mine.slice().sort((a, b) => b.deal_id - a.deal_id);
+  body += mineSorted.length
+    ? mineSorted.map(_renderMyDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem">You have not proposed any deals.</div>';
+  body += `<div style="display:flex;gap:.5rem;margin-top:1rem">
+    <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Close</button>
+    <button class="btn-gold" style="flex:1" onclick="openProposeDealDialog()">＋ Propose new deal</button>
+  </div>`;
+  showDlg('Peer-to-Peer Deals', body);
+}
+
+function _dealRespond(deal_id, action) {
+  sendWsMessage({ type: 'deal_respond', deal_id, action });
+  hideOverlay();
+}
+
+function openReturnDealDialog(deal_id) {
+  const d = _myDealState().awaiting.find(x => x.deal_id === deal_id);
+  if (!d) { showToast('That deal is no longer awaiting you.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const offerRes = d.offer ? d.offer.resource : (resources[0] || '');
+  const reqRes = d.request ? d.request.resource : (resources[0] || '');
+  const body = `
+    <div style="font-size:.8rem;color:var(--dim);margin-bottom:.5rem">Counter-offer back to ${esc(d.proposer_name)}. Terms stay in their offer → your give perspective.</div>
+    <label style="font-size:.74rem;color:var(--dim)">${esc(d.proposer_name)} offers
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-offer-qty" type="number" min="0" value="${d.offer ? d.offer.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-offer-res', resources, offerRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You give
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-req-qty" type="number" min="0" value="${d.request ? d.request.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-req-res', resources, reqRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (${esc(d.proposer_name)} → you)
+      <input id="rd-sweet" type="number" value="${d.sweetener || 0}" style="width:100%">
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Message (optional)
+      <input id="rd-msg" type="text" placeholder="e.g. need a little more oil" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="openDealsDialog()">Back</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealReturnSubmit(${deal_id})">Send counter-offer</button>
+    </div>`;
+  showDlg('Return Deal — Counter-offer', body);
+}
+
+function _dealReturnSubmit(deal_id) {
+  const oq = parseInt(document.getElementById('rd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('rd-req-qty').value, 10) || 0;
+  sendWsMessage({
+    type: 'deal_respond', deal_id, action: 'return',
+    new_offer: oq > 0 ? { resource: document.getElementById('rd-offer-res').value, qty: oq } : null,
+    new_request: rq > 0 ? { resource: document.getElementById('rd-req-res').value, qty: rq } : null,
+    new_sweetener: parseFloat(document.getElementById('rd-sweet').value) || 0,
+    message: (document.getElementById('rd-msg').value || '').trim(),
+  });
+  hideOverlay();
+  showToast('Counter-offer sent…', { type: 'info' });
+}
+
+function openProposeDealDialog() {
+  if (!gameState || myPlayerIdx == null) { showToast('Not in a game.', { type: 'error' }); return; }
+  const others = gameState.players.filter((p, i) => i !== myPlayerIdx);
+  if (!others.length) { showToast('No other players to deal with.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const targetOpts = others.map(p => `<option value="${p.player_id}">${esc(p.name)}</option>`).join('');
+  const body = `
+    <label style="font-size:.74rem;color:var(--dim)">Propose to
+      <select id="pd-target" style="width:100%;display:block">${targetOpts}</select>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You offer
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-offer-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-offer-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You request
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-req-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-req-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (you → them)
+      <input id="pd-sweet" type="number" value="0" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealProposeSubmit()">Send proposal</button>
+    </div>`;
+  showDlg('Propose a Deal', body);
+}
+
+function _dealProposeSubmit() {
+  const oq = parseInt(document.getElementById('pd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('pd-req-qty').value, 10) || 0;
+  const sweet = parseFloat(document.getElementById('pd-sweet').value) || 0;
+  if (oq <= 0 && rq <= 0 && sweet <= 0) {
+    showToast('A deal must offer, request, or pay something.', { type: 'error' });
+    return;
+  }
+  sendWsMessage({
+    type: 'deal_propose',
+    target_player_id: parseInt(document.getElementById('pd-target').value, 10),
+    offer: oq > 0 ? { resource: document.getElementById('pd-offer-res').value, qty: oq } : null,
+    request: rq > 0 ? { resource: document.getElementById('pd-req-res').value, qty: rq } : null,
+    sweetener: sweet,
+  });
+  hideOverlay();
+  showToast('Deal proposal sent…', { type: 'info' });
+}
+
+// Push notification when a counterparty acts on a deal involving you.
+const _DEAL_RESULT_TEXT = {
+  proposed: 'proposed a deal to you',
+  accepted: 'accepted your deal',
+  returned: 'returned a counter-offer',
+  rejected: 'rejected your deal',
+  expired: 'deal expired (stale resources)',
+};
+function onDealResponsePush(msg) {
+  const who = msg.from || 'A player';
+  const verb = _DEAL_RESULT_TEXT[msg.result] || `updated a deal (${msg.result})`;
+  const tone = { accepted: 'success', rejected: 'error', expired: 'error' }[msg.result] || 'info';
+  showToast(`${who} ${verb}.`, { type: tone, ms: 6000 });
 }
 
 function renderBarterMarket(compact = false) {

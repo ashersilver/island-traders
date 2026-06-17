@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/deal-response-ui-167 — deal response UI (#167)
+
+Version bump: `0.1.5-dev.2026-06-17.1`
+
+Front-end for the deal-response backend contract — closes the playtest gap
+where a player was never notified that someone responded to a proposed deal and
+had no way to accept or return it.
+
+- New **Deals** tile (next to the Market Board) with a red badge counting deals
+  awaiting your response, a ＋ Propose button, and a click-through review dialog.
+- **Propose a Deal** dialog: pick a counterparty, what you offer, what you
+  request, and an optional gold sweetener → sends `deal_propose`.
+- **Deals dialog** lists deals awaiting you (Accept / Return… / Reject) and your
+  own proposals with live status (pending / returned / accepted / rejected /
+  expired) and whose turn it is.
+- **Return** opens a counter-offer form (edit terms + a note), sent as
+  `deal_respond {action:"return"}`; Accept/Reject send the matching action.
+- **Toast notifications** on the `deal_response` push so the proposer learns
+  immediately when a counterparty proposes / accepts / returns / rejects, or a
+  deal expires on stale resources.
+
+Binds to the existing `deal_propose` / `deal_respond` / `deal_response`
+contracts and the viewer-scoped `deals_awaiting_me` / `my_deals` payload from
+PR #172. Frontend only — no engine/balance change. Completes #167.
+
 ### codex/deal-response-167 — deal response backend contract (#167)
 
 Version bump: `0.1.5-dev.2026-06-16.4` (was `.3` on the branch; reconciled to
