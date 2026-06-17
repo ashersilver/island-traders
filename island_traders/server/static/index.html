@@ -3716,6 +3716,9 @@ function handleMessage(msg) {
     case 'market_buy_bulk':
       showMarketBuyPopup(msg);
       break;
+    case 'training_batch_result':
+      onTrainingBatchResult(msg);
+      break;
     case 'pre_season_start':
       onPreSeasonStart(msg);
       break;
@@ -5176,7 +5179,11 @@ function _renderActionButton(o) {
   const titleAttr = (disabled && o.disabled_reason)
     ? ` title="${esc(o.disabled_reason)}"`
     : '';
-  const onclick = disabled ? '' : ` onclick="sendResponse('${o.value}')"`;
+  // #158: route the training action to the batch Training Desk dialog instead
+  // of the single-request sequential wizard. The desk submits a training_batch
+  // (handled independently of choose_action), so the action menu stays live.
+  const handler = o.value === 'request_training' ? 'openTrainingDesk()' : `sendResponse('${o.value}')`;
+  const onclick = disabled ? '' : ` onclick="${handler}"`;
   return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
 }
 
@@ -5233,6 +5240,150 @@ function resumeTradingFromParked() {
     btn.classList.remove('is-ready');
     document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   }
+}
+
+// ==================== TRAINING DESK (batch bookings, #158) ====================
+// A single dialog that books training for multiple workers across multiple job
+// types in one go, with an air-ticket option per row. Submits a `training_batch`
+// (handled server-side independently of the sequential wizard, like the Order
+// Desk) and reconciles per-row results. Backed by the read-only
+// `training_options` payload field (capacity + eligible-worker budget).
+let _trainingDeskRows = [];
+let _trainingDeskSeq = 0;
+
+function _myTrainingOptions() {
+  if (!gameState || myPlayerIdx == null) return null;
+  const me = gameState.players[myPlayerIdx];
+  return (me && me.training_options) || null;
+}
+
+function openTrainingDesk() {
+  const opts = _myTrainingOptions();
+  if (!opts || !opts.professions || !opts.professions.length) {
+    const why = (opts && opts.exhausted && opts.exhausted.length)
+      ? 'The university is fully booked this year across all professions.'
+      : 'No training slots are available right now.';
+    showToast(why, { type: 'error' });
+    return;
+  }
+  const first = opts.professions[0];
+  _trainingDeskRows = [{
+    profession: first.value,
+    count: Math.max(1, first.suggested_count || 1),
+    transport: 'air_ticket',
+    tickets: 0,
+    fee: 0,
+  }];
+  showDlg('Training Desk — Book Workers', _renderTrainingDesk());
+}
+
+function _trainingBudgetUsed() {
+  return _trainingDeskRows.reduce((n, r) => n + (parseInt(r.count, 10) || 0), 0);
+}
+
+function _renderTrainingDesk() {
+  const opts = _myTrainingOptions() || { professions: [], exhausted: [], eligible_worker_count: 0 };
+  const profById = Object.fromEntries(opts.professions.map(p => [p.value, p]));
+  const budget = opts.eligible_worker_count || 0;
+  const used = _trainingBudgetUsed();
+  const over = used > budget;
+  const exhaustedOpts = (opts.exhausted || []).map(p =>
+    `<option disabled>${esc(p.label)} — FULL (${p.trained}/${p.annual_cap})</option>`).join('');
+
+  const rowsHtml = _trainingDeskRows.map((row, i) => {
+    const profOpts = opts.professions.map(p =>
+      `<option value="${esc(p.value)}" ${p.value === row.profession ? 'selected' : ''}>${esc(p.label)} — ${p.remaining} slot(s)</option>`
+    ).join('');
+    const rem = (profById[row.profession] || {}).remaining || 0;
+    const air = row.transport === 'air_ticket';
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.5rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <label style="flex:2;min-width:150px;font-size:.74rem;color:var(--dim)">Job type
+          <select onchange="_tdEdit(${i},'profession',this.value)" style="width:100%;display:block">${profOpts}${exhaustedOpts}</select>
+        </label>
+        <label style="flex:0 0 72px;font-size:.74rem;color:var(--dim)">Workers
+          <input type="number" min="1" max="${rem}" value="${row.count}" onchange="_tdEdit(${i},'count',this.value)" style="width:100%;display:block">
+        </label>
+        <label style="flex:1;min-width:120px;font-size:.74rem;color:var(--dim)">Transport
+          <select onchange="_tdEdit(${i},'transport',this.value)" style="width:100%;display:block">
+            <option value="air_ticket" ${air ? 'selected' : ''}>Air ticket (fast)</option>
+            <option value="transporter" ${!air ? 'selected' : ''}>By sea (PassengerSeat)</option>
+          </select>
+        </label>
+        ${air ? `<label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Air tickets
+          <input type="number" min="0" value="${row.tickets}" onchange="_tdEdit(${i},'tickets',this.value)" style="width:100%;display:block">
+        </label>` : ''}
+        <label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Fee (Dp)
+          <input type="number" min="0" value="${row.fee}" onchange="_tdEdit(${i},'fee',this.value)" style="width:100%;display:block">
+        </label>
+        <button class="btn-ghost btn-sm" onclick="_tdRemove(${i})" ${_trainingDeskRows.length <= 1 ? 'disabled' : ''} title="Remove this row">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.5rem">
+      Book training for several job types at once. Eligible workers committed:
+      <strong style="color:${over ? 'var(--red)' : 'var(--heading)'}">${used} / ${budget}</strong>.
+    </div>
+    <div id="td-rows">${rowsHtml}</div>
+    <button class="btn-ghost btn-sm" onclick="_tdAddRow()" style="margin:.1rem 0 .8rem">＋ Add another job type</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_tdSubmit()" ${(over || used <= 0) ? 'disabled' : ''}>Book ${used} worker(s)</button>
+    </div>`;
+}
+
+function _rerenderTrainingDesk() {
+  const body = document.getElementById('dlg-body');
+  if (body) body.innerHTML = _renderTrainingDesk();
+}
+
+function _tdEdit(i, field, value) {
+  if (!_trainingDeskRows[i]) return;
+  if (field === 'fee') value = parseFloat(value) || 0;
+  else if (field === 'count' || field === 'tickets') value = parseInt(value, 10) || 0;
+  _trainingDeskRows[i][field] = value;
+  _rerenderTrainingDesk();
+}
+
+function _tdAddRow() {
+  const opts = _myTrainingOptions();
+  const first = opts && opts.professions[0];
+  if (!first) return;
+  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0 });
+  _rerenderTrainingDesk();
+}
+
+function _tdRemove(i) {
+  _trainingDeskRows.splice(i, 1);
+  _rerenderTrainingDesk();
+}
+
+function _tdSubmit() {
+  const requests = _trainingDeskRows
+    .filter(r => (parseInt(r.count, 10) || 0) > 0)
+    .map(r => ({
+      profession: r.profession,
+      count: parseInt(r.count, 10) || 0,
+      transport_mode: r.transport,
+      tickets_supplied_by_requester: r.transport === 'air_ticket' ? (parseInt(r.tickets, 10) || 0) : 0,
+      dollops_to_educator: parseFloat(r.fee) || 0,
+    }));
+  if (!requests.length) { showToast('Add at least one worker to book.', { type: 'error' }); return; }
+  _trainingDeskSeq += 1;
+  sendWsMessage({ type: 'training_batch', batch_ref: `td-${Date.now()}-${_trainingDeskSeq}`, requests });
+  hideOverlay();
+  showToast('Training request sent…', { type: 'info' });
+}
+
+function onTrainingBatchResult(msg) {
+  const results = msg.results || [];
+  if (msg.error) { showToast(`Training booking failed: ${msg.error}`, { type: 'error' }); return; }
+  const ok = results.filter(r => r && r.status === 'submitted');
+  const failed = results.filter(r => r && r.status === 'rejected');
+  failed.forEach(r => showToast(`Training row ${(r.index ?? 0) + 1} rejected: ${r.reason || 'unknown'}`, { type: 'error' }));
+  if (ok.length) showToast(`Booked ${ok.length} training request(s).`, { type: 'success' });
+  else if (!failed.length) showToast('No training rows were booked.', { type: 'error' });
 }
 
 function showActionPrompt(msg) {

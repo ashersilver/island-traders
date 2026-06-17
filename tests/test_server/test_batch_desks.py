@@ -120,3 +120,27 @@ def test_training_batch_ws_handler_submits_and_rejects_independent_rows():
     assert req.educator_id == educator.player_id
     room.game.training.educator_approve(req.batch_id)
     assert room.game.training.request_by_id(req.batch_id).status.value == "awaiting_transport"
+
+
+def test_game_state_exposes_training_options_for_desk_dialog():
+    # #158: the Training Desk dialog reads a read-only training_options field
+    # (professions with remaining capacity + eligible-worker budget) so it can
+    # build its dropdowns without a per-field round-trip.
+    mgr, room, players = _bootstrap_game(["Farmer", "Educator"])
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    assert state is not None
+    farmer_pd = next(p for p in state["players"] if p["lobby_player_id"] == "p0")
+
+    opts = farmer_pd["training_options"]
+    assert set(opts) >= {"professions", "eligible_worker_count", "exhausted"}
+    assert isinstance(opts["professions"], list)
+    assert opts["eligible_worker_count"] >= 0
+    # Every offered profession carries the fields the dialog renders.
+    for prof in opts["professions"]:
+        assert set(prof) >= {"value", "label", "remaining", "annual_cap", "suggested_count"}
+        assert prof["remaining"] > 0
+    # Offered and exhausted sets are disjoint.
+    offered = {p["value"] for p in opts["professions"]}
+    exhausted = {p["value"] for p in opts["exhausted"]}
+    assert offered.isdisjoint(exhausted)

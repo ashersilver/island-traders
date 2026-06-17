@@ -2279,6 +2279,71 @@ class GameManager:
             return {}
         return training.dispatched_training_targets(player_id)
 
+    def _training_options_for_player(
+        self,
+        game: Game,
+        player: Player,
+        year: int,
+        season: int,
+    ) -> dict:
+        """Read-only menu for the Training Desk batch dialog (#158).
+
+        Surfaces the same selectable professions / capacity / eligible-worker
+        data the sequential wizard computes in
+        ``TurnManager._action_request_training`` so the web client can build a
+        multi-row booking dialog without a round-trip per field.  Mirrors that
+        logic — no new mechanics.
+        """
+        training = getattr(game, "training", None)
+        empty = {"professions": [], "eligible_worker_count": 0, "exhausted": []}
+        if not training:
+            return empty
+
+        def _label(prof: str) -> str:
+            try:
+                return PROFESSION_LABEL.get(Profession(prof), prof)
+            except ValueError:
+                return prof
+
+        capacity_map = training.capacity_summary(year, season)
+        try:
+            deficits = game.turn_manager._training_skill_deficits(player)
+        except Exception:
+            deficits = {}
+
+        professions = []
+        exhausted = []
+        for prof, info in capacity_map.items():
+            remaining = info.get("remaining", 0)
+            if remaining > 0:
+                professions.append({
+                    "value": prof,
+                    "label": _label(prof),
+                    "remaining": remaining,
+                    "annual_cap": info.get("annual_cap", 0),
+                    "seasonal_cap": info.get("seasonal_cap"),
+                    "suggested_count": max(0, min(deficits.get(prof, 0), remaining)),
+                })
+            else:
+                exhausted.append({
+                    "value": prof,
+                    "label": _label(prof),
+                    "trained": info.get("trained", 0),
+                    "annual_cap": info.get("annual_cap", 0),
+                })
+
+        active = player.workforce.active_count
+        eligible = (
+            set(player.workforce.get_unskilled_ids(active))
+            | set(player.workforce.get_trainable_ids(active))
+        ) - set(training.reserved_worker_ids(player.player_id))
+
+        return {
+            "professions": professions,
+            "eligible_worker_count": len(eligible),
+            "exhausted": exhausted,
+        }
+
     def _staffing_contracts_for_player(
         self,
         game: "Game",
@@ -2962,6 +3027,9 @@ class GameManager:
         for p in game.players:
             loan_book = banker_loan_book_status(p)
             training_targets = self._training_targets_for_player(game, p.player_id)
+            training_options = self._training_options_for_player(
+                game, p, current_year_idx, current_season_idx
+            )
             pd = {
                 "player_id": p.player_id,
                 "lobby_player_id": engine_to_lobby.get(p.player_id),
@@ -3060,6 +3128,8 @@ class GameManager:
                     current_year_idx,
                     current_season_idx,
                 ),
+                # Read-only menu for the Training Desk batch dialog (#158).
+                "training_options": training_options,
                 "training_queue_order": self._training_queue_order_for_player(
                     game,
                     p.player_id,
