@@ -7,7 +7,8 @@ Release notes are required before merging a feature/fix branch into
 
 ### codex/deal-response-167 — deal response backend contract (#167)
 
-Version bump: `0.1.5-dev.2026-06-16.3`
+Version bump: `0.1.5-dev.2026-06-16.4` (was `.3` on the branch; reconciled to
+the next `.N` because Training Desk batch UI took `.3` on `pre-release` first)
 
 Adds the backend/model/server seam for structured barter deal responses.
 
@@ -30,6 +31,29 @@ Adds the backend/model/server seam for structured barter deal responses.
 
 UI call is left as a backend contract/stub for Claude's follow-on; no frontend
 controls are wired in this branch.
+
+### claude/training-bookings-batch-ui-158-2026-06-16 — Training Desk batch UI (#158)
+
+Version bump: `0.1.5-dev.2026-06-16.3`
+
+Adds a **Training Desk** dialog so a player can book training for **multiple
+workers across multiple job types in one go**, with a per-row **air-ticket**
+option (#158).
+
+- The "Request Training" turn action now opens a multi-row dialog instead of
+  the single-request sequential wizard. Each row: job type (with remaining
+  university slots shown), worker count, transport (air ticket vs by sea), air
+  tickets supplied, and an optional Educator fee. A running "workers committed /
+  eligible" budget guards over-booking; per-row results are surfaced as toasts.
+- Submits one `training_batch` message — the server-side batch handler and the
+  air-ticket `transport_mode` already existed (shipped with #114); this wires
+  the front door to them.
+- New read-only `training_options` field in the per-player `game_state`
+  (professions with remaining capacity + suggested counts, eligible-worker
+  count, exhausted professions), reusing the existing `capacity_summary` and
+  skill-deficit logic — no new game mechanics.
+
+Frontend + read-only payload only — no engine/balance change.
 
 ### claude/role-complexity-index-27-2026-06-16 — role activity index (#27)
 
