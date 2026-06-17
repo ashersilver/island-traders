@@ -83,6 +83,58 @@ def test_reject_deal_no_transfer(engine, farmer, banker):
     assert farmer.inventory.get(ResourceType.FOOD) == 3
 
 
+def test_returned_deal_can_be_accepted_by_original_proposer(engine, farmer, banker):
+    farmer.receive_resources(ResourceType.FOOD, 3)
+    banker.receive_resources(ResourceType.REAGENTS, 2)
+    deal = engine.propose_deal(
+        farmer, banker, ResourceType.FOOD, 3, ResourceType.REAGENTS, 1
+    )
+
+    engine.return_deal(
+        deal,
+        responder_id=banker.player_id,
+        offer_resource=ResourceType.FOOD,
+        offer_qty=1,
+        request_resource=ResourceType.REAGENTS,
+        request_qty=2,
+        gold_sweetener=5.0,
+        message="One food for both Reagents.",
+    )
+    engine.accept_deal(deal, acceptor=banker, proposer=farmer)
+
+    assert deal.status == DealStatus.ACCEPTED
+    assert farmer.inventory.get(ResourceType.FOOD) == 2
+    assert farmer.inventory.get(ResourceType.REAGENTS) == 2
+    assert farmer.dollops == 95.0
+    assert banker.inventory.get(ResourceType.FOOD) == 1
+    assert banker.inventory.get(ResourceType.REAGENTS) == 0
+    assert banker.dollops == 105.0
+
+
+def test_accept_stale_returned_deal_raises_and_moves_nothing(engine, farmer, banker):
+    farmer.receive_resources(ResourceType.FOOD, 2)
+    banker.receive_resources(ResourceType.REAGENTS, 1)
+    deal = engine.propose_deal(
+        farmer, banker, ResourceType.FOOD, 1, ResourceType.REAGENTS, 1
+    )
+    engine.return_deal(
+        deal,
+        responder_id=banker.player_id,
+        offer_resource=ResourceType.FOOD,
+        offer_qty=1,
+        request_resource=ResourceType.REAGENTS,
+        request_qty=2,
+    )
+
+    with pytest.raises(StaleResourceError):
+        engine.accept_deal(deal, acceptor=banker, proposer=farmer)
+
+    assert deal.status == DealStatus.RETURNED
+    assert farmer.inventory.get(ResourceType.FOOD) == 2
+    assert farmer.inventory.get(ResourceType.REAGENTS) == 0
+    assert banker.inventory.get(ResourceType.REAGENTS) == 1
+
+
 def test_gold_sweetener_deal(engine, farmer, banker):
     farmer.receive_resources(ResourceType.FOOD, 2)
     deal = engine.propose_deal(
