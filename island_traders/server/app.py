@@ -26,10 +26,12 @@ from typing import Any
 
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..engine.revenue import revenue_opportunities
+from ..engine.trading import InvalidDealError, StaleResourceError
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.training import TrainingCapacityError, TrainingStatus
+from ..models.deal import ACTIVE_DEAL_STATUSES, DealProposal
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
     AUCTIONED_SHARES, UNISSUED_HOLDER,
@@ -2444,6 +2446,343 @@ class GameManager:
             })
         return rows
 
+    @staticmethod
+    def _deal_side_payload(resource: ResourceType | None, qty: int) -> dict | None:
+        if resource is None or qty <= 0:
+            return None
+        return {"resource": resource.value, "qty": int(qty)}
+
+    @staticmethod
+    def _parse_deal_side(
+        msg: dict,
+        object_key: str,
+        resource_key: str,
+        qty_key: str,
+        *,
+        default_resource: ResourceType | None = None,
+        default_qty: int = 0,
+    ) -> tuple[ResourceType | None, int]:
+        raw = msg.get(object_key)
+        if isinstance(raw, dict):
+            resource_value = raw.get("resource")
+            qty_value = raw.get("qty", raw.get("quantity", 0))
+        else:
+            resource_value = msg.get(resource_key)
+            qty_value = msg.get(qty_key, default_qty)
+        if resource_value is None:
+            resource = default_resource
+        else:
+            resource_text = str(resource_value).strip()
+            resource = ResourceType(resource_text) if resource_text else None
+        try:
+            qty = int(qty_value)
+        except (TypeError, ValueError):
+            qty = default_qty
+        if resource is None or qty <= 0:
+            return None, 0
+        return resource, qty
+
+    def _deal_payload(
+        self,
+        deal: DealProposal,
+        player_names: dict[int, str],
+        viewer_id: int | None = None,
+    ) -> dict:
+        counterparty_id = None
+        if viewer_id is not None:
+            if viewer_id == deal.proposer_id:
+                counterparty_id = deal.target_id
+            elif viewer_id == deal.target_id:
+                counterparty_id = deal.proposer_id
+        return {
+            "deal_id": deal.deal_id,
+            "status": deal.status.value,
+            "proposer_id": deal.proposer_id,
+            "proposer_name": player_names.get(
+                deal.proposer_id, f"Player {deal.proposer_id}"
+            ),
+            "target_id": deal.target_id,
+            "target_name": player_names.get(
+                deal.target_id, f"Player {deal.target_id}"
+            ),
+            "counterparty_id": counterparty_id,
+            "counterparty_name": (
+                player_names.get(counterparty_id, f"Player {counterparty_id}")
+                if counterparty_id is not None else None
+            ),
+            "awaiting_id": deal.awaiting_id,
+            "awaiting_name": (
+                player_names.get(deal.awaiting_id, f"Player {deal.awaiting_id}")
+                if deal.awaiting_id is not None else None
+            ),
+            "offer": self._deal_side_payload(deal.offer_resource, deal.offer_qty),
+            "request": self._deal_side_payload(deal.request_resource, deal.request_qty),
+            "sweetener": round(deal.gold_sweetener, 1),
+            "message": deal.message or None,
+            "last_response_by_id": deal.last_response_by_id,
+            "last_response_by_name": (
+                player_names.get(
+                    deal.last_response_by_id,
+                    f"Player {deal.last_response_by_id}",
+                )
+                if deal.last_response_by_id is not None else None
+            ),
+        }
+
+    def _deal_lobby_id_for_engine_id(self, room, engine_player_id: int) -> str | None:
+        for lobby_id, engine_id in (room.lobby_to_engine_id or {}).items():
+            if engine_id == engine_player_id:
+                return lobby_id
+        return None
+
+    def _deal_state_for_viewer(
+        self,
+        game: Game,
+        viewer_engine_id: int | None,
+        player_names: dict[int, str],
+    ) -> tuple[list[dict], list[dict]]:
+        if viewer_engine_id is None:
+            return [], []
+        deals = getattr(game.ledger, "deals", [])
+        awaiting = [
+            self._deal_payload(deal, player_names, viewer_engine_id)
+            for deal in deals
+            if deal.awaiting_id == viewer_engine_id
+            and deal.status in ACTIVE_DEAL_STATUSES
+        ]
+        mine = [
+            self._deal_payload(deal, player_names, viewer_engine_id)
+            for deal in deals
+            if deal.proposer_id == viewer_engine_id
+        ]
+        return awaiting, mine
+
+    async def _handle_deal_propose(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        proposer = self._engine_player_for_lobby(room, lobby_player_id)
+        if proposer is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+        target = self._resolve_deal_target(room, msg)
+        if target is None or target.player_id == proposer.player_id:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Invalid deal target"}))
+            return
+
+        try:
+            offer_resource, offer_qty = self._parse_deal_side(
+                msg, "offer", "offer_resource", "offer_qty"
+            )
+            request_resource, request_qty = self._parse_deal_side(
+                msg, "request", "request_resource", "request_qty"
+            )
+            sweetener = float(msg.get("sweetener", msg.get("gold_sweetener", 0.0)) or 0.0)
+            deal = room.game.turn_manager.trading.propose_deal(
+                proposer,
+                target,
+                offer_resource,
+                offer_qty,
+                request_resource,
+                request_qty,
+                sweetener,
+            )
+        except (InvalidDealError, ValueError) as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+
+        player_names = {p.player_id: p.name for p in room.game.players}
+        payload = self._deal_payload(deal, player_names, proposer.player_id)
+        await websocket.send_text(json.dumps({
+            "type": "deal_propose_ack",
+            "result": "submitted",
+            "deal_id": deal.deal_id,
+            "deal": payload,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+        target_lobby_id = self._deal_lobby_id_for_engine_id(room, target.player_id)
+        if target_lobby_id:
+            self._thread_safe_send(room_id, target_lobby_id, {
+                "type": "deal_response",
+                "deal_id": deal.deal_id,
+                "result": "proposed",
+                "from": proposer.name,
+                "deal": self._deal_payload(deal, player_names, target.player_id),
+            })
+            self._thread_safe_send(
+                room_id,
+                target_lobby_id,
+                self.get_game_state(room_id, target_lobby_id) or {},
+            )
+
+    def _resolve_deal_target(self, room, msg: dict) -> Player | None:
+        raw = msg.get("target_player_id", msg.get("target_id"))
+        if raw is None:
+            return None
+        engine_id = None
+        try:
+            engine_id = int(raw)
+        except (TypeError, ValueError):
+            engine_id = (room.lobby_to_engine_id or {}).get(str(raw))
+        return next(
+            (p for p in room.game.players if p.player_id == engine_id),
+            None,
+        )
+
+    async def _handle_deal_respond(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        if actor is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            return
+        try:
+            deal_id = int(msg.get("deal_id"))
+        except (TypeError, ValueError):
+            await websocket.send_text(json.dumps({"type": "error", "message": "Invalid deal_id"}))
+            return
+        deal = room.game.ledger.deal_by_id(deal_id)
+        if deal is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"Deal #{deal_id} not found"}))
+            return
+        if deal.awaiting_id != actor.player_id or deal.status not in ACTIVE_DEAL_STATUSES:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Deal #{deal_id} is not awaiting your response",
+            }))
+            return
+
+        player_by_id = {p.player_id: p for p in room.game.players}
+        proposer = player_by_id.get(deal.proposer_id)
+        target = player_by_id.get(deal.target_id)
+        if proposer is None or target is None:
+            room.game.ledger.expire(deal.deal_id)
+            await websocket.send_text(json.dumps({
+                "type": "deal_response_ack",
+                "result": "expired",
+                "deal_id": deal.deal_id,
+            }))
+            return
+
+        action = str(msg.get("action", "")).strip().lower()
+        result = action
+        try:
+            if action == "accept":
+                room.game.turn_manager.trading.accept_deal(
+                    deal,
+                    acceptor=target,
+                    proposer=proposer,
+                    acquired_tick=(
+                        getattr(room, "current_year_index", 0) * len(SEASONS)
+                        + getattr(room, "current_season_index", 0)
+                    ),
+                )
+                result = "accepted"
+            elif action == "reject":
+                room.game.turn_manager.trading.reject_deal(deal)
+                deal.last_response_by_id = actor.player_id
+                deal.message = str(msg.get("message", "") or "").strip()
+                result = "rejected"
+            elif action == "return":
+                offer_resource, offer_qty = self._parse_deal_side(
+                    msg,
+                    "new_offer",
+                    "new_offer_resource",
+                    "new_offer_qty",
+                    default_resource=deal.offer_resource,
+                    default_qty=deal.offer_qty,
+                )
+                request_resource, request_qty = self._parse_deal_side(
+                    msg,
+                    "new_request",
+                    "new_request_resource",
+                    "new_request_qty",
+                    default_resource=deal.request_resource,
+                    default_qty=deal.request_qty,
+                )
+                sweetener = float(
+                    msg.get(
+                        "new_sweetener",
+                        msg.get("new_gold_sweetener", deal.gold_sweetener),
+                    )
+                    or 0.0
+                )
+                room.game.turn_manager.trading.return_deal(
+                    deal,
+                    actor.player_id,
+                    offer_resource,
+                    offer_qty,
+                    request_resource,
+                    request_qty,
+                    sweetener,
+                    str(msg.get("message", "") or ""),
+                )
+                result = "returned"
+            else:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": f"Unknown deal response action: {action!r}",
+                }))
+                return
+        except StaleResourceError as exc:
+            room.game.ledger.expire(deal.deal_id)
+            result = "expired"
+            deal.message = str(exc)
+        except (InvalidDealError, ValueError) as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+
+        player_names = {p.player_id: p.name for p in room.game.players}
+        actor_payload = self._deal_payload(deal, player_names, actor.player_id)
+        await websocket.send_text(json.dumps({
+            "type": "deal_response_ack",
+            "result": result,
+            "deal_id": deal.deal_id,
+            "deal": actor_payload,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        notify_engine_id = deal.awaiting_id
+        if result in ("accepted", "rejected", "expired"):
+            notify_engine_id = (
+                deal.proposer_id
+                if actor.player_id == deal.target_id else deal.target_id
+            )
+        if notify_engine_id is not None:
+            notify_lobby_id = self._deal_lobby_id_for_engine_id(room, notify_engine_id)
+            if notify_lobby_id:
+                self._thread_safe_send(room_id, notify_lobby_id, {
+                    "type": "deal_response",
+                    "deal_id": deal.deal_id,
+                    "result": result,
+                    "from": actor.name,
+                    "deal": self._deal_payload(deal, player_names, notify_engine_id),
+                })
+                self._thread_safe_send(
+                    room_id,
+                    notify_lobby_id,
+                    self.get_game_state(room_id, notify_lobby_id) or {},
+                )
+
     async def _handle_training_counter_response(
         self,
         room_id: str,
@@ -2934,6 +3273,10 @@ class GameManager:
         current_season_idx = getattr(room, "current_season_index", 0)
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
         player_names = {p.player_id: p.name for p in game.players}
+        viewer_engine_id = (
+            (room.lobby_to_engine_id or {}).get(player_id)
+            if player_id is not None else None
+        )
 
         # --- Equity (Phase 2b): per-island share price + investor net worth ---
         # liquidation value (= total_wealth, already net of bank + shareholder
@@ -3164,7 +3507,7 @@ class GameManager:
         player_by_id = {p.player_id: p for p in game.players}
         barter_deals = []
         for deal in getattr(game.ledger, "deals", []):
-            if getattr(deal.status, "value", deal.status) != "pending":
+            if deal.status not in ACTIVE_DEAL_STATUSES:
                 continue
             proposer = player_by_id.get(deal.proposer_id)
             target = player_by_id.get(deal.target_id)
@@ -3204,6 +3547,12 @@ class GameManager:
                     if deal.request_resource and deal.request_qty else "Dollops"
                 ),
                 "sweetener": round(deal.gold_sweetener, 1),
+                "status": deal.status.value,
+                "awaiting_id": deal.awaiting_id,
+                "awaiting": player_names.get(
+                    deal.awaiting_id, f"Player {deal.awaiting_id}"
+                ) if deal.awaiting_id is not None else None,
+                "message": deal.message or None,
                 "warnings": warnings,
             })
         barter_needs = []
@@ -3296,6 +3645,9 @@ class GameManager:
 
         current_year = current_year_idx + 1
         current_season = SEASONS[current_season_idx]
+        deals_awaiting_me, my_deals = self._deal_state_for_viewer(
+            game, viewer_engine_id, player_names
+        )
 
         return {
             "type": "game_state",
@@ -3330,6 +3682,8 @@ class GameManager:
             },
             "market": market_data,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
+            "deals_awaiting_me": deals_awaiting_me,
+            "my_deals": my_deals,
             "price_history": [
                 {"year": s.year, "season": s.season,
                  "prices": {
@@ -4560,6 +4914,14 @@ def create_app() -> FastAPI:
                     })
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type in ("deal_propose", "propose_deal"):
+                    await manager._handle_deal_propose(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "deal_respond":
+                    await manager._handle_deal_respond(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "order_batch":

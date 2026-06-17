@@ -3125,21 +3125,22 @@ class TurnManager:
         self.io.print(f"  You have {len(pending)} pending deal proposal(s).")
         for deal in pending:
             proposer = player_map.get(deal.proposer_id)
-            if proposer is None:
+            target = player_map.get(deal.target_id)
+            if proposer is None or target is None:
                 self.trading.ledger.expire(deal.deal_id)
-                self.io.print(f"  Deal #{deal.deal_id} expired — proposer is no longer available.")
+                self.io.print(f"  Deal #{deal.deal_id} expired — a party is no longer available.")
                 result.actions_taken.append(f"deal:expired:{deal.deal_id}")
                 continue
 
             summary = deal.summary(
                 player_names.get(deal.proposer_id, f"Player {deal.proposer_id}"),
-                player.name,
+                player_names.get(deal.target_id, f"Player {deal.target_id}"),
             )
             if self.io.confirm(f"{summary}\nAccept this deal?"):
                 try:
                     self.trading.accept_deal(
                         deal,
-                        acceptor=player,
+                        acceptor=target,
                         proposer=proposer,
                         acquired_tick=result.year * len(SEASONS) + result.season,
                     )

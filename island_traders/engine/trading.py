@@ -267,3 +267,25 @@ class TradingEngine:
 
     def reject_deal(self, deal: DealProposal) -> None:
         self.ledger.reject(deal.deal_id)
+
+    def return_deal(
+        self,
+        deal: DealProposal,
+        responder_id: int,
+        offer_resource: ResourceType | None,
+        offer_qty: int,
+        request_resource: ResourceType | None,
+        request_qty: int,
+        gold_sweetener: float = 0.0,
+        message: str = "",
+    ) -> DealProposal:
+        return self.ledger.return_to_proposer(
+            deal.deal_id,
+            responder_id,
+            offer_resource,
+            offer_qty,
+            request_resource,
+            request_qty,
+            gold_sweetener,
+            message,
+        )

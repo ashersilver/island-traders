@@ -5,6 +5,32 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/deal-response-167 — deal response backend contract (#167)
+
+Version bump: `0.1.5-dev.2026-06-16.3`
+
+Adds the backend/model/server seam for structured barter deal responses.
+
+- Deals now have a `returned` status, an `awaiting_id` turn marker, a current
+  message, and terminal accept/reject/expire guards.
+- Returned/countered deals keep terms in the original proposer → target
+  perspective, so accepting a counter reuses the existing atomic transfer path
+  and revalidates stale inventory/Dollops before moving anything.
+- WebSocket actions:
+  - `deal_propose`: `{target_player_id, offer:{resource, qty}, request:{resource, qty}, sweetener}`
+    → `deal_propose_ack`.
+  - `deal_respond`: `{deal_id, action:"accept"|"return"|"reject", new_offer?, new_request?, new_sweetener?, message?}`
+    → `deal_response_ack`.
+- Push notification:
+  - `deal_response`: `{deal_id, result:"proposed"|"accepted"|"returned"|"rejected"|"expired", from, deal}`.
+- `game_state` now includes viewer-scoped `deals_awaiting_me` and `my_deals`.
+  Deal payload fields: `deal_id`, `status`, `proposer_id/name`, `target_id/name`,
+  `counterparty_id/name`, `awaiting_id/name`, `offer`, `request`, `sweetener`,
+  `message`, `last_response_by_id/name`.
+
+UI call is left as a backend contract/stub for Claude's follow-on; no frontend
+controls are wired in this branch.
+
 ### claude/role-complexity-index-27-2026-06-16 — role activity index (#27)
 
 Version bump: `0.1.5-dev.2026-06-16.2`

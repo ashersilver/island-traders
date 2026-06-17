@@ -970,18 +970,31 @@ class AIStrategy:
             return best_offer.price_per_unit
         return market.current_price(rtype)
 
-    def _deal_value_for_acceptor(
-        self, deal: DealProposal, market: Market, trading_engine: TradingEngine
+    def _deal_value_for_player(
+        self, deal: DealProposal, player_id: int, market: Market, trading_engine: TradingEngine
     ) -> tuple[float, float]:
-        received = max(deal.gold_sweetener, 0)
-        given = max(-deal.gold_sweetener, 0)
-        if deal.offer_resource and deal.offer_qty > 0:
-            received += deal.offer_qty * self._valuation_price(
-                market, trading_engine, deal.offer_resource
-            )
+        if player_id == deal.target_id:
+            received = max(deal.gold_sweetener, 0)
+            given = max(-deal.gold_sweetener, 0)
+            if deal.offer_resource and deal.offer_qty > 0:
+                received += deal.offer_qty * self._valuation_price(
+                    market, trading_engine, deal.offer_resource
+                )
+            if deal.request_resource and deal.request_qty > 0:
+                given += deal.request_qty * self._valuation_price(
+                    market, trading_engine, deal.request_resource
+                )
+            return received, given
+
+        received = max(-deal.gold_sweetener, 0)
+        given = max(deal.gold_sweetener, 0)
         if deal.request_resource and deal.request_qty > 0:
-            given += deal.request_qty * self._valuation_price(
+            received += deal.request_qty * self._valuation_price(
                 market, trading_engine, deal.request_resource
+            )
+        if deal.offer_resource and deal.offer_qty > 0:
+            given += deal.offer_qty * self._valuation_price(
+                market, trading_engine, deal.offer_resource
             )
         return received, given
 
@@ -998,11 +1011,14 @@ class AIStrategy:
         players = {p.player_id: p for p in other_players}
         for deal in trading_engine.ledger.pending_for_player(player.player_id):
             proposer = players.get(deal.proposer_id)
-            if proposer is None:
+            target = players.get(deal.target_id)
+            if proposer is None or target is None:
                 trading_engine.ledger.expire(deal.deal_id)
                 actions.append(f"[AI] {player.name} let stale deal #{deal.deal_id} expire")
                 continue
-            received, given = self._deal_value_for_acceptor(deal, market, trading_engine)
+            received, given = self._deal_value_for_player(
+                deal, player.player_id, market, trading_engine
+            )
             profitable = received >= given * (1 + AI_ARBITRAGE_MIN_MARGIN) or (
                 given == 0 and received > 0
             )
@@ -1010,7 +1026,7 @@ class AIStrategy:
                 try:
                     trading_engine.accept_deal(
                         deal,
-                        acceptor=player,
+                        acceptor=target,
                         proposer=proposer,
                         acquired_tick=current_tick,
                     )
