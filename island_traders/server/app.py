@@ -1228,6 +1228,8 @@ class GameManager:
 
         spent_in_auction = room.investing.deductions.get(lp.player_id, 0.0)
         budget = round(room.starting_capital - spent_in_auction, 1)
+        island_capital = round(ISLAND_STARTING_CASH, 1)
+        setup_loan_rate = posted_funding_rates(0, 0)[3]
         from ..models.lease import lease_quote
         catalogue_payload = []
         mandatory_set: set[str] = set()
@@ -1247,6 +1249,13 @@ class GameManager:
                     "name":             it.name,
                     "role":             it.role,
                     "cost":             it.cost,
+                    "island_capital":   island_capital,
+                    "secured_loan_quote": {
+                        "term_years": 3,
+                        "interest_rate": setup_loan_rate,
+                        "max_treasury_cover": island_capital,
+                        "shortfall_if_selected": round(max(0.0, it.cost - island_capital), 1),
+                    },
                     "delivery_seasons": it.delivery_seasons,
                     "description":      it.description,
                     "effects":          it.effects,
@@ -1259,6 +1268,7 @@ class GameManager:
         return {
             "type": "investing_start",
             "budget": budget,
+            "island_capital": island_capital,
             "roles": list(lp.role_names),
             "catalogue": catalogue_payload,
             "mandatory": sorted(mandatory_set),
@@ -1338,6 +1348,7 @@ class GameManager:
         capital_purchases: dict[str, list[str]] = {}   # player_id -> item_ids actually bought
         capital_leases: dict[str, list[str]] = {}      # player_id -> item_ids leased
         capital_spend: dict[str, float] = {}
+        purchase_costs: dict[str, dict[str, float]] = {}
 
         for lp in room.players:
             if not lp.role_names:
@@ -1367,6 +1378,7 @@ class GameManager:
                     leased.append(item_id)
                 else:
                     bought.append(item_id)
+                    purchase_costs.setdefault(lp.player_id, {})[item_id] = round(price, 1)
                 spend += price
             capital_purchases[lp.player_id] = bought
             capital_leases[lp.player_id] = leased
@@ -1394,6 +1406,7 @@ class GameManager:
             capital_purchases=capital_purchases,
             capital_leases=capital_leases,
             capital_spend=capital_spend,
+            capital_purchase_costs=purchase_costs,
         )
 
     # ---- Game launch ----
@@ -1402,7 +1415,8 @@ class GameManager:
                      bids: dict[str, float] | None = None,
                      capital_purchases: dict[str, list[str]] | None = None,
                      capital_leases: dict[str, list[str]] | None = None,
-                     capital_spend: dict[str, float] | None = None) -> bool:
+                     capital_spend: dict[str, float] | None = None,
+                     capital_purchase_costs: dict[str, dict[str, float]] | None = None) -> bool:
         room = self.rooms.get(room_id)
         if not room:
             return False
@@ -1411,11 +1425,12 @@ class GameManager:
         # Personal cash (investor wallet) = starting_capital − winning bid
         # (the bid leaves the game, paid to imaginary former owners).
         # Island treasury is seeded independently at ISLAND_STARTING_CASH and
-        # funds the opening capital basket; any shortfall is auto-lent from
-        # personal cash as a shareholder loan (net-worth-neutral).
+        # funds the opening capital basket; any shortfall becomes a secured
+        # three-year setup loan instead of draining the owner's personal cash.
         base_capital = room.starting_capital
         bids = bids or {}
         capital_spend = capital_spend or {}
+        capital_purchase_costs = capital_purchase_costs or {}
 
         specs = []
         spec_to_lobby_pid: dict[int, str] = {}   # PlayerSpec idx -> lobby player_id
@@ -1462,22 +1477,58 @@ class GameManager:
         }
 
         # --- Apply the equity flip to each engine Player (post-setup) -------
-        # treasury = ISLAND_STARTING_CASH + lent − capital_spend
-        # personal_cash = starting_capital − winning_bid − lent
-        # lent (shareholder loan) = max(0, capital_spend − ISLAND_STARTING_CASH)
+        # treasury = ISLAND_STARTING_CASH − opening capital spend paid from the island
+        # personal_cash = starting_capital − winning_bid
+        # secured setup loan = any opening capital spend above the island treasury
+        setup_loan_rate = posted_funding_rates(0, 0)[3]
+        banker = next(
+            (p for p in game.players if any(r.name == "Banker" for r in p.roles)),
+            None,
+        )
         for spec_idx, lobby_pid in spec_to_lobby_pid.items():
             if spec_idx >= len(game.players):
                 continue
             p = game.players[spec_idx]
             bid = float(bids.get(lobby_pid, 0.0))
             cspend = float(capital_spend.get(lobby_pid, 0.0))
-            lent = max(0.0, cspend - ISLAND_STARTING_CASH)
-            p.dollops = round(ISLAND_STARTING_CASH + lent - cspend, 1)
-            p.personal_cash = round(base_capital - bid - lent, 1)
+            remaining_treasury = ISLAND_STARTING_CASH
+            p.personal_cash = round(base_capital - bid, 1)
             p.shareholder_loans = {}
-            if lent > 0:
-                # The owner (investor) lends to their own island (same id).
-                sh_loans.lend(p.shareholder_loans, str(p.player_id), round(lent, 1))
+            costs = dict(capital_purchase_costs.get(lobby_pid, {}))
+            residual_spend = round(cspend - sum(costs.values()), 1)
+            if residual_spend > 0:
+                costs["opening.aggregate_spend"] = residual_spend
+            for item_id, cost in costs.items():
+                from_treasury = min(remaining_treasury, float(cost))
+                remaining_treasury = round(remaining_treasury - from_treasury, 1)
+                shortfall = round(float(cost) - from_treasury, 1)
+                if shortfall <= 0:
+                    continue
+                lender_id = banker.player_id if banker else -1
+                game.loan_ledger.create_loan(
+                    borrower_id=p.player_id,
+                    lender_id=lender_id,
+                    principal=shortfall,
+                    interest_rate=setup_loan_rate,
+                    issued_year=0,
+                    issued_season=0,
+                    term_years=3,
+                    posted_at_issue=setup_loan_rate,
+                    collateral_item_id=item_id,
+                    secured=True,
+                )
+                if banker and banker.player_id != p.player_id:
+                    game.loan_ledger.create_loan(
+                        borrower_id=banker.player_id,
+                        lender_id=-1,
+                        principal=shortfall,
+                        interest_rate=setup_loan_rate,
+                        issued_year=0,
+                        issued_season=0,
+                        term_years=3,
+                        posted_at_issue=setup_loan_rate,
+                    )
+            p.dollops = round(max(0.0, remaining_treasury), 1)
 
         # Simultaneous-play mode is ALWAYS on for the server: each human
         # plays on their own turn-thread, exit via Ready button or (if
@@ -3438,6 +3489,8 @@ class GameManager:
                         "interest_rate": l.interest_rate,
                         "repayment_amount": round(l.repayment_amount, 1),
                         "term_years": l.term_years,
+                        "secured": l.secured,
+                        "collateral_item_id": l.collateral_item_id,
                         "issued_year": l.issued_year + 1,
                         "issued_season": SEASONS[l.issued_season]
                             if l.issued_season < len(SEASONS) else str(l.issued_season),
