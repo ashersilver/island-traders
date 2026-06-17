@@ -5,6 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/phase0-version-doctor-comment-2026-06-16 — Phase 0 doc-sync housekeeping
+
+Version bump: `0.1.5-dev.2026-06-16.1`
+
+Closes the first two Phase 0 housekeeping items (no player-facing behaviour
+change — comments, docs, and version metadata only):
+
+- Reconciles the version metadata mismatch between `pyproject.toml` (`0.1.4`)
+  and `constants.py` (`0.1.5-dev.*`). Documents the dev-vs-release split in
+  `requirements/release-process.md` (new "Versioning" section) and adds
+  cross-referencing comments to both files: `constants.py` `APP_VERSION` is the
+  canonical *running* version; `pyproject.toml` tracks the last *tagged*
+  release and lags by design until a release is cut.
+- Fixes the stale `STARTING_WORKERS_BY_PROFESSION` Doctor comment in
+  `constants.py`, which described a mix ("1 Doctor + 1 Nurse Manager + 3 Medical
+  Orderlies + 1 Aide" / "2 Doctors + 4 Nurses") that no longer matched the code.
+  The comment now states the actual config: 2 Doctors + 2 Nurses + 2 Medical
+  Orderlies (6 total), consistent with the Doctor block, `RULES.md`, and
+  `STARTING_TRAINED_FRACTION = 1.00`.
+
+Verification: full suite `731 passed`.
+
 ### codex/correctness-balance-154-155 — training accounting + calibration
 
 Version bump: `0.1.5-dev.2026-06-15.5` (was `.4` on the branch; reconciled to the
