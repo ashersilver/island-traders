@@ -5,6 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/role-complexity-index-27-2026-06-16 — role activity index (#27)
+
+Version bump: `0.1.5-dev.2026-06-16.2`
+
+Adds a per-role **activity index** (High / Medium / Low) so players can factor
+how busy a role is into their auction bidding (#27).
+
+- Each island's auction briefing card now shows an "activity" chip
+  (colour-coded, with a hover note); the full briefing dialog adds an
+  "Activity index" line explaining the rating.
+- Ratings: **Low** — Miner; **Medium** — Farmer, Transporter, Manufacturer;
+  **High** — Educator, Banker, Doctor.
+- `RULES.md` "The Seven Islands" table gains an Activity column plus an
+  explanatory note, so the physical edition carries the same guidance.
+
+Frontend + docs only — no engine/balance change.
+
 ### claude/phase0-version-doctor-comment-2026-06-16 — Phase 0 doc-sync housekeeping
 
 Version bump: `0.1.5-dev.2026-06-16.1`

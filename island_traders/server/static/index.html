@@ -1590,42 +1590,49 @@ const ISLAND_BRIEFINGS = {
   Farmer: {
     title: 'Agriculture and Fisheries Island',
     summary: 'Feed the archipelago with Grain, Produce, Fish, Meat, and premium packaged Food. Protect machinery, fuel, and the specialists who make each line sing.',
+    complexity: { level: 'Medium', note: 'Seasonal yield table and a multi-line food basket to balance, but a steady production loop once set up.' },
     priorities: ['Balance Grain / Produce / protein', 'Secure Farm Machinery and Oil', 'Add Horticulturalist and Veterinarian depth'],
     full: `You produce Grain, Produce, Fish, and Meat, then may package balanced Food in an Industrial Kitchen for governors who prefer convenience over kitchen arithmetic. Other islands need a healthy mix of Produce, Grain, and either Fish or Meat; packaged Food saves them time and should command a premium.<br><br>Your strongest strategy is to become the archipelago’s reliable food-security partner: keep raw staples flowing, build the kitchen when the market will pay for convenience, and train Horticulturalists and Veterinarians before those lines become the bottleneck.`
   },
   Miner: {
     title: 'Mining and Exploration Island',
     summary: 'Supply the bones and blood of industry: Ore, Metal, and Oil. Guard your own Oil, keep Container Freight moving, and decide when to sell raw versus refine.',
+    complexity: { level: 'Low', note: 'The most straightforward island: a single extraction loop with a simple raw-vs-refine decision. A good first role.' },
     priorities: ['Protect Oil supply', 'Secure Container Freight', 'Invest in skilled extraction'],
     full: `You produce Ore, Metal, and Oil. Ore brings early cash, Metal is the higher-value industrial feedstock, and Oil powers half the board including your own operations.<br><br>Your strongest strategy is to become more than a quarry: keep production resilient, build refining depth, and make every industrial island negotiate with you for motion or materials.`
   },
   Transporter: {
     title: 'Transportation and Logistics Island',
     summary: 'Make the archipelago function as one economy. Produce both Container Freight and PassengerSeats; cargo moves goods, seats move the people who unlock growth and recovery.',
+    complexity: { level: 'Medium', note: 'Two services to balance and constant demand-anticipation, but no negotiation queues. Activity rises as freight becomes a paid service.' },
     priorities: ['Keep Oil and Food on hand', 'List Freight and PassengerSeats', 'Train transport specialists'],
     full: `You produce Container Freight and PassengerSeats. Freight enables trade; PassengerSeats enable training, nurse travel, and other high-value movement of people.<br><br>Your strongest strategy is to anticipate demand before it becomes a crisis: balance cargo and passenger capacity, keep routes staffed, and make yourself the island everyone has to plan around.`
   },
   Educator: {
     title: 'Education, Research and Training Island',
     summary: 'Turn population into capability. Maintain Expertise, produce Courses, and keep faculty depth high so the archipelago can train rather than stagnate.',
+    complexity: { level: 'High', note: 'Two training pipelines, course/expertise upkeep, and a request approval queue with counter-offers to every other island. Busy every season.' },
     priorities: ['Maintain Expertise', 'Keep Courses available', 'Protect Professors and Instructors'],
     full: `You produce Expertise, Courses, and Patents. One Course serves a class of up to twelve trainees and consumes one Expertise per season to run. Reagents support Patents and science-track courses.<br><br>Your strongest strategy is to sell progress itself: keep the training pipeline open, secure PassengerSeats, and become the trusted route by which every other island scales.`
   },
   Banker: {
     title: 'Banking and Insurance Island',
     summary: 'Price time and risk. Your business is loans and insurance, not commodity production; your edge is seeing other islands’ bottlenecks before they do.',
+    complexity: { level: 'High', note: 'No production loop to fall back on — every turn is active financial judgement: rate negotiation, reserve ratios, underwriting, and reading the whole board. Rewards experienced players.' },
     priorities: ['Deploy capital wisely', 'Underwrite risk early', 'Maintain Expertise'],
     full: `You earn through loans and insurance. Productive borrowers turn your capital into future interest; risky industries and vulnerable islands need protection before disaster arrives.<br><br>Your strongest strategy is to be the best-informed player at the table: finance growth that can repay, insure danger before it becomes obvious, and never let somebody else’s bad plan become your bad balance sheet.`
   },
   Manufacturer: {
     title: 'ForgeHaven Manufacturing Island',
     summary: 'Sell growth itself. Choose the product line the archipelago will need next, and secure Metal, Oil, Container Freight, and the workforce to deliver it.',
+    complexity: { level: 'Medium', note: 'A product-line choice each season makes foresight matter more than volume; inputs and workforce need lining up, but the turn loop is contained.' },
     priorities: ['Read future demand', 'Secure industrial inputs', 'Train for chosen lines'],
     full: `You produce Farm Machinery, Mining Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
   },
   Doctor: {
     title: 'Healthcare and Health Research Island',
     summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
     full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
   },
@@ -2251,12 +2258,38 @@ function showAuctionResult(msg) {
 
 }
 
+// Activity-index colours (issue #27): how much hands-on work a role demands
+// each season, so players can factor effort into their island bidding.
+const COMPLEXITY_COLORS = { High: '#e74c3c', Medium: '#e7c05d', Low: '#27ae60' };
+
+// Compact inline chip for the auction card.
+function complexityChip(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<span title="${esc(c.note || '')}" style="display:inline-block;font-size:.68rem;font-weight:700;`
+    + `text-transform:uppercase;letter-spacing:.04em;color:${col};border:1px solid ${col}88;`
+    + `border-radius:999px;padding:.05rem .5rem;white-space:nowrap">${esc(c.level)} activity</span>`;
+}
+
+// Fuller line for the read-more briefing dialog.
+function complexityLine(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<div style="margin-top:.8rem;font-size:.82rem"><strong style="color:${col}">`
+    + `Activity index: ${esc(c.level)}</strong> — ${esc(c.note || '')}</div>`;
+}
+
 function renderAuctionBriefingCard(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return '';
   const color = ROLE_COLORS[role] || '#aaa';
   return `<div style="margin-bottom:.6rem;padding:.8rem;border:1px solid ${color}66;border-radius:8px;background:${color}10">
-    <div style="font-weight:800;color:${color}">${esc(b.title)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+      <span style="font-weight:800;color:${color}">${esc(b.title)}</span>
+      ${complexityChip(b)}
+    </div>
     <div style="font-size:.84rem;line-height:1.4;margin-top:.35rem">${esc(b.summary)}</div>
     <div style="font-size:.76rem;color:var(--dim);margin-top:.35rem">Priorities: ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-ghost btn-sm" style="margin-top:.55rem" onclick="showIslandBriefing('${esc(role)}')">Read full briefing</button>
@@ -2267,6 +2300,7 @@ function showIslandBriefing(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return;
   const body = `<p style="line-height:1.5">${b.full}</p>
+    ${complexityLine(b)}
     <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
   showDlg(b.title, body);
