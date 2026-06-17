@@ -2809,6 +2809,7 @@ class GameManager:
                         getattr(room, "current_year_index", 0) * len(SEASONS)
                         + getattr(room, "current_season_index", 0)
                     ),
+                    players=room.game.players,
                 )
                 result = "accepted"
             elif action == "reject":

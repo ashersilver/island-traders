@@ -2920,7 +2920,13 @@ class TurnManager:
                     continue
                 rtype = ResourceType(rtype_str)
                 try:
-                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    bought = int(result_row.get("quantity", 0))
+                    cost = abs(float(result_row.get("total", 0.0)))
                     self.io.print(
                         f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}"
                     )
@@ -2997,7 +3003,13 @@ class TurnManager:
             qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, total_avail)
             if self.io.confirm("Confirm buy?"):
                 try:
-                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    bought = int(result_row.get("quantity", 0))
+                    cost = abs(float(result_row.get("total", 0.0)))
                     self.io.print(f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}")
                     result.actions_taken.append(f"buy:{bought}x{rtype.value}")
                 except Exception as e:
@@ -3021,7 +3033,13 @@ class TurnManager:
             )
             if qty <= total_bid_qty and self.io.confirm("Sell immediately into bids?"):
                 try:
-                    paid, sold = self.market.sell_to_bids(player, rtype, qty, self.players)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "sell", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    sold = int(result_row.get("quantity", 0))
+                    paid = float(result_row.get("total", 0.0))
                     self.io.print(f"  Sold {sold}x {rtype.value} for {paid:.2f} {sym}")
                     result.actions_taken.append(f"sell_bid:{sold}x{rtype.value}")
                 except Exception as e:
@@ -3104,6 +3122,7 @@ class TurnManager:
                         target,
                         player,
                         acquired_tick=result.year * len(SEASONS) + result.season,
+                        players=self.players,
                     )
                     self.io.print(f"  {target.name} accepted the deal.")
                     result.actions_taken.append("deal:accepted")
@@ -3143,6 +3162,7 @@ class TurnManager:
                         acceptor=target,
                         proposer=proposer,
                         acquired_tick=result.year * len(SEASONS) + result.season,
+                        players=self.players,
                     )
                     self.io.print(f"  Accepted deal #{deal.deal_id}.")
                     result.actions_taken.append(f"deal:accepted:{deal.deal_id}")
