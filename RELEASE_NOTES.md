@@ -5,6 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/capital-start-freight-157-85 — opening capital loans + freight friction (#157, #85)
+
+Version bump: `0.1.5-dev.2026-06-17.1`
+
+- Opening capital purchases now spend island treasury first. Any setup shortfall
+  becomes a secured three-year setup loan at the posted three-year funding rate,
+  with the purchased asset recorded as collateral instead of draining the
+  owner's personal cash as a shareholder loan.
+- Investing/start payloads expose island capital, item cost, and secured-loan
+  quote terms so the UI can show buy financing before launch.
+- Loan save/load and game-state detail now preserve and surface secured/collateral
+  metadata.
+- Market/order/deal trades now apply freight friction: non-Freight goods consume
+  buyer Freight when available, otherwise pay a flat per-unit freight fee to the
+  Transporter when one is present. Freight trades are exempt, same-island deals
+  are exempt, and no-Transporter setups waive the fee.
+
 ### codex/deal-response-167 — deal response backend contract (#167)
 
 Version bump: `0.1.5-dev.2026-06-16.4` (was `.3` on the branch; reconciled to
