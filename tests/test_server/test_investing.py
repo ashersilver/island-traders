@@ -337,8 +337,10 @@ def test_investing_payload_supports_reconnect():
 
     assert payload["type"] == "investing_start"
     assert payload["budget"] == room.starting_capital - 25.0
+    assert payload["island_capital"] > 0
     assert payload["roles"] == ["Farmer"]
     assert payload["catalogue"]
+    assert payload["catalogue"][0]["secured_loan_quote"]["term_years"] == 3
     assert payload["timer_seconds"] > 0
 
 
