@@ -1029,6 +1029,7 @@ class AIStrategy:
                         acceptor=target,
                         proposer=proposer,
                         acquired_tick=current_tick,
+                        players=[player] + other_players,
                     )
                     actions.append(f"[AI] {player.name} accepted profitable deal #{deal.deal_id}")
                 except Exception:
@@ -1059,8 +1060,21 @@ class AIStrategy:
             if qty <= 0 or player.dollops < offer.price_per_unit * qty:
                 continue
             try:
-                cost, bought = market.buy_from_offers(player, rtype, qty)
-                paid, sold = market.sell_to_bids(player, rtype, bought, other_players)
+                players = [player] + other_players
+                buy = trading_engine.execute_order_list(
+                    player,
+                    [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                    players,
+                )[0]
+                bought = int(buy.get("quantity", 0))
+                cost = abs(float(buy.get("total", 0.0)))
+                sell = trading_engine.execute_order_list(
+                    player,
+                    [{"side": "sell", "resource": rtype.value, "quantity": bought}],
+                    players,
+                )[0]
+                sold = int(sell.get("quantity", 0))
+                paid = float(sell.get("total", 0.0))
             except Exception:
                 continue
             if sold:
@@ -1157,7 +1171,13 @@ class AIStrategy:
                 )
                 if player.dollops >= est_cost:
                     try:
-                        cost, bought = market.buy_from_offers(player, rtype, fill_qty)
+                        order = trading_engine.execute_order_list(
+                            player,
+                            [{"side": "buy", "resource": rtype.value, "quantity": fill_qty}],
+                            [player] + other_players,
+                        )[0]
+                        bought = int(order.get("quantity", 0))
+                        cost = abs(float(order.get("total", 0.0)))
                         actions.append(
                             f"[AI] {player.name} bought {bought}x {rtype.value} "
                             f"for {cost:.1f} Dp"

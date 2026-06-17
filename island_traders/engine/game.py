@@ -244,7 +244,7 @@ class Game:
         )
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(self.market, self.ledger)
+        trading = TradingEngine(self.market, self.ledger, self.players)
         # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
         # market + production engine so the simulation runner can read it.
         self.market.telemetry = self.resource_flow
@@ -1259,7 +1259,7 @@ class Game:
         )
         game.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(game.market, game.ledger)
+        trading = TradingEngine(game.market, game.ledger, game.players)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
             game.staffing, game.loan_ledger, game.lease_ledger,
