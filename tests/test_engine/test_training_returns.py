@@ -24,9 +24,9 @@ from island_traders.models.profession import Profession
 
 def _farmer_educator_game() -> Game:
     """Two-island game (Farmer requester + Educator trainer) for end-to-end
-    training-return coverage. Single year is enough — every test here
-    dispatches at Y0/S0 and the longest course (Doctor, 3 seasons) returns
-    at Y0/S3 — still within the year."""
+    training-return coverage. Tests call the return hook directly, so Doctor's
+    four-season course can cross into Y1/S0 without running a full second game
+    year."""
     config = GameConfig(
         num_years=1,
         player_specs=[
@@ -95,10 +95,8 @@ def test_cross_island_trainee_returns_at_return_season_with_upgraded_profession(
         assert worker.training_level == starting_level + 1
 
 
-def test_cross_island_doctor_three_season_round_trip():
-    """Doctor is Manager-tier with EDUCATION_SEASONS[Doctor] = 3.
-    Verifies the longer course still releases the worker cleanly within
-    the same year."""
+def test_cross_island_doctor_four_season_round_trip():
+    """Doctor is Manager-tier with EDUCATION_SEASONS[Doctor] = 4."""
     game = _farmer_educator_game()
     farmer, educator = game.players
     worker_id = _pick_unskilled_worker(farmer).worker_id
@@ -113,15 +111,15 @@ def test_cross_island_doctor_three_season_round_trip():
     game.training.arrange_transport(req.batch_id, transporter_id=educator.player_id)
     game.training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
     farmer.workforce.dispatch_for_training([worker_id])
-    assert req.return_year == 0 and req.return_season == 3
+    assert req.return_year == 1 and req.return_season == 0
 
-    # Walk the seasons; only S3 should release the worker.
-    for s in (0, 1, 2):
+    # Walk the first year; only Y1/S0 should release the worker.
+    for s in (0, 1, 2, 3):
         game._process_training_returns(year=0, season=s)
         worker = next(w for w in farmer.workforce.workers if w.worker_id == worker_id)
         assert worker.in_training, f"Doctor course should still be active at season {s}"
 
-    game._process_training_returns(year=0, season=3)
+    game._process_training_returns(year=1, season=0)
     worker = next(w for w in farmer.workforce.workers if w.worker_id == worker_id)
     assert not worker.in_training
 
@@ -190,6 +188,32 @@ def test_training_reconcile_clears_orphaned_in_training_flag_when_batch_removed(
     assert farmer.workforce.training_count == len(
         game.training.dispatched_worker_ids(farmer.player_id)
     )
+
+
+def test_training_request_settling_round_trips_through_save_load(tmp_path):
+    game = _farmer_educator_game()
+    farmer, educator = game.players
+    worker_id = _pick_unskilled_worker(farmer).worker_id
+    req = game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=20.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+        duration_seasons=2,
+        settling_seasons_on_return=1,
+    )
+
+    path = tmp_path / "training-save.json"
+    game.save(str(path))
+    loaded = Game.load(str(path), FakeIOAdapter())
+    loaded_req = loaded.training.request_by_id(req.batch_id)
+
+    assert loaded_req.duration_seasons == 2
+    assert loaded_req.settling_seasons_on_return == 1
 
 
 def test_return_hook_repairs_missing_dispatched_flag_before_return():

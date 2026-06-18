@@ -12,7 +12,13 @@ from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
-from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
+from ..models.training import (
+    TrainingRegistry,
+    TrainingRequest,
+    TrainingStatus,
+    campus_has_technical_workshop,
+    settling_seasons_on_return,
+)
 from ..models.staffing import StaffingRegistry, StaffingContract, StaffingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
@@ -714,7 +720,10 @@ class Game:
                 f"as {batch.target_profession}."
             )
             returned = player.workforce.return_from_training(
-                batch.worker_ids, batch.target_profession, batch.engineer_specialty
+                batch.worker_ids,
+                batch.target_profession,
+                batch.engineer_specialty,
+                batch.settling_seasons_on_return,
             )
             if returned:
                 self.io.print(
@@ -920,6 +929,7 @@ class Game:
                     "target_profession": r.target_profession,
                     "engineer_specialty": r.engineer_specialty,
                     "duration_seasons": r.duration_seasons,
+                    "settling_seasons_on_return": r.settling_seasons_on_return,
                     "proposed_year": r.proposed_year,
                     "proposed_season": r.proposed_season,
                     "status": r.status.value,
@@ -1183,7 +1193,22 @@ class Game:
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
+        player_by_id = {player.player_id: player for player in game.players}
         for rd in td.get("requests", []):
+            target_profession = rd.get(
+                "target_profession", Profession.UNSKILLED.value
+            )
+            if "settling_seasons_on_return" in rd:
+                settling_on_return = rd.get("settling_seasons_on_return", 0)
+            else:
+                campus = player_by_id.get(rd.get("educator_id"))
+                settling_on_return = settling_seasons_on_return(
+                    target_profession,
+                    has_technical_workshop=(
+                        campus_has_technical_workshop(campus)
+                        if campus is not None else True
+                    ),
+                )
             req = TrainingRequest(
                 batch_id=rd["batch_id"],
                 requester_id=rd["requester_id"],
@@ -1192,9 +1217,10 @@ class Game:
                 transporter_id=rd.get("transporter_id"),
                 dollops_to_educator=rd.get("dollops_to_educator", 0),
                 dollops_to_transporter=rd.get("dollops_to_transporter", 0),
-                target_profession=rd.get("target_profession", Profession.UNSKILLED.value),
+                target_profession=target_profession,
                 engineer_specialty=rd.get("engineer_specialty", ""),
                 duration_seasons=rd.get("duration_seasons", 0),
+                settling_seasons_on_return=settling_on_return,
                 proposed_year=rd.get("proposed_year", 0),
                 proposed_season=rd.get("proposed_season", 0),
                 status=TrainingStatus(rd["status"]),

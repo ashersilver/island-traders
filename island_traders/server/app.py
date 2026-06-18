@@ -30,7 +30,12 @@ from ..engine.trading import InvalidDealError, StaleResourceError
 from ..models.profession import Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType
 from ..models.role import ROLES
-from ..models.training import TrainingCapacityError, TrainingStatus
+from ..models.training import (
+    TrainingCapacityError,
+    TrainingStatus,
+    campus_has_technical_workshop,
+    settling_seasons_on_return,
+)
 from ..models.deal import ACTIVE_DEAL_STATUSES, DealProposal
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
@@ -3119,7 +3124,12 @@ class GameManager:
                 profession,
                 worker_ids,
                 requester,
+                educator,
                 specialty,
+            )
+            settling = settling_seasons_on_return(
+                profession,
+                has_technical_workshop=campus_has_technical_workshop(educator),
             )
             req = room.game.training.propose(
                 requester_id=requester.player_id,
@@ -3133,6 +3143,7 @@ class GameManager:
                 tickets_supplied_by_requester=tickets,
                 engineer_specialty=specialty,
                 duration_seasons=duration,
+                settling_seasons_on_return=settling,
             )
             return {
                 "index": index,

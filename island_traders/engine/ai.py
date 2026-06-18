@@ -9,7 +9,12 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
-from ..models.training import TrainingCapacityError, away_seasons
+from ..models.training import (
+    TrainingCapacityError,
+    campus_has_technical_workshop,
+    settling_seasons_on_return,
+    training_duration,
+)
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
 from ..models.equity import UNISSUED_HOLDER, fair_value, share_price
@@ -633,12 +638,22 @@ class AIStrategy:
             if count <= 0:
                 continue
             worker_ids = unskilled_ids[worker_offset:worker_offset + count]
-            duration = away_seasons(profession)
+            has_workshop = campus_has_technical_workshop(educator)
+            duration = training_duration(
+                profession,
+                has_technical_workshop=has_workshop,
+            )
+            courses = max(1, ceil(count / 12))
             fee = round(
                 20.0 * count
                 + TRAINEE_FOOD_ACCOM_PER_SEASON * count * duration
-                + ticket_price * count,
+                + ticket_price * count
+                + market.current_price(ResourceType.EXPERTISE) * courses * duration,
                 1,
+            )
+            settling = settling_seasons_on_return(
+                profession,
+                has_technical_workshop=has_workshop,
             )
             if player.dollops < fee + AI_TRAINING_CASH_RESERVE:
                 break
@@ -653,6 +668,7 @@ class AIStrategy:
                     season=season_index,
                     transport_mode="air_ticket",
                     duration_seasons=duration,
+                    settling_seasons_on_return=settling,
                 )
             except TrainingCapacityError:
                 continue

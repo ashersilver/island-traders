@@ -5,6 +5,26 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-costs-18-2026-06-18 — training-cost model reconciliation (#18)
+
+Version bump: `0.1.5-dev.2026-06-18.1`
+
+Reconciles the training model to #18's cost and apprenticeship rules.
+
+- Doctor training is now 4 seasons.
+- Technician training uses the campus Technical Workshop as a fast-track:
+  1 season away and no settling with the workshop; 2 seasons away plus one
+  50%-productivity settling season without it.
+- Training requests persist `settling_seasons_on_return`, and save/load
+  round-trips the field.
+- Expertise is charged and consumed uniformly at 1 unit per course per season
+  for all course-bearing tracks; AI fee floors and training summaries include
+  food/accommodation, tickets, and expertise.
+- The Training Desk batch endpoint computes duration and settling server-side
+  from the selected campus, independent of the client-supplied fee.
+- `requirements/education-model.md` and related requirement notes now describe
+  the reconciled Doctor duration, workshop fast-track, and 50% settling rules.
+
 ### claude/deal-response-ui-167 — deal response UI (#167)
 
 Version bump: `0.1.5-dev.2026-06-17.1`
