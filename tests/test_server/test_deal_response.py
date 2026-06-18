@@ -95,6 +95,37 @@ def test_game_state_exposes_deals_awaiting_me_and_my_deals():
     }
 
 
+def test_deal_propose_notifies_target_with_actionable_state(monkeypatch):
+    mgr, room, players = _bootstrap_game()
+    farmer, _miner = players
+    farmer.receive_resources(ResourceType.FOOD, 2)
+    sent = []
+    monkeypatch.setattr(
+        mgr,
+        "_thread_safe_send",
+        lambda room_id, lobby_id, msg: sent.append((room_id, lobby_id, msg)),
+    )
+    ws = FakeWebSocket()
+
+    asyncio.run(mgr._handle_deal_propose(
+        room.room_id,
+        "p0",
+        {
+            "target_player_id": players[1].player_id,
+            "offer": {"resource": "Food", "qty": 2},
+            "request": {"resource": "Oil", "qty": 1},
+        },
+        ws,
+    ))
+
+    push = next(msg for _, lobby_id, msg in sent if lobby_id == "p1" and msg["type"] == "deal_response")
+    state = next(msg for _, lobby_id, msg in sent if lobby_id == "p1" and msg["type"] == "game_state")
+    assert push["result"] == "proposed"
+    assert push["deal"]["awaiting_id"] == players[1].player_id
+    assert state["deals_awaiting_me"][0]["deal_id"] == push["deal_id"]
+    assert state["deals_awaiting_me"][0]["awaiting_id"] == players[1].player_id
+
+
 def test_deal_respond_return_updates_terms_and_notifies_proposer(monkeypatch):
     mgr, room, players = _bootstrap_game()
     farmer, miner = players
@@ -134,6 +165,9 @@ def test_deal_respond_return_updates_terms_and_notifies_proposer(monkeypatch):
     assert push["deal"]["offer"] == {"resource": "Food", "qty": 1}
     assert push["deal"]["request"] == {"resource": "Oil", "qty": 2}
     assert push["deal"]["message"] == "Need two Oil."
+    state = next(msg for _, lobby_id, msg in sent if lobby_id == "p0" and msg["type"] == "game_state")
+    assert state["deals_awaiting_me"][0]["deal_id"] == deal.deal_id
+    assert state["deals_awaiting_me"][0]["awaiting_id"] == farmer.player_id
 
 
 def test_deal_respond_accept_returned_deal_moves_resources_once(monkeypatch):

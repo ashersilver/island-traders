@@ -3731,9 +3731,11 @@ function handleMessage(msg) {
       onDealResponsePush(msg);
       break;
     case 'deal_propose_ack':
+      mergeDealMessage(msg);
       showToast('Deal proposed.', { type: 'success' });
       break;
     case 'deal_response_ack': {
+      mergeDealMessage(msg);
       const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
       showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
       break;
@@ -4616,6 +4618,39 @@ function _myDealState() {
   };
 }
 
+function _myEnginePlayerId() {
+  if (!gameState || myPlayerIdx == null) return null;
+  return gameState.players?.[myPlayerIdx]?.player_id ?? null;
+}
+
+function _withoutDeal(list, dealId) {
+  return (list || []).filter(d => d && d.deal_id !== dealId);
+}
+
+function _upsertDeal(list, deal) {
+  return [deal, ..._withoutDeal(list, deal.deal_id)]
+    .sort((a, b) => (b.deal_id || 0) - (a.deal_id || 0));
+}
+
+function mergeDealMessage(msg) {
+  if (!msg || !msg.deal || !gameState) return;
+  const deal = msg.deal;
+  const me = _myEnginePlayerId();
+  if (me == null || deal.deal_id == null) return;
+
+  gameState.deals_awaiting_me = _withoutDeal(gameState.deals_awaiting_me, deal.deal_id);
+  gameState.my_deals = _withoutDeal(gameState.my_deals, deal.deal_id);
+
+  const active = deal.status === 'pending' || deal.status === 'returned';
+  if (active && deal.awaiting_id === me) {
+    gameState.deals_awaiting_me = _upsertDeal(gameState.deals_awaiting_me, deal);
+  }
+  if (deal.proposer_id === me) {
+    gameState.my_deals = _upsertDeal(gameState.my_deals, deal);
+  }
+  renderDealsPanel();
+}
+
 function _dealSideText(side) {
   return side ? `${side.qty}× ${side.resource}` : 'nothing';
 }
@@ -4813,10 +4848,16 @@ const _DEAL_RESULT_TEXT = {
   expired: 'deal expired (stale resources)',
 };
 function onDealResponsePush(msg) {
+  mergeDealMessage(msg);
   const who = msg.from || 'A player';
   const verb = _DEAL_RESULT_TEXT[msg.result] || `updated a deal (${msg.result})`;
   const tone = { accepted: 'success', rejected: 'error', expired: 'error' }[msg.result] || 'info';
-  showToast(`${who} ${verb}.`, { type: tone, ms: 6000 });
+  const needsAction = msg.deal && msg.deal.awaiting_id === _myEnginePlayerId()
+    && (msg.deal.status === 'pending' || msg.deal.status === 'returned');
+  showToast(
+    needsAction ? `${who} ${verb}. Review it in Deals.` : `${who} ${verb}.`,
+    { type: tone, ms: needsAction ? 9000 : 6000 },
+  );
 }
 
 function renderBarterMarket(compact = false) {

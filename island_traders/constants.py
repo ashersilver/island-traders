@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-17.1"
+APP_VERSION: str = "0.1.5-dev.2026-06-17.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -324,6 +324,8 @@ CONSUMER_EDUCATION_SEASONAL_UNITS: dict[str, int] = {
 CONSUMER_EDUCATION_VOUCHER_PER_UNIT: float = 20.0
 HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
 CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
+FREIGHT_UNITS_PER_TRADE_UNIT: float = 0.1
+FREIGHT_FEE_PER_TRADE_UNIT: float = 1.0
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3

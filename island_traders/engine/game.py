@@ -244,7 +244,7 @@ class Game:
         )
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(self.market, self.ledger)
+        trading = TradingEngine(self.market, self.ledger, self.players)
         # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
         # market + production engine so the simulation runner can read it.
         self.market.telemetry = self.resource_flow
@@ -995,6 +995,8 @@ class Game:
                     "external_funded": l.external_funded,
                     "posted_at_issue": l.posted_at_issue,
                     "reserve_ratio_at_issue": l.reserve_ratio_at_issue,
+                    "collateral_item_id": l.collateral_item_id,
+                    "secured": l.secured,
                 }
                 for l in self.loan_ledger.all_loans()
             ],
@@ -1151,6 +1153,8 @@ class Game:
                 external_funded=loan_d.get("external_funded", 0.0),
                 posted_at_issue=loan_d.get("posted_at_issue", 0.0),
                 reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
+                collateral_item_id=loan_d.get("collateral_item_id"),
+                secured=bool(loan_d.get("secured", False)),
             )
             game.loan_ledger.loans.append(loan)
         game.lease_ledger = LeaseLedger()
@@ -1255,7 +1259,7 @@ class Game:
         )
         game.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(game.market, game.ledger)
+        trading = TradingEngine(game.market, game.ledger, game.players)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
             game.staffing, game.loan_ledger, game.lease_ledger,
