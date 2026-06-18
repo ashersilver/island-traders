@@ -46,6 +46,9 @@ Version bump: `0.1.5-dev.2026-06-17.2`
   buyer Freight when available, otherwise pay a flat per-unit freight fee to the
   Transporter when one is present. Freight trades are exempt, same-island deals
   are exempt, and no-Transporter setups waive the fee.
+- Deal notifications now update the local Deals panel immediately from the
+  push/ack payload, so offers and returned counter-offers reliably appear with
+  the badge/action indicator even if the follow-up `game_state` packet is late.
 
 ### codex/deal-response-167 — deal response backend contract (#167)
 
