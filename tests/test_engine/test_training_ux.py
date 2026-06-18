@@ -138,17 +138,33 @@ def test_ai_educator_approves_lower_offer_when_requester_self_supplies():
         educator,
         count=2,
         tickets_supplied_by_requester=2,
-        fee=40.0,
+        fee=0.0,
     )
     tm = _turn_manager([requester, educator], training)
+    req.dollops_to_educator = tm._ai_training_required_offer(req)
 
     tm._ai_educator_respond(educator, requester, req, "Spring", 0)
 
     assert req.status == TrainingStatus.DISPATCHED
     assert requester.inventory.get(ResourceType.PASSENGER_SEATS) == 0
     # Educator pays student medical cover at dispatch (2 × 8 = 16) on top of
-    # the fee, so 540 − 16 = 524 (2026-06-02 student insurance).
-    assert educator.dollops == 524.0
+    # the fee.
+    assert educator.dollops == 500.0 + req.dollops_to_educator - 16.0
+
+
+def test_ai_educator_required_offer_includes_food_and_expertise():
+    requester = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator", is_human=False)
+    training = TrainingRegistry()
+    req = _nurse_request(training, requester, educator, count=2)
+    tm = _turn_manager([requester, educator], training)
+
+    assert tm._ai_training_required_offer(req) == (
+        20.0 * 2
+        + 5.0 * 2 * 1
+        + tm.market.current_price(ResourceType.PASSENGER_SEATS) * 2
+        + tm.market.current_price(ResourceType.EXPERTISE) * 1 * 1
+    )
 
 
 def test_dispatch_fails_when_requester_promises_tickets_but_lacks_inventory():

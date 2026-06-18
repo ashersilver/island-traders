@@ -63,17 +63,18 @@ def test_primary_title_examples():
 
 
 def test_education_and_apprenticeship_durations():
-    # Phase 3 + Engineer specialization (ruled 2026-06-10): Doctor 3
-    # seasons, Nurse 1, Engineer 3, other Managers 2.
-    assert EDUCATION_SEASONS[Profession.DOCTOR] == 3
+    # #18 reconciliation (ruled 2026-06-18): Doctor 4 seasons, Nurse 1,
+    # Engineer 3, other Managers 2.
+    assert EDUCATION_SEASONS[Profession.DOCTOR] == 4
     assert EDUCATION_SEASONS[Profession.NURSE] == 1
     assert EDUCATION_SEASONS[Profession.ENGINEER] == 3
-    # Every Technician apprenticeship is exactly 1 season away at Education,
-    # followed by one 75%-productivity settling season on the home island.
+    # Every Technician apprenticeship is 1 season away when the campus has a
+    # Technical Workshop; no-workshop courses add one 50%-productivity settling
+    # season on the home island.
     for p, seasons in APPRENTICESHIP_SEASONS.items():
         assert seasons == 1
     assert APPRENTICESHIP_SETTLING_SEASONS == 1
-    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.75
+    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.50
 
 
 def test_workforce_band_helpers():

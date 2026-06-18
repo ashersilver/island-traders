@@ -122,6 +122,37 @@ def test_training_batch_ws_handler_submits_and_rejects_independent_rows():
     assert room.game.training.request_by_id(req.batch_id).status.value == "awaiting_transport"
 
 
+def test_training_batch_server_computes_technician_duration_and_settling():
+    mgr, room, players = _bootstrap_game(["Farmer", "Educator"])
+    farmer, educator = players
+    educator.capital_inventory.pop("educator.technical_workshop", None)
+    ws = _WS()
+
+    asyncio.run(mgr._handle_training_batch(
+        room.room_id,
+        "p0",
+        {
+            "batch_ref": "tb-tech",
+            "requests": [
+                {
+                    "profession": "FarmingTechnician",
+                    "count": 1,
+                    "campus_player_id": educator.player_id,
+                    "dollops_to_educator": 0,
+                },
+            ],
+        },
+        ws,
+    ))
+
+    result = ws.sent[0]
+    assert result["results"][0]["status"] == "submitted"
+    req = room.game.training.request_by_id(result["results"][0]["batch_id"])
+    assert req.requester_id == farmer.player_id
+    assert req.duration_seasons == 2
+    assert req.settling_seasons_on_return == 1
+
+
 def test_game_state_exposes_training_options_for_desk_dialog():
     # #158: the Training Desk dialog reads a read-only training_options field
     # (professions with remaining capacity + eligible-worker budget) so it can

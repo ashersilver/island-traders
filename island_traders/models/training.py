@@ -19,16 +19,24 @@ from ..constants import (
 from .profession import (
     Profession, WorkerBand, EngineerSpecialty, band_of,
     EDUCATION_SEASONS, APPRENTICESHIP_SEASONS,
+    APPRENTICESHIP_SETTLING_SEASONS,
 )
+
+TECHNICAL_WORKSHOP_ITEM_ID = "educator.technical_workshop"
+
+
+def campus_has_technical_workshop(campus_player) -> bool:
+    inventory = getattr(campus_player, "capital_inventory", {}) or {}
+    return int(inventory.get(TECHNICAL_WORKSHOP_ITEM_ID, 0) or 0) > 0
 
 
 def away_seasons(profession: str) -> int:
     """Seasons a trainee is away for the given profession.
 
     Manager-band → university course duration (EDUCATION_SEASONS, e.g.
-    Doctor 3, Nurse 1, others 2).  Technician-band → apprenticeship
-    away-duration (APPRENTICESHIP_SEASONS, 1 season; the post-return 75%
-    settling season is tracked on the Worker, not here).  Unknown
+    Doctor 4, Nurse 1, others 2).  Technician-band → baseline
+    apprenticeship away-duration (APPRENTICESHIP_SEASONS, 1 season).  Use
+    training_duration when campus facilities should affect the result. Unknown
     professions fall back to 1 season.
     """
     try:
@@ -41,6 +49,38 @@ def away_seasons(profession: str) -> int:
     if band == WorkerBand.TECHNICIAN:
         return APPRENTICESHIP_SEASONS.get(prof, 1)
     return 1
+
+
+def training_duration(
+    profession: str,
+    *,
+    has_technical_workshop: bool = True,
+    engineer_specialty: str = "",
+    returning_engineer: bool = False,
+) -> int:
+    if profession == Profession.ENGINEER.value and engineer_specialty:
+        return engineer_training_duration(engineer_specialty, returning_engineer)
+    try:
+        prof = Profession(profession)
+    except ValueError:
+        return 1
+    if band_of(prof) == WorkerBand.TECHNICIAN and not has_technical_workshop:
+        return APPRENTICESHIP_SEASONS.get(prof, 1) + 1
+    return away_seasons(profession)
+
+
+def settling_seasons_on_return(
+    profession: str,
+    *,
+    has_technical_workshop: bool = True,
+) -> int:
+    try:
+        prof = Profession(profession)
+    except ValueError:
+        return 0
+    if band_of(prof) == WorkerBand.TECHNICIAN and not has_technical_workshop:
+        return APPRENTICESHIP_SETTLING_SEASONS
+    return 0
 
 
 def engineer_training_duration(
@@ -81,6 +121,7 @@ class TrainingRequest:
     target_profession: str          # profession workers will graduate into
     engineer_specialty: str = ""
     duration_seasons: int = 0
+    settling_seasons_on_return: int = 0
     proposed_year: int = -1
     proposed_season: int = -1       # for per-season caps (e.g. Professor)
     status: TrainingStatus = TrainingStatus.AWAITING_EDUCATOR
@@ -258,6 +299,7 @@ class TrainingRegistry:
         tickets_supplied_by_requester: int = 0,
         engineer_specialty: str = "",
         duration_seasons: int = 0,
+        settling_seasons_on_return: int = 0,
     ) -> TrainingRequest:
         count = len(worker_ids)
         if len(set(worker_ids)) != count:
@@ -298,6 +340,7 @@ class TrainingRegistry:
             target_profession=target_profession,
             engineer_specialty=engineer_specialty,
             duration_seasons=duration_seasons,
+            settling_seasons_on_return=settling_seasons_on_return,
             proposed_year=year,
             proposed_season=season,
             transport_mode=transport_mode,

@@ -33,7 +33,7 @@ class _AutoIO(FakeIOAdapter):
         return players[0]
 
     def ask_dollop_amount(self, prompt, mx, prefill=0.0):
-        return 50.0
+        return max(50.0, prefill)
 
     def confirm(self, prompt, request_summary=None):
         return True
