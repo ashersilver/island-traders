@@ -10,11 +10,11 @@ has an annual quota limiting how many can be trained per game year; Professors
 additionally have a per-season cap.
 
 Workers are also classified into one of three **bands** — see WorkerBand:
-  - MANAGER:    university-trained (Education pipeline; Doctor=3 seasons,
+  - MANAGER:    university-trained (Education pipeline; Doctor=4 seasons,
                 Nurse=1 season, others=2 seasons)
-  - TECHNICIAN: vocationally trained (Educator workshop + Instructor;
-                1 season away at the Education Island, then a 75%-productivity
-                settling season on the home island before reaching 100%)
+  - TECHNICIAN: vocationally trained (Instructor + optional Educator workshop;
+                1 season away with the workshop, otherwise 2 seasons away and
+                a 50%-productivity settling season on the home island)
   - WORKER:     hired directly from the island population (no formal training)
 """
 from __future__ import annotations
@@ -186,11 +186,11 @@ def primary_title(role_name: str, band: WorkerBand) -> str:
 
 
 # Education pipeline duration in seasons (per Manager profession).
-# Canonical (education-model.md, ruled 2026-05-17): Doctor 3, Nurse 1,
+# Canonical (#18 reconciliation, ruled 2026-06-18): Doctor 4, Nurse 1,
 # all other Managers 2, except Engineer now takes 3 seasons before an
 # optional 4th specialty season.
 EDUCATION_SEASONS: dict[Profession, int] = {
-    Profession.DOCTOR:            3,
+    Profession.DOCTOR:            4,
     Profession.NURSE:             1,
     Profession.ENGINEER:          3,
     Profession.FARMER:             2,
@@ -205,10 +205,10 @@ EDUCATION_SEASONS: dict[Profession, int] = {
 
 # Apprenticeship pipeline: number of seasons the apprentice is *away* at
 # the Education Island.  Canonical (education-model.md, ruled 2026-05-17):
-# 1 season away for every Technician, followed by exactly one
-# 75%-productivity "settling" season on the home island (the settling
-# season is NOT counted here — see APPRENTICESHIP_SETTLING_SEASONS and
-# Worker.settling_seasons).
+# 1 season away for every Technician when the campus has a Technical Workshop.
+# Without that facility, the #18 rule adds one away season and one 50%
+# settling season on return; see training_duration and
+# settling_seasons_on_return.
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.FARMING_TECHNICIAN:  1,
     Profession.HORTICULTURALIST:    1,
@@ -238,11 +238,11 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.CHEF:                1,
 }
 
-# How many post-return seasons a freshly-qualified apprentice works at
-# reduced productivity on the home island before reaching 100%.
+# How many post-return seasons a freshly-qualified apprentice without a
+# Technical Workshop works at reduced productivity before reaching 100%.
 APPRENTICESHIP_SETTLING_SEASONS: int = 1
 # Productivity multiplier applied during each settling season.
-APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.75
+APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.50
 
 
 # Which professions are primarily associated with each island role.

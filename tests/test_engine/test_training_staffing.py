@@ -100,7 +100,7 @@ def test_technical_capacity_min_of_2x_td_and_instructors_staffing_only():
     assert tm._technical_course_capacity(educator) == 3
 
 
-def test_technical_course_requires_workshop_prerequisite():
+def test_technical_course_can_run_without_workshop_prerequisite():
     training = TrainingRegistry()
     tm = _turn_manager(training)
     educator = _player(1, "Educator")
@@ -112,8 +112,8 @@ def test_technical_course_requires_workshop_prerequisite():
         educator, _request(Profession.FARMING_TECHNICIAN.value)
     )
 
-    assert not ok
-    assert "no Technical Workshop" in msg
+    assert ok
+    assert msg == ""
 
 
 def test_manager_course_does_not_require_workshop():
@@ -159,15 +159,18 @@ def test_staff_locked_for_course_duration():
 def test_expertise_debited_per_course():
     tm = _turn_manager()
     educator = _player(1, "Educator")
-    _fund_training(educator, courses=4, expertise=4)
+    _fund_training(educator, courses=4, expertise=8)
 
     tm._consume_training_capacity(educator, _request(Profession.NURSE.value))
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 7
 
     tm._consume_training_capacity(
         educator, _request(Profession.FARMING_TECHNICIAN.value)
     )
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 6
+
+    tm._consume_training_capacity(educator, _request(Profession.DOCTOR.value))
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
 
 
 def test_course_slot_debited_per_course_unchanged():

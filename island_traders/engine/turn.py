@@ -6,7 +6,7 @@ from ..models.market import Market
 from ..models.resource import ResourceType
 from ..models.training import (
     TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
-    engineer_training_duration,
+    campus_has_technical_workshop, settling_seasons_on_return, training_duration,
 )
 from ..models.staffing import StaffingRegistry, StaffingStatus
 from ..engine.events import EventResult
@@ -1172,16 +1172,16 @@ class TurnManager:
                     profession,
                     batch_worker_ids,
                     player,
+                    educator,
                     engineer_specialty_by_profession.get(profession, ""),
                 )
                 course_duration = max(course_duration, duration)
                 food_accom += (
                     TRAINEE_FOOD_ACCOM_PER_SEASON * profession_count * duration
                 )
-                if band_of(profession) == WorkerBand.MANAGER:
-                    profession_courses = self.courses_needed(profession_count)
-                    courses += profession_courses
-                    expertise_cost += expertise_price * profession_courses * duration
+                profession_courses = self.courses_needed(profession_count)
+                courses += profession_courses
+                expertise_cost += expertise_price * profession_courses * duration
             educator_ticket_count = count - tickets_supplied_by_requester
             tickets = ticket_price * educator_ticket_count
             suggested_total = base_fee + food_accom + tickets + expertise_cost
@@ -1230,7 +1230,11 @@ class TurnManager:
             try:
                 specialty = engineer_specialty_by_profession.get(profession, "")
                 duration = self._training_duration_for_selection(
-                    profession, batch_worker_ids, player, specialty
+                    profession, batch_worker_ids, player, educator, specialty
+                )
+                settling = settling_seasons_on_return(
+                    profession,
+                    has_technical_workshop=campus_has_technical_workshop(educator),
                 )
                 req = self.training.propose(
                     requester_id=player.player_id,
@@ -1245,6 +1249,7 @@ class TurnManager:
                     tickets_supplied_by_requester=batch_requester_tickets,
                     engineer_specialty=specialty,
                     duration_seasons=duration,
+                    settling_seasons_on_return=settling,
                 )
             except TrainingCapacityError as e:
                 self.io.print(f"  {e}")
@@ -1460,7 +1465,11 @@ class TurnManager:
         fair_rate = 20.0 * len(req.worker_ids)
         educator_tickets = self._educator_ticket_count(req)
         ticket_cost = self.market.current_price(ResourceType.PASSENGER_SEATS) * educator_tickets
-        return fair_rate + ticket_cost
+        duration = req.duration_seasons or away_seasons(req.target_profession)
+        courses = self.courses_needed(len(req.worker_ids))
+        food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * len(req.worker_ids) * duration
+        expertise_cost = self.market.current_price(ResourceType.EXPERTISE) * courses * duration
+        return fair_rate + food_accom + ticket_cost + expertise_cost
 
     def _choose_engineer_specialty(self) -> str:
         options = [{"label": "No specialty", "value": ""}]
@@ -1483,12 +1492,9 @@ class TurnManager:
         profession: str,
         worker_ids: list[int],
         player: Player,
+        campus_player: Player | None = None,
         engineer_specialty: str = "",
     ) -> int:
-        if profession != Profession.ENGINEER.value:
-            return away_seasons(profession)
-        if not engineer_specialty:
-            return away_seasons(profession)
         workers = {
             worker.worker_id: worker
             for worker in player.workforce.workers
@@ -1498,7 +1504,16 @@ class TurnManager:
             worker.profession == Profession.ENGINEER.value
             for worker in workers.values()
         )
-        return engineer_training_duration(engineer_specialty, returning_engineer)
+        has_workshop = (
+            campus_has_technical_workshop(campus_player)
+            if campus_player is not None else True
+        )
+        return training_duration(
+            profession,
+            has_technical_workshop=has_workshop,
+            engineer_specialty=engineer_specialty,
+            returning_engineer=returning_engineer,
+        )
 
     def _auto_arrange_transport(self, requester, req, season_name: str, year: int) -> None:
         """Find an AI Transporter to handle the logistics, or flag for human turn."""
@@ -1788,8 +1803,9 @@ class TurnManager:
                     f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
                     f"have {prof} Professor(s), {lect} Lecturer(s))."
                 )
-            if educator.inventory.get(ResourceType.EXPERTISE) < 2 * need_courses:
-                return False, f"needs {2 * need_courses} Expertise for this course."
+            expertise_needed = self._training_expertise_needed(req, need_courses)
+            if educator.inventory.get(ResourceType.EXPERTISE) < expertise_needed:
+                return False, f"needs {expertise_needed} Expertise for this course."
             if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
                 return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
@@ -1805,11 +1821,6 @@ class TurnManager:
             workshop_seats = technical_workshop_trainee_capacity(
                 CAPITAL_CATALOGUE, educator.capital_inventory
             )
-            if workshop_seats <= 0:
-                return False, (
-                    "no Technical Workshop on the Education Island "
-                    "(prerequisite for technical courses)."
-                )
             # Staffing gate — per-course (Technical Director supervises 2
             # concurrent courses; Instructor leads 1).
             max_concurrent = self._technical_course_capacity(educator)
@@ -1824,16 +1835,18 @@ class TurnManager:
                 )
             # Workshop gate — per-trainee (each workshop holds 6 trainees
             # at once; sum trainee headcount across all in-flight batches).
-            trainees_in_flight = self.training.technical_trainees_in_flight(educator.player_id)
-            batch_trainees = len(req.worker_ids)
-            if workshop_seats - trainees_in_flight < batch_trainees:
-                return False, (
-                    f"Technical Workshop capacity full: "
-                    f"{trainees_in_flight}/{workshop_seats} trainee seat(s) "
-                    f"already in training (need {batch_trainees} more for this batch)."
-                )
-            if educator.inventory.get(ResourceType.EXPERTISE) < need_courses:
-                return False, f"needs {need_courses} Expertise for this course."
+            if workshop_seats > 0:
+                trainees_in_flight = self.training.technical_trainees_in_flight(educator.player_id)
+                batch_trainees = len(req.worker_ids)
+                if workshop_seats - trainees_in_flight < batch_trainees:
+                    return False, (
+                        f"Technical Workshop capacity full: "
+                        f"{trainees_in_flight}/{workshop_seats} trainee seat(s) "
+                        f"already in training (need {batch_trainees} more for this batch)."
+                    )
+            expertise_needed = self._training_expertise_needed(req, need_courses)
+            if educator.inventory.get(ResourceType.EXPERTISE) < expertise_needed:
+                return False, f"needs {expertise_needed} Expertise for this course."
             if educator.inventory.get(ResourceType.REAGENTS) < reagents_needed:
                 return False, f"needs {reagents_needed} Reagents for this science course."
             have = educator.inventory.get(ResourceType.COURSES)
@@ -1854,6 +1867,13 @@ class TurnManager:
         except ValueError:
             return 0
         if profession not in SCIENCE_TRAINING_PROFESSIONS:
+            return 0
+        duration = req.duration_seasons or away_seasons(req.target_profession)
+        return need_courses * duration
+
+    @staticmethod
+    def _training_expertise_needed(req, need_courses: int) -> int:
+        if need_courses <= 0:
             return 0
         duration = req.duration_seasons or away_seasons(req.target_profession)
         return need_courses * duration
@@ -1885,24 +1905,22 @@ class TurnManager:
         band = band_of(req.target_profession)
         need_courses = self._incremental_courses_for_request(req, year, season)
         reagents_needed = self._training_reagents_needed(req, need_courses)
+        expertise = self._training_expertise_needed(req, need_courses)
         if need_courses > 0:
             educator.give_resources(ResourceType.COURSES, need_courses)
         if reagents_needed > 0:
             educator.give_resources(ResourceType.REAGENTS, reagents_needed)
+        if expertise > 0:
+            educator.give_resources(ResourceType.EXPERTISE, expertise)
         if band == WorkerBand.MANAGER:
-            expertise = 2 * need_courses
-            if expertise > 0:
-                educator.give_resources(ResourceType.EXPERTISE, expertise)
             return (
                 f"{need_courses} Course slot(s) + {expertise} Expertise"
                 f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the Manager-tier course"
             )
         if band == WorkerBand.TECHNICIAN:
-            if need_courses > 0:
-                educator.give_resources(ResourceType.EXPERTISE, need_courses)
             return (
-                f"{need_courses} Course slot(s) + {need_courses} Expertise"
+                f"{need_courses} Course slot(s) + {expertise} Expertise"
                 f"{' + ' + str(reagents_needed) + ' Reagents' if reagents_needed else ''} "
                 "for the technical course"
             )
@@ -1976,11 +1994,19 @@ class TurnManager:
         sym = CURRENCY_SYMBOL
         requester_name = player_names.get(req.requester_id, f"Player{req.requester_id}")
         band = band_of(req.target_profession)
-        away = away_seasons(req.target_profession)
+        away = req.duration_seasons or away_seasons(req.target_profession)
         requester_tickets = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
         educator_tickets = len(req.worker_ids) - requester_tickets
         ticket_price = self.market.current_price(ResourceType.PASSENGER_SEATS)
-        suggested_floor = 20.0 * len(req.worker_ids) + ticket_price * educator_tickets
+        courses = self.courses_needed(len(req.worker_ids))
+        food_accom = TRAINEE_FOOD_ACCOM_PER_SEASON * len(req.worker_ids) * away
+        expertise_cost = self.market.current_price(ResourceType.EXPERTISE) * courses * away
+        suggested_floor = (
+            20.0 * len(req.worker_ids)
+            + food_accom
+            + ticket_price * educator_tickets
+            + expertise_cost
+        )
         fields = [
             ("Requester:", requester_name),
             ("Trainees:", f"{len(req.worker_ids)} worker(s)"),
@@ -2002,9 +2028,10 @@ class TurnManager:
             (
                 "Suggested floor:",
                 (
-                    f"20 × {len(req.worker_ids)} + "
+                    f"20 × {len(req.worker_ids)} + food/accom {food_accom:.0f} + "
                     f"price(PassengerSeats) × {educator_tickets} = "
-                    f"{suggested_floor:.0f} {sym}"
+                    f"{ticket_price * educator_tickets:.0f} + expertise "
+                    f"{expertise_cost:.0f} = {suggested_floor:.0f} {sym}"
                 ),
             ),
             ("Status:", req.status.value),
@@ -2920,7 +2947,13 @@ class TurnManager:
                     continue
                 rtype = ResourceType(rtype_str)
                 try:
-                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    bought = int(result_row.get("quantity", 0))
+                    cost = abs(float(result_row.get("total", 0.0)))
                     self.io.print(
                         f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}"
                     )
@@ -2997,7 +3030,13 @@ class TurnManager:
             qty = self.io.choose_quantity(f"How many {rtype.value}?", 1, total_avail)
             if self.io.confirm("Confirm buy?"):
                 try:
-                    cost, bought = self.market.buy_from_offers(player, rtype, qty)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    bought = int(result_row.get("quantity", 0))
+                    cost = abs(float(result_row.get("total", 0.0)))
                     self.io.print(f"  Bought {bought}x {rtype.value} for {cost:.2f} {sym}")
                     result.actions_taken.append(f"buy:{bought}x{rtype.value}")
                 except Exception as e:
@@ -3021,7 +3060,13 @@ class TurnManager:
             )
             if qty <= total_bid_qty and self.io.confirm("Sell immediately into bids?"):
                 try:
-                    paid, sold = self.market.sell_to_bids(player, rtype, qty, self.players)
+                    result_row = self.trading.execute_order_list(
+                        player,
+                        [{"side": "sell", "resource": rtype.value, "quantity": qty}],
+                        self.players,
+                    )[0]
+                    sold = int(result_row.get("quantity", 0))
+                    paid = float(result_row.get("total", 0.0))
                     self.io.print(f"  Sold {sold}x {rtype.value} for {paid:.2f} {sym}")
                     result.actions_taken.append(f"sell_bid:{sold}x{rtype.value}")
                 except Exception as e:
@@ -3104,6 +3149,7 @@ class TurnManager:
                         target,
                         player,
                         acquired_tick=result.year * len(SEASONS) + result.season,
+                        players=self.players,
                     )
                     self.io.print(f"  {target.name} accepted the deal.")
                     result.actions_taken.append("deal:accepted")
@@ -3125,23 +3171,25 @@ class TurnManager:
         self.io.print(f"  You have {len(pending)} pending deal proposal(s).")
         for deal in pending:
             proposer = player_map.get(deal.proposer_id)
-            if proposer is None:
+            target = player_map.get(deal.target_id)
+            if proposer is None or target is None:
                 self.trading.ledger.expire(deal.deal_id)
-                self.io.print(f"  Deal #{deal.deal_id} expired — proposer is no longer available.")
+                self.io.print(f"  Deal #{deal.deal_id} expired — a party is no longer available.")
                 result.actions_taken.append(f"deal:expired:{deal.deal_id}")
                 continue
 
             summary = deal.summary(
                 player_names.get(deal.proposer_id, f"Player {deal.proposer_id}"),
-                player.name,
+                player_names.get(deal.target_id, f"Player {deal.target_id}"),
             )
             if self.io.confirm(f"{summary}\nAccept this deal?"):
                 try:
                     self.trading.accept_deal(
                         deal,
-                        acceptor=player,
+                        acceptor=target,
                         proposer=proposer,
                         acquired_tick=result.year * len(SEASONS) + result.season,
+                        players=self.players,
                     )
                     self.io.print(f"  Accepted deal #{deal.deal_id}.")
                     result.actions_taken.append(f"deal:accepted:{deal.deal_id}")

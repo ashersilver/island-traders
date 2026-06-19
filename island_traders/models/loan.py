@@ -77,6 +77,8 @@ class Loan:
     external_funded: float = 0.0   # depositor portion (principal − own)
     posted_at_issue: float = 0.0   # base/posted funding rate at issuance
     reserve_ratio_at_issue: float = 0.0  # r at the time the loan was issued
+    collateral_item_id: str | None = None
+    secured: bool = False
 
     @property
     def repayment_amount(self) -> float:
@@ -96,7 +98,9 @@ class Loan:
             f"from {lender_name} at {self.interest_rate*100:.0f}% "
             f"for {self.term_years} year(s) "
             f"(repay {self.repayment_amount:.1f} {sym} in Y{self.maturity_year+1} "
-            f"S{self.maturity_season+1}) [{self.status.value}]"
+            f"S{self.maturity_season+1})"
+            f"{' secured by ' + self.collateral_item_id if self.secured and self.collateral_item_id else ''} "
+            f"[{self.status.value}]"
         )
 
 
@@ -118,6 +122,8 @@ class LoanLedger:
         external_funded: float = 0.0,
         posted_at_issue: float = 0.0,
         reserve_ratio_at_issue: float = 0.0,
+        collateral_item_id: str | None = None,
+        secured: bool = False,
     ) -> Loan:
         maturity_year = issued_year + term_years
         maturity_season = issued_season
@@ -136,6 +142,8 @@ class LoanLedger:
             external_funded=external_funded,
             posted_at_issue=posted_at_issue,
             reserve_ratio_at_issue=reserve_ratio_at_issue,
+            collateral_item_id=collateral_item_id,
+            secured=secured,
         )
         self.loans.append(loan)
         self._next_id += 1

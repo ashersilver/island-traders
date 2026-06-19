@@ -9,7 +9,12 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
 from ..models.insurance import InsurancePolicy
-from ..models.training import TrainingCapacityError, away_seasons
+from ..models.training import (
+    TrainingCapacityError,
+    campus_has_technical_workshop,
+    settling_seasons_on_return,
+    training_duration,
+)
 from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
 from ..models.profession import Profession
 from ..models.equity import UNISSUED_HOLDER, fair_value, share_price
@@ -633,12 +638,22 @@ class AIStrategy:
             if count <= 0:
                 continue
             worker_ids = unskilled_ids[worker_offset:worker_offset + count]
-            duration = away_seasons(profession)
+            has_workshop = campus_has_technical_workshop(educator)
+            duration = training_duration(
+                profession,
+                has_technical_workshop=has_workshop,
+            )
+            courses = max(1, ceil(count / 12))
             fee = round(
                 20.0 * count
                 + TRAINEE_FOOD_ACCOM_PER_SEASON * count * duration
-                + ticket_price * count,
+                + ticket_price * count
+                + market.current_price(ResourceType.EXPERTISE) * courses * duration,
                 1,
+            )
+            settling = settling_seasons_on_return(
+                profession,
+                has_technical_workshop=has_workshop,
             )
             if player.dollops < fee + AI_TRAINING_CASH_RESERVE:
                 break
@@ -653,6 +668,7 @@ class AIStrategy:
                     season=season_index,
                     transport_mode="air_ticket",
                     duration_seasons=duration,
+                    settling_seasons_on_return=settling,
                 )
             except TrainingCapacityError:
                 continue
@@ -970,18 +986,31 @@ class AIStrategy:
             return best_offer.price_per_unit
         return market.current_price(rtype)
 
-    def _deal_value_for_acceptor(
-        self, deal: DealProposal, market: Market, trading_engine: TradingEngine
+    def _deal_value_for_player(
+        self, deal: DealProposal, player_id: int, market: Market, trading_engine: TradingEngine
     ) -> tuple[float, float]:
-        received = max(deal.gold_sweetener, 0)
-        given = max(-deal.gold_sweetener, 0)
-        if deal.offer_resource and deal.offer_qty > 0:
-            received += deal.offer_qty * self._valuation_price(
-                market, trading_engine, deal.offer_resource
-            )
+        if player_id == deal.target_id:
+            received = max(deal.gold_sweetener, 0)
+            given = max(-deal.gold_sweetener, 0)
+            if deal.offer_resource and deal.offer_qty > 0:
+                received += deal.offer_qty * self._valuation_price(
+                    market, trading_engine, deal.offer_resource
+                )
+            if deal.request_resource and deal.request_qty > 0:
+                given += deal.request_qty * self._valuation_price(
+                    market, trading_engine, deal.request_resource
+                )
+            return received, given
+
+        received = max(-deal.gold_sweetener, 0)
+        given = max(deal.gold_sweetener, 0)
         if deal.request_resource and deal.request_qty > 0:
-            given += deal.request_qty * self._valuation_price(
+            received += deal.request_qty * self._valuation_price(
                 market, trading_engine, deal.request_resource
+            )
+        if deal.offer_resource and deal.offer_qty > 0:
+            given += deal.offer_qty * self._valuation_price(
+                market, trading_engine, deal.offer_resource
             )
         return received, given
 
@@ -998,11 +1027,14 @@ class AIStrategy:
         players = {p.player_id: p for p in other_players}
         for deal in trading_engine.ledger.pending_for_player(player.player_id):
             proposer = players.get(deal.proposer_id)
-            if proposer is None:
+            target = players.get(deal.target_id)
+            if proposer is None or target is None:
                 trading_engine.ledger.expire(deal.deal_id)
                 actions.append(f"[AI] {player.name} let stale deal #{deal.deal_id} expire")
                 continue
-            received, given = self._deal_value_for_acceptor(deal, market, trading_engine)
+            received, given = self._deal_value_for_player(
+                deal, player.player_id, market, trading_engine
+            )
             profitable = received >= given * (1 + AI_ARBITRAGE_MIN_MARGIN) or (
                 given == 0 and received > 0
             )
@@ -1010,9 +1042,10 @@ class AIStrategy:
                 try:
                     trading_engine.accept_deal(
                         deal,
-                        acceptor=player,
+                        acceptor=target,
                         proposer=proposer,
                         acquired_tick=current_tick,
+                        players=[player] + other_players,
                     )
                     actions.append(f"[AI] {player.name} accepted profitable deal #{deal.deal_id}")
                 except Exception:
@@ -1043,8 +1076,21 @@ class AIStrategy:
             if qty <= 0 or player.dollops < offer.price_per_unit * qty:
                 continue
             try:
-                cost, bought = market.buy_from_offers(player, rtype, qty)
-                paid, sold = market.sell_to_bids(player, rtype, bought, other_players)
+                players = [player] + other_players
+                buy = trading_engine.execute_order_list(
+                    player,
+                    [{"side": "buy", "resource": rtype.value, "quantity": qty}],
+                    players,
+                )[0]
+                bought = int(buy.get("quantity", 0))
+                cost = abs(float(buy.get("total", 0.0)))
+                sell = trading_engine.execute_order_list(
+                    player,
+                    [{"side": "sell", "resource": rtype.value, "quantity": bought}],
+                    players,
+                )[0]
+                sold = int(sell.get("quantity", 0))
+                paid = float(sell.get("total", 0.0))
             except Exception:
                 continue
             if sold:
@@ -1141,7 +1187,13 @@ class AIStrategy:
                 )
                 if player.dollops >= est_cost:
                     try:
-                        cost, bought = market.buy_from_offers(player, rtype, fill_qty)
+                        order = trading_engine.execute_order_list(
+                            player,
+                            [{"side": "buy", "resource": rtype.value, "quantity": fill_qty}],
+                            [player] + other_players,
+                        )[0]
+                        bought = int(order.get("quantity", 0))
+                        cost = abs(float(order.get("total", 0.0)))
                         actions.append(
                             f"[AI] {player.name} bought {bought}x {rtype.value} "
                             f"for {cost:.1f} Dp"

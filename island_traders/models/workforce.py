@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from .profession import (
     Profession, WorkerBand, EngineerSpecialty, band_of,
-    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
+    APPRENTICESHIP_SETTLING_EFFICIENCY,
 )
 
 
@@ -95,6 +95,7 @@ class Worker:
         self,
         target_profession: str | None = None,
         engineer_specialty: str = "",
+        settling_seasons_on_return: int = 0,
     ) -> None:
         self.in_training = False
         self.train(target_profession)
@@ -103,10 +104,8 @@ class Worker:
                 self.engineer_specialty = EngineerSpecialty(engineer_specialty).value
             except ValueError:
                 self.engineer_specialty = ""
-        # Apprenticeship (Technician band) graduates work a reduced-output
-        # settling season on the home island; university graduates do not.
         if band_of(self.profession) == WorkerBand.TECHNICIAN:
-            self.settling_seasons = APPRENTICESHIP_SETTLING_SEASONS
+            self.settling_seasons = max(0, settling_seasons_on_return)
 
 
 @dataclass
@@ -374,11 +373,16 @@ class Workforce:
         worker_ids: list[int],
         target_profession: str | None = None,
         engineer_specialty: str = "",
+        settling_seasons_on_return: int = 0,
     ) -> list[Worker]:
         returned = []
         for w in self.workers:
             if w.worker_id in worker_ids and w.in_training:
-                w.return_from_training(target_profession, engineer_specialty)
+                w.return_from_training(
+                    target_profession,
+                    engineer_specialty,
+                    settling_seasons_on_return,
+                )
                 returned.append(w)
         return returned
 

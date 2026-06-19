@@ -47,15 +47,24 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 **sealed-bid auction** (see Auction Phase below) and a single player may win
 **more than one** island.
 
-| Role | Island | Produces | Needs to Produce |
-|---|---|---|---|
-| **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil |
-| **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment |
-| **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) |
-| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment |
-| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* |
-| **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment |
+| Role | Island | Produces | Needs to Produce | Activity |
+|---|---|---|---|---|
+| **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil | Medium |
+| **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment | Low |
+| **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) | Medium |
+| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment | High |
+| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* | High |
+| **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight | Medium |
+| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
+
+> **Activity index (how busy a role is):** roles differ in how many decisions
+> and interactions they demand each season — factor this into your auction
+> bidding. **Low** (Miner) is a single, steady extraction loop — a good first
+> role. **Medium** (Farmer, Transporter, Manufacturer) adds a balancing act or a
+> per-season choice. **High** (Educator, Banker, Doctor) means constant
+> negotiation, financial judgement, or inter-island logistics every turn —
+> rewarding for experienced players. The digital edition shows each island's
+> activity index on its auction briefing card.
 
 > **Multi-role play:** A single player can win multiple islands in the auction
 > (they manage each island independently). If two or more humans want to

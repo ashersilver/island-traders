@@ -1,9 +1,14 @@
-# Single source of truth for the application version.  Surfaced to the
-# client via the /version HTTP endpoint and the initial game-state payload
-# so playtesters can quote a version when reporting bugs.  Bump on each
-# pre-release merge that's worth marking; mirror in pyproject.toml when
-# tagging a release.
-APP_VERSION: str = "0.1.5-dev.2026-06-15.5"
+# Canonical source of truth for the *running* application version.  Surfaced
+# to the client via the /version HTTP endpoint and the initial game-state
+# payload so playtesters can quote a version when reporting bugs.  Format is
+# `MAJOR.MINOR.PATCH-dev.YYYY-MM-DD.N`; bump `.N` on each pre-release merge
+# that's worth marking (see requirements/release-process.md → "Versioning").
+#
+# `pyproject.toml`'s `version` is intentionally different: it tracks the last
+# *tagged* package release (currently 0.1.4) and is only bumped when cutting a
+# release — dropping the `-dev.*` suffix as the dev series ships.  The two are
+# reconciled at release time, not on every merge.
+APP_VERSION: str = "0.1.5-dev.2026-06-18.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -319,6 +324,8 @@ CONSUMER_EDUCATION_SEASONAL_UNITS: dict[str, int] = {
 CONSUMER_EDUCATION_VOUCHER_PER_UNIT: float = 20.0
 HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
 CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
+FREIGHT_UNITS_PER_TRADE_UNIT: float = 0.1
+FREIGHT_FEE_PER_TRADE_UNIT: float = 1.0
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3
@@ -391,9 +398,9 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 #
 # Default mix per requirements/production-capacity-model.md §5:
 #   1 Manager + 2 Technicians + 3 Workers (= 6 starting workforce)
-# Doctor uses a custom mix (1 Doctor + 1 Nurse Manager + 3 Medical Orderlies + 1 Aide)
-# but is currently encoded simply as 2 Doctors + 4 Nurses; revisit when Apprenticeship
-# pipeline is implemented.
+# Doctor uses a custom mix encoded as 2 Doctors + 2 Nurses + 2 Medical Orderlies
+# (6 total) — matches the Doctor block below, STARTING_TRAINED_FRACTION = 1.00,
+# and RULES.md. Revisit if the Apprenticeship pipeline reshapes the medical tiers.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     "Farmer":        [("Farmer", 1), ("Horticulturalist", 1), ("Veterinarian", 1)],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],

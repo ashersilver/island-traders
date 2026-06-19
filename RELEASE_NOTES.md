@@ -5,6 +5,160 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/training-costs-18-2026-06-18 — training-cost model reconciliation (#18)
+
+Version bump: `0.1.5-dev.2026-06-18.1`
+
+Reconciles the training model to #18's cost and apprenticeship rules.
+
+- Doctor training is now 4 seasons.
+- Technician training uses the campus Technical Workshop as a fast-track:
+  1 season away and no settling with the workshop; 2 seasons away plus one
+  50%-productivity settling season without it.
+- Training requests persist `settling_seasons_on_return`, and save/load
+  round-trips the field.
+- Expertise is charged and consumed uniformly at 1 unit per course per season
+  for all course-bearing tracks; AI fee floors and training summaries include
+  food/accommodation, tickets, and expertise.
+- The Training Desk batch endpoint computes duration and settling server-side
+  from the selected campus, independent of the client-supplied fee.
+- `requirements/education-model.md` and related requirement notes now describe
+  the reconciled Doctor duration, workshop fast-track, and 50% settling rules.
+
+### claude/deal-response-ui-167 — deal response UI (#167)
+
+Version bump: `0.1.5-dev.2026-06-17.1`
+
+Front-end for the deal-response backend contract — closes the playtest gap
+where a player was never notified that someone responded to a proposed deal and
+had no way to accept or return it.
+
+- New **Deals** tile (next to the Market Board) with a red badge counting deals
+  awaiting your response, a ＋ Propose button, and a click-through review dialog.
+- **Propose a Deal** dialog: pick a counterparty, what you offer, what you
+  request, and an optional gold sweetener → sends `deal_propose`.
+- **Deals dialog** lists deals awaiting you (Accept / Return… / Reject) and your
+  own proposals with live status (pending / returned / accepted / rejected /
+  expired) and whose turn it is.
+- **Return** opens a counter-offer form (edit terms + a note), sent as
+  `deal_respond {action:"return"}`; Accept/Reject send the matching action.
+- **Toast notifications** on the `deal_response` push so the proposer learns
+  immediately when a counterparty proposes / accepts / returns / rejects, or a
+  deal expires on stale resources.
+
+Binds to the existing `deal_propose` / `deal_respond` / `deal_response`
+contracts and the viewer-scoped `deals_awaiting_me` / `my_deals` payload from
+PR #172. Frontend only — no engine/balance change. Completes #167.
+
+### codex/capital-start-freight-157-85 — opening capital loans + freight friction (#157, #85)
+
+Version bump: `0.1.5-dev.2026-06-17.2`
+
+- Opening capital purchases now spend island treasury first. Any setup shortfall
+  becomes a secured three-year setup loan at the posted three-year funding rate,
+  with the purchased asset recorded as collateral instead of draining the
+  owner's personal cash as a shareholder loan.
+- Investing/start payloads expose island capital, item cost, and secured-loan
+  quote terms so the UI can show buy financing before launch.
+- Loan save/load and game-state detail now preserve and surface secured/collateral
+  metadata.
+- Market/order/deal trades now apply freight friction: non-Freight goods consume
+  buyer Freight when available, otherwise pay a flat per-unit freight fee to the
+  Transporter when one is present. Freight trades are exempt, same-island deals
+  are exempt, and no-Transporter setups waive the fee.
+- Deal notifications now update the local Deals panel immediately from the
+  push/ack payload, so offers and returned counter-offers reliably appear with
+  the badge/action indicator even if the follow-up `game_state` packet is late.
+
+### codex/deal-response-167 — deal response backend contract (#167)
+
+Version bump: `0.1.5-dev.2026-06-16.4` (was `.3` on the branch; reconciled to
+the next `.N` because Training Desk batch UI took `.3` on `pre-release` first)
+
+Adds the backend/model/server seam for structured barter deal responses.
+
+- Deals now have a `returned` status, an `awaiting_id` turn marker, a current
+  message, and terminal accept/reject/expire guards.
+- Returned/countered deals keep terms in the original proposer → target
+  perspective, so accepting a counter reuses the existing atomic transfer path
+  and revalidates stale inventory/Dollops before moving anything.
+- WebSocket actions:
+  - `deal_propose`: `{target_player_id, offer:{resource, qty}, request:{resource, qty}, sweetener}`
+    → `deal_propose_ack`.
+  - `deal_respond`: `{deal_id, action:"accept"|"return"|"reject", new_offer?, new_request?, new_sweetener?, message?}`
+    → `deal_response_ack`.
+- Push notification:
+  - `deal_response`: `{deal_id, result:"proposed"|"accepted"|"returned"|"rejected"|"expired", from, deal}`.
+- `game_state` now includes viewer-scoped `deals_awaiting_me` and `my_deals`.
+  Deal payload fields: `deal_id`, `status`, `proposer_id/name`, `target_id/name`,
+  `counterparty_id/name`, `awaiting_id/name`, `offer`, `request`, `sweetener`,
+  `message`, `last_response_by_id/name`.
+
+UI call is left as a backend contract/stub for Claude's follow-on; no frontend
+controls are wired in this branch.
+
+### claude/training-bookings-batch-ui-158-2026-06-16 — Training Desk batch UI (#158)
+
+Version bump: `0.1.5-dev.2026-06-16.3`
+
+Adds a **Training Desk** dialog so a player can book training for **multiple
+workers across multiple job types in one go**, with a per-row **air-ticket**
+option (#158).
+
+- The "Request Training" turn action now opens a multi-row dialog instead of
+  the single-request sequential wizard. Each row: job type (with remaining
+  university slots shown), worker count, transport (air ticket vs by sea), air
+  tickets supplied, and an optional Educator fee. A running "workers committed /
+  eligible" budget guards over-booking; per-row results are surfaced as toasts.
+- Submits one `training_batch` message — the server-side batch handler and the
+  air-ticket `transport_mode` already existed (shipped with #114); this wires
+  the front door to them.
+- New read-only `training_options` field in the per-player `game_state`
+  (professions with remaining capacity + suggested counts, eligible-worker
+  count, exhausted professions), reusing the existing `capacity_summary` and
+  skill-deficit logic — no new game mechanics.
+
+Frontend + read-only payload only — no engine/balance change.
+
+### claude/role-complexity-index-27-2026-06-16 — role activity index (#27)
+
+Version bump: `0.1.5-dev.2026-06-16.2`
+
+Adds a per-role **activity index** (High / Medium / Low) so players can factor
+how busy a role is into their auction bidding (#27).
+
+- Each island's auction briefing card now shows an "activity" chip
+  (colour-coded, with a hover note); the full briefing dialog adds an
+  "Activity index" line explaining the rating.
+- Ratings: **Low** — Miner; **Medium** — Farmer, Transporter, Manufacturer;
+  **High** — Educator, Banker, Doctor.
+- `RULES.md` "The Seven Islands" table gains an Activity column plus an
+  explanatory note, so the physical edition carries the same guidance.
+
+Frontend + docs only — no engine/balance change.
+
+### claude/phase0-version-doctor-comment-2026-06-16 — Phase 0 doc-sync housekeeping
+
+Version bump: `0.1.5-dev.2026-06-16.1`
+
+Closes the first two Phase 0 housekeeping items (no player-facing behaviour
+change — comments, docs, and version metadata only):
+
+- Reconciles the version metadata mismatch between `pyproject.toml` (`0.1.4`)
+  and `constants.py` (`0.1.5-dev.*`). Documents the dev-vs-release split in
+  `requirements/release-process.md` (new "Versioning" section) and adds
+  cross-referencing comments to both files: `constants.py` `APP_VERSION` is the
+  canonical *running* version; `pyproject.toml` tracks the last *tagged*
+  release and lags by design until a release is cut.
+- Fixes the stale `STARTING_WORKERS_BY_PROFESSION` Doctor comment in
+  `constants.py`, which described a mix ("1 Doctor + 1 Nurse Manager + 3 Medical
+  Orderlies + 1 Aide" / "2 Doctors + 4 Nurses") that no longer matched the code.
+  The comment now states the actual config: 2 Doctors + 2 Nurses + 2 Medical
+  Orderlies (6 total), consistent with the Doctor block, `RULES.md`, and
+  `STARTING_TRAINED_FRACTION = 1.00`.
+
+Verification: full suite `731 passed`.
+
 ### codex/correctness-balance-154-155 — training accounting + calibration
 
 Version bump: `0.1.5-dev.2026-06-15.5` (was `.4` on the branch; reconciled to the

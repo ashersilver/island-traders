@@ -1456,6 +1456,14 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="market-panel" onclick="showMarketBoardPopup()" style="cursor:pointer">—</div>
       </div>
+      <div class="section" data-tile="deals" data-tile-label="Deals">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>Deals <span id="deals-badge" class="deals-badge" style="display:none"></span></span>
+          <button class="btn-ghost btn-sm" style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openProposeDealDialog()" title="Propose a peer-to-peer deal">＋ Propose</button>
+        </h3>
+        <div id="deals-panel" onclick="openDealsDialog()" style="cursor:pointer;font-size:.82rem;line-height:1.4">—</div>
+      </div>
     </div>
 
     <div class="g-log" id="event-log" data-filter="all">
@@ -1590,42 +1598,49 @@ const ISLAND_BRIEFINGS = {
   Farmer: {
     title: 'Agriculture and Fisheries Island',
     summary: 'Feed the archipelago with Grain, Produce, Fish, Meat, and premium packaged Food. Protect machinery, fuel, and the specialists who make each line sing.',
+    complexity: { level: 'Medium', note: 'Seasonal yield table and a multi-line food basket to balance, but a steady production loop once set up.' },
     priorities: ['Balance Grain / Produce / protein', 'Secure Farm Machinery and Oil', 'Add Horticulturalist and Veterinarian depth'],
     full: `You produce Grain, Produce, Fish, and Meat, then may package balanced Food in an Industrial Kitchen for governors who prefer convenience over kitchen arithmetic. Other islands need a healthy mix of Produce, Grain, and either Fish or Meat; packaged Food saves them time and should command a premium.<br><br>Your strongest strategy is to become the archipelago’s reliable food-security partner: keep raw staples flowing, build the kitchen when the market will pay for convenience, and train Horticulturalists and Veterinarians before those lines become the bottleneck.`
   },
   Miner: {
     title: 'Mining and Exploration Island',
     summary: 'Supply the bones and blood of industry: Ore, Metal, and Oil. Guard your own Oil, keep Container Freight moving, and decide when to sell raw versus refine.',
+    complexity: { level: 'Low', note: 'The most straightforward island: a single extraction loop with a simple raw-vs-refine decision. A good first role.' },
     priorities: ['Protect Oil supply', 'Secure Container Freight', 'Invest in skilled extraction'],
     full: `You produce Ore, Metal, and Oil. Ore brings early cash, Metal is the higher-value industrial feedstock, and Oil powers half the board including your own operations.<br><br>Your strongest strategy is to become more than a quarry: keep production resilient, build refining depth, and make every industrial island negotiate with you for motion or materials.`
   },
   Transporter: {
     title: 'Transportation and Logistics Island',
     summary: 'Make the archipelago function as one economy. Produce both Container Freight and PassengerSeats; cargo moves goods, seats move the people who unlock growth and recovery.',
+    complexity: { level: 'Medium', note: 'Two services to balance and constant demand-anticipation, but no negotiation queues. Activity rises as freight becomes a paid service.' },
     priorities: ['Keep Oil and Food on hand', 'List Freight and PassengerSeats', 'Train transport specialists'],
     full: `You produce Container Freight and PassengerSeats. Freight enables trade; PassengerSeats enable training, nurse travel, and other high-value movement of people.<br><br>Your strongest strategy is to anticipate demand before it becomes a crisis: balance cargo and passenger capacity, keep routes staffed, and make yourself the island everyone has to plan around.`
   },
   Educator: {
     title: 'Education, Research and Training Island',
     summary: 'Turn population into capability. Maintain Expertise, produce Courses, and keep faculty depth high so the archipelago can train rather than stagnate.',
+    complexity: { level: 'High', note: 'Two training pipelines, course/expertise upkeep, and a request approval queue with counter-offers to every other island. Busy every season.' },
     priorities: ['Maintain Expertise', 'Keep Courses available', 'Protect Professors and Instructors'],
     full: `You produce Expertise, Courses, and Patents. One Course serves a class of up to twelve trainees and consumes one Expertise per season to run. Reagents support Patents and science-track courses.<br><br>Your strongest strategy is to sell progress itself: keep the training pipeline open, secure PassengerSeats, and become the trusted route by which every other island scales.`
   },
   Banker: {
     title: 'Banking and Insurance Island',
     summary: 'Price time and risk. Your business is loans and insurance, not commodity production; your edge is seeing other islands’ bottlenecks before they do.',
+    complexity: { level: 'High', note: 'No production loop to fall back on — every turn is active financial judgement: rate negotiation, reserve ratios, underwriting, and reading the whole board. Rewards experienced players.' },
     priorities: ['Deploy capital wisely', 'Underwrite risk early', 'Maintain Expertise'],
     full: `You earn through loans and insurance. Productive borrowers turn your capital into future interest; risky industries and vulnerable islands need protection before disaster arrives.<br><br>Your strongest strategy is to be the best-informed player at the table: finance growth that can repay, insure danger before it becomes obvious, and never let somebody else’s bad plan become your bad balance sheet.`
   },
   Manufacturer: {
     title: 'ForgeHaven Manufacturing Island',
     summary: 'Sell growth itself. Choose the product line the archipelago will need next, and secure Metal, Oil, Container Freight, and the workforce to deliver it.',
+    complexity: { level: 'Medium', note: 'A product-line choice each season makes foresight matter more than volume; inputs and workforce need lining up, but the turn loop is contained.' },
     priorities: ['Read future demand', 'Secure industrial inputs', 'Train for chosen lines'],
     full: `You produce Farm Machinery, Mining Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
   },
   Doctor: {
     title: 'Healthcare and Health Research Island',
     summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
     full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
   },
@@ -2251,12 +2266,38 @@ function showAuctionResult(msg) {
 
 }
 
+// Activity-index colours (issue #27): how much hands-on work a role demands
+// each season, so players can factor effort into their island bidding.
+const COMPLEXITY_COLORS = { High: '#e74c3c', Medium: '#e7c05d', Low: '#27ae60' };
+
+// Compact inline chip for the auction card.
+function complexityChip(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<span title="${esc(c.note || '')}" style="display:inline-block;font-size:.68rem;font-weight:700;`
+    + `text-transform:uppercase;letter-spacing:.04em;color:${col};border:1px solid ${col}88;`
+    + `border-radius:999px;padding:.05rem .5rem;white-space:nowrap">${esc(c.level)} activity</span>`;
+}
+
+// Fuller line for the read-more briefing dialog.
+function complexityLine(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<div style="margin-top:.8rem;font-size:.82rem"><strong style="color:${col}">`
+    + `Activity index: ${esc(c.level)}</strong> — ${esc(c.note || '')}</div>`;
+}
+
 function renderAuctionBriefingCard(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return '';
   const color = ROLE_COLORS[role] || '#aaa';
   return `<div style="margin-bottom:.6rem;padding:.8rem;border:1px solid ${color}66;border-radius:8px;background:${color}10">
-    <div style="font-weight:800;color:${color}">${esc(b.title)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+      <span style="font-weight:800;color:${color}">${esc(b.title)}</span>
+      ${complexityChip(b)}
+    </div>
     <div style="font-size:.84rem;line-height:1.4;margin-top:.35rem">${esc(b.summary)}</div>
     <div style="font-size:.76rem;color:var(--dim);margin-top:.35rem">Priorities: ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-ghost btn-sm" style="margin-top:.55rem" onclick="showIslandBriefing('${esc(role)}')">Read full briefing</button>
@@ -2267,6 +2308,7 @@ function showIslandBriefing(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return;
   const body = `<p style="line-height:1.5">${b.full}</p>
+    ${complexityLine(b)}
     <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
   showDlg(b.title, body);
@@ -3682,6 +3724,22 @@ function handleMessage(msg) {
     case 'market_buy_bulk':
       showMarketBuyPopup(msg);
       break;
+    case 'training_batch_result':
+      onTrainingBatchResult(msg);
+      break;
+    case 'deal_response':
+      onDealResponsePush(msg);
+      break;
+    case 'deal_propose_ack':
+      mergeDealMessage(msg);
+      showToast('Deal proposed.', { type: 'success' });
+      break;
+    case 'deal_response_ack': {
+      mergeDealMessage(msg);
+      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
+      showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
+      break;
+    }
     case 'pre_season_start':
       onPreSeasonStart(msg);
       break;
@@ -4022,6 +4080,7 @@ function renderGameState() {
       renderMarketTable(gameState.market, true) + renderBarterMarket(true);
   }
 
+  renderDealsPanel();
   renderTradeFinder();
 }
 
@@ -4545,6 +4604,260 @@ function renderMarketTable(market, compact = false) {
     <thead><tr><th>Commodity</th><th>Bid</th><th>Bid Qty</th><th>Ask</th><th>Ask Qty</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+}
+
+// ==================== PEER-TO-PEER DEALS (#167) ====================
+// Consumes the viewer-scoped game_state.deals_awaiting_me / my_deals payload
+// and the deal_propose / deal_respond / deal_response WS contracts. Lets a
+// player propose a deal, get notified when someone responds, and accept /
+// return (counter) / reject deals awaiting their response.
+function _myDealState() {
+  return {
+    awaiting: (gameState && gameState.deals_awaiting_me) || [],
+    mine: (gameState && gameState.my_deals) || [],
+  };
+}
+
+function _myEnginePlayerId() {
+  if (!gameState || myPlayerIdx == null) return null;
+  return gameState.players?.[myPlayerIdx]?.player_id ?? null;
+}
+
+function _withoutDeal(list, dealId) {
+  return (list || []).filter(d => d && d.deal_id !== dealId);
+}
+
+function _upsertDeal(list, deal) {
+  return [deal, ..._withoutDeal(list, deal.deal_id)]
+    .sort((a, b) => (b.deal_id || 0) - (a.deal_id || 0));
+}
+
+function mergeDealMessage(msg) {
+  if (!msg || !msg.deal || !gameState) return;
+  const deal = msg.deal;
+  const me = _myEnginePlayerId();
+  if (me == null || deal.deal_id == null) return;
+
+  gameState.deals_awaiting_me = _withoutDeal(gameState.deals_awaiting_me, deal.deal_id);
+  gameState.my_deals = _withoutDeal(gameState.my_deals, deal.deal_id);
+
+  const active = deal.status === 'pending' || deal.status === 'returned';
+  if (active && deal.awaiting_id === me) {
+    gameState.deals_awaiting_me = _upsertDeal(gameState.deals_awaiting_me, deal);
+  }
+  if (deal.proposer_id === me) {
+    gameState.my_deals = _upsertDeal(gameState.my_deals, deal);
+  }
+  renderDealsPanel();
+}
+
+function _dealSideText(side) {
+  return side ? `${side.qty}× ${side.resource}` : 'nothing';
+}
+
+function _resourceSelect(id, resources, sel) {
+  return `<select id="${id}" style="flex:1">${resources.map(r =>
+    `<option value="${esc(r)}" ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>`;
+}
+
+function _dealResources() {
+  return Object.keys((gameState && gameState.market) || {}).sort();
+}
+
+function renderDealsPanel() {
+  const panel = document.getElementById('deals-panel');
+  const badge = document.getElementById('deals-badge');
+  if (!panel) return;
+  const { awaiting, mine } = _myDealState();
+  if (badge) {
+    if (awaiting.length) {
+      badge.textContent = awaiting.length;
+      badge.style.cssText = 'display:inline-block;background:var(--red);color:#fff;border-radius:999px;font-size:.66rem;font-weight:800;padding:.02rem .42rem;min-width:1.1em;text-align:center';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  const activeMine = mine.filter(d => d.status === 'pending' || d.status === 'returned');
+  if (!awaiting.length && !activeMine.length) {
+    panel.innerHTML = '<span style="color:var(--dim)">No deals awaiting you. Click ＋ Propose to start one.</span>';
+    return;
+  }
+  let html = '';
+  if (awaiting.length) html += `<div style="color:var(--gold);font-weight:700">${awaiting.length} awaiting your response</div>`;
+  if (activeMine.length) html += `<div style="color:var(--dim);margin-top:.2rem">${activeMine.length} of your proposals in play</div>`;
+  html += '<div style="color:var(--accent);margin-top:.25rem;font-size:.76rem">Click to review →</div>';
+  panel.innerHTML = html;
+}
+
+function _dealTermsHtml(d) {
+  const offer = _dealSideText(d.offer);
+  const req = _dealSideText(d.request);
+  const sweet = d.sweetener ? ` + ${d.sweetener} Dp` : '';
+  const msg = d.message ? `<div style="color:var(--dim);font-style:italic;margin-top:.25rem">“${esc(d.message)}”</div>` : '';
+  return `<div style="font-size:.84rem"><strong>${esc(d.proposer_name)}</strong> offers <strong>${esc(offer)}${esc(sweet)}</strong> `
+    + `in exchange for <strong>${esc(req)}</strong> from <strong>${esc(d.target_name)}</strong></div>${msg}`;
+}
+
+function _renderAwaitingDealCard(d) {
+  return `<div style="border:1px solid var(--gold);border-radius:8px;padding:.6rem;margin-bottom:.5rem;background:rgba(231,192,93,.06)">
+    ${_dealTermsHtml(d)}
+    <div style="display:flex;gap:.4rem;margin-top:.55rem">
+      <button class="btn-gold btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'accept')">Accept</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="openReturnDealDialog(${d.deal_id})">Return…</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'reject')">Reject</button>
+    </div>
+  </div>`;
+}
+
+function _renderMyDealCard(d) {
+  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)' }[d.status] || 'var(--dim)';
+  const awaiting = d.awaiting_name ? ` · awaiting ${esc(d.awaiting_name)}` : '';
+  return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.4rem">
+    ${_dealTermsHtml(d)}
+    <div style="margin-top:.35rem;font-size:.74rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}</div>
+  </div>`;
+}
+
+function openDealsDialog() {
+  const { awaiting, mine } = _myDealState();
+  let body = '<h4 style="margin:.2rem 0 .4rem">Awaiting your response</h4>';
+  body += awaiting.length
+    ? awaiting.map(_renderAwaitingDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem;margin-bottom:.6rem">Nothing right now.</div>';
+  body += '<h4 style="margin:.8rem 0 .4rem">Your proposals</h4>';
+  const mineSorted = mine.slice().sort((a, b) => b.deal_id - a.deal_id);
+  body += mineSorted.length
+    ? mineSorted.map(_renderMyDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem">You have not proposed any deals.</div>';
+  body += `<div style="display:flex;gap:.5rem;margin-top:1rem">
+    <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Close</button>
+    <button class="btn-gold" style="flex:1" onclick="openProposeDealDialog()">＋ Propose new deal</button>
+  </div>`;
+  showDlg('Peer-to-Peer Deals', body);
+}
+
+function _dealRespond(deal_id, action) {
+  sendWsMessage({ type: 'deal_respond', deal_id, action });
+  hideOverlay();
+}
+
+function openReturnDealDialog(deal_id) {
+  const d = _myDealState().awaiting.find(x => x.deal_id === deal_id);
+  if (!d) { showToast('That deal is no longer awaiting you.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const offerRes = d.offer ? d.offer.resource : (resources[0] || '');
+  const reqRes = d.request ? d.request.resource : (resources[0] || '');
+  const body = `
+    <div style="font-size:.8rem;color:var(--dim);margin-bottom:.5rem">Counter-offer back to ${esc(d.proposer_name)}. Terms stay in their offer → your give perspective.</div>
+    <label style="font-size:.74rem;color:var(--dim)">${esc(d.proposer_name)} offers
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-offer-qty" type="number" min="0" value="${d.offer ? d.offer.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-offer-res', resources, offerRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You give
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-req-qty" type="number" min="0" value="${d.request ? d.request.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-req-res', resources, reqRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (${esc(d.proposer_name)} → you)
+      <input id="rd-sweet" type="number" value="${d.sweetener || 0}" style="width:100%">
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Message (optional)
+      <input id="rd-msg" type="text" placeholder="e.g. need a little more oil" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="openDealsDialog()">Back</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealReturnSubmit(${deal_id})">Send counter-offer</button>
+    </div>`;
+  showDlg('Return Deal — Counter-offer', body);
+}
+
+function _dealReturnSubmit(deal_id) {
+  const oq = parseInt(document.getElementById('rd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('rd-req-qty').value, 10) || 0;
+  sendWsMessage({
+    type: 'deal_respond', deal_id, action: 'return',
+    new_offer: oq > 0 ? { resource: document.getElementById('rd-offer-res').value, qty: oq } : null,
+    new_request: rq > 0 ? { resource: document.getElementById('rd-req-res').value, qty: rq } : null,
+    new_sweetener: parseFloat(document.getElementById('rd-sweet').value) || 0,
+    message: (document.getElementById('rd-msg').value || '').trim(),
+  });
+  hideOverlay();
+  showToast('Counter-offer sent…', { type: 'info' });
+}
+
+function openProposeDealDialog() {
+  if (!gameState || myPlayerIdx == null) { showToast('Not in a game.', { type: 'error' }); return; }
+  const others = gameState.players.filter((p, i) => i !== myPlayerIdx);
+  if (!others.length) { showToast('No other players to deal with.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const targetOpts = others.map(p => `<option value="${p.player_id}">${esc(p.name)}</option>`).join('');
+  const body = `
+    <label style="font-size:.74rem;color:var(--dim)">Propose to
+      <select id="pd-target" style="width:100%;display:block">${targetOpts}</select>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You offer
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-offer-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-offer-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You request
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-req-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-req-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (you → them)
+      <input id="pd-sweet" type="number" value="0" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealProposeSubmit()">Send proposal</button>
+    </div>`;
+  showDlg('Propose a Deal', body);
+}
+
+function _dealProposeSubmit() {
+  const oq = parseInt(document.getElementById('pd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('pd-req-qty').value, 10) || 0;
+  const sweet = parseFloat(document.getElementById('pd-sweet').value) || 0;
+  if (oq <= 0 && rq <= 0 && sweet <= 0) {
+    showToast('A deal must offer, request, or pay something.', { type: 'error' });
+    return;
+  }
+  sendWsMessage({
+    type: 'deal_propose',
+    target_player_id: parseInt(document.getElementById('pd-target').value, 10),
+    offer: oq > 0 ? { resource: document.getElementById('pd-offer-res').value, qty: oq } : null,
+    request: rq > 0 ? { resource: document.getElementById('pd-req-res').value, qty: rq } : null,
+    sweetener: sweet,
+  });
+  hideOverlay();
+  showToast('Deal proposal sent…', { type: 'info' });
+}
+
+// Push notification when a counterparty acts on a deal involving you.
+const _DEAL_RESULT_TEXT = {
+  proposed: 'proposed a deal to you',
+  accepted: 'accepted your deal',
+  returned: 'returned a counter-offer',
+  rejected: 'rejected your deal',
+  expired: 'deal expired (stale resources)',
+};
+function onDealResponsePush(msg) {
+  mergeDealMessage(msg);
+  const who = msg.from || 'A player';
+  const verb = _DEAL_RESULT_TEXT[msg.result] || `updated a deal (${msg.result})`;
+  const tone = { accepted: 'success', rejected: 'error', expired: 'error' }[msg.result] || 'info';
+  const needsAction = msg.deal && msg.deal.awaiting_id === _myEnginePlayerId()
+    && (msg.deal.status === 'pending' || msg.deal.status === 'returned');
+  showToast(
+    needsAction ? `${who} ${verb}. Review it in Deals.` : `${who} ${verb}.`,
+    { type: tone, ms: needsAction ? 9000 : 6000 },
+  );
 }
 
 function renderBarterMarket(compact = false) {
@@ -5142,7 +5455,11 @@ function _renderActionButton(o) {
   const titleAttr = (disabled && o.disabled_reason)
     ? ` title="${esc(o.disabled_reason)}"`
     : '';
-  const onclick = disabled ? '' : ` onclick="sendResponse('${o.value}')"`;
+  // #158: route the training action to the batch Training Desk dialog instead
+  // of the single-request sequential wizard. The desk submits a training_batch
+  // (handled independently of choose_action), so the action menu stays live.
+  const handler = o.value === 'request_training' ? 'openTrainingDesk()' : `sendResponse('${o.value}')`;
+  const onclick = disabled ? '' : ` onclick="${handler}"`;
   return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
 }
 
@@ -5199,6 +5516,150 @@ function resumeTradingFromParked() {
     btn.classList.remove('is-ready');
     document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   }
+}
+
+// ==================== TRAINING DESK (batch bookings, #158) ====================
+// A single dialog that books training for multiple workers across multiple job
+// types in one go, with an air-ticket option per row. Submits a `training_batch`
+// (handled server-side independently of the sequential wizard, like the Order
+// Desk) and reconciles per-row results. Backed by the read-only
+// `training_options` payload field (capacity + eligible-worker budget).
+let _trainingDeskRows = [];
+let _trainingDeskSeq = 0;
+
+function _myTrainingOptions() {
+  if (!gameState || myPlayerIdx == null) return null;
+  const me = gameState.players[myPlayerIdx];
+  return (me && me.training_options) || null;
+}
+
+function openTrainingDesk() {
+  const opts = _myTrainingOptions();
+  if (!opts || !opts.professions || !opts.professions.length) {
+    const why = (opts && opts.exhausted && opts.exhausted.length)
+      ? 'The university is fully booked this year across all professions.'
+      : 'No training slots are available right now.';
+    showToast(why, { type: 'error' });
+    return;
+  }
+  const first = opts.professions[0];
+  _trainingDeskRows = [{
+    profession: first.value,
+    count: Math.max(1, first.suggested_count || 1),
+    transport: 'air_ticket',
+    tickets: 0,
+    fee: 0,
+  }];
+  showDlg('Training Desk — Book Workers', _renderTrainingDesk());
+}
+
+function _trainingBudgetUsed() {
+  return _trainingDeskRows.reduce((n, r) => n + (parseInt(r.count, 10) || 0), 0);
+}
+
+function _renderTrainingDesk() {
+  const opts = _myTrainingOptions() || { professions: [], exhausted: [], eligible_worker_count: 0 };
+  const profById = Object.fromEntries(opts.professions.map(p => [p.value, p]));
+  const budget = opts.eligible_worker_count || 0;
+  const used = _trainingBudgetUsed();
+  const over = used > budget;
+  const exhaustedOpts = (opts.exhausted || []).map(p =>
+    `<option disabled>${esc(p.label)} — FULL (${p.trained}/${p.annual_cap})</option>`).join('');
+
+  const rowsHtml = _trainingDeskRows.map((row, i) => {
+    const profOpts = opts.professions.map(p =>
+      `<option value="${esc(p.value)}" ${p.value === row.profession ? 'selected' : ''}>${esc(p.label)} — ${p.remaining} slot(s)</option>`
+    ).join('');
+    const rem = (profById[row.profession] || {}).remaining || 0;
+    const air = row.transport === 'air_ticket';
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.5rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <label style="flex:2;min-width:150px;font-size:.74rem;color:var(--dim)">Job type
+          <select onchange="_tdEdit(${i},'profession',this.value)" style="width:100%;display:block">${profOpts}${exhaustedOpts}</select>
+        </label>
+        <label style="flex:0 0 72px;font-size:.74rem;color:var(--dim)">Workers
+          <input type="number" min="1" max="${rem}" value="${row.count}" onchange="_tdEdit(${i},'count',this.value)" style="width:100%;display:block">
+        </label>
+        <label style="flex:1;min-width:120px;font-size:.74rem;color:var(--dim)">Transport
+          <select onchange="_tdEdit(${i},'transport',this.value)" style="width:100%;display:block">
+            <option value="air_ticket" ${air ? 'selected' : ''}>Air ticket (fast)</option>
+            <option value="transporter" ${!air ? 'selected' : ''}>By sea (PassengerSeat)</option>
+          </select>
+        </label>
+        ${air ? `<label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Air tickets
+          <input type="number" min="0" value="${row.tickets}" onchange="_tdEdit(${i},'tickets',this.value)" style="width:100%;display:block">
+        </label>` : ''}
+        <label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Fee (Dp)
+          <input type="number" min="0" value="${row.fee}" onchange="_tdEdit(${i},'fee',this.value)" style="width:100%;display:block">
+        </label>
+        <button class="btn-ghost btn-sm" onclick="_tdRemove(${i})" ${_trainingDeskRows.length <= 1 ? 'disabled' : ''} title="Remove this row">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.5rem">
+      Book training for several job types at once. Eligible workers committed:
+      <strong style="color:${over ? 'var(--red)' : 'var(--heading)'}">${used} / ${budget}</strong>.
+    </div>
+    <div id="td-rows">${rowsHtml}</div>
+    <button class="btn-ghost btn-sm" onclick="_tdAddRow()" style="margin:.1rem 0 .8rem">＋ Add another job type</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_tdSubmit()" ${(over || used <= 0) ? 'disabled' : ''}>Book ${used} worker(s)</button>
+    </div>`;
+}
+
+function _rerenderTrainingDesk() {
+  const body = document.getElementById('dlg-body');
+  if (body) body.innerHTML = _renderTrainingDesk();
+}
+
+function _tdEdit(i, field, value) {
+  if (!_trainingDeskRows[i]) return;
+  if (field === 'fee') value = parseFloat(value) || 0;
+  else if (field === 'count' || field === 'tickets') value = parseInt(value, 10) || 0;
+  _trainingDeskRows[i][field] = value;
+  _rerenderTrainingDesk();
+}
+
+function _tdAddRow() {
+  const opts = _myTrainingOptions();
+  const first = opts && opts.professions[0];
+  if (!first) return;
+  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0 });
+  _rerenderTrainingDesk();
+}
+
+function _tdRemove(i) {
+  _trainingDeskRows.splice(i, 1);
+  _rerenderTrainingDesk();
+}
+
+function _tdSubmit() {
+  const requests = _trainingDeskRows
+    .filter(r => (parseInt(r.count, 10) || 0) > 0)
+    .map(r => ({
+      profession: r.profession,
+      count: parseInt(r.count, 10) || 0,
+      transport_mode: r.transport,
+      tickets_supplied_by_requester: r.transport === 'air_ticket' ? (parseInt(r.tickets, 10) || 0) : 0,
+      dollops_to_educator: parseFloat(r.fee) || 0,
+    }));
+  if (!requests.length) { showToast('Add at least one worker to book.', { type: 'error' }); return; }
+  _trainingDeskSeq += 1;
+  sendWsMessage({ type: 'training_batch', batch_ref: `td-${Date.now()}-${_trainingDeskSeq}`, requests });
+  hideOverlay();
+  showToast('Training request sent…', { type: 'info' });
+}
+
+function onTrainingBatchResult(msg) {
+  const results = msg.results || [];
+  if (msg.error) { showToast(`Training booking failed: ${msg.error}`, { type: 'error' }); return; }
+  const ok = results.filter(r => r && r.status === 'submitted');
+  const failed = results.filter(r => r && r.status === 'rejected');
+  failed.forEach(r => showToast(`Training row ${(r.index ?? 0) + 1} rejected: ${r.reason || 'unknown'}`, { type: 'error' }));
+  if (ok.length) showToast(`Booked ${ok.length} training request(s).`, { type: 'success' });
+  else if (!failed.length) showToast('No training rows were booked.', { type: 'error' });
 }
 
 function showActionPrompt(msg) {

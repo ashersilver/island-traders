@@ -5,10 +5,10 @@ requirements/education-model.md:
 
   * Manager-tier and Technician-tier courses are staffing-gated, with
     Courses and Expertise debited at approval.
-  * Profession-dependent away duration (Doctor 3, other Managers 2,
-    Nurse 1, Technicians 1).
-  * Returning apprentices work one 75%-productivity settling season;
-    university (Manager) graduates do not.
+  * Profession-dependent away duration (Doctor 4, other Managers 2,
+    Nurse 1, Technicians 1 with a Technical Workshop).
+  * Returning apprentices only settle after no-workshop training, at 50%
+    productivity for one season; university (Manager) graduates do not.
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 from island_traders.models.training import (
     TrainingRegistry, TrainingStatus, away_seasons,
+    campus_has_technical_workshop, settling_seasons_on_return, training_duration,
 )
 from island_traders.models.workforce import Workforce
 from island_traders.constants import STAFFING_FOOD_PER_STAFF_PER_SEASON
@@ -50,6 +51,7 @@ def _turn_manager(players, training, io):
 
 
 def _propose_tech(training, farmer, educator, workers):
+    has_workshop = campus_has_technical_workshop(educator)
     return training.propose(
         requester_id=farmer.player_id,
         worker_ids=[w.worker_id for w in workers],
@@ -57,6 +59,14 @@ def _propose_tech(training, farmer, educator, workers):
         dollops_to_educator=70.0,
         target_profession="FarmingTechnician",
         year=0, season=0, transport_mode="air_ticket",
+        duration_seasons=training_duration(
+            "FarmingTechnician",
+            has_technical_workshop=has_workshop,
+        ),
+        settling_seasons_on_return=settling_seasons_on_return(
+            "FarmingTechnician",
+            has_technical_workshop=has_workshop,
+        ),
     )
 
 
@@ -65,7 +75,7 @@ def _propose_tech(training, farmer, educator, workers):
 # --------------------------------------------------------------------------
 
 def test_away_seasons_by_profession():
-    assert away_seasons("Doctor") == 3
+    assert away_seasons("Doctor") == 4
     assert away_seasons("Nurse") == 1
     assert away_seasons("Engineer") == 3
     assert away_seasons("FarmingTechnician") == 1   # Technician away
@@ -116,7 +126,7 @@ def test_technician_pending_without_instructor():
     assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 2
 
 
-def test_technician_pending_without_technical_workshop():
+def test_technician_without_technical_workshop_uses_longer_settling_track():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
     workers = farmer.workforce.add_workers(2)
@@ -135,8 +145,10 @@ def test_technician_pending_without_technical_workshop():
         season_name="Spring", year=0,
     )
 
-    assert req.status == TrainingStatus.AWAITING_EDUCATOR
-    assert "no Technical Workshop" in "\n".join(io.printed)
+    assert req.status == TrainingStatus.DISPATCHED
+    assert req.duration_seasons == 2
+    assert req.settling_seasons_on_return == 1
+    assert (req.return_year, req.return_season) == (0, 2)
 
 
 def test_technician_dispatches_with_staff_workshop_courses_and_expertise():
@@ -208,7 +220,7 @@ def test_technical_course_staffing_blocks_overbooking():
 # Course duration wired into dispatch
 # --------------------------------------------------------------------------
 
-def test_doctor_course_is_three_seasons_away():
+def test_doctor_course_is_four_seasons_away():
     training = TrainingRegistry()
     req = training.propose(
         requester_id=0, worker_ids=[1, 2], educator_id=9,
@@ -217,8 +229,8 @@ def test_doctor_course_is_three_seasons_away():
     )
     training.educator_approve(req.batch_id)
     training.dispatch(req.batch_id, year=0, season=0, num_seasons=4)
-    # Spring (0) + 3 = Winter (3) of the same year.
-    assert (req.return_year, req.return_season) == (0, 3)
+    # Spring (0) + 4 = Spring of the next year.
+    assert (req.return_year, req.return_season) == (1, 0)
 
 
 def test_technician_apprenticeship_is_one_season_away():
@@ -235,24 +247,39 @@ def test_technician_apprenticeship_is_one_season_away():
 
 
 # --------------------------------------------------------------------------
-# Post-return settling ramp (75% for one season) — Technician only
+# Post-return settling ramp (50% for one season) — no-workshop Technician only
 # --------------------------------------------------------------------------
 
-def test_technician_returns_with_one_settling_season():
+def test_technician_trained_with_workshop_returns_without_settling():
     wf = Workforce()
     w = wf.add_workers(1, profession="Unskilled")[0]
-    full_unskilled_eff = w.efficiency
 
     wf.dispatch_for_training([w.worker_id])
     wf.return_from_training([w.worker_id], "FarmingTechnician")
 
     assert w.profession == "FarmingTechnician"
+    assert w.settling_seasons == 0
+
+
+def test_technician_trained_without_workshop_returns_with_one_settling_season():
+    wf = Workforce()
+    w = wf.add_workers(1, profession="Unskilled")[0]
+    full_unskilled_eff = w.efficiency
+
+    wf.dispatch_for_training([w.worker_id])
+    wf.return_from_training(
+        [w.worker_id],
+        "FarmingTechnician",
+        settling_seasons_on_return=1,
+    )
+
+    assert w.profession == "FarmingTechnician"
     assert w.settling_seasons == 1
-    # During the settling season efficiency is throttled to 75%.
+    # During the settling season efficiency is throttled to 50%.
     settling_eff = w.efficiency
     assert settling_eff < full_unskilled_eff or w.training_level == 1
     base_no_settle = min(0.20 + w.experience_seasons * 0.05, w.plateau)
-    assert abs(settling_eff - base_no_settle * 0.75) < 1e-9
+    assert abs(settling_eff - base_no_settle * 0.50) < 1e-9
 
     # One worked season clears the settling penalty.
     wf.apply_season_work()
@@ -260,6 +287,25 @@ def test_technician_returns_with_one_settling_season():
     assert abs(w.efficiency - min(
         0.20 + w.experience_seasons * 0.05, w.plateau
     )) < 1e-9
+
+
+def test_training_duration_and_settling_follow_workshop_presence():
+    assert training_duration(
+        "FarmingTechnician",
+        has_technical_workshop=True,
+    ) == 1
+    assert settling_seasons_on_return(
+        "FarmingTechnician",
+        has_technical_workshop=True,
+    ) == 0
+    assert training_duration(
+        "FarmingTechnician",
+        has_technical_workshop=False,
+    ) == 2
+    assert settling_seasons_on_return(
+        "FarmingTechnician",
+        has_technical_workshop=False,
+    ) == 1
 
 
 def test_campus_load_raises_education_island_sustenance_demand():

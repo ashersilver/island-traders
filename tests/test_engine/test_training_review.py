@@ -218,7 +218,7 @@ def test_training_approval_does_not_consume_expertise_per_attendee():
     )
 
     assert educator.inventory.get(ResourceType.COURSES) == 0
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
 
 
 def test_educator_cannot_approve_training_without_air_tickets():
