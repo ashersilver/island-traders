@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-18.2"
+APP_VERSION: str = "0.1.5-dev.2026-06-18.3"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -315,6 +315,11 @@ CONSUMER_HEALTH_CASUALTY_UNITS: int = 1
 CONSUMER_VACCINE_SEASONAL_UNITS: dict[str, int] = {
     "Autumn": 1,
 }
+FLU_SEASON: str = "Winter"
+FLU_STRAIN_LOSSES: tuple[float, ...] = (0.05, 0.10, 0.15, 0.20)
+FLU_MAX_PRODUCTIVITY_LOSS: float = 0.20
+VACCINE_PEOPLE_PER_DOSE: int = 20
+VACCINE_INFECTION_REDUCTION: float = 0.80
 CONSUMER_EDUCATION_SEASONAL_UNITS: dict[str, int] = {
     "Spring": 1,
     "Summer": 1,

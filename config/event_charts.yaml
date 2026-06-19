@@ -256,8 +256,8 @@ Manufacturer:
 Doctor:
   events:
   - name: Normal Practice
-    weight: 0.4585
-    yield_modifier: 0.87
+    weight: 0.43
+    yield_modifier: 0.8
     productivity_bonus: 0
     outage: false
     damage_seasons: 0
@@ -265,8 +265,8 @@ Doctor:
     price_shock_resource: null
     price_shock_multiplier: 1.0
   - name: Medical Breakthrough
-    weight: 0.3049
-    yield_modifier: 1.6
+    weight: 0.22
+    yield_modifier: 1.4
     productivity_bonus: 1
     outage: false
     damage_seasons: 0
@@ -274,7 +274,7 @@ Doctor:
     price_shock_resource: HealthServices
     price_shock_multiplier: 1.2
   - name: Disease Outbreak
-    weight: 0.1331
+    weight: 0.2
     yield_modifier: 0.1
     productivity_bonus: 0
     outage: false
@@ -283,7 +283,7 @@ Doctor:
     price_shock_resource: HealthServices
     price_shock_multiplier: 1.2
   - name: Hospital Strike
-    weight: 0.0739
+    weight: 0.1
     yield_modifier: 0.0
     productivity_bonus: 0
     outage: true
@@ -292,7 +292,7 @@ Doctor:
     price_shock_resource: HealthServices
     price_shock_multiplier: 1.3
   - name: Pandemic
-    weight: 0.0296
+    weight: 0.05
     yield_modifier: 0.0
     productivity_bonus: 0
     outage: true

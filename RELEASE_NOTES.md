@@ -5,6 +5,27 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### codex/vaccines-flu-49-2026-06-19 — Winter flu + vaccine mitigation (#49)
+
+Version bump: `0.1.5-dev.2026-06-18.3`
+
+Implements the #49 vaccine/flu season model.
+
+- Winter now rolls a deterministic archipelago-wide flu strain from discrete
+  5% / 10% / 15% / 20% productivity-loss severities.
+- Each island automatically administers up to `ceil(population / 20)` Vaccine
+  doses from its inventory in Winter. Full coverage reduces the flu loss by
+  80%; partial coverage scales proportionally.
+- Flu is folded into each player's existing `EventResult.yield_modifier`, so it
+  stacks multiplicatively with ordinary event-chart results and uses the normal
+  production path.
+- `game_state` exposes `flu.strain_loss` plus per-player
+  `flu_doses_needed`, `flu_doses_administered`, and `flu_effective_loss` for
+  Claude's Winter flu UI banner/indicator.
+- Rule AI now buys or bids for Vaccine ahead of Winter and keeps its own
+  coverage reserve before listing surplus.
+- RULES.md now describes Vaccine as a Winter flu mitigation resource.
+
 ### claude/competent-cori-f857f6 — spectator view: staff / training / capital + event filter (#179)
 
 Version bump: `0.1.5-dev.2026-06-18.2`

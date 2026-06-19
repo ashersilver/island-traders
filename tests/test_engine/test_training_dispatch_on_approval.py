@@ -84,6 +84,23 @@ def test_ai_educator_approves_and_dispatches_on_its_own_turn():
     assert any(r.status.value == "dispatched" for r in reqs)
 
 
+def test_ai_educator_leaves_request_pending_when_requester_cannot_pay_fee():
+    g = _game(educator_human=False)
+    farmer, educator = g.players
+    educator.receive_resources(ResourceType.REAGENTS, 2)
+    res = TurnResult(player_id=farmer.player_id, season="Spring", year=0)
+    g.turn_manager._action_request_training(farmer, res, "Spring", 0)
+    farmer.dollops = 0.0
+
+    res2 = TurnResult(player_id=educator.player_id, season="Spring", year=0)
+    g.turn_manager._ai_review_training_queue(educator, res2, "Spring", 0)
+
+    assert farmer.workforce.training_count == 0
+    reqs = g.training.active_for_player(farmer.player_id)
+    assert reqs
+    assert all(r.status.value == "awaiting_educator" for r in reqs)
+
+
 def test_request_does_not_dispatch_workers_with_human_educator():
     g = _game(educator_human=True)
     farmer, educator = g.players

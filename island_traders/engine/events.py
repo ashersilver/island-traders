@@ -17,6 +17,10 @@ class EventResult:
     natural_disaster: bool = False
     price_shock_resource: ResourceType | None = None
     price_shock_multiplier: float = 1.0
+    flu_strain_loss: float = 0.0
+    flu_doses_needed: int = 0
+    flu_doses_administered: int = 0
+    flu_effective_loss: float = 0.0
 
     @property
     def is_normal(self) -> bool:
@@ -25,6 +29,7 @@ class EventResult:
             and not self.outage
             and self.damage_seasons == 0
             and not self.natural_disaster
+            and self.flu_effective_loss == 0.0
         )
 
     @property

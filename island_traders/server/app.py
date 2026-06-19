@@ -48,6 +48,7 @@ from ..constants import (
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
     TOTAL_STARTING_POPULATION, PEOPLE_PER_MEAL,
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
+    FLU_SEASON,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -3401,6 +3402,11 @@ class GameManager:
         current_season_idx = getattr(room, "current_season_index", 0)
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
         player_names = {p.player_id: p.name for p in game.players}
+        event_results = getattr(game, "_last_event_results", {}) or {}
+        flu_strain_loss = max(
+            (getattr(event, "flu_strain_loss", 0.0) for event in event_results.values()),
+            default=0.0,
+        )
         viewer_engine_id = (
             (room.lobby_to_engine_id or {}).get(player_id)
             if player_id is not None else None
@@ -3560,6 +3566,20 @@ class GameManager:
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                "flu_strain_loss": round(
+                    getattr(event_results.get(p.player_id), "flu_strain_loss", 0.0),
+                    4,
+                ),
+                "flu_doses_needed": getattr(
+                    event_results.get(p.player_id), "flu_doses_needed", 0
+                ),
+                "flu_doses_administered": getattr(
+                    event_results.get(p.player_id), "flu_doses_administered", 0
+                ),
+                "flu_effective_loss": round(
+                    getattr(event_results.get(p.player_id), "flu_effective_loss", 0.0),
+                    4,
+                ),
                 "campus_load": (
                     game.training.visiting_trainees(p.player_id)
                     if any(r.name == "Educator" for r in p.roles) else 0
@@ -3809,6 +3829,11 @@ class GameManager:
                 for term, rate in posted_funding_rates(
                     current_year_idx, current_season_idx
                 ).items()
+            },
+            "flu": {
+                "season": FLU_SEASON,
+                "strain_loss": round(flu_strain_loss, 4),
+                "active": flu_strain_loss > 0,
             },
             "players": players_data,
             "sustenance_alerts": {

@@ -22,6 +22,7 @@ from ..models.profession import (
 )
 from ..engine.workforce_events import apply_workplace_risks
 from ..engine.consumer import consumer_demand_plan, buy_household_goods_from_offers
+from ..engine.flu import vaccine_doses_needed
 from ..constants import (
     SEASONS, CURRENCY_SYMBOL, UNIVERSITY_CAPACITY,
     STARTING_WORKERS_BY_PROFESSION,
@@ -38,6 +39,8 @@ from ..constants import (
     CONSUMER_EDUCATION_VOUCHER_PER_UNIT,
     CONSUMER_GOODS_VOUCHER_PER_UNIT,
     REPURPOSE_WORKER_COST,
+    FLU_SEASON, FLU_STRAIN_LOSSES, FLU_MAX_PRODUCTIVITY_LOSS,
+    VACCINE_INFECTION_REDUCTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
@@ -151,6 +154,13 @@ class TurnManager:
         self.io.print(f"\n{'='*50}")
         self.io.print(f"  Year {year + 1}  —  {season_name}")
         self.io.print(f"{'='*50}")
+        adjusted_event_results = self._apply_winter_flu(
+            season_name,
+            event_results,
+        )
+        if adjusted_event_results is not event_results:
+            event_results.clear()
+            event_results.update(adjusted_event_results)
 
         # Apply workplace injuries/fatalities before turns begin
         banker_players = [p for p in self.players if any(r.name == "Banker" for r in p.roles)]
@@ -186,6 +196,78 @@ class TurnManager:
         self.market.reset_period_signals()
         self.market.tick_shocks()
         return results
+
+    def _roll_flu_strain_loss(self) -> float:
+        strains = tuple(
+            loss for loss in FLU_STRAIN_LOSSES
+            if 0.0 < loss <= FLU_MAX_PRODUCTIVITY_LOSS
+        )
+        if not strains:
+            return FLU_MAX_PRODUCTIVITY_LOSS
+        return self._rng.choice(strains)
+
+    def _copy_event_result(self, event: EventResult) -> EventResult:
+        return EventResult(
+            event_name=event.event_name,
+            yield_modifier=event.yield_modifier,
+            productivity_bonus=event.productivity_bonus,
+            outage=event.outage,
+            damage_seasons=event.damage_seasons,
+            natural_disaster=event.natural_disaster,
+            price_shock_resource=event.price_shock_resource,
+            price_shock_multiplier=event.price_shock_multiplier,
+            flu_strain_loss=event.flu_strain_loss,
+            flu_doses_needed=event.flu_doses_needed,
+            flu_doses_administered=event.flu_doses_administered,
+            flu_effective_loss=event.flu_effective_loss,
+        )
+
+    def _apply_winter_flu(
+        self,
+        season_name: str,
+        event_results: dict[int, EventResult],
+        strain_loss: float | None = None,
+    ) -> dict[int, EventResult]:
+        if season_name != FLU_SEASON:
+            return event_results
+        strain = (
+            self._roll_flu_strain_loss()
+            if strain_loss is None else max(0.0, min(strain_loss, FLU_MAX_PRODUCTIVITY_LOSS))
+        )
+        adjusted = dict(event_results)
+        self.io.print(
+            f"\n[FLU] Winter flu strain: productivity risk {strain * 100:.0f}% "
+            "before vaccination."
+        )
+        for player in self.players:
+            needed = vaccine_doses_needed(player.population)
+            available = player.inventory.get(ResourceType.VACCINE)
+            administered = min(needed, available)
+            if administered > 0:
+                player.give_resources(ResourceType.VACCINE, administered)
+            coverage = administered / needed if needed else 0.0
+            mitigation = coverage * VACCINE_INFECTION_REDUCTION
+            effective_loss = round(strain * (1 - mitigation), 6)
+            base_event = adjusted.get(
+                player.player_id, EventResult("Normal Operations")
+            )
+            event = self._copy_event_result(base_event)
+            event.yield_modifier = round(
+                event.yield_modifier * (1 - effective_loss),
+                6,
+            )
+            event.flu_strain_loss = strain
+            event.flu_doses_needed = needed
+            event.flu_doses_administered = administered
+            event.flu_effective_loss = effective_loss
+            if "Flu" not in event.event_name:
+                event.event_name = f"{event.event_name} + Winter Flu"
+            adjusted[player.player_id] = event
+            self.io.print(
+                f"[FLU] {player.name}: vaccinated {administered}/{needed}; "
+                f"effective productivity loss {effective_loss * 100:.1f}%."
+            )
+        return adjusted
 
     def _process_consumer_demand(self, season_name: str, risk_reports: list) -> None:
         casualties_by_player = {
@@ -1349,6 +1431,14 @@ class TurnManager:
         if req.dollops_to_educator >= required_offer:
             # Peek training capacity before burning air tickets.
             season_index = SEASONS.index(season_name)
+            if requester.dollops < req.dollops_to_educator:
+                self.io.print(
+                    f"  [AI] {educator.name} cannot approve training request "
+                    f"#{req.batch_id} yet: {requester.name} has "
+                    f"{requester.dollops:.0f} Dp for a "
+                    f"{req.dollops_to_educator:.0f} Dp fee. Pending."
+                )
+                return
             ok, gate_msg = self._training_capacity_status(
                 educator, req, year, season_index
             )
