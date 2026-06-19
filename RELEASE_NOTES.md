@@ -10,11 +10,14 @@ _Nothing yet — next dev cycle._
 ## 0.1.5-beta.1 — 2026-06-19 (Beta)
 
 First Beta point release, promoted from `pre-release` to `master`.
-Tag: `v0.1.5-beta.1` · running `APP_VERSION`: `0.1.5-dev.2026-06-19.1` ·
+Tag: `v0.1.5-beta.1` · running `APP_VERSION`: `0.1.5-dev.2026-06-19.2` ·
 package `version`: `0.1.5b1`.
 
 Headline changes since 0.1.4:
 
+- **QoL + pollution population dynamics (#48/#45)** — Quality-of-Life-modulated
+  birth rates and pollution tracking, with residents migrating toward
+  higher-QoL islands; QoL/coverage/pollution surfaced in `game_state`.
 - **Winter flu + vaccine mitigation (#49)** — deterministic Winter flu strain;
   islands auto-administer Vaccine for up to 80% loss reduction; flu surfaced in
   `game_state` for the Winter UI.
@@ -30,6 +33,28 @@ Headline changes since 0.1.4:
   the auction briefings.
 
 See the per-merge entries below for detail.
+
+### codex/qol-pollution-48-45-2026-06-19 — QoL + pollution population dynamics (#48/#45)
+
+Version bump: `0.1.5-dev.2026-06-19.1`
+
+Implements the #48 Quality of Life model and #45 pollution tracking.
+
+- Tracks annual Oil consumption during selected production plus household Food
+  and HealthServices demand coverage from consumer-demand purchases.
+- Adds pure QoL/pollution helpers for food coverage, health coverage, raw and
+  health-mitigated pollution, and composite QoL.
+- Replaces wealth-only population births with QoL-modulated birth rates, then
+  moves residents from islands far below average QoL to the highest-QoL island.
+- `game_state` exposes per-player `qol_score`, `food_coverage`,
+  `health_coverage`, and `pollution_index` for Claude's UI indicator.
+- Rule AI now lightly buys HealthServices when last year's health coverage was
+  below 50% and base-price market asks are available.
+- Balance calibration lowered the QoL health weight to 25%, raised food to 50%,
+  and reduced HealthServices base price from 28.5 Dp to 25.0 Dp. The initial
+  1000-game seed-42 run had Doctor at 31.5%; final calibration landed at
+  Farmer 10.2%, Miner 11.3%, Transporter 16.9%, Educator 15.0%, Banker 17.1%,
+  Manufacturer 11.7%, Doctor 17.8%.
 
 ### codex/vaccines-flu-49-2026-06-19 — Winter flu + vaccine mitigation (#49)
 

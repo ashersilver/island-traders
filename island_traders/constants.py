@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-19.1"
+APP_VERSION: str = "0.1.5-dev.2026-06-19.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -123,7 +123,7 @@ BASE_PRICES: dict[str, float] = {
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
     "Goods":               40.0,
-    "HealthServices":      28.5,
+    "HealthServices":      25.0,
     "Vaccine":             33.5,
     "Finance":             22.0,
     # ForgeHaven product lines
@@ -320,6 +320,18 @@ FLU_STRAIN_LOSSES: tuple[float, ...] = (0.05, 0.10, 0.15, 0.20)
 FLU_MAX_PRODUCTIVITY_LOSS: float = 0.20
 VACCINE_PEOPLE_PER_DOSE: int = 20
 VACCINE_INFECTION_REDUCTION: float = 0.80
+
+# Quality of Life + Pollution (#48 / #45).
+QOL_WEIGHT_FOOD: float = 0.50
+QOL_WEIGHT_HEALTH: float = 0.25
+QOL_WEIGHT_POLLUTION: float = 0.20
+QOL_WEIGHT_FOREST: float = 0.05
+OIL_POLLUTION_SCALE: float = 50.0
+POLLUTION_HEALTH_MITIGATION: float = 0.50
+QOL_BIRTH_RATE_MIN: float = 0.50
+QOL_BIRTH_RATE_MAX: float = 2.00
+QOL_EMIGRATION_THRESHOLD: float = 0.20
+QOL_EMIGRATION_RATE: float = 0.04
 CONSUMER_EDUCATION_SEASONAL_UNITS: dict[str, int] = {
     "Spring": 1,
     "Summer": 1,

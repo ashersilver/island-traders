@@ -39,6 +39,8 @@ from ..constants import (
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
     BASE_BIRTH_RATE,
+    QOL_BIRTH_RATE_MIN, QOL_BIRTH_RATE_MAX,
+    QOL_EMIGRATION_THRESHOLD, QOL_EMIGRATION_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
@@ -48,6 +50,12 @@ from ..constants import (
     HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
+from .qol import (
+    compute_qol,
+    food_coverage,
+    health_coverage,
+    mitigated_pollution_index,
+)
 
 SAVE_VERSION = 7
 
@@ -336,6 +344,7 @@ class Game:
         if not self._money_supply_history:
             self._money_supply_history.append(round(self._total_money_supply(), 2))
         for year in range(self._resume_year, self.config.num_years):
+            self._reset_annual_qol_accumulators()
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
@@ -380,27 +389,94 @@ class Game:
                 p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick)
                 for p in self.players
             ]
-            max_wealth = max(wealthies) if wealthies else 1.0
 
             for player, wealth in zip(self.players, wealthies):
                 player.record_year_wealth(
                     prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick
                 )
-                wealth_ratio = wealth / max_wealth if max_wealth > 0 else 0.0
-                birth_rate = BASE_BIRTH_RATE * max(0.0, 1.0 - wealth_ratio)
-                new_people = max(0, round(player.population * birth_rate))
-                if new_people:
-                    player.population += new_people
-                    self.io.print(
-                        f"  [Population] {player.name}: +{new_people} people born  "
-                        f"(island population now {player.population}; "
-                        f"{player.available_unskilled} recruitable)"
-                    )
+            self._process_year_end_qol_and_population(year, prices, year_end_tick)
 
             self.io.print(self._year_end_summary(year, prices, year_end_tick))
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
+
+    def _reset_annual_qol_accumulators(self) -> None:
+        for player in self.players:
+            player._oil_consumed_this_year = 0
+            player._food_demanded_this_year = 0
+            player._food_bought_this_year = 0
+            player._health_demanded_this_year = 0
+            player._health_bought_this_year = 0
+
+    def _process_year_end_qol_and_population(
+        self,
+        year: int,
+        prices: dict[ResourceType, float],
+        year_end_tick: int,
+    ) -> None:
+        _ = (prices, year_end_tick)
+        qol_scores: dict[int, float] = {}
+        for player in self.players:
+            fc = food_coverage(
+                getattr(player, "_food_demanded_this_year", 0),
+                getattr(player, "_food_bought_this_year", 0),
+            )
+            hc = health_coverage(
+                getattr(player, "_health_demanded_this_year", 0),
+                getattr(player, "_health_bought_this_year", 0),
+            )
+            pi = mitigated_pollution_index(
+                getattr(player, "_oil_consumed_this_year", 0),
+                player.population,
+                hc,
+            )
+            qol = compute_qol(fc, hc, pi)
+            player._qol_score = round(qol, 3)
+            player._food_coverage = round(fc, 3)
+            player._health_coverage = round(hc, 3)
+            player._pollution_index = round(pi, 3)
+            player._qol_observed_years = getattr(player, "_qol_observed_years", 0) + 1
+            qol_scores[player.player_id] = qol
+            self.io.print(
+                f"  [QoL] {player.name}: food={fc:.0%} health={hc:.0%} "
+                f"pollution={pi:.0%} -> QoL {qol:.2f}"
+            )
+
+        for player in self.players:
+            qol = qol_scores[player.player_id]
+            birth_modifier = QOL_BIRTH_RATE_MIN + qol * (
+                QOL_BIRTH_RATE_MAX - QOL_BIRTH_RATE_MIN
+            )
+            birth_rate = BASE_BIRTH_RATE * birth_modifier
+            new_people = max(0, round(player.population * birth_rate))
+            if new_people:
+                player.population += new_people
+                self.io.print(
+                    f"  [Population] {player.name}: +{new_people} people born "
+                    f"(QoL {qol:.2f} -> rate {birth_rate:.3f}; "
+                    f"population now {player.population})"
+                )
+
+        if len(self.players) < 2:
+            return
+        mean_qol = sum(qol_scores.values()) / len(qol_scores)
+        best_player = max(self.players, key=lambda p: qol_scores[p.player_id])
+        for player in self.players:
+            if player is best_player:
+                continue
+            qol = qol_scores[player.player_id]
+            if mean_qol - qol >= QOL_EMIGRATION_THRESHOLD:
+                emigrants = max(1, round(player.population * QOL_EMIGRATION_RATE))
+                emigrants = min(emigrants, player.population - 1)
+                if emigrants > 0:
+                    player.population -= emigrants
+                    best_player.population += emigrants
+                    self.io.print(
+                        f"  [Emigration] {emigrants} people left {player.name} "
+                        f"(QoL {qol:.2f}) for {best_player.name} "
+                        f"(QoL {qol_scores[best_player.player_id]:.2f})."
+                    )
 
     def _process_capital_maintenance(self, year: int, season: int) -> None:
         """Expire end-of-life capital, then charge per-season maintenance.

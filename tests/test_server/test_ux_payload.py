@@ -126,6 +126,25 @@ def test_game_state_exposes_winter_flu_payload():
     assert player_state["flu_effective_loss"] == 0.04
 
 
+def test_game_state_exposes_qol_payload():
+    mgr, room, players = _bootstrap_game(["Farmer", "Doctor"])
+    farmer = players[0]
+    farmer._qol_score = 0.725
+    farmer._food_coverage = 0.8
+    farmer._health_coverage = 0.5
+    farmer._pollution_index = 0.125
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    player_state = next(
+        p for p in state["players"] if p["player_id"] == farmer.player_id
+    )
+
+    assert player_state["qol_score"] == 0.725
+    assert player_state["food_coverage"] == 0.8
+    assert player_state["health_coverage"] == 0.5
+    assert player_state["pollution_index"] == 0.125
+
+
 def test_training_pipeline_shape():
     mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
     educator, farmer = players

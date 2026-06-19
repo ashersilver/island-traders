@@ -3566,6 +3566,10 @@ class GameManager:
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
+                "qol_score": round(getattr(p, "_qol_score", 0.0), 3),
+                "food_coverage": round(getattr(p, "_food_coverage", 0.0), 3),
+                "health_coverage": round(getattr(p, "_health_coverage", 0.0), 3),
+                "pollution_index": round(getattr(p, "_pollution_index", 0.0), 3),
                 "flu_strain_loss": round(
                     getattr(event_results.get(p.player_id), "flu_strain_loss", 0.0),
                     4,

@@ -193,6 +193,18 @@ class Player:
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        self._oil_consumed_this_year = 0
+        self._food_demanded_this_year = 0
+        self._food_bought_this_year = 0
+        self._health_demanded_this_year = 0
+        self._health_bought_this_year = 0
+        self._qol_score = 0.0
+        self._food_coverage = 0.0
+        self._health_coverage = 0.0
+        self._pollution_index = 0.0
+        self._qol_observed_years = 0
+
     # --- Equity / balance-sheet split (Phase 1, additive) ------------------
     # `dollops` (above) is the ISLAND's operating treasury.  `personal_cash`
     # is the player-as-investor's private wealth (the auction budget; the

@@ -341,6 +341,7 @@ class TurnManager:
                         f"{ResourceType.GOODS.value}."
                     )
             if player.household_cash <= 0:
+                self._record_qol_consumer_demand(player, plan.units, {})
                 continue
             result = buy_household_goods_from_offers(
                 player,
@@ -348,6 +349,7 @@ class TurnManager:
                 desired,
                 post_unmet=False,
             )
+            self._record_qol_consumer_demand(player, plan.units, result.bought)
             if result.spent > 0:
                 delivery_units = sum(result.bought.values())
                 if delivery_units and CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT > 0:
@@ -376,6 +378,29 @@ class TurnManager:
                     f"[CONSUMER DEMAND] {player.name} households spent "
                     f"{CURRENCY_SYMBOL}{result.spent:.2f} on {parts}."
                 )
+
+    def _record_qol_consumer_demand(
+        self,
+        player: Player,
+        demanded: dict[ResourceType, int],
+        bought: dict[ResourceType, int],
+    ) -> None:
+        plan_food = demanded.get(ResourceType.FOOD, 0)
+        plan_health = demanded.get(ResourceType.HEALTH_SERVICES, 0)
+        player._food_demanded_this_year = (
+            getattr(player, "_food_demanded_this_year", 0) + plan_food
+        )
+        player._food_bought_this_year = (
+            getattr(player, "_food_bought_this_year", 0)
+            + bought.get(ResourceType.FOOD, 0)
+        )
+        player._health_demanded_this_year = (
+            getattr(player, "_health_demanded_this_year", 0) + plan_health
+        )
+        player._health_bought_this_year = (
+            getattr(player, "_health_bought_this_year", 0)
+            + bought.get(ResourceType.HEALTH_SERVICES, 0)
+        )
 
     def _post_consumer_demand_signals(self, season_name: str, risk_reports: list) -> None:
         casualties_by_player = {

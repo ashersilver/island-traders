@@ -871,6 +871,10 @@ class ProductionEngine:
             player.give_resources(r, amount)
             if self.telemetry is not None:
                 self.telemetry.record_consumed(r, amount)
+        player._oil_consumed_this_year = (
+            getattr(player, "_oil_consumed_this_year", 0)
+            + inputs.get(ResourceType.OIL, 0)
+        )
         player.receive_resources(output, qty)
         if self.telemetry is not None:
             self.telemetry.record_produced(output, qty)
