@@ -61,6 +61,8 @@ AI_INSURANCE_CASH_RESERVE = 125.0
 AI_INSURANCE_MIN_INJURY_RATE = 0.02
 AI_INSURANCE_MIN_FATALITY_RATE = 0.005
 AI_VACCINE_CASH_RESERVE = 50.0
+AI_HEALTH_QOL_COVERAGE_THRESHOLD = 0.5
+AI_HEALTH_QOL_CASH_RESERVE = 50.0
 
 
 class AIStrategy:
@@ -1167,6 +1169,49 @@ class AIStrategy:
                     pass
         return actions
 
+    def _ai_buy_health_services_for_qol(
+        self,
+        player: Player,
+        market: Market,
+        trading_engine: TradingEngine,
+        other_players: list[Player],
+    ) -> list[str]:
+        if player.is_human:
+            return []
+        if getattr(player, "_qol_observed_years", 0) <= 0:
+            return []
+        if getattr(player, "_health_coverage", 1.0) >= AI_HEALTH_QOL_COVERAGE_THRESHOLD:
+            return []
+        target_qty = ceil(max(0, player.population) / 100)
+        if target_qty <= 0:
+            return []
+        base_price = BASE_PRICES.get(ResourceType.HEALTH_SERVICES.value, 0.0)
+        max_price = base_price * 2
+        offers = [
+            offer for offer in market.available_offers(ResourceType.HEALTH_SERVICES)
+            if offer.seller_id != player.player_id and offer.price_per_unit <= max_price
+        ]
+        if not offers:
+            return []
+        bid_price = min(max_price, base_price)
+        bid_qty = min(target_qty, sum(offer.remaining for offer in offers))
+        if player.dollops < (bid_price * bid_qty) + AI_HEALTH_QOL_CASH_RESERVE:
+            return []
+        try:
+            bid = market.post_bid(
+                player, ResourceType.HEALTH_SERVICES, bid_price, bid_qty
+            )
+        except Exception:
+            return []
+        bought = bid.quantity - bid.remaining
+        cost = round(bought * bid_price, 2)
+        if bought <= 0:
+            return []
+        return [
+            f"[AI] {player.name} bought {bought}x HealthServices "
+            f"to improve QoL coverage ({cost:.1f} Dp)"
+        ]
+
     def take_turn(
         self,
         player: Player,
@@ -1231,6 +1276,11 @@ class AIStrategy:
         actions.extend(
             self._ai_buy_vaccines_for_winter(
                 player, market, trading_engine, other_players, season_name
+            )
+        )
+        actions.extend(
+            self._ai_buy_health_services_for_qol(
+                player, market, trading_engine, other_players
             )
         )
 
