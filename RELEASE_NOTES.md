@@ -5,6 +5,32 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+_Nothing yet — next dev cycle._
+
+## 0.1.5-beta.1 — 2026-06-19 (Beta)
+
+First Beta point release, promoted from `pre-release` to `master`.
+Tag: `v0.1.5-beta.1` · running `APP_VERSION`: `0.1.5-dev.2026-06-19.1` ·
+package `version`: `0.1.5b1`.
+
+Headline changes since 0.1.4:
+
+- **Winter flu + vaccine mitigation (#49)** — deterministic Winter flu strain;
+  islands auto-administer Vaccine for up to 80% loss reduction; flu surfaced in
+  `game_state` for the Winter UI.
+- **Spectator view upgrade (#179)** — staff summary, training pipeline, and
+  capital (incl. on-order / in-repair) cards plus an event filter.
+- **Training-cost reconciliation (#18)** — 4-season Doctor training, campus
+  Technical Workshop fast-track, uniform Expertise charging.
+- **Deal-response UI (#167)** — notify + propose/accept/return/reject, with the
+  Deals panel updating live on alerts.
+- **Secured opening capital loans + freight friction (#157, #85)** — capital can
+  be financed at game start; trades pay freight friction.
+- **Training Desk batch booking (#158)** and **role activity index (#27)** in
+  the auction briefings.
+
+See the per-merge entries below for detail.
+
 ### codex/vaccines-flu-49-2026-06-19 — Winter flu + vaccine mitigation (#49)
 
 Version bump: `0.1.5-dev.2026-06-18.3`

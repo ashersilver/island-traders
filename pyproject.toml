@@ -4,7 +4,7 @@ name = "island-traders"
 # island_traders/constants.py (APP_VERSION, e.g. 0.1.5-dev.YYYY-MM-DD.N) and is
 # the canonical source for the /version endpoint. Bump this only when cutting a
 # release. See requirements/release-process.md → "Versioning".
-version = "0.1.4"
+version = "0.1.5b1"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
