@@ -5,6 +5,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from island_traders.cli.prompts import FakeIOAdapter
+from island_traders.engine.events import EventResult
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.engine.turn import TurnAction
 from island_traders.models.profession import Profession
@@ -93,6 +94,36 @@ def test_action_payload_finance_gated():
     assert "Banking" in sell_policy["disabled_reason"]
     assert offer_loan["enabled"] is False
     assert "Banking" in offer_loan["disabled_reason"]
+
+
+def test_game_state_exposes_winter_flu_payload():
+    mgr, room, players = _bootstrap_game(["Farmer", "Doctor"])
+    farmer = players[0]
+    room.game._last_event_results = {
+        farmer.player_id: EventResult(
+            "Normal Operations + Winter Flu",
+            yield_modifier=0.96,
+            flu_strain_loss=0.20,
+            flu_doses_needed=5,
+            flu_doses_administered=5,
+            flu_effective_loss=0.04,
+        )
+    }
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    player_state = next(
+        p for p in state["players"] if p["player_id"] == farmer.player_id
+    )
+
+    assert state["flu"] == {
+        "season": "Winter",
+        "strain_loss": 0.2,
+        "active": True,
+    }
+    assert player_state["flu_strain_loss"] == 0.2
+    assert player_state["flu_doses_needed"] == 5
+    assert player_state["flu_doses_administered"] == 5
+    assert player_state["flu_effective_loss"] == 0.04
 
 
 def test_training_pipeline_shape():

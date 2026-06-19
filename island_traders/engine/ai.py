@@ -8,6 +8,7 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
+from ..engine.flu import vaccine_doses_needed
 from ..models.insurance import InsurancePolicy
 from ..models.training import (
     TrainingCapacityError,
@@ -28,6 +29,7 @@ from ..constants import (
     EQUIPMENT_AI_WARRANTY_MIN_COST,
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
+    FLU_SEASON,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role
@@ -58,6 +60,7 @@ AI_TRAINING_CASH_RESERVE = 75.0
 AI_INSURANCE_CASH_RESERVE = 125.0
 AI_INSURANCE_MIN_INJURY_RATE = 0.02
 AI_INSURANCE_MIN_FATALITY_RATE = 0.005
+AI_VACCINE_CASH_RESERVE = 50.0
 
 
 class AIStrategy:
@@ -1100,6 +1103,70 @@ class AIStrategy:
                 )
         return actions
 
+    def _ai_buy_vaccines_for_winter(
+        self,
+        player: Player,
+        market: Market,
+        trading_engine: TradingEngine,
+        other_players: list[Player],
+        season_name: str,
+    ) -> list[str]:
+        if player.is_human or season_name not in ("Autumn", FLU_SEASON):
+            return []
+        needed = vaccine_doses_needed(player.population)
+        have = player.inventory.get(ResourceType.VACCINE)
+        if have >= needed:
+            return []
+        target_qty = needed - have
+        actions: list[str] = []
+        offers = market.available_offers(ResourceType.VACCINE)
+        available = sum(offer.remaining for offer in offers)
+        if available > 0:
+            fill_qty = min(target_qty, available)
+            estimated = sum(
+                offer.price_per_unit * take
+                for offer, take in self._planned_offer_fills(offers, fill_qty)
+            )
+            if player.dollops >= estimated + AI_VACCINE_CASH_RESERVE:
+                try:
+                    order = trading_engine.execute_order_list(
+                        player,
+                        [{
+                            "side": "buy",
+                            "resource": ResourceType.VACCINE.value,
+                            "quantity": fill_qty,
+                        }],
+                        [player] + other_players,
+                    )[0]
+                    bought = int(order.get("quantity", 0))
+                    cost = abs(float(order.get("total", 0.0)))
+                    if bought > 0:
+                        target_qty -= bought
+                        actions.append(
+                            f"[AI] {player.name} stocked {bought}x Vaccine "
+                            f"for Winter flu cover ({cost:.1f} Dp)"
+                        )
+                except Exception:
+                    pass
+        if target_qty > 0:
+            bid_price = self._valuation_price(
+                market, trading_engine, ResourceType.VACCINE
+            )
+            affordable = int(
+                max(0.0, player.dollops - AI_VACCINE_CASH_RESERVE) // bid_price
+            )
+            bid_qty = min(target_qty, affordable)
+            if bid_qty > 0:
+                try:
+                    market.post_bid(player, ResourceType.VACCINE, bid_price, bid_qty)
+                    actions.append(
+                        f"[AI] {player.name} bid for {bid_qty}x Vaccine "
+                        f"ahead of Winter flu"
+                    )
+                except Exception:
+                    pass
+        return actions
+
     def take_turn(
         self,
         player: Player,
@@ -1159,6 +1226,11 @@ class AIStrategy:
         actions.extend(
             self._ai_invest_unclaimed_catalogue_item(
                 player, year, season_index, other_players
+            )
+        )
+        actions.extend(
+            self._ai_buy_vaccines_for_winter(
+                player, market, trading_engine, other_players, season_name
             )
         )
 
@@ -1279,6 +1351,8 @@ class AIStrategy:
             if rtype in AI_LIST_ONLY_WITH_BID and market.best_bid(rtype) is None:
                 continue
             qty = max(0, player.inventory.get(rtype) - reserve_inputs.get(rtype, 0))
+            if rtype == ResourceType.VACCINE:
+                qty = max(0, qty - vaccine_doses_needed(player.population))
             if (
                 is_manufacturer
                 and rtype == ResourceType.REAGENTS
