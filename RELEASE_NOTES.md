@@ -5,6 +5,27 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+### claude/competent-cori-f857f6 — spectator view: staff / training / capital + event filter (#179)
+
+Version bump: `0.1.5-dev.2026-06-18.2`
+
+Brings the read-only spectator view closer to the main dashboard. All data
+comes from fields the `/state` API already returns — purely additive
+front-end rendering in `spectator.html`, with read-only behaviour preserved.
+
+- **Staff summary** card: workforce bands (Manager/Technician/Worker) plus a
+  per-profession Working/Training table (`workforce_bands`,
+  `workforce_professions`).
+- **Training pipeline** card: each cohort's target profession, educator,
+  status, and return Year/Season + seasons-remaining, with blocker reasons
+  flagged in red (`training_pipeline`).
+- **Capital equipment** card: owned items with failed/warranty badges, plus
+  **On order** (`capital_in_transit`, arrival Year/Season + seasons-remaining)
+  and **In repair** (`capital_repair_in_progress`) subsections.
+- **Event filter** bar on the activity log (All / This island / Trades /
+  Events / Training), reusing the dashboard's categorisation rules and
+  persisting the selection in `localStorage`.
+
 ### codex/training-costs-18-2026-06-18 — training-cost model reconciliation (#18)
 
 Version bump: `0.1.5-dev.2026-06-18.1`

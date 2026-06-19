@@ -51,8 +51,23 @@
   .muted { color:var(--dim); }
   ul.feed { list-style:none; margin:0; padding:0; max-height:260px; overflow:auto; }
   ul.feed li { padding:.2rem 0; border-bottom:1px solid var(--border); font-size:.84rem; color:var(--dim); }
+  ul.feed li.log-mine { color:var(--text); }
   .span2 { grid-column:1/-1; }
   .ro-note { color:var(--dim); font-size:.78rem; margin:.2rem 0 .8rem; }
+  .sub { color:var(--dim); font-size:.78rem; margin:.1rem 0 .45rem; }
+  /* Event-log filter bar — mirrors the main dashboard's filters. */
+  .lf-bar { display:flex; gap:.35rem; margin-bottom:.5rem; flex-wrap:wrap; }
+  .lf-btn {
+    background:var(--panel2); color:var(--dim); border:1px solid var(--border);
+    border-radius:6px; padding:.18rem .55rem; font-size:.78rem; cursor:pointer;
+  }
+  .lf-btn.active { background:var(--accent); color:#022; border-color:var(--accent); font-weight:700; }
+  .feed[data-filter="events"]   li:not([data-cat="event"]){ display:none; }
+  .feed[data-filter="trades"]   li:not([data-cat="trade"]){ display:none; }
+  .feed[data-filter="training"] li:not([data-cat="training"]){ display:none; }
+  .feed[data-filter="mine"]     li:not(.log-mine){ display:none; }
+  .badge-fail { color:var(--red); font-size:.78rem; }
+  .badge-warr { color:var(--dim); font-size:.78rem; }
 </style>
 </head>
 <body>
@@ -73,6 +88,25 @@
 const $ = id => document.getElementById(id);
 const ORIGIN = window.location.origin;
 let timer = null, playerId = null, playerWant = null;
+let logFilter = (() => { try { return localStorage.getItem('it_spec_log_filter') || 'all'; } catch (e) { return 'all'; } })();
+
+// Categorise a log line the same way the main dashboard does, so the
+// spectator's Events/Trades/Training filters behave identically.
+function logCat(text){
+  if (/\[EVENT\]|\[WORKPLACE\]|Drought|Flood|Disaster|Outage|Collapse|Spill|Pandemic|Storm|⛈/i.test(text)) return 'event';
+  if (/\[TRADE\]|\bsold\b|\bbought\b|\boffer\b|\bbid\b|\bdeal\b|accepted|counter-?offer/i.test(text)) return 'trade';
+  if (/train|course|graduat|apprentic|university|faculty|tuition|enrol/i.test(text)) return 'training';
+  return 'other';
+}
+
+function setLogFilter(f){
+  logFilter = f;
+  try { localStorage.setItem('it_spec_log_filter', f); } catch (e) {}
+  const ul = $('spec-feed');
+  if (ul) ul.dataset.filter = f;
+  document.querySelectorAll('#log-filter-bar .lf-btn')
+    .forEach(b => b.classList.toggle('active', b.dataset.f === f));
+}
 
 function qs() { return new URLSearchParams(window.location.search); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -127,12 +161,92 @@ function renderNeeds(barter, meName) {
     `<li><b>${esc(n.player)}</b> <span class="muted">[${esc(rolesText(n.roles))}]</span> wants ${esc((n.needs||[]).join(', '))}</li>`).join('') + '</ul>';
 }
 
+function renderStaff(me) {
+  const profs = Object.values(me.workforce_professions || {});
+  const bands = me.workforce_bands || {};
+  const bandLine = Object.entries(bands).filter(([, v]) => v)
+    .map(([k, v]) => `${esc(k)} <b style="color:var(--heading)">${v}</b>`).join(' · ') || '—';
+  if (!profs.length) {
+    return `<div class="sub">Bands: ${bandLine}</div><div class="muted">No staff data.</div>`;
+  }
+  profs.sort((a, b) =>
+    ((b.active || 0) + (b.training || 0)) - ((a.active || 0) + (a.training || 0))
+    || String(a.label).localeCompare(String(b.label)));
+  const rows = profs.map(p =>
+    `<tr><td>${esc(p.label)}</td><td class="num">${p.active || 0}</td>` +
+    `<td class="num">${p.training ? `<span class="muted">${p.training}</span>` : '—'}</td></tr>`).join('');
+  return `<div class="sub">Bands: ${bandLine}</div>` +
+    `<table><tr><th>Profession</th><th style="text-align:right">Working</th>` +
+    `<th style="text-align:right">Training</th></tr>${rows}</table>`;
+}
+
+function renderTraining(me) {
+  const pipe = me.training_pipeline || [];
+  if (!pipe.length) return '<div class="muted">No active training.</div>';
+  const rows = pipe.map(t => {
+    const ret = t.return_year
+      ? `Y${t.return_year} ${esc(t.return_season || '')}` +
+        (t.seasons_remaining != null ? ` <span class="muted">(${t.seasons_remaining}s)</span>` : '')
+      : '<span class="muted">—</span>';
+    const status = esc(String(t.status || '').replace(/_/g, ' '));
+    const blocked = t.blocker_reason
+      ? `<div class="badge-fail">⚠ ${esc(t.blocker_reason)}</div>` : '';
+    return `<tr><td>${t.worker_count}× ${esc(t.target_profession)}` +
+      `<div class="muted" style="font-size:.78rem">via ${esc(t.educator_name || '?')}</div>${blocked}</td>` +
+      `<td>${status}</td><td class="num">${ret}</td></tr>`;
+  }).join('');
+  return `<table><tr><th>Cohort</th><th>Status</th>` +
+    `<th style="text-align:right">Returns</th></tr>${rows}</table>`;
+}
+
+function renderCapital(me) {
+  const cap = me.capacity || {};
+  const owned = cap.capital_owned || [];
+  const transit = cap.capital_in_transit || [];
+  const repairs = cap.capital_repair_in_progress || [];
+  let html;
+  if (owned.length) {
+    const rows = owned.map(it => {
+      const badges = [];
+      if (it.failed) badges.push(`<span class="badge-fail">${it.failed} failed</span>`);
+      if (it.warrantied) badges.push(`<span class="badge-warr">${it.warrantied} warr.</span>`);
+      const b = badges.length ? ` ${badges.join(' ')}` : '';
+      return `<tr><td>${esc(it.name)}${b}</td><td class="num">${it.count}</td></tr>`;
+    }).join('');
+    html = `<table><tr><th>Equipment</th><th style="text-align:right">Qty</th></tr>${rows}</table>`;
+  } else {
+    html = '<div class="muted">No equipment owned.</div>';
+  }
+  if (transit.length) {
+    html += '<h2 style="margin-top:.8rem">On order</h2><ul class="feed">' +
+      transit.map(it =>
+        `<li>📦 ${esc(it.name || it.item_id)} — <span class="muted">arrives Y${it.arrival_year} ` +
+        `${esc(it.arrival_season || '')}` +
+        `${it.seasons_remaining != null ? ` (${it.seasons_remaining}s)` : ''}</span></li>`).join('') +
+      '</ul>';
+  }
+  if (repairs.length) {
+    html += '<h2 style="margin-top:.8rem">In repair</h2><ul class="feed">' +
+      repairs.map(it =>
+        `<li>🔧 ${esc(it.name || it.item_id)} — <span class="muted">ready Y${it.completion_year} ` +
+        `${esc(it.completion_season || '')}` +
+        `${it.seasons_remaining != null ? ` (${it.seasons_remaining}s)` : ''}</span></li>`).join('') +
+      '</ul>';
+  }
+  return html;
+}
+
 function render(state, me) {
   $('hdr-phase').textContent = `· Year ${state.year ?? '?'} ${state.season ?? ''} · ${state.status||''}${state.paused?' · ⏸ PAUSED':''}`;
   const inv = Object.entries(me.inventory || {}).filter(([,v])=>v)
     .map(([k,v])=>`<span class="chip">${esc(k)} <b>${v}</b></span>`).join('') || '<span class="muted">empty</span>';
-  const log = (state.recent_log||[]).slice(-18).reverse()
-    .map(l=>`<li>${esc(l)}</li>`).join('') || '<li class="muted">No log yet.</li>';
+  const meName = (me.name || '').toLowerCase();
+  const meRoles = (me.role_names || []).map(r => String(r).toLowerCase());
+  const log = (state.recent_log||[]).slice(-80).reverse().map(l => {
+    const low = String(l).toLowerCase();
+    const mine = (meName && low.includes(meName)) || meRoles.some(r => r && low.includes(r));
+    return `<li data-cat="${logCat(l)}"${mine ? ' class="log-mine"' : ''}>${esc(l)}</li>`;
+  }).join('') || '<li class="muted">No log yet.</li>';
 
   $('view').innerHTML = `
   <div class="grid">
@@ -159,11 +273,31 @@ function render(state, me) {
       <h2>Other islands need (trade openings)</h2>
       ${renderNeeds(state.barter_market, me.name)}
     </div>
+    <div class="card">
+      <h2>Staff summary</h2>
+      ${renderStaff(me)}
+    </div>
+    <div class="card">
+      <h2>Training pipeline</h2>
+      ${renderTraining(me)}
+    </div>
+    <div class="card">
+      <h2>Capital equipment</h2>
+      ${renderCapital(me)}
+    </div>
     <div class="card span2">
       <h2>Recent activity</h2>
-      <ul class="feed">${log}</ul>
+      <div class="lf-bar" id="log-filter-bar">
+        <button class="lf-btn" data-f="all"      onclick="setLogFilter('all')">All</button>
+        <button class="lf-btn" data-f="mine"     onclick="setLogFilter('mine')">This island</button>
+        <button class="lf-btn" data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
+        <button class="lf-btn" data-f="events"   onclick="setLogFilter('events')">Events</button>
+        <button class="lf-btn" data-f="training" onclick="setLogFilter('training')">Training</button>
+      </div>
+      <ul class="feed" id="spec-feed" data-filter="${esc(logFilter)}">${log}</ul>
     </div>
   </div>`;
+  setLogFilter(logFilter);
 }
 
 let roomId = null;  // resolved internal room id (from a code or used as-is)
