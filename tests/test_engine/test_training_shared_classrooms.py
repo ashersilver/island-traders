@@ -39,7 +39,7 @@ def _staff_technical_course(educator: Player) -> None:
         3, training_level=1, profession=Profession.TECHNICAL_DIRECTOR.value
     )
     educator.workforce.add_workers(6, training_level=1, profession=Profession.INSTRUCTOR.value)
-    educator.capital_inventory["educator.technical_workshop"] = 3
+    educator.add_capital("educator.technical_workshop", 3)
 
 
 def _fund_training(

@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Island Traders - Capital Equipment Order Form Mockup #185</title>
+<style>
+:root{
+  --bg:#07101b;
+  --ink:#edf4f8;
+  --muted:#8ca4b8;
+  --dim:#58728a;
+  --panel:#0d1b2b;
+  --panel2:#11243a;
+  --panel3:#162f4b;
+  --line:#254660;
+  --line2:#335a78;
+  --cyan:#18c7df;
+  --gold:#f3b83f;
+  --green:#28d983;
+  --red:#ff6470;
+  --blue:#74a7ff;
+  --paper:#f5efd9;
+  --paper-ink:#273545;
+  --radius:8px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  background:
+    radial-gradient(900px 500px at 20% -10%,rgba(24,199,223,.16),transparent 60%),
+    radial-gradient(760px 560px at 100% 0,rgba(243,184,63,.12),transparent 55%),
+    #040912;
+  color:var(--ink);
+  font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.page{max-width:1480px;margin:0 auto;padding:28px}
+.intro{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:22px;align-items:end;margin-bottom:22px}
+h1{margin:0 0 8px;color:var(--gold);font-size:34px;letter-spacing:0}
+.lede{margin:0;color:var(--muted);font-size:16px;line-height:1.48;max-width:850px}
+.note{border:1px solid rgba(255,100,112,.42);background:rgba(255,100,112,.08);border-radius:var(--radius);padding:13px 15px;color:#ffc0c6;font-size:13px;line-height:1.42}
+.mockup{border:1px solid #1e3956;border-radius:10px;overflow:hidden;background:var(--bg);box-shadow:0 22px 60px rgba(0,0,0,.34)}
+.mock-title{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 16px;background:#081423;border-bottom:1px solid #1e3956}
+.mock-title h2{font-size:14px;text-transform:uppercase;color:var(--cyan);letter-spacing:.06em;margin:0}
+.mock-title span{font-size:13px;color:var(--muted)}
+.app{height:860px;display:grid;grid-template-columns:260px minmax(0,1fr) 360px;grid-template-rows:58px minmax(0,1fr);grid-template-areas:"top top top" "nav main rail";background:var(--bg)}
+.topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:0 16px;background:#0b1827;border-bottom:1px solid var(--line)}
+.brand{font-weight:900;color:var(--gold)}
+.crumb{font-size:13px;color:var(--muted)}
+.crumb strong{color:var(--ink)}
+.season{border:1px solid rgba(24,199,223,.38);background:rgba(24,199,223,.08);color:var(--cyan);border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{border:1px solid var(--line2);background:#12243a;color:var(--ink);border-radius:6px;padding:8px 11px;font-size:13px;font-weight:800}
+.btn.ghost{background:transparent;color:var(--muted)}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#1a1300}
+.btn.green{background:var(--green);border-color:var(--green);color:#00170c}
+.nav{grid-area:nav;background:#0d1b2b;border-right:1px solid var(--line);padding:14px;overflow:auto}
+.main{grid-area:main;padding:16px;overflow:auto;background:#06101b}
+.rail{grid-area:rail;background:#0d1b2b;border-left:1px solid var(--line);padding:14px;overflow:auto}
+.side-card{border:1px solid rgba(243,184,63,.36);background:rgba(243,184,63,.08);border-radius:var(--radius);padding:12px;margin-bottom:14px}
+.side-card .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.side-card h3{margin:4px 0 8px;color:var(--gold);font-size:21px}
+.side-card p{margin:0;color:#f7d88f;font-size:12px;line-height:1.38}
+.nav h4,.rail h4{margin:17px 0 9px;padding-bottom:6px;border-bottom:1px solid var(--line);font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--cyan)}
+.step{display:flex;gap:10px;align-items:flex-start;padding:9px 8px;border-radius:var(--radius);color:var(--muted)}
+.step.active{background:#12243a;color:var(--ink);outline:1px solid rgba(24,199,223,.34)}
+.dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line2);font-size:12px;font-weight:900;color:var(--muted)}
+.done .dot{background:var(--green);border-color:var(--green);color:#00170c}
+.active .dot{background:var(--cyan);border-color:var(--cyan);color:#001218}
+.step b{display:block;color:var(--ink);font-size:13px}
+.step small{display:block;margin-top:2px;color:var(--muted);font-size:12px;line-height:1.35}
+.toolbar-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:14px}
+.toolbar-card h3{margin:0 0 4px;font-size:18px;color:var(--ink)}
+.toolbar-card p{margin:0;color:var(--muted);font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:4px 8px;font-size:12px;font-weight:800;color:var(--muted)}
+.badge.green{color:var(--green);border-color:rgba(40,217,131,.45);background:rgba(40,217,131,.08)}
+.badge.gold{color:var(--gold);border-color:rgba(243,184,63,.45);background:rgba(243,184,63,.08)}
+.badge.red{color:#ffc0c6;border-color:rgba(255,100,112,.45);background:rgba(255,100,112,.08)}
+.screen{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(360px,.75fr);gap:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.panel header{display:flex;align-items:center;gap:8px;padding:11px 12px;background:#0a1727;border-bottom:1px solid var(--line)}
+.panel header h3{margin:0;font-size:15px;color:var(--ink)}
+.panel header span{margin-left:auto;font-size:12px;color:var(--muted)}
+.panel .body{padding:12px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field.full{grid-column:1/-1}
+label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}
+input,select,textarea{
+  width:100%;
+  border:1px solid #1c3753;
+  background:#050d18;
+  color:var(--ink);
+  border-radius:6px;
+  padding:9px 10px;
+  min-height:38px;
+}
+textarea{min-height:72px;resize:none;line-height:1.4}
+.field-row{display:grid;grid-template-columns:1fr 92px;gap:8px}
+.item-picker{display:grid;grid-template-columns:1fr 120px;gap:10px}
+.item-card{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:11px}
+.item-card b{display:block;font-size:16px;color:var(--ink);margin-bottom:4px}
+.item-card small{display:block;color:var(--muted);font-size:12px;line-height:1.35}
+.price-box{text-align:right;border:1px solid rgba(243,184,63,.38);background:rgba(243,184,63,.08);border-radius:var(--radius);padding:10px}
+.price-box span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.price-box b{display:block;color:var(--gold);font-size:24px;margin-top:2px}
+.option-stack{display:grid;gap:9px}
+.option{display:grid;grid-template-columns:36px minmax(0,1fr) 96px;gap:10px;align-items:start;border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:10px}
+.switch{position:relative;width:34px;height:20px;margin-top:2px}
+.switch input{position:absolute;opacity:0}
+.slider{position:absolute;inset:0;border-radius:999px;background:#293c52;border:1px solid var(--line2)}
+.slider:before{content:"";position:absolute;width:14px;height:14px;left:2px;top:2px;border-radius:50%;background:#8aa2b6;transition:.15s}
+.switch input:checked+.slider{background:rgba(24,199,223,.28);border-color:var(--cyan)}
+.switch input:checked+.slider:before{transform:translateX(14px);background:var(--cyan)}
+.option b{display:block;font-size:13px;color:var(--ink)}
+.option small{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35}
+.option .cost{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--gold);font-weight:900}
+.option.off{opacity:.72}
+.opt-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:9px}
+.mini{display:flex;flex-direction:column;gap:3px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800}
+.mini select{width:auto;min-width:118px;min-height:30px;padding:5px 8px;font-size:12px}
+.mini-switch{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink);font-weight:700}
+.cost.muted{color:var(--muted);font-weight:700;font-size:11px;line-height:1.3}
+.line.contingent{border-top:1px dashed var(--line2);border-bottom:0;margin-top:6px}
+.line.contingent .label,.line.contingent .value{color:var(--muted);font-weight:700;font-size:12px}
+.terms{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:11px;margin-top:11px}
+.terms h4{margin:0 0 8px;color:var(--cyan);font-size:13px;text-transform:none;letter-spacing:0;border:0;padding:0}
+.terms ul{margin:0;padding-left:18px;color:var(--muted);font-size:12px;line-height:1.55}
+.quote{display:grid;gap:8px}
+.line{display:grid;grid-template-columns:minmax(0,1fr) 86px;gap:8px;align-items:baseline;padding:8px 0;border-bottom:1px solid #17304b;font-size:13px}
+.line:last-child{border-bottom:0}
+.line .label{color:var(--muted)}
+.line .value{text-align:right;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);font-weight:900}
+.line.sub .label{padding-left:12px}
+.line.total{margin-top:5px;padding-top:11px;border-top:1px solid var(--line2);border-bottom:0}
+.line.total .label{color:var(--ink);font-weight:900}
+.line.total .value{color:var(--gold);font-size:20px}
+.adjust{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:11px}
+.warn{border:1px solid rgba(255,100,112,.42);background:rgba(255,100,112,.08);color:#ffc0c6;border-radius:var(--radius);padding:10px;font-size:12px;line-height:1.42;margin-top:11px}
+.info{border:1px solid rgba(116,167,255,.42);background:rgba(116,167,255,.08);color:#c9ddff;border-radius:var(--radius);padding:10px;font-size:12px;line-height:1.42;margin-top:11px}
+.paper{background:linear-gradient(180deg,#fbf5df,#efe4c4);color:var(--paper-ink);border-radius:var(--radius);padding:15px;box-shadow:0 14px 35px rgba(0,0,0,.22)}
+.paper h3{margin:0 0 10px;color:#293747;font-size:16px}
+.paper-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.paper-cell{border:1px solid rgba(39,53,69,.22);border-radius:6px;padding:8px;background:rgba(255,255,255,.34)}
+.paper-cell span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#68737e;font-weight:900;margin-bottom:3px}
+.paper-cell b{font-size:13px;color:#273545}
+.sig{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.sig div{border-top:1px solid rgba(39,53,69,.42);padding-top:6px;font-size:11px;color:#68737e}
+.rail-card{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:11px;margin-bottom:10px}
+.rail-card b{display:block;color:var(--ink);font-size:13px;margin-bottom:5px}
+.rail-card small{display:block;color:var(--muted);font-size:12px;line-height:1.38}
+.mini-table{width:100%;border-collapse:collapse;font-size:12px}
+.mini-table td{padding:7px 0;border-bottom:1px solid #17304b;color:var(--muted)}
+.mini-table tr:last-child td{border-bottom:0}
+.mini-table td:last-child{text-align:right;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:900}
+.footer-actions{display:flex;gap:8px;align-items:center;margin-top:13px}
+.footer-actions .hint{margin-left:auto;color:var(--muted);font-size:12px}
+@media(max-width:1100px){
+  .intro{grid-template-columns:1fr}
+  .app{height:auto;grid-template-columns:1fr;grid-template-areas:"top" "main" "rail" "nav"}
+  .topbar{flex-wrap:wrap;height:auto;min-height:58px;padding:10px 16px}
+  .top-actions{margin-left:0}
+  .nav,.rail{border:0;border-top:1px solid var(--line)}
+  .screen{grid-template-columns:1fr}
+}
+@media(max-width:680px){
+  .page{padding:14px}
+  h1{font-size:27px}
+  .form-grid,.item-picker,.paper-grid,.sig,.adjust{grid-template-columns:1fr}
+  .option{grid-template-columns:36px minmax(0,1fr)}
+  .option .cost{text-align:left;grid-column:2}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <section class="intro">
+    <div>
+      <h1>Capital Equipment Order Form</h1>
+      <p class="lede">Mockup for issue #185: a buyer-facing order workflow for capital equipment from the Manufacturer, covering the maintenance / warranty contract (priced per issue #188), the manufacturer guarantee, spares kits, expedited-repair eligibility, financing, and offer/counter-offer pricing.</p>
+    </div>
+    <div class="note"><strong>Spec decisions:</strong> protection pricing now follows issue #188 (it overrides the old 15%/10%/50% figures), and the manufacturer guarantee is confirmed as 1 season standard at no charge (issue #185's 2-season pricing-section figure is superseded).</div>
+  </section>
+
+  <section class="mockup">
+    <div class="mock-title">
+      <h2>Screenshot - Manufacturer Order Desk</h2>
+      <span>Primary screen after selecting an item from the capital equipment menu</span>
+    </div>
+    <div class="app">
+      <div class="topbar">
+        <div class="brand">Island Traders</div>
+        <div class="crumb">Market / Manufacturer / <strong>Capital equipment order</strong></div>
+        <div class="season">Year 2 - Summer</div>
+        <div class="top-actions">
+          <button class="btn ghost">Save draft</button>
+          <button class="btn">Send counter-offer</button>
+          <button class="btn gold">Submit order</button>
+        </div>
+      </div>
+
+      <aside class="nav">
+        <div class="side-card">
+          <div class="kicker">Order #185</div>
+          <h3>Manufacturer Desk</h3>
+          <p>Buyer sees quote, terms, options, and financing request. Hidden manufacturer incentive stays internal.</p>
+        </div>
+        <h4>Order Flow</h4>
+        <div class="step done"><div class="dot">1</div><div><b>Select item</b><small>Pre-filled from capital equipment menu.</small></div></div>
+        <div class="step active"><div class="dot">2</div><div><b>Configure protection</b><small>Maintenance, warranty, spares, expedited repairs.</small></div></div>
+        <div class="step"><div class="dot">3</div><div><b>Choose financing</b><small>Optional loan application sent to Banker.</small></div></div>
+        <div class="step"><div class="dot">4</div><div><b>Negotiate total</b><small>Recommended total can be adjusted by offer/counter-offer.</small></div></div>
+        <h4>Parties</h4>
+        <div class="step"><div class="dot">B</div><div><b>Buyer</b><small>Transportation and Logistics island.</small></div></div>
+        <div class="step"><div class="dot">M</div><div><b>Manufacturer</b><small>Manufacturing island supplies the item.</small></div></div>
+        <div class="step"><div class="dot">K</div><div><b>Banker</b><small>Banking and Insurance island; receives the financing application if requested.</small></div></div>
+      </aside>
+
+      <main class="main">
+        <div class="toolbar-card">
+          <div>
+            <h3>New Capital Equipment Order</h3>
+            <p>Item details are pre-filled from selection; buyer can tune service terms before the quote is sent.</p>
+          </div>
+          <span class="badge green">Buyer-facing quote</span>
+        </div>
+
+        <div class="screen">
+          <section class="panel">
+            <header><h3>Order Form</h3><span>editable draft</span></header>
+            <div class="body">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Buyer island</label>
+                  <select>
+                    <option>Transportation and Logistics</option>
+                    <option>Agriculture and Fisheries</option>
+                    <option>Mining and Exploration</option>
+                    <option>Healthcare and Health Research</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Manufacturer</label>
+                  <select>
+                    <option>Manufacturing - Assembly Works</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label>Item being ordered</label>
+                  <div class="item-picker">
+                    <div class="item-card">
+                      <b>Cargo Plane</b>
+                      <small>Capital item from the Transporter catalogue. Delivery: 2 seasons. Effect: +8 Freight capacity and enables fast delivery.</small>
+                    </div>
+                    <div class="price-box"><span>List price</span><b>130 Dp</b></div>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Required delivery season (earliest derived from 2-season build)</label>
+                  <select>
+                    <option>Winter, Year 2 - earliest (Summer + 2 seasons)</option>
+                    <option>Spring, Year 3</option>
+                    <option>Summer, Year 3</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Payment method</label>
+                  <select>
+                    <option>Apply for bank financing</option>
+                    <option>Pay from island treasury</option>
+                    <option>Split treasury + financing</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style="height:12px"></div>
+              <div class="option-stack">
+                <div class="option">
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                  <div>
+                    <b>Maintenance / warranty contract</b>
+                    <small>Term-priced from issue #188: Weibull failure probability &times; ~35% repair cost, present-valued at 5%, plus a 30% markup. Predictive Maintenance lowers the premium. Replaces the old 15%/10% maintenance fee and the separate extended-warranty estimate.</small>
+                    <div class="opt-controls">
+                      <label class="mini">Term
+                        <select>
+                          <option>1 year</option>
+                          <option>2 years</option>
+                          <option selected>3 years</option>
+                          <option>4 years</option>
+                          <option>5 years</option>
+                        </select>
+                      </label>
+                      <span class="mini-switch"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label>Predictive Maintenance</span>
+                    </div>
+                  </div>
+                  <div class="cost">31.12 Dp</div>
+                </div>
+                <div class="option">
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                  <div><b>Manufacturer guarantee</b><small>Standard coverage at no charge - 1 season (confirmed). Issue #185's 2-season pricing-section figure is superseded.</small></div>
+                  <div class="cost">No charge</div>
+                </div>
+                <div class="option">
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                  <div><b>Additional spares kits</b><small>2 kits is an assumed default. Each kit costs 15% of list price and cuts a repair bill by 50%. Spares cost rises 50% if they must be manufactured at the moment of failure.</small></div>
+                  <div class="cost">39.00 Dp</div>
+                </div>
+                <div class="option">
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                  <div><b>Expedited repair option</b><small>Rush-order eligibility - no upfront charge. The 15% repair surcharge (~19.50 Dp) is billed only at failure, and only when spares and air-freight conditions are met.</small></div>
+                  <div class="cost muted">At failure<br>~19.50 Dp</div>
+                </div>
+                <div class="option">
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                  <div><b>Financing application</b><small>Send loan request to Banker with this quote attached. Manufacturer incentive is internal only.</small></div>
+                  <div class="cost">Requested</div>
+                </div>
+              </div>
+
+              <div class="terms">
+                <h4>Standard Terms Shown to Buyer</h4>
+                <ul>
+                  <li>A repair bill averages 35% of the item's list value (issue #188); each spares kit reduces a repair by 50%.</li>
+                  <li>Failure probability rises each quarter on the issue #188 Weibull schedule, and is multiplied by natural disasters (earthquake, flood) and sabotage during strikes.</li>
+                  <li>Spares cost increases by 50% if manufactured at the time of failure.</li>
+                  <li>Standard repairs complete the following season.</li>
+                  <li>Expedited repairs are ready in the same season only when spares and air freight are available.</li>
+                  <li>Air freight requires 2 manufacturer freight credits, a Transport cargo aircraft, and available manufacturer spares.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <div>
+            <section class="panel">
+              <header><h3>Quote Summary</h3><span>recommended total is negotiable</span></header>
+              <div class="body">
+                <div class="quote">
+                  <div class="line"><div class="label">Cargo Plane list price</div><div class="value">130.00</div></div>
+                  <div class="line sub"><div class="label">Maintenance / warranty contract (3-yr &middot; Predictive Maint.)</div><div class="value">31.12</div></div>
+                  <div class="line sub"><div class="label">Manufacturer guarantee</div><div class="value">0.00</div></div>
+                  <div class="line sub"><div class="label">Spares kits x2</div><div class="value">39.00</div></div>
+                  <div class="line total"><div class="label">Recommended total</div><div class="value">200.12 Dp</div></div>
+                  <div class="line contingent"><div class="label">+ Expedited repair (billed at failure, if eligible)</div><div class="value">~19.50</div></div>
+                </div>
+                <div class="adjust">
+                  <div class="field"><label>Buyer offer</label><input value="192.00 Dp"></div>
+                  <div class="field"><label>Counter-offer</label><input value="200.12 Dp"></div>
+                </div>
+                <div class="info"><strong>Financing:</strong> loan application total is 200.12 Dp. The manufacturer's 2% bank referral return (4.00 Dp) is intentionally not visible to the buyer.</div>
+                <div class="info"><strong>Guarantee:</strong> confirmed at 1 season, no charge (issue #185's 2-season figure superseded). Pricing follows issue #188.</div>
+              </div>
+            </section>
+
+            <div style="height:14px"></div>
+            <section class="paper">
+              <h3>Printable / Signed Order Preview</h3>
+              <div class="paper-grid">
+                <div class="paper-cell"><span>Item</span><b>Cargo Plane</b></div>
+                <div class="paper-cell"><span>Total</span><b>200.12 Dp</b></div>
+                <div class="paper-cell"><span>Maintenance</span><b>3-yr contract &middot; Predictive Maint.</b></div>
+                <div class="paper-cell"><span>Spares</span><b>2 kits included</b></div>
+                <div class="paper-cell"><span>Guarantee</span><b>Standard &middot; 1 season (no charge)</b></div>
+                <div class="paper-cell"><span>Financing</span><b>Bank application requested</b></div>
+              </div>
+              <div class="sig"><div>Buyer signature</div><div>Manufacturer signature</div></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="footer-actions">
+          <button class="btn ghost">Discard</button>
+          <button class="btn">Preview buyer copy</button>
+          <button class="btn green">Send to Manufacturer</button>
+          <span class="hint">Order status: draft - not yet binding</span>
+        </div>
+      </main>
+
+      <aside class="rail">
+        <h4>Internal Checks</h4>
+        <div class="rail-card">
+          <b><span class="badge green">Resolved</span> Guarantee duration</b>
+          <small>Settled: 1 season standard, no charge. Issue #185's 2-season pricing-section figure is superseded.</small>
+        </div>
+        <div class="rail-card">
+          <b><span class="badge green">Resolved</span> Maintenance / warranty pricing</b>
+          <small>Now driven by the issue #188 term table (Baseline vs Predictive Maintenance), scaled to list price. Replaces the old 15%/10% fee and the separate extended-warranty estimate.</small>
+        </div>
+        <div class="rail-card">
+          <b><span class="badge gold">Scope</span> Order book (#63)</b>
+          <small>This screen is the single-order form. The persistent multi-buyer order book / queue is issue #63.</small>
+        </div>
+        <div class="rail-card">
+          <b><span class="badge green">Hidden</span> Manufacturer referral</b>
+          <small>Bank financing includes 2% back to the manufacturer (4.00 Dp on this order), but the buyer-facing form must not show it.</small>
+        </div>
+
+        <h4>Default Pricing - Issue #188</h4>
+        <table class="mini-table">
+          <tr><td>List price</td><td>130.00</td></tr>
+          <tr><td>Maint. 1-yr (base / predictive)</td><td>11.21 / 9.24</td></tr>
+          <tr><td>Maint. 3-yr (base / predictive)</td><td>46.41 / 31.12</td></tr>
+          <tr><td>Maint. 5-yr (base / predictive)</td><td>101.70 / 62.28</td></tr>
+          <tr><td>Avg repair, 35% of value</td><td>45.50</td></tr>
+          <tr><td>Spares kit, each 15%</td><td>19.50</td></tr>
+          <tr><td>Expedited repairs 15% (at failure)</td><td>19.50</td></tr>
+          <tr><td>Manufacturer referral 2%</td><td>4.00</td></tr>
+        </table>
+        <div class="rail-card">
+          <b>Price scale</b>
+          <small>Issue #188 percentages apply to list / display price (130). The engine stores cost at 1/10 (x10 capacity multiplier) and must scale up before applying any %.</small>
+        </div>
+
+        <h4>Failure Probability - Issue #188</h4>
+        <div class="rail-card">
+          <b>Per-quarter Weibull hazard</b>
+          <small>Rises from 4.70% (Q1) to 19.02% (Q20), present-valued at 5% interest, then multiplied by natural disasters (earthquake, flood) and sabotage during strikes.</small>
+        </div>
+        <table class="mini-table">
+          <tr><td>Q1 / Q4</td><td>4.70% / 5.96%</td></tr>
+          <tr><td>Q8 / Q12</td><td>8.10% / 10.88%</td></tr>
+          <tr><td>Q16 / Q20</td><td>14.46% / 19.02%</td></tr>
+        </table>
+
+        <h4>Repair Availability</h4>
+        <div class="rail-card">
+          <b>Air freight eligibility</b>
+          <small>Requires 2 freight credits held by Manufacturer, Transport Island cargo aircraft, and spares available at customer island or manufacturer.</small>
+        </div>
+        <div class="rail-card">
+          <b>Failure-time decision</b>
+          <small>Expedited charge is collected only when a rush repair is needed and the conditions are satisfied.</small>
+        </div>
+
+        <h4>State Payload Sketch</h4>
+        <div class="rail-card">
+          <b>Useful UI fields</b>
+          <small><code>item_id</code>, <code>list_price</code>, <code>maintenance_term_years</code>, <code>predictive_maintenance</code>, <code>standard_guarantee_seasons</code>, <code>spares_kits</code>, <code>expedited_repair_option</code>, <code>equipment_age_quarters</code>, <code>repair_fraction</code>, <code>financing_requested</code>, <code>recommended_total</code>, <code>buyer_offer</code>.</small>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
+</body>
+</html>

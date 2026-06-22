@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from ..models.player import Player
 from ..models.market import Market
-from ..models.resource import ResourceType
+from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.training import (
     TrainingRegistry, TrainingStatus, TrainingCapacityError, away_seasons,
     campus_has_technical_workshop, settling_seasons_on_return, training_duration,
@@ -14,7 +14,14 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
 from ..models.insurance import InsurancePolicy
-from ..models.loan import LoanLedger, LoanStatus, banker_quote_rate, posted_funding_rates
+from ..models.loan import (
+    CapitalFinanceError,
+    Loan,
+    LoanLedger,
+    LoanStatus,
+    banker_quote_rate,
+    posted_funding_rates,
+)
 from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
 from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
@@ -3159,7 +3166,11 @@ class TurnManager:
 
     def _action_market_sell(self, player: Player, result: TurnResult) -> None:
         sym = CURRENCY_SYMBOL
-        has = {r: player.inventory.get(r) for r in ResourceType if player.inventory.get(r) > 0}
+        has = {
+            r: player.inventory.get(r)
+            for r in ResourceType
+            if player.inventory.get(r) > 0 and r not in NON_TRADABLE_RESOURCES
+        }
         if not has:
             self.io.print("  You have nothing to sell.")
             return
@@ -3224,13 +3235,19 @@ class TurnManager:
         if target is None:
             self.io.print("  Deal cancelled.")
             return
-        has = [r for r in ResourceType if player.inventory.get(r) > 0]
+        has = [
+            r for r in ResourceType
+            if player.inventory.get(r) > 0 and r not in NON_TRADABLE_RESOURCES
+        ]
         offer_r = self.io.choose_resource("Offer which resource?", has) if has else None
         offer_qty = (
             self.io.choose_quantity("Offer quantity?", 0, player.inventory.get(offer_r))
             if offer_r else 0
         )
-        wants = [r for r in ResourceType if target.inventory.get(r) > 0]
+        wants = [
+            r for r in ResourceType
+            if target.inventory.get(r) > 0 and r not in NON_TRADABLE_RESOURCES
+        ]
         req_r = self.io.choose_resource("Request which resource?", wants) if wants else None
         req_qty = (
             self.io.choose_quantity("Request quantity?", 0, target.inventory.get(req_r))
@@ -3602,6 +3619,71 @@ class TurnManager:
             f"at {cost_rate*100:.1f}% (depositor loan #{funding.loan_id})."
         )
         return external_share
+
+    def issue_capital_finance_loan(
+        self,
+        borrower: Player,
+        principal: float,
+        term_years: int,
+        year: int,
+        season_index: int,
+    ) -> "Loan":
+        """Finance a capital order via the Bank, reusing the Phase D reserve
+        mechanics shared with ``_action_take_loan``.
+
+        Issues a bullet loan from the Banker to ``borrower`` for ``principal``,
+        sources the depositor portion, and credits the borrower with the cash so
+        the caller can settle the equipment purchase.  Repayment is handled at
+        maturity by ``_process_loan_repayments``.
+
+        Raises ``CapitalFinanceError`` (with a buyer-facing message) when no Bank
+        is present, the Bank is at its active-loan cap, or it lacks reserve
+        capital — the caller should then fall back to cash settlement.
+        """
+        banker = self._find_banker()
+        if banker is None:
+            raise CapitalFinanceError("No Banker island is available to finance this order.")
+        term_years = max(1, min(3, int(term_years)))
+        self_lending = banker.player_id == borrower.player_id
+        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        rate = banker_quote_rate(
+            borrower, self.loan_ledger, principal, term_years, year, season_index
+        )
+        if self_lending:
+            r = own_share = external_share = 0.0
+        else:
+            r = self._banker_reserve_ratio(banker)
+            can_issue, active, cap = self._banker_can_issue_loan(banker)
+            if not can_issue:
+                raise CapitalFinanceError(
+                    f"Bank is at its active-loan cap ({active}/{cap}); pay cash instead."
+                )
+            own_share = r * principal
+            external_share = max(0.0, principal - own_share)
+            if banker.dollops < own_share:
+                raise CapitalFinanceError(
+                    "Bank lacks the reserve capital to back this loan; pay cash instead."
+                )
+        loan = self.loan_ledger.create_loan(
+            borrower_id=borrower.player_id,
+            lender_id=banker.player_id,
+            principal=principal,
+            interest_rate=rate,
+            issued_year=year,
+            issued_season=season_index,
+            term_years=term_years,
+            own_committed=own_share,
+            external_funded=external_share,
+            posted_at_issue=funding_rate,
+            reserve_ratio_at_issue=r,
+        )
+        if not self_lending:
+            self._fund_bank_external_portion(
+                banker, external_share, funding_rate, term_years, year, season_index
+            )
+            banker.dollops -= principal
+        borrower.dollops += principal
+        return loan
 
     def _action_offer_loan(self, player: Player, result: TurnResult,
                            year: int, season_index: int) -> None:

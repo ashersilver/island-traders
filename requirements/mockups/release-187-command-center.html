@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Island Traders — Release #187 Command Center Mockup</title>
+<style>
+:root {
+  --bg:#07101b;
+  --ink:#edf4f8;
+  --muted:#8aa2b6;
+  --panel:#0d1b2b;
+  --panel2:#11243a;
+  --panel3:#142b45;
+  --line:#244462;
+  --cyan:#18c7df;
+  --gold:#f3b83f;
+  --green:#26de81;
+  --red:#ff6470;
+  --blue:#69a7ff;
+  --radius:8px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:#040912;
+  color:var(--ink);
+  font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.page{max-width:1540px;margin:0 auto;padding:28px}
+.intro{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:24px;align-items:end;margin-bottom:26px}
+h1{font-size:34px;margin:0 0 8px;color:var(--gold);letter-spacing:0}
+.lede{margin:0;color:var(--muted);font-size:16px;line-height:1.48;max-width:860px}
+.note{border:1px solid rgba(243,184,63,.38);background:rgba(243,184,63,.08);border-radius:var(--radius);padding:14px 16px;color:#f8d98c;font-size:14px;line-height:1.45}
+.mockup{border:1px solid #1e3956;border-radius:10px;overflow:hidden;margin:26px 0 34px;background:var(--bg);box-shadow:0 18px 50px rgba(0,0,0,.35)}
+.mock-title{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 16px;background:#081423;border-bottom:1px solid #1e3956}
+.mock-title h2{font-size:15px;text-transform:uppercase;color:var(--cyan);letter-spacing:.06em;margin:0}
+.mock-title span{color:var(--muted);font-size:13px}
+.app{height:820px;display:grid;grid-template-columns:280px minmax(0,1fr) 390px;grid-template-rows:56px minmax(0,1fr);grid-template-areas:"top top top" "nav main rail";background:var(--bg)}
+.topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:0 16px;background:#0b1827;border-bottom:1px solid var(--line)}
+.brand{color:var(--gold);font-weight:900}
+.crumb{color:var(--muted);font-size:13px}
+.crumb strong{color:var(--ink)}
+.status{border:1px solid rgba(38,222,129,.5);background:rgba(38,222,129,.08);color:var(--green);border-radius:999px;padding:6px 10px;font-weight:800;font-size:12px}
+.actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+button,.btn{border:1px solid var(--line);background:#12243a;color:var(--ink);border-radius:6px;padding:8px 11px;font-weight:800;font-size:13px}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#1a1300}
+.btn.green{background:var(--green);border-color:var(--green);color:#00180c}
+.btn.ghost{background:transparent}
+.nav{grid-area:nav;background:#0d1b2b;border-right:1px solid var(--line);padding:14px;overflow:hidden}
+.release-card{border:1px solid rgba(243,184,63,.38);background:rgba(243,184,63,.08);border-radius:var(--radius);padding:12px;margin-bottom:14px}
+.release-card .kicker{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.07em}
+.release-card h3{margin:4px 0 8px;color:var(--gold);font-size:22px}
+.release-card p{margin:0;color:#f8d98c;font-size:13px;line-height:1.4}
+.nav h4,.rail h4{margin:18px 0 9px;padding-bottom:6px;border-bottom:1px solid var(--line);color:var(--cyan);font-size:12px;text-transform:uppercase;letter-spacing:.07em}
+.step{display:flex;gap:10px;align-items:flex-start;padding:9px 8px;border-radius:var(--radius);color:var(--muted)}
+.step.active{background:#12243a;color:var(--ink);outline:1px solid rgba(24,199,223,.4)}
+.dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;border:1px solid var(--line);font-size:12px;font-weight:900;color:var(--muted)}
+.done .dot{background:var(--green);border-color:var(--green);color:#00180c}
+.active .dot{background:var(--cyan);border-color:var(--cyan);color:#001218}
+.step b{display:block;color:var(--ink);font-size:13px}
+.step small{display:block;margin-top:2px;font-size:12px;color:var(--muted);line-height:1.35}
+.main{grid-area:main;padding:16px;overflow:hidden;background:#06101b}
+.rail{grid-area:rail;background:#0d1b2b;border-left:1px solid var(--line);padding:14px;overflow:hidden}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) 235px;gap:14px;margin-bottom:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.panel header{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#0a1727;border-bottom:1px solid var(--line)}
+.panel header h3{margin:0;color:var(--ink);font-size:15px}
+.panel header span{margin-left:auto;color:var(--muted);font-size:12px}
+.panel .body{padding:12px}
+.field-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.field{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:10px}
+.field label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.field strong{font-size:18px;color:var(--ink)}
+.field .fromto{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.field .fromto b{font-size:15px;color:var(--ink)}
+.arrow{color:var(--cyan);font-weight:900}
+.score{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:11px}
+.metric b{display:block;font-size:22px;color:var(--green)}
+.metric span{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:5px;margin-bottom:12px}
+.tab{padding:8px 12px;border:1px solid var(--line);background:#0d1b2b;border-radius:6px;color:var(--muted);font-weight:800;font-size:13px}
+.tab.active{background:var(--panel3);color:var(--cyan);border-color:rgba(24,199,223,.5)}
+.outline{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{border:1px solid var(--line);background:#0b1827;border-radius:var(--radius);padding:12px}
+.card h3{margin:0 0 9px;font-size:15px;color:var(--cyan)}
+.card p{margin:0 0 9px;color:var(--muted);font-size:13px;line-height:1.42}
+textarea{width:100%;height:155px;border:1px solid #1c3753;border-radius:6px;background:#050d18;color:var(--ink);font:13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;padding:10px;resize:none}
+.check{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #17304b}
+.check:last-child{border-bottom:none}
+.box{width:19px;height:19px;border-radius:5px;border:1px solid var(--line);display:grid;place-items:center;color:#00180c;font-size:12px;font-weight:900;flex:0 0 auto}
+.check.done .box{background:var(--green);border-color:var(--green)}
+.check.warn .box{background:var(--gold);border-color:var(--gold);color:#1a1300}
+.check b{display:block;font-size:13px;color:var(--ink)}
+.check small{display:block;color:var(--muted);font-size:12px;line-height:1.35;margin-top:2px}
+.diff{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:12px;border:1px solid #1c3753;background:#050d18;border-radius:var(--radius);padding:9px;color:var(--muted);line-height:1.6}
+.minus{color:#ff9aa2}.plus{color:#96ffc2}.neutral{color:#9bb2c5}
+.timeline{display:flex;flex-direction:column;gap:10px}
+.event{border:1px solid #1c3753;background:#081423;border-radius:var(--radius);padding:10px}
+.event b{display:block;font-size:13px}
+.event span{display:block;color:var(--muted);font-size:12px;margin-top:3px;line-height:1.35}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:var(--muted);font-size:11px;font-weight:800}
+.badge.green{color:var(--green);border-color:rgba(38,222,129,.45)}
+.badge.gold{color:var(--gold);border-color:rgba(243,184,63,.45)}
+.footer-actions{display:flex;gap:8px;align-items:center;margin-top:12px}
+.footer-actions .hint{margin-left:auto;color:var(--muted);font-size:12px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.big-list{display:grid;gap:8px}
+.handoff{border:1px solid rgba(105,167,255,.42);background:rgba(105,167,255,.08);border-radius:var(--radius);padding:10px}
+.handoff b{display:block;color:var(--blue);margin-bottom:5px}
+.handoff code{display:block;margin-top:6px;padding:7px;background:#050d18;border-radius:6px;color:#d5e8ff;font-size:12px;white-space:normal}
+.screen-two .app{height:760px}
+.screen-two .main{overflow:hidden}
+.screen-two .outline{grid-template-columns:1.08fr .92fr}
+.screen-two textarea{height:280px}
+.screen-two .rail textarea{height:184px}
+@media(max-width:980px){
+  .intro{grid-template-columns:1fr}
+  .app,.screen-two .app{height:auto;min-height:900px;grid-template-columns:1fr;grid-template-areas:"top" "main" "rail" "nav"}
+  .nav{border-right:none;border-top:1px solid var(--line)}
+  .rail{border-left:none;border-top:1px solid var(--line)}
+  .hero,.outline,.split{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <section class="intro">
+    <div>
+      <h1>Release #187 Command Center</h1>
+      <p class="lede">A proposed internal UX for capturing and executing the <strong>0.1.5-beta.1</strong> release outline: version reconciliation, release notes rollover, test evidence, promotion to <strong>master</strong>, and tag creation. This is deliberately process-focused; #187 is a release-cut item, not a gameplay feature requirement.</p>
+    </div>
+    <div class="note"><strong>Design stance:</strong> make the release requirement editable, auditable, and hard to half-complete. The screen should feel like a checklist with teeth, not a decorative form wearing a tiny clipboard hat.</div>
+  </section>
+
+  <section class="mockup" id="overview">
+    <div class="mock-title">
+      <h2>Screenshot A — Release Overview / Readiness</h2>
+      <span>Primary view for the maintainer before merging the beta release PR</span>
+    </div>
+    <div class="app">
+      <div class="topbar">
+        <div class="brand">Island Traders</div>
+        <div class="crumb">Release workspace / <strong>#187 Cut 0.1.5-beta.1 Beta release</strong></div>
+        <div class="status">Ready for promotion</div>
+        <div class="actions">
+          <button class="btn ghost">Export brief</button>
+          <button class="btn">Preview notes</button>
+          <button class="btn gold">Merge release PR</button>
+        </div>
+      </div>
+      <aside class="nav">
+        <div class="release-card">
+          <div class="kicker">Beta point release</div>
+          <h3>v0.1.5-beta.1</h3>
+          <p>Promote <strong>pre-release</strong> to <strong>master</strong>, then tag. No gameplay code changes expected.</p>
+        </div>
+        <h4>Release Flow</h4>
+        <div class="step done"><div class="dot">✓</div><div><b>Capture outline</b><small>Versions, notes, tag target, test proof.</small></div></div>
+        <div class="step done"><div class="dot">✓</div><div><b>Verify branch state</b><small>Only version strings and notes changed.</small></div></div>
+        <div class="step active"><div class="dot">3</div><div><b>Review readiness</b><small>Confirm suite result and promotion steps.</small></div></div>
+        <div class="step"><div class="dot">4</div><div><b>Promote + tag</b><small>Merge, sync master, create annotated tag.</small></div></div>
+        <h4>Owners</h4>
+        <div class="step"><div class="dot">A</div><div><b>Release owner</b><small>Confirms notes and version alignment.</small></div></div>
+        <div class="step"><div class="dot">C</div><div><b>Codex helper</b><small>Runs checks, prepares commands, spots contradictions.</small></div></div>
+      </aside>
+      <main class="main">
+        <div class="hero">
+          <section class="panel">
+            <header><h3>Version Reconciliation</h3><span>from #187 outline</span></header>
+            <div class="body">
+              <div class="field-grid">
+                <div class="field"><label>APP_VERSION</label><div class="fromto"><b>0.1.5-dev.2026-06-18.3</b><span class="arrow">→</span><b>0.1.5-dev.2026-06-19.1</b></div></div>
+                <div class="field"><label>pyproject version</label><div class="fromto"><b>0.1.4</b><span class="arrow">→</span><b>0.1.5b1</b></div></div>
+                <div class="field"><label>master tag</label><strong>v0.1.5-beta.1</strong></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <header><h3>Evidence</h3><span>quality gate</span></header>
+            <div class="body score">
+              <div class="metric"><b>762</b><span>tests passed</span></div>
+              <div class="metric"><b>0</b><span>code files changed</span></div>
+              <div class="metric"><b>2</b><span>docs/version files</span></div>
+              <div class="metric"><b>1</b><span>tag to create</span></div>
+            </div>
+          </section>
+        </div>
+        <div class="tabs">
+          <div class="tab active">Requirement Outline</div>
+          <div class="tab">Changed Files</div>
+          <div class="tab">Release Notes</div>
+          <div class="tab">Promotion Plan</div>
+        </div>
+        <div class="outline">
+          <section class="card">
+            <h3>Captured Requirement</h3>
+            <p>The issue body is treated as the source requirement and can be edited into a structured release brief before work starts.</p>
+            <textarea readonly>Release-cut for the first Beta point release.
+
+Version reconciliation:
+- APP_VERSION: 0.1.5-dev.2026-06-18.3 → 0.1.5-dev.2026-06-19.1
+- pyproject version: 0.1.4 → 0.1.5b1
+- Tag after promotion: v0.1.5-beta.1
+
+Notes:
+- Roll Unreleased into 0.1.5-beta.1 — 2026-06-19 (Beta)
+- Open a fresh empty Unreleased
+- No code changes; version strings + notes only
+- Full suite: 762 passed</textarea>
+          </section>
+          <section class="card">
+            <h3>Readiness Checks</h3>
+            <div class="check done"><div class="box">✓</div><div><b>Version fields agree with release intent</b><small>Dev runtime moves forward; package becomes beta identifier; tag uses public beta spelling.</small></div></div>
+            <div class="check done"><div class="box">✓</div><div><b>Release notes rolled over</b><small>Accumulated Unreleased entries moved into dated beta section.</small></div></div>
+            <div class="check done"><div class="box">✓</div><div><b>Test evidence attached</b><small>Full suite result captured as 762 passed.</small></div></div>
+            <div class="check warn"><div class="box">!</div><div><b>Human confirmation before tag</b><small>Tagging master is a public release action. Require explicit final confirmation.</small></div></div>
+          </section>
+        </div>
+        <div class="footer-actions">
+          <button class="btn green">Mark outline approved</button>
+          <button class="btn">Copy promotion commands</button>
+          <span class="hint">Guardrail: promotion buttons stay locked until checks are green.</span>
+        </div>
+      </main>
+      <aside class="rail">
+        <h4>Promotion Checklist</h4>
+        <div class="big-list">
+          <div class="check done"><div class="box">✓</div><div><b>PR reviewed</b><small>#187 contains release-only changes.</small></div></div>
+          <div class="check done"><div class="box">✓</div><div><b>Tests green</b><small>Full suite: 762 passed.</small></div></div>
+          <div class="check warn"><div class="box">!</div><div><b>Merge to master</b><small>Pending maintainer action.</small></div></div>
+          <div class="check warn"><div class="box">!</div><div><b>Create tag</b><small>v0.1.5-beta.1 after master promotion.</small></div></div>
+        </div>
+        <h4>Generated Commands</h4>
+        <div class="handoff">
+          <b>After merge</b>
+          <code>git checkout master<br>git pull<br>git tag -a v0.1.5-beta.1 -m "Island Traders 0.1.5 beta 1"<br>git push origin v0.1.5-beta.1</code>
+        </div>
+        <h4>Audit Trail</h4>
+        <div class="timeline">
+          <div class="event"><b>Requirement imported</b><span>Source: GitHub #187, open state.</span></div>
+          <div class="event"><b>Release notes checked</b><span>New 0.1.5-beta.1 section and empty Unreleased expected.</span></div>
+          <div class="event"><b>Contradiction scan</b><span>No code-change claim conflicts with release-only goal.</span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="mockup screen-two" id="editor">
+    <div class="mock-title">
+      <h2>Screenshot B — Editable Outline / Contradiction Capture</h2>
+      <span>Where the rough GitHub text becomes a structured requirement before execution</span>
+    </div>
+    <div class="app">
+      <div class="topbar">
+        <div class="brand">Island Traders</div>
+        <div class="crumb">Release workspace / <strong>Outline editor</strong></div>
+        <div class="status">Draft captured</div>
+        <div class="actions">
+          <button class="btn">Add evidence</button>
+          <button class="btn green">Save outline</button>
+        </div>
+      </div>
+      <aside class="nav">
+        <div class="release-card">
+          <div class="kicker">Source</div>
+          <h3>#187</h3>
+          <p>Keep the original issue text visible so the team can see what changed when the outline is normalized.</p>
+        </div>
+        <h4>Extracted Entities</h4>
+        <div class="field"><label>Release type</label><strong>Beta point release</strong></div>
+        <div class="field"><label>Target branch</label><strong>master</strong></div>
+        <div class="field"><label>Working branch</label><strong>pre-release</strong></div>
+        <div class="field"><label>Close issue?</label><strong>No</strong></div>
+      </aside>
+      <main class="main">
+        <div class="outline">
+          <section class="card">
+            <h3>Structured Requirement Outline</h3>
+            <textarea>Goal
+- Cut the first beta point release for Island Traders.
+- Promote pre-release to master.
+- Tag master as v0.1.5-beta.1.
+
+Required edits
+- constants APP_VERSION:
+  0.1.5-dev.2026-06-18.3 -> 0.1.5-dev.2026-06-19.1
+- pyproject package version:
+  0.1.4 -> 0.1.5b1
+- RELEASE_NOTES:
+  move Unreleased into "0.1.5-beta.1 - 2026-06-19 (Beta)"
+  create fresh empty Unreleased
+
+Acceptance criteria
+- No gameplay/code behavior changes.
+- Full suite passes: 762 passed.
+- Tag is created only after master promotion.</textarea>
+          </section>
+          <section class="card">
+            <h3>Contradictions &amp; Questions</h3>
+            <div class="check done"><div class="box">✓</div><div><b>Issue vs PR wording</b><small>#187 resolves as a PR/release item. UX labels should say “release item” rather than assuming a feature issue.</small></div></div>
+            <div class="check warn"><div class="box">!</div><div><b>APP_VERSION remains dev-flavored</b><small>That is intentional per outline, but the UI should highlight it because beta package + dev app version looks odd at first glance.</small></div></div>
+            <div class="check warn"><div class="box">!</div><div><b>“No issue to close”</b><small>Prevent auto-closing behavior in release tooling. The checklist should explicitly record this.</small></div></div>
+            <div class="diff">
+              <div class="neutral">Suggested normalized title:</div>
+              <div class="minus">- Cut 0.1.5-beta.1 Beta release</div>
+              <div class="plus">+ Release 0.1.5-beta.1: reconcile versions, roll notes, promote and tag</div>
+            </div>
+          </section>
+        </div>
+      </main>
+      <aside class="rail">
+        <h4>Original Source Snippet</h4>
+        <textarea readonly>Release-cut for the first Beta point release, to be promoted pre-release -> master and tagged v0.1.5-beta.1.
+
+No code changes - version strings + notes only.
+Full suite: 762 passed.
+
+Process release (no issue to close); promotion to master + tag follow on merge.</textarea>
+        <h4>How It Works</h4>
+        <div class="timeline">
+          <div class="event"><b>1. Import</b><span>Pull GitHub body, labels, state, and PR URL.</span></div>
+          <div class="event"><b>2. Normalize</b><span>Extract versions, branches, tag, tests, acceptance criteria.</span></div>
+          <div class="event"><b>3. Challenge</b><span>Surface inconsistencies before anyone presses merge.</span></div>
+          <div class="event"><b>4. Execute</b><span>Generate commands and require confirmation for public tag.</span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
+</body>
+</html>

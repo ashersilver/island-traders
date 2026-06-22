@@ -2,7 +2,7 @@ from __future__ import annotations
 from math import ceil
 from ..models.player import EQUIPMENT_RESOURCE_CAPITAL, Player
 from ..models.market import Market
-from ..models.resource import ResourceType
+from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.deal import DealProposal, DealStatus
 from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
@@ -1067,7 +1067,7 @@ class AIStrategy:
         """Buy the cheapest ask and immediately fill richer bids when the spread is visible."""
         actions: list[str] = []
         for rtype in ResourceType:
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             offer = market.best_offer(rtype)
             bid = market.best_bid(rtype)
@@ -1286,7 +1286,7 @@ class AIStrategy:
 
         inputs_needed = self._inputs_for_ai_purchase(player, season_name, chosen_line)
         for rtype, qty_needed in inputs_needed.items():
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             target_runs = (
                 1
@@ -1396,7 +1396,7 @@ class AIStrategy:
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
         for rtype in listable_resources:
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             if rtype in AI_LIST_ONLY_WITH_BID and market.best_bid(rtype) is None:
                 continue

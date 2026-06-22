@@ -106,7 +106,7 @@ def test_technician_pending_without_instructor():
     educator.receive_resources(ResourceType.COURSES, 5)
     educator.receive_resources(ResourceType.EXPERTISE, 5)
     educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
-    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
+    educator.add_capital(TECHNICAL_WORKSHOP_ITEM, 1)
     training = TrainingRegistry()
     req = _propose_tech(training, farmer, educator, workers)
 
@@ -160,7 +160,7 @@ def test_technician_dispatches_with_staff_workshop_courses_and_expertise():
     educator.receive_resources(ResourceType.EXPERTISE, 3)
     educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
     educator.workforce.add_workers(1, training_level=1, profession="Instructor")
-    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
+    educator.add_capital(TECHNICAL_WORKSHOP_ITEM, 1)
     training = TrainingRegistry()
     req = _propose_tech(training, farmer, educator, workers)
 
@@ -188,7 +188,7 @@ def test_technical_course_staffing_blocks_overbooking():
     educator.receive_resources(ResourceType.EXPERTISE, 10)
     educator.workforce.add_workers(1, training_level=1, profession="TechnicalDirector")
     educator.workforce.add_workers(1, training_level=1, profession="Instructor")
-    educator.capital_inventory[TECHNICAL_WORKSHOP_ITEM] = 1
+    educator.add_capital(TECHNICAL_WORKSHOP_ITEM, 1)
     training = TrainingRegistry()
     r1 = _propose_tech(training, farmer, educator, first)
 

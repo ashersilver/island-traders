@@ -1486,6 +1486,41 @@ body.fx-off .ih-pins .pdot{animation:none}
   </div>
 </div>
 
+<!-- Capital Equipment Order form (#185) -->
+<div class="overlay" id="capital-order-overlay">
+  <div class="dialog">
+    <h3>Capital Equipment Order</h3>
+    <div id="cap-order-item" style="font-weight:600;margin-bottom:.6rem"></div>
+    <label style="display:block;margin:.4rem 0">Maintenance / warranty term
+      <select id="cap-order-term" oninput="updateCapOrderTotal()">
+        <option value="0">None</option>
+        <option value="1">1 year</option>
+        <option value="2">2 years</option>
+        <option value="3" selected>3 years</option>
+        <option value="4">4 years</option>
+        <option value="5">5 years</option>
+      </select>
+    </label>
+    <label style="display:block;margin:.4rem 0">
+      <input type="checkbox" id="cap-order-predictive" checked onchange="updateCapOrderTotal()"> Predictive Maintenance
+    </label>
+    <label style="display:block;margin:.4rem 0">Additional spares kits
+      <input type="number" id="cap-order-spares" min="0" value="0" oninput="updateCapOrderTotal()">
+    </label>
+    <label style="display:block;margin:.4rem 0">
+      <input type="checkbox" id="cap-order-expedited"> Expedited repair eligibility
+    </label>
+    <label style="display:block;margin:.4rem 0">
+      <input type="checkbox" id="cap-order-financing"> Apply for bank financing
+    </label>
+    <div id="cap-order-total" style="margin:.6rem 0;color:var(--accent)"></div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalOrder()">Cancel</button>
+      <button onclick="submitCapitalOrder()">Send order</button>
+    </div>
+  </div>
+</div>
+
 <!-- Non-blocking message layer (toasts + message modal). Separate from the
      IO-prompt overlay above so it never disturbs an active game prompt, and
      never blocks the event loop (the season countdown keeps ticking). -->
@@ -2670,9 +2705,63 @@ function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
 }
 
+// Capital Equipment Order form (#185): collects order conditions and sends a
+// `capital_order` message; the server records them on the delivered unit.
+let capOrderItem = null;
+function openCapitalOrder(itemId) {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  const it = cat.find(c => c.item_id === itemId);
+  if (!it) return;
+  capOrderItem = it;
+  const arrival = it.delivery_seasons === 0 ? 'arrives now'
+    : `${it.delivery_seasons}-season delivery`;
+  document.getElementById('cap-order-item').textContent =
+    `${it.name} — ${it.cost} Dp · ${arrival}`;
+  document.getElementById('cap-order-spares').value = 0;
+  updateCapOrderTotal();
+  document.getElementById('capital-order-overlay').classList.add('active');
+}
+function closeCapitalOrder() {
+  document.getElementById('capital-order-overlay').classList.remove('active');
+  capOrderItem = null;
+}
+// #188 maintenance/warranty contract cost per $100, by term: [baseline, predictive].
+const CAP_CONTRACT_PER_100 = {
+  1: [8.62, 7.11], 2: [19.90, 14.82], 3: [35.70, 23.94],
+  4: [55.29, 34.88], 5: [78.23, 47.91],
+};
+function updateCapOrderTotal() {
+  if (!capOrderItem) return;
+  const term = parseInt(document.getElementById('cap-order-term').value, 10);
+  const predictive = document.getElementById('cap-order-predictive').checked;
+  const kits = Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10));
+  const rate = CAP_CONTRACT_PER_100[term];
+  const contract = rate
+    ? Math.round((predictive ? rate[1] : rate[0]) * capOrderItem.cost / 100 * 100) / 100 : 0;
+  const sparesCost = Math.round(0.15 * capOrderItem.cost * kits * 100) / 100;
+  const total = Math.round((capOrderItem.cost + contract + sparesCost) * 100) / 100;
+  document.getElementById('cap-order-total').textContent =
+    `Upfront: ${total} Dp (equipment ${capOrderItem.cost} + maintenance ${contract} + spares ${sparesCost})`;
+}
+function submitCapitalOrder() {
+  if (!capOrderItem) return;
+  sendWsMessage({
+    type: 'capital_order',
+    item_id: capOrderItem.item_id,
+    maintenance_term_years: parseInt(document.getElementById('cap-order-term').value, 10),
+    predictive_maintenance: document.getElementById('cap-order-predictive').checked,
+    spares_kits: Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)),
+    expedited_eligible: document.getElementById('cap-order-expedited').checked,
+    financing: document.getElementById('cap-order-financing').checked,
+  });
+  closeCapitalOrder();
+}
+
 // UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
 // the island can still build (from capacity.capital_catalogue). The header
-// "＋ Build…" button launches the existing Purchase Equipment action.
+// "＋ Build…" button launches the existing Purchase Equipment action; an
+// "Available" row opens the richer Capital Equipment Order form (#185).
 function renderBuildDevelop(me) {
   const el = document.getElementById('build-develop-list');
   if (!el) return;
@@ -2700,7 +2789,7 @@ function renderBuildDevelop(me) {
       const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
       const sub = (c.cash_only ? 'cash-only' : 'requires equipment') + ' · ' + arrival;
       const req = c.mandatory ? '<span class="bd-req">Required</span>' : '';
-      return `<div class="bd-row avail" title="${esc(c.description || '')}">
+      return `<div class="bd-row avail" style="cursor:pointer" title="Order ${esc(c.name)} with options" onclick="openCapitalOrder('${c.item_id}')">
         <div class="bx">＋</div>
         <div class="bd-body"><div class="bd-name">${esc(c.name)} ${req}</div>
           <div class="bd-sub">${sub}</div></div>
@@ -3669,6 +3758,18 @@ function handleMessage(msg) {
     case 'buy_out_float_ack':
       addLog(`🏦 Bought ${msg.shares} share(s) of your island for `
         + `${msg.cost} Dp (${msg.price_per_share} Dp/share).`, 'ok');
+      break;
+    case 'capital_order_ack':
+      let financeNote = '';
+      if (msg.financed) {
+        financeNote = `, financed via Bank loan (repay ${msg.loan_repayment} Dp)`;
+      } else if (msg.financing) {
+        financeNote = ', financing unavailable — paid from treasury';
+      }
+      addLog(`📦 Ordered ${msg.name} for ${msg.upfront} Dp`
+        + (msg.spares_kits ? ` (+${msg.spares_kits} spares kit(s))` : '')
+        + financeNote + '.', 'ok');
+      showToast(`Order placed: ${msg.name}`);
       break;
     case 'game_state':
       gameState = msg;
