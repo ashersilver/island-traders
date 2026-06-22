@@ -1375,7 +1375,7 @@ body.fx-off .ih-pins .pdot{animation:none}
         <h3 style="display:flex;align-items:center;gap:.4rem">
           🏗 Build &amp; Develop
           <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
-                  onclick="sendResponse('purchase_capital')"
+                  onclick="openCapitalPicker()"
                   title="Buy capital equipment (available on your turn)">＋ Build…</button>
         </h3>
         <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
@@ -1517,6 +1517,18 @@ body.fx-off .ih-pins .pdot{animation:none}
     <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
       <button onclick="closeCapitalOrder()">Cancel</button>
       <button onclick="submitCapitalOrder()">Send order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Capital item picker: lists buildable equipment, then opens the order form
+     (#185) for the chosen item. Routed from the "Purchase Equipment" action. -->
+<div class="overlay" id="capital-pick-overlay">
+  <div class="dialog">
+    <h3>Purchase Equipment</h3>
+    <div id="cap-pick-list" style="display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0"></div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalPicker()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2075,7 +2087,9 @@ function renderWaitingRoom(room) {
   }).join('');
 
   // Only host can start
-  const isHost = room.creator_id === undefined || room.players[0]?.player_id === myPlayerId;
+  const isHost = room.creator_id === undefined
+    ? room.players[0]?.player_id === myPlayerId
+    : room.creator_id === myPlayerId;
   document.getElementById('btn-start-auction').style.display = isHost ? '' : 'none';
   document.getElementById('btn-add-ai').style.display = isHost ? '' : 'none';
 }
@@ -2725,6 +2739,35 @@ function openCapitalOrder(itemId) {
 function closeCapitalOrder() {
   document.getElementById('capital-order-overlay').classList.remove('active');
   capOrderItem = null;
+}
+// "Purchase Equipment" action → pick a buildable item, then open the #185/#188
+// order form for it (term contract, financing, etc.). Replaces the legacy
+// server-driven item picker so the one obvious button reaches the new modal.
+function openCapitalPicker() {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  const avail = cat.filter(c => c.owned <= 0);
+  if (!avail.length) {
+    showToast('No buildable equipment available for this island.');
+    return;
+  }
+  if (avail.length === 1) { openCapitalOrder(avail[0].item_id); return; }
+  const el = document.getElementById('cap-pick-list');
+  el.innerHTML = avail.map(c => {
+    const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+    const req = c.cash_only ? 'cash-only' : 'requires equipment';
+    return `<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
+      + `${esc(c.name)} — ${c.cost} Dp · ${req} · ${arrival}`
+      + (c.mandatory ? ' · Required' : '') + `</button>`;
+  }).join('');
+  document.getElementById('capital-pick-overlay').classList.add('active');
+}
+function closeCapitalPicker() {
+  document.getElementById('capital-pick-overlay').classList.remove('active');
+}
+function pickCapitalItem(itemId) {
+  closeCapitalPicker();
+  openCapitalOrder(itemId);
 }
 // #188 maintenance/warranty contract cost per $100, by term: [baseline, predictive].
 const CAP_CONTRACT_PER_100 = {
@@ -5559,7 +5602,12 @@ function _renderActionButton(o) {
   // #158: route the training action to the batch Training Desk dialog instead
   // of the single-request sequential wizard. The desk submits a training_batch
   // (handled independently of choose_action), so the action menu stays live.
-  const handler = o.value === 'request_training' ? 'openTrainingDesk()' : `sendResponse('${o.value}')`;
+  // Route the capital-purchase action to the #185/#188 order picker+modal
+  // (term contract / financing) instead of the legacy server-driven item
+  // prompt; the modal sends an independent capital_order so the menu stays live.
+  const handler = o.value === 'request_training' ? 'openTrainingDesk()'
+    : o.value === 'purchase_capital' ? 'openCapitalPicker()'
+    : `sendResponse('${o.value}')`;
   const onclick = disabled ? '' : ` onclick="${handler}"`;
   return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
 }
