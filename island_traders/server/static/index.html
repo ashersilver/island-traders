@@ -731,6 +731,27 @@ button:active{transform:scale(.97)}
 .training-decision-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
 .training-row-blocker{font-size:.66rem;color:var(--gold);margin-top:.1rem;white-space:normal;line-height:1.25}
 .training-row-supply-hint{font-size:.63rem;color:var(--dim);margin-top:.06rem;line-height:1.2}
+/* ---- Capital negotiation alerts ---- */
+.cap-neg-alert{
+  border:1px solid rgba(231,192,93,.65);border-radius:var(--radius-sm);
+  padding:.35rem .5rem;margin:.25rem 0 .1rem;font-size:.76rem;line-height:1.35;
+  background:rgba(231,192,93,.07)
+}
+.cap-neg-alert.status-proposed{border-color:rgba(231,192,93,.65)}
+.cap-neg-alert.status-countered{border-color:rgba(39,174,96,.6);background:rgba(39,174,96,.06)}
+.cap-neg-alert-hdr{font-weight:700;color:var(--gold);margin-bottom:.12rem}
+.cap-neg-alert.status-countered .cap-neg-alert-hdr{color:var(--green)}
+.cap-neg-alert-detail{color:var(--dim);font-size:.71rem;margin-top:.08rem;line-height:1.3}
+.cap-neg-btns{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+.cap-neg-btns button{font-size:.68rem;padding:.2rem .5rem;cursor:pointer;
+  border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.06);
+  color:var(--text)}
+.cap-neg-btns .btn-accept{border-color:rgba(39,174,96,.6);color:var(--green)}
+.cap-neg-btns .btn-counter{border-color:rgba(231,192,93,.6);color:var(--gold)}
+.cap-neg-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
+#cap-neg-badge{display:inline-block;background:var(--gold);color:#1a1200;
+  border-radius:999px;font-size:.61rem;font-weight:800;
+  padding:.02rem .38rem;min-width:1.1em;text-align:center;margin-left:.3rem;vertical-align:middle}
 /* ---- Staffing contract strip ---- */
 .staffing-strip{display:grid;gap:.22rem;margin:.15rem 0 .1rem}
 .staffing-row{display:grid;grid-template-columns:1fr auto;align-items:start;gap:.3rem;
@@ -1408,10 +1429,12 @@ body.fx-off .ih-pins .pdot{animation:none}
       <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           🏗 Build &amp; Develop
+          <span id="cap-neg-badge" style="display:none">0</span>
           <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
                   onclick="openCapitalPicker()"
                   title="Buy capital equipment (available on your turn)">＋ Build…</button>
         </h3>
+        <div id="s-capital-neg-alerts"></div>
         <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
       </div>
       <div class="section" data-tile="insurance" data-tile-label="Insurance">
@@ -2942,18 +2965,160 @@ function capitalNegotiationLabel(n) {
   const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
   return `${item} (${moneyDp(total)})`;
 }
+
+// ---- Capital negotiation local-state merge ----
+// Keeps gameState.capital_negotiations_awaiting_me / my_capital_negotiations
+// in sync with push messages so a stale game_state broadcast can't lose them.
+const _capNegBuffer = new Map(); // negotiation_id -> negotiation payload
+
+function _mergeCapNeg(n) {
+  if (!n || n.negotiation_id == null) return;
+  const active = n.status === 'proposed' || n.status === 'countered';
+  if (active) {
+    _capNegBuffer.set(n.negotiation_id, n);
+  } else {
+    _capNegBuffer.delete(n.negotiation_id);
+  }
+  if (!gameState) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  _applyCapNegToState(n, me);
+}
+
+function _applyCapNegToState(n, me) {
+  const nid = n.negotiation_id;
+  gameState.capital_negotiations_awaiting_me =
+    (gameState.capital_negotiations_awaiting_me || []).filter(x => x.negotiation_id !== nid);
+  gameState.my_capital_negotiations =
+    (gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid);
+  const active = n.status === 'proposed' || n.status === 'countered';
+  if (active && n.awaiting_id === me) {
+    gameState.capital_negotiations_awaiting_me =
+      [n, ...(gameState.capital_negotiations_awaiting_me || [])];
+  }
+  if (n.buyer_id === me || n.manufacturer_id === me) {
+    gameState.my_capital_negotiations =
+      [n, ...(gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid)];
+  }
+}
+
+function _reapplyCapNegBuffer() {
+  const me = _myEnginePlayerId();
+  if (me == null || !_capNegBuffer.size) return;
+  for (const n of _capNegBuffer.values()) {
+    // Only re-apply if game_state doesn't already have it
+    const inAwaiting = (gameState.capital_negotiations_awaiting_me || [])
+      .some(x => x.negotiation_id === n.negotiation_id);
+    if (!inAwaiting) _applyCapNegToState(n, me);
+  }
+}
+
+function renderCapitalNegotiationAlerts() {
+  const el = document.getElementById('s-capital-neg-alerts');
+  const badge = document.getElementById('cap-neg-badge');
+  if (!el) return;
+  const awaiting = (gameState && gameState.capital_negotiations_awaiting_me) || [];
+  if (badge) {
+    if (awaiting.length) {
+      badge.textContent = awaiting.length;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  if (!awaiting.length) { el.innerHTML = ''; return; }
+  const me = _myEnginePlayerId();
+  el.innerHTML = awaiting.map(n => {
+    const isBuyer = n.buyer_id === me;
+    const isManufacturer = n.manufacturer_id === me;
+    const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
+    const statusClass = n.status === 'countered' ? 'status-countered' : 'status-proposed';
+    let hdrText, detail, btns;
+    if (isManufacturer && n.status === 'proposed') {
+      hdrText = `📦 Capital order from ${esc(n.buyer_name || 'buyer')}`;
+      const termLine = n.maintenance_term_years
+        ? `${n.maintenance_term_years}yr contract${n.predictive_maintenance ? ' + predictive' : ''}`
+        : 'no maintenance';
+      const sparesLine = n.spares_kits ? `, ${n.spares_kits} spares kit(s)` : '';
+      detail = `${esc(n.name)} — offered ${moneyDp(n.buyer_offer)} (rec. ${moneyDp(n.recommended_total)})`
+        + `<div class="cap-neg-alert-detail">${esc(termLine)}${sparesLine}</div>`;
+      btns = `<div class="cap-neg-btns">
+        <button class="btn-accept" onclick="respondCapNeg(${n.negotiation_id},'accept')">Accept ${moneyDp(n.buyer_offer)}</button>
+        <button class="btn-counter" onclick="respondCapNeg(${n.negotiation_id},'counter',${n.recommended_total})">Counter…</button>
+        <button class="btn-reject" onclick="respondCapNeg(${n.negotiation_id},'decline')">Decline</button>
+      </div>`;
+    } else if (isBuyer && n.status === 'countered') {
+      hdrText = `📦 Counter-offer from ${esc(n.manufacturer_name || 'manufacturer')}`;
+      detail = `${esc(n.name)} — ${moneyDp(n.counter_total)} (you offered ${moneyDp(n.buyer_offer)}, rec. ${moneyDp(n.recommended_total)})`;
+      btns = `<div class="cap-neg-btns">
+        <button class="btn-accept" onclick="acceptCapCounter(${n.negotiation_id})">Accept ${moneyDp(n.counter_total)}</button>
+      </div>`;
+    } else {
+      return '';
+    }
+    return `<div class="cap-neg-alert ${statusClass}">
+      <div class="cap-neg-alert-hdr">${hdrText}</div>
+      <div>${detail}</div>
+      ${btns}
+    </div>`;
+  }).join('');
+}
+
+function respondCapNeg(nid, action, suggestedTotal) {
+  if (action === 'accept') {
+    sendWsMessage({ type: 'capital_negotiation_respond', negotiation_id: nid, action: 'accept' });
+  } else if (action === 'decline') {
+    sendWsMessage({ type: 'capital_negotiation_respond', negotiation_id: nid, action: 'decline' });
+  } else {
+    showPromptModal('Counter-offer to buyer', {
+      submitLabel: 'Send counter',
+      fields: [{
+        name: 'total', label: 'Your counter total (Dp)', type: 'number',
+        placeholder: suggestedTotal != null ? String(suggestedTotal) : '',
+        validate: v => (isNaN(parseFloat(v)) || parseFloat(v) <= 0)
+          ? 'Enter a counter total greater than 0.' : null,
+      }],
+      onSubmit: vals => {
+        sendWsMessage({
+          type: 'capital_negotiation_respond',
+          negotiation_id: nid,
+          action: 'counter',
+          counter_total: parseFloat(vals.total),
+        });
+      },
+    });
+  }
+}
+
+function acceptCapCounter(nid) {
+  sendWsMessage({ type: 'capital_negotiation_accept', negotiation_id: nid });
+}
+
 function onCapitalNegotiationAck(msg) {
+  if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+  renderCapitalNegotiationAlerts();
   const label = capitalNegotiationLabel(msg.negotiation);
   const type = msg.result === 'declined' ? 'error'
     : msg.result === 'countered' ? 'info' : 'success';
   showToast(`Capital order ${msg.result || 'updated'}: ${label}`, { type });
   addLog(`📦 Capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
 }
+
 function onCapitalNegotiationPush(msg) {
+  if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+  renderCapitalNegotiationAlerts();
   const label = capitalNegotiationLabel(msg.negotiation);
   const from = msg.from ? `${msg.from}: ` : '';
-  showToast(`${from}capital order ${msg.result || 'updated'}: ${label}`, { type: 'info' });
-  addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, 'info');
+  const type = msg.result === 'accepted' ? 'success'
+    : msg.result === 'declined' ? 'error' : 'info';
+  const needsAction = msg.negotiation && msg.negotiation.awaiting_id === _myEnginePlayerId();
+  showToast(
+    needsAction
+      ? `${from}capital order ${msg.result || 'updated'}: ${label}. Review in Build &amp; Develop.`
+      : `${from}capital order ${msg.result || 'updated'}: ${label}`,
+    { type, ms: needsAction ? 9000 : 6000 },
+  );
+  addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
 }
 
 // UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
@@ -3977,6 +4142,10 @@ function handleMessage(msg) {
       break;
     case 'game_state':
       gameState = msg;
+      // Re-apply push buffers so a stale broadcast can't silently drop
+      // deals or capital negotiations that arrived via push moments earlier.
+      _reapplyCapNegBuffer();
+      _reapplyDealBuffer();
       syncServerLog(msg);
       syncSeasonTimerFromState(msg);
       // Don't auto-jump to the game screen while the user is still on the
@@ -4386,6 +4555,7 @@ function renderGameState() {
   }
 
   renderDealsPanel();
+  renderCapitalNegotiationAlerts();
   renderTradeFinder();
 }
 
@@ -4937,15 +5107,16 @@ function _upsertDeal(list, deal) {
     .sort((a, b) => (b.deal_id || 0) - (a.deal_id || 0));
 }
 
-function mergeDealMessage(msg) {
-  if (!msg || !msg.deal || !gameState) return;
-  const deal = msg.deal;
-  const me = _myEnginePlayerId();
-  if (me == null || deal.deal_id == null) return;
+// Buffer of deals received via push. Keyed by deal_id so a later push for the
+// same deal always wins. Cleared for settled deals (accepted/rejected/expired).
+// _reapplyDealBuffer() merges the buffer into gameState after every game_state
+// replace, preventing a stale AI-broadcast snapshot from silently dropping a
+// deal that the player already saw via deal_response push (C3 race fix).
+const _dealPushBuffer = new Map();
 
+function _applyDealToState(deal, me) {
   gameState.deals_awaiting_me = _withoutDeal(gameState.deals_awaiting_me, deal.deal_id);
   gameState.my_deals = _withoutDeal(gameState.my_deals, deal.deal_id);
-
   const active = deal.status === 'pending' || deal.status === 'returned';
   if (active && deal.awaiting_id === me) {
     gameState.deals_awaiting_me = _upsertDeal(gameState.deals_awaiting_me, deal);
@@ -4953,6 +5124,35 @@ function mergeDealMessage(msg) {
   if (deal.proposer_id === me) {
     gameState.my_deals = _upsertDeal(gameState.my_deals, deal);
   }
+}
+
+function _reapplyDealBuffer() {
+  if (!gameState || !_dealPushBuffer.size) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  for (const deal of _dealPushBuffer.values()) {
+    const alreadyIn =
+      (gameState.deals_awaiting_me || []).some(d => d.deal_id === deal.deal_id) ||
+      (gameState.my_deals || []).some(d => d.deal_id === deal.deal_id);
+    if (!alreadyIn) _applyDealToState(deal, me);
+  }
+}
+
+function mergeDealMessage(msg) {
+  if (!msg || !msg.deal) return;
+  const deal = msg.deal;
+  if (deal.deal_id == null) return;
+  // Update buffer: keep active deals, evict settled ones.
+  const active = deal.status === 'pending' || deal.status === 'returned';
+  if (active) {
+    _dealPushBuffer.set(deal.deal_id, deal);
+  } else {
+    _dealPushBuffer.delete(deal.deal_id);
+  }
+  if (!gameState) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  _applyDealToState(deal, me);
   renderDealsPanel();
 }
 
