@@ -5,7 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.2`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.3`.
+
+- **Capital negotiation fixes + log search (#185)** — a Manufacturer ordering its *own*
+  equipment (or any cash-only item) now settles immediately as a self-build instead of
+  parking a negotiation that awaited — and could never clear — the manufacturer's own
+  response, which previously jammed the awaiting queue and blocked every later order.
+  The Build & Develop review panel now hardens against mislabeling: self-build and
+  wrong-viewer payloads are never rendered as an incoming "order from another player",
+  and the pending badge counts only actionable rows. The Recent Activity / Log panel
+  gains a 🔍 text search that combines with the category filter and reaches trimmed
+  history.
 
 - **Capital order negotiation + enriched modal (#185)** — `capital_order` now creates a
   dedicated Manufacturer-review negotiation instead of settling instantly. Manufacturers can

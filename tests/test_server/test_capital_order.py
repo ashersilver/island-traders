@@ -346,3 +346,40 @@ def test_capital_order_double_accept_settles_once():
     assert any(m.get("type") == "capital_order_ack" for m in first.sent)
     assert any(m.get("type") == "error" for m in second.sent)
     assert len(buyer.capital_in_transit) == 1
+
+
+def test_capital_order_self_build_settles_immediately_without_negotiation():
+    # A Manufacturer ordering its own equipment has no counterparty to review the
+    # order.  It must settle on the spot (consuming a manufactured unit, no Dp,
+    # no referral) rather than parking a negotiation that awaits — and can never
+    # clear — the manufacturer's own response, which previously jammed the queue.
+    mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
+    manufacturer, _other = players
+    item = find_item(CAPITAL_CATALOGUE, "manufacturer.foundry")
+    manufacturer.dollops = item.cost * 5
+    start_dollops = manufacturer.dollops
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+        "item_id": "manufacturer.foundry",
+    }, ws))
+
+    # Settles immediately: a capital_order_ack, never a 'proposed' negotiation.
+    assert any(m.get("type") == "capital_order_ack" for m in ws.sent), ws.sent
+    assert not any(
+        m.get("type") == "capital_negotiation_ack" and m.get("result") == "proposed"
+        for m in ws.sent
+    ), ws.sent
+
+    # Self-build: no Dp moves, one manufactured unit consumed, equipment placed
+    # (foundry has 0-season delivery, so it lands directly in capital_units).
+    assert manufacturer.dollops == start_dollops
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before - 1
+    assert manufacturer.capital_units.get("manufacturer.foundry")
+
+    # Nothing is left awaiting the manufacturer — the queue stays clear.
+    assert mgr.rooms[room.room_id].game.capital_negotiations.awaiting(
+        manufacturer.player_id
+    ) == []

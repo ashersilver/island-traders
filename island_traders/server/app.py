@@ -3368,6 +3368,30 @@ class GameManager:
             buyer_offer=buyer_offer,
         )
 
+        # Self-build: the Manufacturer is its own buyer (it ordered equipment it
+        # manufactures, or a cash_only item with no separate manufacturer).  There
+        # is no counterparty to review the order, so settle it immediately instead
+        # of parking a negotiation that awaits the manufacturer's own response.
+        # Such a record can be neither meaningfully accepted (an offer from
+        # yourself) nor declined, so it jams the awaiting queue and blocks every
+        # later order.  Settlement consumes the manufactured unit / cash as usual;
+        # no referral or financing applies when buyer == manufacturer.
+        if manufacturer.player_id == buyer.player_id:
+            try:
+                settlement = self._settle_capital_negotiation(
+                    room, negotiation, negotiation.buyer_offer
+                )
+            except (CapitalFinanceError, ValueError) as exc:
+                await _err(str(exc)); return
+            await websocket.send_text(json.dumps({
+                **settlement,
+                "negotiation_id": negotiation.negotiation_id,
+            }))
+            state = self.get_game_state(room_id, lobby_player_id)
+            if state:
+                await websocket.send_text(json.dumps(state))
+            return
+
         await websocket.send_text(json.dumps({
             "type": "capital_negotiation_ack",
             "result": "proposed",
@@ -3379,7 +3403,7 @@ class GameManager:
         state = self.get_game_state(room_id, lobby_player_id)
         if state:
             await websocket.send_text(json.dumps(state))
-        if not cash_only and manufacturer.is_human:
+        if manufacturer.is_human:
             self._send_capital_negotiation_push(
                 room,
                 manufacturer.player_id,

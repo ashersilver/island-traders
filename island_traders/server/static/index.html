@@ -395,6 +395,16 @@ button:active{transform:scale(.97)}
   background:var(--bg);color:var(--dim);border:1px solid var(--border)
 }
 .log-filter-bar .lf-btn.active{background:var(--accent);color:#04090f;border-color:var(--accent);font-weight:700}
+.log-search{display:flex;align-items:center;gap:.25rem;flex:1 1 7rem;min-width:6rem;
+  background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:.05rem .4rem}
+.log-search .ls-icon{font-size:.7rem;color:var(--dim);line-height:1}
+.log-search input{flex:1;min-width:0;background:none;border:none;outline:none;
+  font-family:inherit;font-size:.68rem;color:var(--text);padding:.12rem 0}
+.log-search input::placeholder{color:var(--dim)}
+.log-search .ls-clear{cursor:pointer;color:var(--dim);font-weight:700;font-size:.78rem;
+  line-height:1;padding:0 .1rem;display:none}
+.log-search.has-text .ls-clear{display:inline}
+.g-log-line.log-search-hidden{display:none!important}
 /* --- Tile system: per-tile collapse/hide/reorder (UI v2 phase 1, #114) --- */
 .section[data-tile]>h3{position:relative}
 .tile-ctl{display:inline-flex;gap:.1rem;margin-left:auto;opacity:0;transition:opacity .15s}
@@ -1530,6 +1540,12 @@ body.fx-off .ih-pins .pdot{animation:none}
         <button class="lf-btn"        data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
         <button class="lf-btn"        data-f="events"   onclick="setLogFilter('events')">Events</button>
         <button class="lf-btn"        data-f="training" onclick="setLogFilter('training')">Training</button>
+        <span class="log-search" id="log-search">
+          <span class="ls-icon">🔍</span>
+          <input type="text" id="log-search-input" placeholder="Search log…"
+                 autocomplete="off" oninput="applyLogSearch(this.value)">
+          <span class="ls-clear" title="Clear search" onclick="clearLogSearch()">✕</span>
+        </span>
       </div>
     </div>
   </div>
@@ -3018,23 +3034,19 @@ function renderCapitalNegotiationAlerts() {
   const badge = document.getElementById('cap-neg-badge');
   if (!el) return;
   const awaiting = (gameState && gameState.capital_negotiations_awaiting_me) || [];
-  if (badge) {
-    if (awaiting.length) {
-      badge.textContent = awaiting.length;
-      badge.style.display = '';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
-  if (!awaiting.length) { el.innerHTML = ''; return; }
   const me = _myEnginePlayerId();
-  el.innerHTML = awaiting.map(n => {
+  // Render only negotiations this viewer can actually act on, in the role the
+  // payload assigns them. A self-build (buyer === manufacturer) has no
+  // counterparty to review and must never appear as an incoming order — guard
+  // here too so a stale payload can't mislabel the viewer's own order as
+  // "from another player". The badge counts only what actually renders.
+  const rows = awaiting.map(n => {
+    if (n == null || n.buyer_id === n.manufacturer_id) return '';
     const isBuyer = n.buyer_id === me;
     const isManufacturer = n.manufacturer_id === me;
-    const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
     const statusClass = n.status === 'countered' ? 'status-countered' : 'status-proposed';
     let hdrText, detail, btns;
-    if (isManufacturer && n.status === 'proposed') {
+    if (isManufacturer && !isBuyer && n.status === 'proposed') {
       hdrText = `📦 Capital order from ${esc(n.buyer_name || 'buyer')}`;
       const termLine = n.maintenance_term_years
         ? `${n.maintenance_term_years}yr contract${n.predictive_maintenance ? ' + predictive' : ''}`
@@ -3047,7 +3059,7 @@ function renderCapitalNegotiationAlerts() {
         <button class="btn-counter" onclick="respondCapNeg(${n.negotiation_id},'counter',${n.recommended_total})">Counter…</button>
         <button class="btn-reject" onclick="respondCapNeg(${n.negotiation_id},'decline')">Decline</button>
       </div>`;
-    } else if (isBuyer && n.status === 'countered') {
+    } else if (isBuyer && !isManufacturer && n.status === 'countered') {
       hdrText = `📦 Counter-offer from ${esc(n.manufacturer_name || 'manufacturer')}`;
       detail = `${esc(n.name)} — ${moneyDp(n.counter_total)} (you offered ${moneyDp(n.buyer_offer)}, rec. ${moneyDp(n.recommended_total)})`;
       btns = `<div class="cap-neg-btns">
@@ -3061,7 +3073,16 @@ function renderCapitalNegotiationAlerts() {
       <div>${detail}</div>
       ${btns}
     </div>`;
-  }).join('');
+  }).filter(Boolean);
+  if (badge) {
+    if (rows.length) {
+      badge.textContent = rows.length;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  el.innerHTML = rows.join('');
 }
 
 function respondCapNeg(nid, action, suggestedTotal) {
@@ -6772,6 +6793,9 @@ function addLog(text, cls = '') {
     div.classList.add('log-mine');
   }
   div.textContent = text;
+  if (_logSearchTerm && !text.toLowerCase().includes(_logSearchTerm)) {
+    div.classList.add('log-search-hidden');
+  }
   log.appendChild(div);
   const lines = log.querySelectorAll('.g-log-line');
   const excess = lines.length - LOG_DOM_MAX;
@@ -6791,6 +6815,36 @@ function setLogFilter(f) {
   document.querySelectorAll('#log-filter-bar .lf-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.f === f));
   try { localStorage.setItem('it_log_filter', f); } catch (e) {}
+}
+
+// --- Log text search (combines with the category filter above) ---
+let _logSearchTerm = '';
+function applyLogSearch(term) {
+  _logSearchTerm = (term || '').trim().toLowerCase();
+  const box = document.getElementById('log-search');
+  if (box) box.classList.toggle('has-text', _logSearchTerm.length > 0);
+  const log = document.getElementById('event-log');
+  if (!log) return;
+  log.querySelectorAll('.g-log-line').forEach(line => {
+    const hit = !_logSearchTerm
+      || (line.textContent || '').toLowerCase().includes(_logSearchTerm);
+    line.classList.toggle('log-search-hidden', !hit);
+  });
+  // Earlier (trimmed) lines are held off-DOM; surface them so a search can
+  // reach the full history rather than only the visible tail.
+  if (_logSearchTerm && _logEarlier.length) {
+    const btn = document.getElementById('log-earlier-btn');
+    if (btn) btn.click();
+    log.querySelectorAll('.g-log-line').forEach(line => {
+      const hit = (line.textContent || '').toLowerCase().includes(_logSearchTerm);
+      line.classList.toggle('log-search-hidden', !hit);
+    });
+  }
+}
+function clearLogSearch() {
+  const input = document.getElementById('log-search-input');
+  if (input) input.value = '';
+  applyLogSearch('');
 }
 
 // --- Modular layout: hide/collapse panels + presets ---
