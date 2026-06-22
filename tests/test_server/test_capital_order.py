@@ -25,7 +25,7 @@ class _WS:
         self.sent.append(json.loads(text))
 
 
-def _bootstrap(role_names: list[str]):
+def _bootstrap(role_names: list[str], *, human: bool = True):
     mgr = GameManager()
     room = GameRoom(
         room_id="cap-room", name="Cap Room", max_players=len(role_names),
@@ -40,7 +40,7 @@ def _bootstrap(role_names: list[str]):
     mgr._ws_connections[room.room_id] = {}
     game = Game(
         GameConfig(
-            [PlayerSpec(name=f"Player{idx}", role_names=[role], is_human=True)
+            [PlayerSpec(name=f"Player{idx}", role_names=[role], is_human=human)
              for idx, role in enumerate(role_names)],
             num_years=1, starting_dollops=100.0,
         ),
@@ -55,7 +55,39 @@ def _bootstrap(role_names: list[str]):
     return mgr, room, game.players
 
 
-def test_capital_order_charges_records_conditions_and_delivers():
+def _propose(mgr, room, lobby_id: str, msg: dict):
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order(room.room_id, lobby_id, msg, ws))
+    ack = next(
+        (m for m in ws.sent if m.get("type") == "capital_negotiation_ack"),
+        None,
+    )
+    assert ack is not None, ws.sent
+    return ws, ack["negotiation_id"]
+
+
+def _respond(mgr, room, lobby_id: str, msg: dict):
+    ws = _WS()
+    asyncio.run(
+        mgr._handle_capital_negotiation_respond(room.room_id, lobby_id, msg, ws)
+    )
+    return ws
+
+
+def _accept_counter(mgr, room, lobby_id: str, negotiation_id: int):
+    ws = _WS()
+    asyncio.run(
+        mgr._handle_capital_negotiation_accept(
+            room.room_id,
+            lobby_id,
+            {"negotiation_id": negotiation_id},
+            ws,
+        )
+    )
+    return ws
+
+
+def test_capital_order_propose_then_manufacturer_accept_delivers():
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
     buyer, manufacturer = players
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
@@ -66,16 +98,22 @@ def test_capital_order_charges_records_conditions_and_delivers():
     mfr_start = manufacturer.dollops
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
-    ws = _WS()
 
-    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+    _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
         "maintenance_term_years": 3,
         "predictive_maintenance": True,
         "spares_kits": 2,
         "expedited_eligible": True,
-    }, ws))
+    })
+    assert buyer.dollops == buyer_start
+    assert manufacturer.dollops == mfr_start
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
 
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
     ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
     assert ack is not None, ws.sent
     assert ack["upfront"] == upfront
@@ -105,7 +143,7 @@ def test_capital_order_charges_records_conditions_and_delivers():
     assert unit.purchase_value == item.cost
 
 
-def test_capital_order_financed_creates_loan_and_pays_referral():
+def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     from island_traders.constants import MANUFACTURER_FINANCE_REFERRAL_RATE
 
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer", "Banker"])
@@ -118,12 +156,24 @@ def test_capital_order_financed_creates_loan_and_pays_referral():
     mfr_start = manufacturer.dollops
     banker_start = banker.dollops
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
-    ws = _WS()
 
-    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+    _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
         "financing": True,
-    }, ws))
+        "buyer_offer": upfront - 25,
+    })
+    counter_ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "counter",
+        "counter_total": upfront,
+    })
+    counter_ack = next(
+        (m for m in counter_ws.sent if m.get("type") == "capital_negotiation_ack"),
+        None,
+    )
+    assert counter_ack["result"] == "countered"
+
+    ws = _accept_counter(mgr, room, "p0", negotiation_id)
 
     ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
     assert ack is not None, ws.sent
@@ -151,12 +201,15 @@ def test_capital_order_financing_falls_back_to_cash_without_banker():
     buyer.dollops = item.cost * 5
     buyer_start = buyer.dollops
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
-    ws = _WS()
 
-    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+    _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
         "financing": True,
-    }, ws))
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
 
     ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
     assert ack is not None, ws.sent
@@ -185,12 +238,15 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
     buyer.dollops = 1.0  # also can't pay cash
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
-    ws = _WS()
 
-    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+    _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
         "financing": True,
-    }, ws))
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
 
     assert any(m.get("type") == "error" for m in ws.sent)
     assert buyer.capital_in_transit == []
@@ -208,13 +264,85 @@ def test_capital_order_rejects_when_unaffordable():
     buyer.dollops = 5.0
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": "transporter.cargo_plane",
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+
+    assert any(m.get("type") == "error" for m in ws.sent)
+    assert buyer.capital_in_transit == []
+    # Nothing consumed or charged.
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+
+
+def test_capital_order_decline_does_not_charge_or_consume():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    buyer.dollops = item.cost * 5
+    buyer_start = buyer.dollops
+    mfr_start = manufacturer.dollops
+    te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": "transporter.cargo_plane",
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "decline",
+    })
+
+    ack = next((m for m in ws.sent if m.get("type") == "capital_negotiation_ack"), None)
+    assert ack["result"] == "declined"
+    assert buyer.dollops == buyer_start
+    assert manufacturer.dollops == mfr_start
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    assert buyer.capital_in_transit == []
+
+
+def test_capital_order_ai_manufacturer_auto_accepts_at_recommended_total():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"], human=False)
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    buyer.dollops = item.cost * 5
+    buyer_start = buyer.dollops
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
     ws = _WS()
 
     asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
         "item_id": "transporter.cargo_plane",
     }, ws))
 
-    assert any(m.get("type") == "error" for m in ws.sent)
-    assert buyer.capital_in_transit == []
-    # Nothing consumed or charged.
-    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
+    assert ack is not None, ws.sent
+    assert ack["upfront"] == round(item.cost, 2)
+    assert buyer.dollops == buyer_start - round(item.cost, 2)
+    assert buyer.capital_in_transit
+
+
+def test_capital_order_double_accept_settles_once():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    buyer.dollops = item.cost * 5
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 2)
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": "transporter.cargo_plane",
+    })
+    first = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+    second = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+
+    assert any(m.get("type") == "capital_order_ack" for m in first.sent)
+    assert any(m.get("type") == "error" for m in second.sent)
+    assert len(buyer.capital_in_transit) == 1

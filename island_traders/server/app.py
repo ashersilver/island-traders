@@ -37,6 +37,12 @@ from ..models.training import (
     settling_seasons_on_return,
 )
 from ..models.deal import ACTIVE_DEAL_STATUSES, DealProposal
+from ..models.capital_negotiation import (
+    ACTIVE_CAPITAL_NEGOTIATION_STATUSES,
+    CapitalNegotiationLedger,
+    CapitalNegotiationStatus,
+    CapitalOrderNegotiation,
+)
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
     AUCTIONED_SHARES, UNISSUED_HOLDER,
@@ -49,6 +55,7 @@ from ..constants import (
     TOTAL_STARTING_POPULATION, PEOPLE_PER_MEAL,
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
     FLU_SEASON,
+    MANUFACTURER_FINANCE_REFERRAL_RATE,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -3288,14 +3295,7 @@ class GameManager:
         msg: dict,
         websocket,
     ) -> None:
-        """Place a Capital Equipment Order (#185) from the buyer-facing form.
-
-        Charges the equipment list price + spares upfront, records the chosen
-        order conditions on the delivered unit (via ``place_capital_order``),
-        and consumes one manufactured-equipment unit from the Manufacturer.
-        Message: {item_id, maintenance_term_years, predictive_maintenance,
-        spares_kits, expedited_eligible, financing}.
-        """
+        """Create a manufacturer-review capital order negotiation (#185)."""
         from ..models.capacity import find_item
 
         async def _err(message: str) -> None:
@@ -3326,7 +3326,7 @@ class GameManager:
         financing = bool(msg.get("financing", False))
 
         cash_only = bool(item.effects.get("cash_only", False))
-        manufacturer = None
+        manufacturer = buyer if cash_only else None
         manufactured_resource = None
         if not cash_only:
             manufacturer = next(
@@ -3342,53 +3342,299 @@ class GameManager:
                 ); return
 
         from ..models.player import maintenance_contract_cost
-        from ..constants import MANUFACTURER_FINANCE_REFERRAL_RATE
         contract_cost = maintenance_contract_cost(item.cost, term, predictive)
         spares_cost = round(0.15 * item.cost * spares_kits, 2)
-        upfront = round(item.cost + contract_cost + spares_cost, 2)
-        pays = cash_only or (manufacturer is not None and manufacturer.player_id != buyer.player_id)
+        recommended_total = round(item.cost + contract_cost + spares_cost, 2)
+        try:
+            buyer_offer = round(float(msg.get("buyer_offer", recommended_total)), 2)
+        except (TypeError, ValueError):
+            buyer_offer = recommended_total
+        if buyer_offer <= 0:
+            await _err("Offer total must be positive."); return
 
+        if not getattr(game, "capital_negotiations", None):
+            game.capital_negotiations = CapitalNegotiationLedger()
+        negotiation = game.capital_negotiations.create(
+            buyer_id=buyer.player_id,
+            manufacturer_id=manufacturer.player_id,
+            item_id=item.item_id,
+            maintenance_term_years=term,
+            predictive_maintenance=predictive,
+            spares_kits=spares_kits,
+            expedited_eligible=expedited,
+            financing=financing,
+            list_price=item.cost,
+            recommended_total=recommended_total,
+            buyer_offer=buyer_offer,
+        )
+
+        await websocket.send_text(json.dumps({
+            "type": "capital_negotiation_ack",
+            "result": "proposed",
+            "negotiation_id": negotiation.negotiation_id,
+            "negotiation": self._capital_negotiation_payload(
+                negotiation, game, buyer.player_id
+            ),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+        if not cash_only and manufacturer.is_human:
+            self._send_capital_negotiation_push(
+                room,
+                manufacturer.player_id,
+                "proposed",
+                negotiation,
+                from_name=buyer.name,
+            )
+        else:
+            await self._auto_respond_capital_negotiation(
+                room_id, lobby_player_id, negotiation, websocket
+            )
+
+    async def _handle_capital_negotiation_respond(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        await self._handle_capital_negotiation_action(
+            room_id, lobby_player_id, msg, websocket, actor_role="manufacturer"
+        )
+
+    async def _handle_capital_negotiation_accept(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        await self._handle_capital_negotiation_action(
+            room_id, lobby_player_id, msg, websocket, actor_role="buyer"
+        )
+
+    async def _handle_capital_negotiation_action(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+        *,
+        actor_role: str,
+    ) -> None:
+        async def _err(message: str) -> None:
+            await websocket.send_text(json.dumps({"type": "error", "message": message}))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await _err("Room not found"); return
+        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        if actor is None:
+            await _err("Player not in game"); return
+        try:
+            negotiation_id = int(msg.get("negotiation_id"))
+        except (TypeError, ValueError):
+            await _err("Invalid negotiation_id"); return
+        ledger = getattr(room.game, "capital_negotiations", None)
+        negotiation = ledger.get(negotiation_id) if ledger else None
+        if negotiation is None:
+            await _err(f"Capital negotiation #{negotiation_id} not found"); return
+        if negotiation.awaiting_id != actor.player_id:
+            await _err(
+                f"Capital negotiation #{negotiation_id} is not awaiting your response"
+            ); return
+
+        action = str(msg.get("action", "")).strip().lower()
+        if actor_role == "buyer":
+            action = "accept"
+            if actor.player_id != negotiation.buyer_id:
+                await _err("Only the buyer can accept this counter-offer."); return
+            if negotiation.status != CapitalNegotiationStatus.COUNTERED:
+                await _err("Only countered capital orders can be buyer-accepted."); return
+        elif actor.player_id != negotiation.manufacturer_id:
+            await _err("Only the Manufacturer can respond to this capital order."); return
+
+        try:
+            if action == "accept":
+                total = (
+                    negotiation.counter_total
+                    if negotiation.status == CapitalNegotiationStatus.COUNTERED
+                    else negotiation.buyer_offer
+                )
+                settlement = self._settle_capital_negotiation(
+                    room, negotiation, float(total)
+                )
+                result = "accepted"
+            elif action == "counter":
+                if negotiation.status != CapitalNegotiationStatus.PROPOSED:
+                    raise ValueError("Only proposed capital orders can be countered.")
+                counter_total = round(float(msg.get("counter_total")), 2)
+                if counter_total <= 0:
+                    raise ValueError("Counter total must be positive.")
+                negotiation.counter_total = counter_total
+                negotiation.status = CapitalNegotiationStatus.COUNTERED
+                negotiation.awaiting_id = negotiation.buyer_id
+                settlement = None
+                result = "countered"
+            elif action == "decline":
+                if negotiation.status != CapitalNegotiationStatus.PROPOSED:
+                    raise ValueError("Only proposed capital orders can be declined.")
+                negotiation.status = CapitalNegotiationStatus.DECLINED
+                negotiation.awaiting_id = None
+                settlement = None
+                result = "declined"
+            else:
+                await _err(f"Unknown capital negotiation action: {action!r}"); return
+        except (CapitalFinanceError, ValueError) as exc:
+            await _err(str(exc)); return
+
+        payload = self._capital_negotiation_payload(
+            negotiation, room.game, actor.player_id
+        )
+        ack = {
+            "type": "capital_negotiation_ack",
+            "result": result,
+            "negotiation_id": negotiation.negotiation_id,
+            "negotiation": payload,
+        }
+        if settlement:
+            ack.update(settlement)
+        await websocket.send_text(json.dumps(ack))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        notify_id = (
+            negotiation.buyer_id
+            if actor.player_id == negotiation.manufacturer_id
+            else negotiation.manufacturer_id
+        )
+        self._send_capital_negotiation_push(
+            room, notify_id, result, negotiation, from_name=actor.name,
+            settlement=settlement,
+        )
+
+    async def _auto_respond_capital_negotiation(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        negotiation: CapitalOrderNegotiation,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            return
+        if negotiation.buyer_offer >= negotiation.recommended_total:
+            try:
+                settlement = self._settle_capital_negotiation(
+                    room, negotiation, negotiation.buyer_offer
+                )
+            except (CapitalFinanceError, ValueError) as exc:
+                await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                return
+            result = "accepted"
+        else:
+            negotiation.counter_total = negotiation.recommended_total
+            negotiation.status = CapitalNegotiationStatus.COUNTERED
+            negotiation.awaiting_id = negotiation.buyer_id
+            settlement = None
+            result = "countered"
+        await websocket.send_text(json.dumps({
+            "type": "capital_negotiation_ack",
+            "result": result,
+            "negotiation_id": negotiation.negotiation_id,
+            "negotiation": self._capital_negotiation_payload(
+                negotiation, room.game, negotiation.buyer_id
+            ),
+            **(settlement or {}),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    def _settle_capital_negotiation(
+        self,
+        room,
+        negotiation: CapitalOrderNegotiation,
+        agreed_total: float,
+    ) -> dict:
+        from ..models.capacity import find_item
+        from ..models.player import maintenance_contract_cost
+
+        if negotiation.status not in ACTIVE_CAPITAL_NEGOTIATION_STATUSES:
+            raise ValueError(
+                f"Capital negotiation #{negotiation.negotiation_id} is already "
+                f"{negotiation.status.value}"
+            )
+        game = room.game
+        buyer = next((p for p in game.players if p.player_id == negotiation.buyer_id), None)
+        manufacturer = next(
+            (p for p in game.players if p.player_id == negotiation.manufacturer_id),
+            None,
+        )
+        if buyer is None or manufacturer is None:
+            negotiation.status = CapitalNegotiationStatus.EXPIRED
+            negotiation.awaiting_id = None
+            raise ValueError("Capital negotiation party no longer exists.")
+        item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
+        if item is None:
+            negotiation.status = CapitalNegotiationStatus.EXPIRED
+            negotiation.awaiting_id = None
+            raise ValueError("Capital item no longer exists.")
+
+        cash_only = bool(item.effects.get("cash_only", False))
+        manufactured_resource = None
+        if not cash_only:
+            manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
+            if manufacturer.inventory.get(manufactured_resource) <= 0:
+                raise ValueError(
+                    f"{manufacturer.name} has no {manufactured_resource.value} to build {item.name}."
+                )
+        agreed_total = round(float(agreed_total), 2)
+        if agreed_total <= 0:
+            raise ValueError("Agreed total must be positive.")
+        pays = cash_only or manufacturer.player_id != buyer.player_id
         cyi = getattr(room, "current_year_index", 0)
         csi = getattr(room, "current_season_index", 0)
         current_tick = cyi * len(SEASONS) + csi
 
-        # Resolve settlement BEFORE mutating any state.  Financing borrows the
-        # upfront from the Bank (manufacturer still paid in full); a cash order
-        # settles straight from the buyer's treasury.  issue_capital_finance_loan
-        # raises before mutating, so a failed loan leaves us free to fall back to
-        # cash (or surface the reason if the buyer can't pay cash either).
         loan = None
         financed = False
         referral_fee = 0.0
         if pays:
-            want_finance = financing and game.turn_manager._find_banker() is not None
+            want_finance = (
+                negotiation.financing
+                and game.turn_manager._find_banker() is not None
+            )
             if want_finance:
-                loan_term = min(3, max(1, term)) if term else 2
+                loan_term = (
+                    min(3, max(1, negotiation.maintenance_term_years))
+                    if negotiation.maintenance_term_years else 2
+                )
                 try:
                     loan = game.turn_manager.issue_capital_finance_loan(
-                        buyer, upfront, loan_term, cyi, csi
+                        buyer, agreed_total, loan_term, cyi, csi
                     )
                     financed = True
                 except CapitalFinanceError as exc:
-                    if buyer.dollops < upfront:
-                        await _err(str(exc)); return
-            if not financed and buyer.dollops < upfront:
-                await _err(
-                    f"Need {upfront:.1f} Dp for this order; you have {buyer.dollops:.1f} Dp."
-                ); return
+                    if buyer.dollops < agreed_total:
+                        raise CapitalFinanceError(str(exc))
+            if not financed and buyer.dollops < agreed_total:
+                raise ValueError(
+                    f"Need {agreed_total:.1f} Dp for this order; you have "
+                    f"{buyer.dollops:.1f} Dp."
+                )
 
-        # Execute: consume one manufactured unit, settle cash.  When financed,
-        # the loan principal was credited to the buyer above, so spending it here
-        # leaves the buyer's treasury flat (they now owe the loan instead).
         if not cash_only:
             manufacturer.give_resources(manufactured_resource, 1)
         if pays:
-            buyer.spend_dollops(upfront)
-            if manufacturer is not None and manufacturer.player_id != buyer.player_id:
-                manufacturer.receive_dollops(upfront)
-            if financed and manufacturer is not None:
+            buyer.spend_dollops(agreed_total)
+            if manufacturer.player_id != buyer.player_id:
+                manufacturer.receive_dollops(agreed_total)
+            if financed:
                 banker = game.turn_manager._find_banker()
-                fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * upfront, 2)
+                fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * agreed_total, 2)
                 if (banker is not None
                         and banker.player_id != manufacturer.player_id
                         and banker.dollops >= fee):
@@ -3396,35 +3642,134 @@ class GameManager:
                     manufacturer.receive_dollops(fee)
                     referral_fee = fee
 
+        contract_cost = maintenance_contract_cost(
+            item.cost,
+            negotiation.maintenance_term_years,
+            negotiation.predictive_maintenance,
+        )
         order = {
-            "maintenance_term_years": term,
-            "predictive_maintenance": predictive,
-            "guarantee_seasons":      1,           # resolved #185 decision
-            "warranty":               term > 0,
-            "spares_kits":            spares_kits,  # manufactured & shipped with the unit
-            "expedited_eligible":     expedited,
-            "financing":              financing,
-            "purchase_value":         item.cost,
+            "maintenance_term_years": negotiation.maintenance_term_years,
+            "predictive_maintenance": negotiation.predictive_maintenance,
+            "guarantee_seasons": 1,
+            "warranty": negotiation.maintenance_term_years > 0,
+            "spares_kits": negotiation.spares_kits,
+            "expedited_eligible": negotiation.expedited_eligible,
+            "financing": negotiation.financing,
+            "purchase_value": item.cost,
         }
         arrives_at = buyer.place_capital_order(
             item.item_id, order, current_tick, item.delivery_seasons
         )
-
-        await websocket.send_text(json.dumps({
+        negotiation.status = CapitalNegotiationStatus.ACCEPTED
+        negotiation.awaiting_id = None
+        return {
             "type": "capital_order_ack",
-            "item_id": item.item_id, "name": item.name,
-            "upfront": upfront, "contract_cost": contract_cost,
-            "spares_kits": spares_kits,
-            "financing": financing,
+            "item_id": item.item_id,
+            "name": item.name,
+            "upfront": agreed_total,
+            "agreed_total": agreed_total,
+            "contract_cost": contract_cost,
+            "spares_kits": negotiation.spares_kits,
+            "financing": negotiation.financing,
             "financed": financed,
             "loan_id": loan.loan_id if loan is not None else None,
             "loan_repayment": loan.repayment_amount if loan is not None else None,
             "referral_fee": referral_fee,
             "arrives_at_tick": arrives_at,
-        }))
-        state = self.get_game_state(room_id, lobby_player_id)
-        if state:
-            await websocket.send_text(json.dumps(state))
+        }
+
+    def _capital_negotiation_payload(
+        self,
+        negotiation: CapitalOrderNegotiation,
+        game: Game,
+        viewer_id: int | None,
+    ) -> dict:
+        from ..models.capacity import find_item
+
+        item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
+        player_names = {p.player_id: p.name for p in game.players}
+        return {
+            "negotiation_id": negotiation.negotiation_id,
+            "status": negotiation.status.value,
+            "buyer_id": negotiation.buyer_id,
+            "buyer_name": player_names.get(negotiation.buyer_id),
+            "manufacturer_id": negotiation.manufacturer_id,
+            "manufacturer_name": player_names.get(negotiation.manufacturer_id),
+            "counterparty_id": (
+                negotiation.manufacturer_id
+                if viewer_id == negotiation.buyer_id else negotiation.buyer_id
+            ),
+            "awaiting_id": negotiation.awaiting_id,
+            "awaiting_name": (
+                player_names.get(negotiation.awaiting_id)
+                if negotiation.awaiting_id is not None else None
+            ),
+            "item_id": negotiation.item_id,
+            "name": item.name if item else negotiation.item_id,
+            "maintenance_term_years": negotiation.maintenance_term_years,
+            "predictive_maintenance": negotiation.predictive_maintenance,
+            "spares_kits": negotiation.spares_kits,
+            "expedited_eligible": negotiation.expedited_eligible,
+            "financing": negotiation.financing,
+            "list_price": negotiation.list_price,
+            "recommended_total": negotiation.recommended_total,
+            "buyer_offer": negotiation.buyer_offer,
+            "counter_total": negotiation.counter_total,
+        }
+
+    def _capital_negotiation_state_for_viewer(
+        self,
+        game: Game,
+        viewer_engine_id: int | None,
+    ) -> tuple[list[dict], list[dict]]:
+        if viewer_engine_id is None:
+            return [], []
+        ledger = getattr(game, "capital_negotiations", None)
+        if ledger is None:
+            return [], []
+        awaiting = [
+            self._capital_negotiation_payload(negotiation, game, viewer_engine_id)
+            for negotiation in ledger.awaiting(viewer_engine_id)
+        ]
+        mine = [
+            self._capital_negotiation_payload(negotiation, game, viewer_engine_id)
+            for negotiation in ledger.for_player(viewer_engine_id)
+        ]
+        return awaiting, mine
+
+    def _send_capital_negotiation_push(
+        self,
+        room,
+        engine_player_id: int,
+        result: str,
+        negotiation: CapitalOrderNegotiation,
+        *,
+        from_name: str,
+        settlement: dict | None = None,
+    ) -> None:
+        lobby_id = self._deal_lobby_id_for_engine_id(room, engine_player_id)
+        if not lobby_id:
+            return
+        payload = {
+            "type": "capital_negotiation",
+            "result": result,
+            "negotiation_id": negotiation.negotiation_id,
+            "from": from_name,
+            "negotiation": self._capital_negotiation_payload(
+                negotiation, room.game, engine_player_id
+            ),
+        }
+        if settlement:
+            payload.update({
+                key: value for key, value in settlement.items()
+                if key != "type"
+            })
+        self._thread_safe_send(room.room_id, lobby_id, payload)
+        self._thread_safe_send(
+            room.room_id,
+            lobby_id,
+            self.get_game_state(room.room_id, lobby_id) or {},
+        )
 
     def _leases_detail_for_player(
         self,
@@ -3970,6 +4315,9 @@ class GameManager:
         deals_awaiting_me, my_deals = self._deal_state_for_viewer(
             game, viewer_engine_id, player_names
         )
+        capital_negotiations_awaiting_me, my_capital_negotiations = (
+            self._capital_negotiation_state_for_viewer(game, viewer_engine_id)
+        )
 
         return {
             "type": "game_state",
@@ -4011,6 +4359,8 @@ class GameManager:
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "deals_awaiting_me": deals_awaiting_me,
             "my_deals": my_deals,
+            "capital_negotiations_awaiting_me": capital_negotiations_awaiting_me,
+            "my_capital_negotiations": my_capital_negotiations,
             "price_history": [
                 {"year": s.year, "season": s.season,
                  "prices": {
@@ -5265,6 +5615,14 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_order":
                     await manager._handle_capital_order(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_negotiation_respond":
+                    await manager._handle_capital_negotiation_respond(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_negotiation_accept":
+                    await manager._handle_capital_negotiation_accept(
                         room_id, player_id, msg, websocket
                     )
 

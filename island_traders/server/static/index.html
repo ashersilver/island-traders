@@ -557,6 +557,40 @@ button:active{transform:scale(.97)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 .popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+.cap-order-dialog{width:min(980px,96vw)}
+.cap-order-item{font-weight:700;margin-bottom:.7rem;color:var(--heading)}
+.cap-order-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:.8rem;align-items:start}
+.cap-order-options{display:grid;gap:.55rem}
+.cap-option{display:grid;grid-template-columns:24px minmax(0,1fr) 90px;gap:.55rem;align-items:start;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.14);padding:.65rem}
+.cap-option input[type=checkbox]{margin-top:.2rem}
+.cap-option input[type=number]{max-width:84px;margin:.25rem 0 0}
+.cap-option-title{font-weight:700;color:var(--heading);font-size:.84rem}
+.cap-option-copy{color:var(--dim);font-size:.74rem;line-height:1.35;margin-top:.12rem}
+.cap-option-cost{text-align:right;color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums;font-size:.78rem}
+.cap-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.45rem}
+.cap-controls select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.3rem}
+.cap-inline{display:flex;gap:.35rem;align-items:center;color:var(--text);font-size:.75rem}
+.cap-inline input{margin:0}
+.cap-info-btn{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--accent);background:rgba(10,189,227,.09);color:var(--accent);font-size:.68rem;font-weight:800;padding:0;margin-left:.25rem}
+.cap-info{display:none;margin-top:.45rem;border:1px solid rgba(116,167,255,.36);background:rgba(116,167,255,.08);color:#c9ddff;border-radius:6px;padding:.45rem;font-size:.72rem;line-height:1.35}
+.cap-info.active{display:block}
+.cap-quote{border:1px solid rgba(246,185,59,.38);background:rgba(246,185,59,.07);border-radius:8px;padding:.7rem;display:grid;gap:.35rem}
+.cap-quote-row{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:.5rem;align-items:baseline;padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.78rem}
+.cap-quote-row:last-child{border-bottom:0}
+.cap-quote-label{color:var(--dim)}
+.cap-quote-value{text-align:right;color:var(--text);font-weight:800;font-variant-numeric:tabular-nums}
+.cap-quote-row.total{border-top:1px solid rgba(246,185,59,.4);border-bottom:0;margin-top:.25rem;padding-top:.55rem}
+.cap-quote-row.total .cap-quote-label{color:var(--heading);font-weight:800}
+.cap-quote-row.total .cap-quote-value{color:var(--gold);font-size:1rem}
+.cap-quote-row.contingent .cap-quote-label,.cap-quote-row.contingent .cap-quote-value{color:var(--dim);font-size:.72rem}
+.cap-terms{border:1px solid var(--border);background:rgba(0,0,0,.14);border-radius:8px;margin-top:.65rem;padding:.7rem}
+.cap-terms h4{margin:0 0 .45rem;color:var(--accent);font-size:.82rem}
+.cap-terms ul{margin:0;padding-left:1rem;color:var(--dim);font-size:.73rem;line-height:1.45}
+@media(max-width:760px){
+  .cap-order-grid{grid-template-columns:1fr}
+  .cap-option{grid-template-columns:24px minmax(0,1fr)}
+  .cap-option-cost{text-align:left;grid-column:2}
+}
 
 /* ---- Non-blocking message layer (toasts + message modal) ----
    Native alert()/confirm()/prompt() block the JS main thread, which freezes
@@ -1488,35 +1522,93 @@ body.fx-off .ih-pins .pdot{animation:none}
 
 <!-- Capital Equipment Order form (#185) -->
 <div class="overlay" id="capital-order-overlay">
-  <div class="dialog">
+  <div class="dialog cap-order-dialog">
     <h3>Capital Equipment Order</h3>
-    <div id="cap-order-item" style="font-weight:600;margin-bottom:.6rem"></div>
-    <label style="display:block;margin:.4rem 0">Maintenance / warranty term
-      <select id="cap-order-term" oninput="updateCapOrderTotal()">
-        <option value="0">None</option>
-        <option value="1">1 year</option>
-        <option value="2">2 years</option>
-        <option value="3" selected>3 years</option>
-        <option value="4">4 years</option>
-        <option value="5">5 years</option>
-      </select>
-    </label>
-    <label style="display:block;margin:.4rem 0">
-      <input type="checkbox" id="cap-order-predictive" checked onchange="updateCapOrderTotal()"> Predictive Maintenance
-    </label>
-    <label style="display:block;margin:.4rem 0">Additional spares kits
-      <input type="number" id="cap-order-spares" min="0" value="0" oninput="updateCapOrderTotal()">
-    </label>
-    <label style="display:block;margin:.4rem 0">
-      <input type="checkbox" id="cap-order-expedited"> Expedited repair eligibility
-    </label>
-    <label style="display:block;margin:.4rem 0">
-      <input type="checkbox" id="cap-order-financing"> Apply for bank financing
-    </label>
-    <div id="cap-order-total" style="margin:.6rem 0;color:var(--accent)"></div>
+    <div id="cap-order-item" class="cap-order-item"></div>
+    <div class="cap-order-grid">
+      <div class="cap-order-options">
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-maintenance" checked onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Maintenance / warranty contract <button class="cap-info-btn" onclick="toggleCapOrderInfo('maintenance')" title="Show maintenance terms">i</button></div>
+            <div class="cap-option-copy">Prepaid repair cover using the #188 per-quarter Weibull failure model.</div>
+            <div class="cap-controls">
+              <select id="cap-order-term" oninput="updateCapOrderTotal()">
+                <option value="0">None</option>
+                <option value="1">1 year</option>
+                <option value="2">2 years</option>
+                <option value="3" selected>3 years</option>
+                <option value="4">4 years</option>
+                <option value="5">5 years</option>
+              </select>
+              <label class="cap-inline"><input type="checkbox" id="cap-order-predictive" checked onchange="updateCapOrderTotal()"> Predictive Maint.</label>
+            </div>
+            <div class="cap-info" id="cap-info-maintenance">Repair cost is roughly 35% of list price. Contract prices follow issue #188 and account for age, disasters, and sabotage risk.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-maint-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-guarantee" checked disabled>
+          <div>
+            <div class="cap-option-title">Manufacturer guarantee</div>
+            <div class="cap-option-copy">One season standard guarantee, no charge.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-spares-toggle" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Spares kits <button class="cap-info-btn" onclick="toggleCapOrderInfo('spares')" title="Show spares terms">i</button></div>
+            <div class="cap-option-copy">Each kit cuts one future repair by 50% when attached to this unit.</div>
+            <div class="cap-controls">
+              <input type="number" id="cap-order-spares" min="0" value="0" oninput="updateCapOrderTotal()">
+            </div>
+            <div class="cap-info" id="cap-info-spares">Spares cost 15% of list price per kit at order time. Building spares at failure costs 50% more.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-spares-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-expedited" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Expedited repair eligibility <button class="cap-info-btn" onclick="toggleCapOrderInfo('expedited')" title="Show expedited terms">i</button></div>
+            <div class="cap-option-copy">Allows fast repair after a failure when spares and air freight are available.</div>
+            <div class="cap-info" id="cap-info-expedited">Standard repair completes next season. Expedited repair needs attached spares plus air freight and is billed only at failure.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-expedite-cost">Contingent</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-financing" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Apply for bank financing <button class="cap-info-btn" onclick="toggleCapOrderInfo('financing')" title="Show financing terms">i</button></div>
+            <div class="cap-option-copy">Request a capital loan for the agreed order total.</div>
+            <div class="cap-info" id="cap-info-financing">Loan application amount equals the agreed total. Bank/manufacturer incentives are internal and not displayed in buyer pricing.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cap-quote" id="cap-order-total"></div>
+        <div class="cap-terms">
+          <h4>Standard Terms</h4>
+          <ul>
+            <li>Repair is approximately 35% of list price.</li>
+            <li>#188 uses per-quarter Weibull failure, adjusted by disasters and sabotage.</li>
+            <li>Each spares kit reduces one repair by 50%.</li>
+            <li>Spares built at failure cost 50% more.</li>
+            <li>Standard repair completes next season.</li>
+            <li>Expedited repair needs spares plus air freight.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
     <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
       <button onclick="closeCapitalOrder()">Cancel</button>
-      <button onclick="submitCapitalOrder()">Send order</button>
+      <button onclick="submitCapitalOrder()">Send offer</button>
     </div>
   </div>
 </div>
@@ -2720,8 +2812,11 @@ function displayRoles(roles, short=false) {
 }
 
 // Capital Equipment Order form (#185): collects order conditions and sends a
-// `capital_order` message; the server records them on the delivered unit.
+// `capital_order` offer. The server routes it to the Manufacturer review flow.
 let capOrderItem = null;
+function moneyDp(value) {
+  return `${(Math.round((Number(value) || 0) * 100) / 100).toFixed(2)} Dp`;
+}
 function openCapitalOrder(itemId) {
   const me = gameState && gameState.players[myPlayerIdx];
   const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
@@ -2732,13 +2827,24 @@ function openCapitalOrder(itemId) {
     : `${it.delivery_seasons}-season delivery`;
   document.getElementById('cap-order-item').textContent =
     `${it.name} — ${it.cost} Dp · ${arrival}`;
+  document.getElementById('cap-order-maintenance').checked = true;
+  document.getElementById('cap-order-term').value = '3';
+  document.getElementById('cap-order-predictive').checked = true;
+  document.getElementById('cap-order-spares-toggle').checked = false;
   document.getElementById('cap-order-spares').value = 0;
+  document.getElementById('cap-order-expedited').checked = false;
+  document.getElementById('cap-order-financing').checked = false;
+  document.querySelectorAll('#capital-order-overlay .cap-info').forEach(el => el.classList.remove('active'));
   updateCapOrderTotal();
   document.getElementById('capital-order-overlay').classList.add('active');
 }
 function closeCapitalOrder() {
   document.getElementById('capital-order-overlay').classList.remove('active');
   capOrderItem = null;
+}
+function toggleCapOrderInfo(key) {
+  const el = document.getElementById(`cap-info-${key}`);
+  if (el) el.classList.toggle('active');
 }
 // "Purchase Equipment" action → pick a buildable item, then open the #185/#188
 // order form for it (term contract, financing, etc.). Replaces the legacy
@@ -2776,29 +2882,78 @@ const CAP_CONTRACT_PER_100 = {
 };
 function updateCapOrderTotal() {
   if (!capOrderItem) return;
-  const term = parseInt(document.getElementById('cap-order-term').value, 10);
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const termEl = document.getElementById('cap-order-term');
+  const predictiveEl = document.getElementById('cap-order-predictive');
+  termEl.disabled = !wantsMaintenance;
+  predictiveEl.disabled = !wantsMaintenance;
+  const term = wantsMaintenance ? parseInt(termEl.value, 10) : 0;
   const predictive = document.getElementById('cap-order-predictive').checked;
-  const kits = Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10));
+  const sparesToggle = document.getElementById('cap-order-spares-toggle');
+  const sparesInput = document.getElementById('cap-order-spares');
+  if (parseInt(sparesInput.value || '0', 10) > 0) sparesToggle.checked = true;
+  sparesInput.disabled = !sparesToggle.checked;
+  const kits = sparesToggle.checked
+    ? Math.max(0, parseInt(sparesInput.value || '0', 10)) : 0;
   const rate = CAP_CONTRACT_PER_100[term];
   const contract = rate
     ? Math.round((predictive ? rate[1] : rate[0]) * capOrderItem.cost / 100 * 100) / 100 : 0;
   const sparesCost = Math.round(0.15 * capOrderItem.cost * kits * 100) / 100;
   const total = Math.round((capOrderItem.cost + contract + sparesCost) * 100) / 100;
-  document.getElementById('cap-order-total').textContent =
-    `Upfront: ${total} Dp (equipment ${capOrderItem.cost} + maintenance ${contract} + spares ${sparesCost})`;
+  const expeditedEstimate = Math.round(0.15 * capOrderItem.cost * 100) / 100;
+  const maintLabel = term
+    ? `${term}yr contract${predictive ? ' · Predictive Maint.' : ''}`
+    : 'No maintenance contract';
+  document.getElementById('cap-maint-cost').textContent = moneyDp(contract);
+  document.getElementById('cap-spares-cost').textContent =
+    kits ? `${moneyDp(sparesCost)} (${kits}x)` : moneyDp(0);
+  document.getElementById('cap-expedite-cost').textContent =
+    document.getElementById('cap-order-expedited').checked
+      ? `~${moneyDp(expeditedEstimate)} at failure`
+      : 'Optional';
+  document.getElementById('cap-order-total').innerHTML = `
+    <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">${esc(maintLabel)}</div><div class="cap-quote-value">${moneyDp(contract)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Manufacturer guarantee</div><div class="cap-quote-value">${moneyDp(0)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits}</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
+    <div class="cap-quote-row total"><div class="cap-quote-label">Recommended total</div><div class="cap-quote-value">${moneyDp(total)}</div></div>
+    <div class="cap-quote-row contingent"><div class="cap-quote-label">+ Expedited repair, if eligible</div><div class="cap-quote-value">~${moneyDp(expeditedEstimate)}</div></div>
+  `;
 }
 function submitCapitalOrder() {
   if (!capOrderItem) return;
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const wantsSpares = document.getElementById('cap-order-spares-toggle').checked;
   sendWsMessage({
     type: 'capital_order',
     item_id: capOrderItem.item_id,
-    maintenance_term_years: parseInt(document.getElementById('cap-order-term').value, 10),
-    predictive_maintenance: document.getElementById('cap-order-predictive').checked,
-    spares_kits: Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)),
+    maintenance_term_years: wantsMaintenance ? parseInt(document.getElementById('cap-order-term').value, 10) : 0,
+    predictive_maintenance: wantsMaintenance && document.getElementById('cap-order-predictive').checked,
+    spares_kits: wantsSpares ? Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)) : 0,
     expedited_eligible: document.getElementById('cap-order-expedited').checked,
     financing: document.getElementById('cap-order-financing').checked,
   });
   closeCapitalOrder();
+}
+
+function capitalNegotiationLabel(n) {
+  if (!n) return 'capital order';
+  const item = n.name || n.item_id || 'capital equipment';
+  const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
+  return `${item} (${moneyDp(total)})`;
+}
+function onCapitalNegotiationAck(msg) {
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const type = msg.result === 'declined' ? 'error'
+    : msg.result === 'countered' ? 'info' : 'success';
+  showToast(`Capital order ${msg.result || 'updated'}: ${label}`, { type });
+  addLog(`📦 Capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
+}
+function onCapitalNegotiationPush(msg) {
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const from = msg.from ? `${msg.from}: ` : '';
+  showToast(`${from}capital order ${msg.result || 'updated'}: ${label}`, { type: 'info' });
+  addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, 'info');
 }
 
 // UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
@@ -3813,6 +3968,12 @@ function handleMessage(msg) {
         + (msg.spares_kits ? ` (+${msg.spares_kits} spares kit(s))` : '')
         + financeNote + '.', 'ok');
       showToast(`Order placed: ${msg.name}`);
+      break;
+    case 'capital_negotiation':
+      onCapitalNegotiationPush(msg);
+      break;
+    case 'capital_negotiation_ack':
+      onCapitalNegotiationAck(msg);
       break;
     case 'game_state':
       gameState = msg;

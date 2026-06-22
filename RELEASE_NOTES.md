@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.1`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.2`.
+
+- **Capital order negotiation + enriched modal (#185)** — `capital_order` now creates a
+  dedicated Manufacturer-review negotiation instead of settling instantly. Manufacturers can
+  accept, counter, or decline through `capital_negotiation_respond`; buyers accept counters
+  through `capital_negotiation_accept`; accepted negotiations settle through the existing
+  delivery, financing, and 2% referral path exactly once. AI Manufacturers auto-accept offers
+  at or above the recommended total and otherwise counter at the recommendation. `game_state`
+  now exposes `capital_negotiations_awaiting_me` and `my_capital_negotiations` for Claude's
+  review/counter UI. The order modal now shows line-item pricing, per-option costs and
+  descriptions, standard terms, and info popovers while keeping the internal referral hidden
+  from the buyer-facing form.
 
 - **Capital Orders II — financing loan path + 2% manufacturer referral (#185/#188)** —
   a financed capital order (`financing: true`) now borrows the upfront from the Bank via

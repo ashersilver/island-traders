@@ -7,6 +7,7 @@ from ..models.player import Player
 from ..models.equity import CapTable, AUCTIONED_SHARES
 from ..models.market import Market
 from ..models.deal import DealLedger
+from ..models.capital_negotiation import CapitalNegotiationLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
@@ -188,6 +189,7 @@ class Game:
         self.players: list[Player] = []
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
+        self.capital_negotiations: CapitalNegotiationLedger | None = None
         self.loan_ledger: LoanLedger | None = None
         self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
@@ -204,6 +206,7 @@ class Game:
     def setup(self) -> None:
         self.market = Market()
         self.ledger = DealLedger()
+        self.capital_negotiations = CapitalNegotiationLedger()
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
