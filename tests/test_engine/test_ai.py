@@ -1,3 +1,5 @@
+import pytest
+
 from island_traders.engine.ai import AIStrategy
 from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
@@ -6,8 +8,14 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.training import TrainingRegistry
+from island_traders.models.equity import AUCTIONED_SHARES, CapTable
+from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
+from island_traders.engine.game import Game, GameConfig, PlayerSpec
+from island_traders.simulation.runner import _SilentIO
+from island_traders.constants import STARTING_DOLLOPS, WORKPLACE_RISK
 
 
 def make_player(pid, name, role_names, dollops=300.0, is_human=False):
@@ -23,6 +31,7 @@ def make_player(pid, name, role_names, dollops=300.0, is_human=False):
 def test_banker_ai_does_not_auto_charge_humans_or_itself_for_insurance():
     ai = AIStrategy()
     banker = make_player(1, "Banker AI", ["Banker", "Manufacturer"])
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.ACTUARY.value)
     human = make_player(2, "Human", ["Farmer"], is_human=True)
     miner_ai = make_player(3, "Miner AI", ["Miner"])
 
@@ -41,6 +50,68 @@ def test_banker_ai_does_not_auto_charge_humans_or_itself_for_insurance():
     assert human.insurance_policies == []
     assert banker.insurance_policies == []
     assert any("Miner AI" in action and "insurance" in action for action in actions)
+
+
+def test_workplace_risk_retune_is_survivable_for_productive_roles():
+    assert WORKPLACE_RISK["Miner"]["fatality_rate"] <= 0.025
+    assert WORKPLACE_RISK["Miner"]["injury_rate"] <= 0.060
+    assert WORKPLACE_RISK["Farmer"]["fatality_rate"] <= 0.012
+    assert WORKPLACE_RISK["Manufacturer"]["fatality_rate"] <= 0.018
+    assert WORKPLACE_RISK["Educator"]["fatality_rate"] > 0.0
+
+
+def test_high_risk_ai_buys_workplace_insurance_when_solvent():
+    ai = AIStrategy()
+    market = Market()
+    miner = make_player(1, "Miner AI", ["Miner"], dollops=500.0)
+    banker = make_player(2, "Banker AI", ["Banker"], dollops=500.0)
+    banker.workforce.add_workers(
+        1, training_level=1, profession=Profession.ACTUARY.value
+    )
+
+    actions = ai.take_turn(
+        miner,
+        market,
+        [miner, banker],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    policy_types = {policy.policy_type for policy in miner.insurance_policies}
+    assert {"life", "medical"} <= policy_types
+    assert any("bought life insurance" in action for action in actions)
+
+
+def test_ai_requests_replacement_training_for_staffing_deficit():
+    ai = AIStrategy()
+    market = Market()
+    training = TrainingRegistry()
+    miner = make_player(1, "Miner AI", ["Miner"], dollops=800.0)
+    educator = make_player(2, "Educator AI", ["Educator"], dollops=800.0)
+    miner.workforce.workers.clear()
+    miner.workforce.add_workers(5, profession=Profession.UNSKILLED.value)
+
+    actions = ai.take_turn(
+        miner,
+        market,
+        [miner, educator],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        training_registry=training,
+    )
+
+    requests = training.active_for_player(miner.player_id)
+    assert requests
+    assert any(req.target_profession == Profession.MINER.value for req in requests)
+    assert any("requested replacement training" in action for action in actions)
 
 
 def test_ai_keeps_required_input_reserve_when_listing_outputs():
@@ -89,13 +160,13 @@ def test_ai_produces_multiple_runs_when_inputs_available():
     )
 
     assert any(
-        "80x Ore" in action and "40x Metal" in action and "80x Oil" in action
+        "80x Ore" in action and "20x Metal" in action and "80x Oil" in action
         for action in actions
     )
     summary = market.market_summary()
-    assert summary[ResourceType.ORE.value]["ask_quantity"] == 80
-    assert summary[ResourceType.METAL.value]["ask_quantity"] == 40
-    assert summary[ResourceType.OIL.value]["ask_quantity"] == 82
+    assert summary[ResourceType.ORE.value]["ask_quantity"] == 78
+    assert summary[ResourceType.METAL.value]["ask_quantity"] == 20
+    assert summary[ResourceType.OIL.value]["ask_quantity"] == 81
 
 
 def test_ai_places_bid_for_missing_required_inputs():
@@ -118,7 +189,45 @@ def test_ai_places_bid_for_missing_required_inputs():
 
     bids = market.available_bids(ResourceType.FARM_MACHINERY)
     assert bids
-    assert bids[0].remaining >= 1
+    assert bids[0].remaining == 1
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert ResourceType.GRAIN in farmer.inventory.amounts
+
+
+def test_farmer_ai_packages_food_for_visible_human_demand():
+    ai = AIStrategy()
+    market = Market()
+    farmer = make_player(1, "Farmer AI", ["Farmer"], dollops=30.0)
+    buyer = make_player(2, "Human Buyer", ["Transporter"], dollops=500.0, is_human=True)
+    farmer.add_capital("farmer.industrial_kitchen")
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(
+        1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value
+    )
+    farmer.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    farmer.receive_resources(ResourceType.GRAIN, 3)
+    farmer.receive_resources(ResourceType.PRODUCE, 3)
+    farmer.receive_resources(ResourceType.FISH, 3)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    farmer.receive_resources(ResourceType.OIL, 1)
+    bid_price = round(market.current_price(ResourceType.FOOD) * 1.6, 2)
+    market.post_bid(buyer, ResourceType.FOOD, bid_price, 3)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [farmer, buyer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    assert buyer.inventory.get(ResourceType.FOOD) == 3
+    assert farmer.dollops == pytest.approx(30.0 + bid_price * 3)
+    assert any("produced" in action and "Food" in action for action in actions)
 
 
 def test_transporter_ai_lists_passenger_seats_after_production():
@@ -208,6 +317,69 @@ def test_ai_banker_offers_loan_to_capital_short_ai_borrower():
     assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
 
 
+def test_ai_banker_originates_working_capital_loan_to_healthy_ai_borrower():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Banker AI", ["Banker"], dollops=100.0)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=300.0)
+
+    actions = ai.take_turn(
+        banker,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert len(farmer_loans) == 1
+    loan = farmer_loans[0]
+    assert loan.principal >= 50.0
+    assert loan.interest_rate == round(loan.posted_at_issue + 0.02, 4)
+    assert loan.own_committed > 0
+    assert loan.external_funded > 0
+    assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_banker_originates_loans_in_normal_all_ai_game():
+    specs = [
+        PlayerSpec(
+            name=role_name,
+            role_names=[role_name],
+            is_human=False,
+            starting_dollops=STARTING_DOLLOPS,
+        )
+        for role_name in ROLES
+    ]
+    game = Game(
+        GameConfig(player_specs=specs, num_years=1, starting_dollops=STARTING_DOLLOPS),
+        _SilentIO(),
+    )
+    game.setup()
+    summary = game.run()
+
+    customer_loans = [
+        loan for loan in game.loan_ledger.all_loans()
+        if loan.lender_id >= 0 and loan.borrower_id != loan.lender_id
+    ]
+    assert summary.winner is not None
+    assert customer_loans
+    assert len([
+        loan for loan in customer_loans
+        if loan.status == LoanStatus.ACTIVE
+    ]) <= 2
+
+
 def test_ai_banker_does_not_offer_loan_when_reserve_short():
     ai = AIStrategy()
     market = Market()
@@ -291,6 +463,72 @@ def test_ai_borrower_accepts_loan_when_capital_short():
     assert farmer_loans
     assert farmer.dollops > 0
     assert any("issued Loan" in action and "Farmer AI" in action for action in actions)
+
+
+def test_ai_borrower_can_take_human_banker_loan_when_capital_short():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Human Banker", ["Banker"], dollops=100.0, is_human=True)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.BANKER.value)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans
+    assert any("Human Banker issued Loan" in action for action in actions)
+
+
+def test_ai_recapitalizes_with_unissued_shares_when_loan_unavailable():
+    ai = AIStrategy()
+    market = Market()
+    loan_ledger = LoanLedger()
+    banker = make_player(1, "Tapped Banker", ["Banker"], dollops=0.0)
+    farmer = make_player(2, "Farmer AI", ["Farmer"], dollops=0.0)
+    farmer.personal_cash = 500.0
+    farmer.cap_table = CapTable.new_with_majority(str(farmer.player_id))
+    farmer.holdings = {str(farmer.player_id): AUCTIONED_SHARES}
+    money0 = farmer.dollops + farmer.personal_cash
+
+    actions = ai.take_turn(
+        farmer,
+        market,
+        [banker, farmer],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+        loan_ledger,
+    )
+
+    farmer_loans = [
+        loan for loan in loan_ledger.active_loans_for(farmer.player_id)
+        if loan.borrower_id == farmer.player_id
+    ]
+    assert farmer_loans == []
+    assert farmer.dollops > 0
+    assert farmer.personal_cash < 500.0
+    assert farmer.dollops + farmer.personal_cash == money0
+    assert farmer.cap_table.held_by(str(farmer.player_id)) > AUCTIONED_SHARES
+    assert farmer.cap_table.unissued() < 100 - AUCTIONED_SHARES
+    assert any("recapitalized" in action for action in actions)
 
 
 def test_ai_rollover_loan_when_cannot_repay_at_maturity():

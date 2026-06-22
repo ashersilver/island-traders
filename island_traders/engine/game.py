@@ -7,34 +7,60 @@ from ..models.player import Player
 from ..models.equity import CapTable, AUCTIONED_SHARES
 from ..models.market import Market
 from ..models.deal import DealLedger
+from ..models.capital_negotiation import CapitalNegotiationLedger
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
-from ..models.training import TrainingRegistry, TrainingRequest, TrainingStatus
+from ..models.training import (
+    TrainingRegistry,
+    TrainingRequest,
+    TrainingStatus,
+    campus_has_technical_workshop,
+    settling_seasons_on_return,
+)
 from ..models.staffing import StaffingRegistry, StaffingContract, StaffingStatus
 from ..models.workforce import Workforce, Worker
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
+from ..engine.telemetry import ResourceFlowTelemetry
 from ..engine.turn import TurnManager
+from ..engine.engineering import effective_capital_service_life
 from ..constants import (
     SEASONS, STARTING_DOLLOPS, STARTING_INVENTORY,
     STARTING_WORKFORCE, STARTING_TRAINED_FRACTION,
     STARTING_WORKERS_BY_PROFESSION,
     WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
     DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
+    EQUIPMENT_FAILURE_PROB_BY_QUARTER,
+    EQUIPMENT_FAILURE_EVENT_MULTIPLIER,
+    EQUIPMENT_FAILURE_REPAIR_FRACTION,
+    EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+    EQUIPMENT_REPAIR_AIR_FREIGHT,
+    EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_WARRANTY_ANNUAL_RATE,
     BASE_BIRTH_RATE,
+    QOL_BIRTH_RATE_MIN, QOL_BIRTH_RATE_MAX,
+    QOL_EMIGRATION_THRESHOLD, QOL_EMIGRATION_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
+    PAYROLL_WAGE_BY_BAND,
+    HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
+from .qol import (
+    compute_qol,
+    food_coverage,
+    health_coverage,
+    mitigated_pollution_index,
+)
 
-SAVE_VERSION = 5
+SAVE_VERSION = 7
 
 # Renamed resources: old save inventory key -> current key (2026-06-02).
 LEGACY_RESOURCE_IDS: dict[str, str] = {
@@ -76,6 +102,52 @@ def _migrate_capital_in_transit(raw: list[dict]) -> list[dict]:
     return migrated
 
 
+def _migrate_capital_units(pd: dict) -> dict[str, list]:
+    """Build per-unit capital records (#185 / #188) from a serialized player.
+
+    New saves carry ``capital_units`` directly; older saves are migrated from
+    the legacy aggregate dicts (counts + acquisition ticks, with warranty /
+    failed flags) so existing games load unchanged.
+    """
+    from ..models.player import CapitalUnit
+
+    raw_units = pd.get("capital_units")
+    if raw_units is not None:
+        out: dict[str, list] = {}
+        for item_id, units in raw_units.items():
+            current_id = _current_capital_item_id(str(item_id))
+            out.setdefault(current_id, []).extend(
+                CapitalUnit.from_dict({**u, "item_id": current_id}) for u in units
+            )
+        return out
+
+    # Legacy migration from the old aggregate dicts.
+    inventory = _migrate_capital_inventory(pd.get("capital_inventory", {}))
+    ticks = _migrate_capital_ticks(pd.get("capital_acquired_ticks", {}))
+    warranties = _migrate_capital_inventory(pd.get("capital_warranties", {}))
+    failed = _migrate_capital_inventory(pd.get("failed_capital", {}))
+    out: dict[str, list] = {}
+    seq = 0
+    for item_id, count in inventory.items():
+        item_ticks = list(ticks.get(item_id, []))
+        if len(item_ticks) < count:
+            item_ticks.extend([0] * (count - len(item_ticks)))
+        n_warranty = warranties.get(item_id, 0)
+        n_failed = failed.get(item_id, 0)
+        units: list = []
+        for i in range(count):
+            seq += 1
+            units.append(CapitalUnit(
+                item_id=item_id,
+                acquired_tick=int(item_ticks[i]),
+                unit_id=seq,
+                warranty=(i < n_warranty),
+                status=("failed" if i >= count - n_failed else "in_service"),
+            ))
+        out[item_id] = units
+    return out
+
+
 @dataclass
 class PlayerSpec:
     name: str
@@ -98,6 +170,15 @@ class GameSummary:
     final_rankings: list[tuple[Player, float]]
     deal_count: int
     price_history: list
+    # Total Dollops in circulation, snapshotted once per season (index 0 is the
+    # opening balance before any season runs).  Surfaced so calibration can see
+    # whether the economy inflates or starves as faucets/sinks change — the
+    # formula market mints/burns cash, so the money supply is otherwise
+    # unanchored.  See requirements/economics-review-2026-06-10.md (P5 / #73).
+    money_supply: list[float] = field(default_factory=list)
+    # Dynamic supply-chain liveness (B1/B2, #73): a ResourceFlowTelemetry with
+    # per-resource produced/consumed/traded volumes and input-starvation counts.
+    resource_flow: "ResourceFlowTelemetry | None" = None
 
 
 class Game:
@@ -108,6 +189,7 @@ class Game:
         self.players: list[Player] = []
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
+        self.capital_negotiations: CapitalNegotiationLedger | None = None
         self.loan_ledger: LoanLedger | None = None
         self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
@@ -115,10 +197,16 @@ class Game:
         self.turn_manager: TurnManager | None = None
         self._resume_year: int = 0
         self._resume_season: int = 0
+        # Per-season total Dollops in circulation; see GameSummary.money_supply.
+        self._money_supply_history: list[float] = []
+        # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
+        # market + production engine in setup().
+        self.resource_flow = ResourceFlowTelemetry()
 
     def setup(self) -> None:
         self.market = Market()
         self.ledger = DealLedger()
+        self.capital_negotiations = CapitalNegotiationLedger()
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
@@ -157,7 +245,8 @@ class Game:
             )
 
             # Equity scaffolding (Phase 1/2b): every player owns a 60% majority
-            # of their own island (player_id == island id); 40% public float.
+            # of their own island (player_id == island id); 40% remains
+            # authorized but unissued.
             # Additive — the pure engine keeps its single-pool economy and
             # total_wealth scoring; the web path (app.py) applies the full flip
             # (treasury reseed, bid->personal cash, shareholder loans).
@@ -220,20 +309,101 @@ class Game:
         )
         self.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(self.market, self.ledger)
+        trading = TradingEngine(self.market, self.ledger, self.players)
+        # Wire dynamic supply-chain liveness telemetry (B1/B2, #73) through the
+        # market + production engine so the simulation runner can read it.
+        self.market.telemetry = self.resource_flow
+        production.telemetry = self.resource_flow
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
         )
 
+    def _total_money_supply(self) -> float:
+        """Total liquid Dollops in circulation: every island's operating
+        treasury, every investor's personal cash, and resident household cash.
+        Loans, payroll, and player trades only move Dollops between these
+        balances, so this is conserved except where the formula market mints
+        (sell) or burns (buy) cash."""
+        return sum(p.dollops + p.personal_cash + p.household_cash for p in self.players)
+
+    def _seasonal_payroll_due(self, player: Player) -> float:
+        return round(
+            sum(
+                PAYROLL_WAGE_BY_BAND.get(band_of(worker.profession).value, 0.0)
+                for worker in player.workforce.active_workers
+            ),
+            2,
+        )
+
+    def _process_payroll(self, year: int, season: int) -> None:
+        """Charge per-season wages for active home workers.
+
+        Payroll moves Dollops from the island treasury to resident household
+        cash. Trainees and contracted-away staff are excluded because they are
+        not available to the home island. Shortfalls are logged but do not add
+        a layoff/morale rule in this pass.
+        """
+        _ = (year, season)  # kept for log-hook symmetry with other processors
+        for player in self.players:
+            due = self._seasonal_payroll_due(player)
+            if due <= 0:
+                continue
+            paid = min(player.dollops, due)
+            player.dollops = round(player.dollops - paid, 2)
+            player.household_cash = round(player.household_cash + paid, 2)
+            if paid >= due:
+                self.io.print(
+                    f"[PAYROLL] {player.name}: paid {CURRENCY_SYMBOL}{paid:.2f} "
+                    f"to household wages."
+                )
+            else:
+                shortfall = round(due - paid, 2)
+                self.io.print(
+                    f"[PAYROLL SHORTFALL] {player.name}: paid "
+                    f"{CURRENCY_SYMBOL}{paid:.2f} of {CURRENCY_SYMBOL}{due:.2f}; "
+                    f"{CURRENCY_SYMBOL}{shortfall:.2f} unpaid."
+                )
+
+    def _process_household_activity_stimulus(self, year: int, season: int) -> None:
+        """Mint a small household income floor tied to active local employment.
+
+        Payroll recirculates island treasury, but playtest calibration still
+        showed a large money-supply drain from maintenance, external funding,
+        and other non-player sinks. This household-side faucet keeps consumer
+        demand funded without handing operating cash directly to producers.
+        """
+        _ = (year, season)
+        rate = HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA
+        if rate <= 0:
+            return
+        for player in self.players:
+            if player.workforce.active_count <= 0:
+                continue
+            amount = round(max(0, player.population) * rate, 2)
+            if amount <= 0:
+                continue
+            player.household_cash = round(player.household_cash + amount, 2)
+            self.io.print(
+                f"[HOUSEHOLDS] {player.name}: received "
+                f"{CURRENCY_SYMBOL}{amount:.2f} in local activity income."
+            )
+
     def run(self) -> GameSummary:
+        # Opening balance, before any season runs (resumed games append from
+        # wherever they left off — the series stays monotonic in season order).
+        if not self._money_supply_history:
+            self._money_supply_history.append(round(self._total_money_supply(), 2))
         for year in range(self._resume_year, self.config.num_years):
+            self._reset_annual_qol_accumulators()
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
                 self._process_training_returns(year, season_index)
                 self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
+                self._process_payroll(year, season_index)
+                self._process_household_activity_stimulus(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
                 )
@@ -252,6 +422,7 @@ class Game:
                     except Exception:
                         pass
                 self.turn_manager.run_season(year, season_index, event_results)
+                self._advance_temporary_absences()
                 cb = getattr(self, "after_season", None)
                 if cb:
                     try:
@@ -259,6 +430,9 @@ class Game:
                     except Exception:
                         pass
                 self._auto_save(year, season_index + 1)
+                self._money_supply_history.append(
+                    round(self._total_money_supply(), 2)
+                )
 
             prices = self.market.current_prices()
             year_end_tick = year * len(SEASONS) + (len(SEASONS) - 1)
@@ -266,27 +440,94 @@ class Game:
                 p.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick)
                 for p in self.players
             ]
-            max_wealth = max(wealthies) if wealthies else 1.0
 
             for player, wealth in zip(self.players, wealthies):
                 player.record_year_wealth(
                     prices, self.loan_ledger, CAPITAL_CATALOGUE, year_end_tick
                 )
-                wealth_ratio = wealth / max_wealth if max_wealth > 0 else 0.0
-                birth_rate = BASE_BIRTH_RATE * max(0.0, 1.0 - wealth_ratio)
-                new_people = max(0, round(player.population * birth_rate))
-                if new_people:
-                    player.population += new_people
-                    self.io.print(
-                        f"  [Population] {player.name}: +{new_people} people born  "
-                        f"(island population now {player.population}; "
-                        f"{player.available_unskilled} recruitable)"
-                    )
+            self._process_year_end_qol_and_population(year, prices, year_end_tick)
 
             self.io.print(self._year_end_summary(year, prices, year_end_tick))
 
         Path(self.save_path).unlink(missing_ok=True)
         return self.compute_summary()
+
+    def _reset_annual_qol_accumulators(self) -> None:
+        for player in self.players:
+            player._oil_consumed_this_year = 0
+            player._food_demanded_this_year = 0
+            player._food_bought_this_year = 0
+            player._health_demanded_this_year = 0
+            player._health_bought_this_year = 0
+
+    def _process_year_end_qol_and_population(
+        self,
+        year: int,
+        prices: dict[ResourceType, float],
+        year_end_tick: int,
+    ) -> None:
+        _ = (prices, year_end_tick)
+        qol_scores: dict[int, float] = {}
+        for player in self.players:
+            fc = food_coverage(
+                getattr(player, "_food_demanded_this_year", 0),
+                getattr(player, "_food_bought_this_year", 0),
+            )
+            hc = health_coverage(
+                getattr(player, "_health_demanded_this_year", 0),
+                getattr(player, "_health_bought_this_year", 0),
+            )
+            pi = mitigated_pollution_index(
+                getattr(player, "_oil_consumed_this_year", 0),
+                player.population,
+                hc,
+            )
+            qol = compute_qol(fc, hc, pi)
+            player._qol_score = round(qol, 3)
+            player._food_coverage = round(fc, 3)
+            player._health_coverage = round(hc, 3)
+            player._pollution_index = round(pi, 3)
+            player._qol_observed_years = getattr(player, "_qol_observed_years", 0) + 1
+            qol_scores[player.player_id] = qol
+            self.io.print(
+                f"  [QoL] {player.name}: food={fc:.0%} health={hc:.0%} "
+                f"pollution={pi:.0%} -> QoL {qol:.2f}"
+            )
+
+        for player in self.players:
+            qol = qol_scores[player.player_id]
+            birth_modifier = QOL_BIRTH_RATE_MIN + qol * (
+                QOL_BIRTH_RATE_MAX - QOL_BIRTH_RATE_MIN
+            )
+            birth_rate = BASE_BIRTH_RATE * birth_modifier
+            new_people = max(0, round(player.population * birth_rate))
+            if new_people:
+                player.population += new_people
+                self.io.print(
+                    f"  [Population] {player.name}: +{new_people} people born "
+                    f"(QoL {qol:.2f} -> rate {birth_rate:.3f}; "
+                    f"population now {player.population})"
+                )
+
+        if len(self.players) < 2:
+            return
+        mean_qol = sum(qol_scores.values()) / len(qol_scores)
+        best_player = max(self.players, key=lambda p: qol_scores[p.player_id])
+        for player in self.players:
+            if player is best_player:
+                continue
+            qol = qol_scores[player.player_id]
+            if mean_qol - qol >= QOL_EMIGRATION_THRESHOLD:
+                emigrants = max(1, round(player.population * QOL_EMIGRATION_RATE))
+                emigrants = min(emigrants, player.population - 1)
+                if emigrants > 0:
+                    player.population -= emigrants
+                    best_player.population += emigrants
+                    self.io.print(
+                        f"  [Emigration] {emigrants} people left {player.name} "
+                        f"(QoL {qol:.2f}) for {best_player.name} "
+                        f"(QoL {qol_scores[best_player.player_id]:.2f})."
+                    )
 
     def _process_capital_maintenance(self, year: int, season: int) -> None:
         """Expire end-of-life capital, then charge per-season maintenance.
@@ -309,6 +550,10 @@ class Game:
         for player in self.players:
             # Reset transient unmaintained state at the start of the season.
             player.unmaintained_capital = {}
+            self._complete_capital_repairs(player, current_tick, catalogue)
+            self._attempt_pending_capital_repairs(player, current_tick, catalogue)
+            if season == 0:
+                self._process_equipment_warranty_premiums(player, catalogue)
 
             # 1) Expiry — remove units past their service life (oldest first).
             for item_id in list(player.capital_inventory.keys()):
@@ -316,10 +561,10 @@ class Game:
                 if not item or item.service_life_seasons <= 0:
                     continue
                 ticks = player.capital_acquired_ticks.get(item_id, [])
-                expired = sum(
-                    1 for t in ticks
-                    if current_tick - t >= item.service_life_seasons
+                service_life = effective_capital_service_life(
+                    player, item.service_life_seasons
                 )
+                expired = sum(1 for t in ticks if current_tick - t >= service_life)
                 if expired > 0:
                     player.remove_capital(item_id, expired)
                     self.io.print(
@@ -355,6 +600,252 @@ class Game:
                         f"until paid."
                     )
 
+            # Failure is rolled every season on the #188 per-quarter schedule
+            # (was once a year under the old annual age-bucket model).
+            self._process_equipment_failures(player, current_tick, catalogue)
+
+    def _role_player(self, role_name: str) -> Player | None:
+        return next(
+            (p for p in self.players if any(r.name == role_name for r in p.roles)),
+            None,
+        )
+
+    def _capital_rng(self):
+        if self.turn_manager is not None:
+            return self.turn_manager._rng
+        import random
+        return random
+
+    def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
+        return sum(
+            int(entry.get("count", 1))
+            for entry in player.capital_repair_in_progress
+            if entry.get("item_id") == item_id
+        )
+
+    def _complete_capital_repairs(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        remaining: list[dict] = []
+        for entry in player.capital_repair_in_progress:
+            if int(entry.get("completes_at_tick", 0)) > current_tick:
+                remaining.append(entry)
+                continue
+            item_id = str(entry.get("item_id", ""))
+            count = int(entry.get("count", 1))
+            repaired = player.complete_capital_repair(item_id, count)
+            item = catalogue.get(item_id)
+            if repaired and item is not None:
+                self.io.print(
+                    f"\n[CAPITAL REPAIRED] {player.name}: {repaired} × "
+                    f"{item.name} returned to service."
+                )
+        player.capital_repair_in_progress = remaining
+
+    def _process_equipment_warranty_premiums(
+        self,
+        player: Player,
+        catalogue: dict[str, object],
+    ) -> None:
+        manufacturer = self._role_player("Manufacturer")
+        if manufacturer is None or manufacturer.player_id == player.player_id:
+            return
+        for item_id, units in list(player.capital_units.items()):
+            item = catalogue.get(item_id)
+            # Units on an upfront #188 term contract (maintenance_term_years > 0)
+            # already paid in full at order time — only legacy recurring
+            # warranties (no term) are billed annually here.
+            warranted_units = [
+                u for u in units if u.warranty and u.maintenance_term_years == 0
+            ]
+            if not warranted_units:
+                continue
+            if item is None:
+                # Item left the catalogue: drop stale coverage.
+                for u in warranted_units:
+                    u.warranty = False
+                continue
+            per_unit = round(item.cost * EQUIPMENT_WARRANTY_ANNUAL_RATE, 2)
+            paid = 0
+            for u in warranted_units:
+                if player.dollops < per_unit:
+                    u.warranty = False   # premium lapses — coverage drops
+                    continue
+                player.spend_dollops(per_unit)
+                manufacturer.receive_dollops(per_unit)
+                paid += 1
+            if paid:
+                self.io.print(
+                    f"\n[WARRANTY] {player.name}: paid "
+                    f"{CURRENCY_SYMBOL}{per_unit * paid:.2f} to "
+                    f"{manufacturer.name} for {paid} × {item.name} warranty."
+                )
+
+    def _failure_probability_for_age(self, age_seasons: int) -> float:
+        """Per-quarter Weibull failure probability (#188).
+
+        ``age_seasons`` is the unit's age in seasons (0 in the season it is
+        delivered), so the quarter of life is ``age_seasons + 1``.  Beyond the
+        table's last quarter the final value is held.
+        """
+        quarter = max(1, age_seasons + 1)
+        max_quarter = max(EQUIPMENT_FAILURE_PROB_BY_QUARTER)
+        if quarter > max_quarter:
+            quarter = max_quarter
+        return EQUIPMENT_FAILURE_PROB_BY_QUARTER[quarter]
+
+    def _capital_failure_multiplier(self, player: Player) -> float:
+        """Event multiplier on the per-quarter failure probability (#188 seam).
+
+        Natural disasters (earthquake, flood) and sabotage during strikes
+        raise the base hazard.  Defaults to EQUIPMENT_FAILURE_EVENT_MULTIPLIER
+        (1.0) until those events are wired in.
+        """
+        return EQUIPMENT_FAILURE_EVENT_MULTIPLIER
+
+    def _process_equipment_failures(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        rng = self._capital_rng()
+        multiplier = self._capital_failure_multiplier(player)
+        for item_id, units in list(player.capital_units.items()):
+            item = catalogue.get(item_id)
+            if item is None:
+                continue
+            # Roll each in-service, uninsured unit on its own quarter (#188).
+            for unit in list(units):
+                age = max(0, current_tick - unit.acquired_tick)
+                # An upfront term contract lapses once its term has elapsed,
+                # after which the unit is failure-eligible again.
+                if (unit.warranty and unit.maintenance_term_years > 0
+                        and age >= unit.maintenance_term_years * len(SEASONS)):
+                    unit.warranty = False
+                if unit.warranty or unit.status != "in_service":
+                    continue
+                prob = self._failure_probability_for_age(age) * multiplier
+                if rng.random() < prob:
+                    unit.status = "failed"
+                    self.io.print(
+                        f"\n[CAPITAL FAILURE] {player.name}: 1 × {item.name} "
+                        f"failed and is down until repaired."
+                    )
+                    self._attempt_capital_repair(player, item, current_tick, unit=unit)
+
+    def _attempt_pending_capital_repairs(
+        self,
+        player: Player,
+        current_tick: int,
+        catalogue: dict[str, object],
+    ) -> None:
+        for item_id in list(player.capital_units.keys()):
+            item = catalogue.get(item_id)
+            if item is None:
+                continue
+            in_progress = self._repair_in_progress_count(player, item_id)
+            failed_units = [
+                u for u in player.capital_units.get(item_id, [])
+                if u.status == "failed"
+            ]
+            # Skip units already covered by a queued ship repair; retry the rest.
+            for unit in failed_units[in_progress:]:
+                if not self._attempt_capital_repair(
+                    player, item, current_tick, unit=unit
+                ):
+                    break
+
+    def _has_air_repair_capacity(self) -> bool:
+        transporter = self._role_player("Transporter")
+        if transporter is None:
+            return False
+        return transporter.effective_capital_inventory().get(
+            "transporter.cargo_plane", 0
+        ) > 0
+
+    def _credit_freight_to_transporter(self, freight_qty: int) -> None:
+        transporter = self._role_player("Transporter")
+        if transporter is None or freight_qty <= 0:
+            return
+        credit = round(self.market.current_price(ResourceType.FREIGHT) * freight_qty, 2)
+        transporter.receive_dollops(credit)
+        if self.resource_flow is not None:
+            self.resource_flow.record_consumed(ResourceType.FREIGHT, freight_qty)
+            self.resource_flow.record_traded(ResourceType.FREIGHT, freight_qty)
+
+    def _attempt_capital_repair(
+        self,
+        player: Player,
+        item,
+        current_tick: int,
+        unit=None,
+    ) -> bool:
+        manufacturer = self._role_player("Manufacturer")
+        # Repair fee is 35% of the unit's purchase value (falling back to the
+        # catalogue cost when an order didn't record one).  A spare on hand —
+        # attached to the unit or held generically — halves it (#185); without
+        # one, spares are manufactured at failure for the baseline fee.
+        base_value = (
+            unit.purchase_value if (unit is not None and unit.purchase_value)
+            else item.cost
+        )
+        has_attached = unit is not None and unit.spares_attached > 0
+        has_generic = player.inventory.get(ResourceType.SPARES) > 0
+        use_spare = has_attached or has_generic
+        repair_fee = round(
+            base_value * EQUIPMENT_FAILURE_REPAIR_FRACTION
+            * (EQUIPMENT_SPARES_REPAIR_DISCOUNT if use_spare else 1.0),
+            2,
+        )
+        air = self._has_air_repair_capacity()
+        freight_qty = (
+            EQUIPMENT_REPAIR_AIR_FREIGHT if air else EQUIPMENT_REPAIR_SHIP_FREIGHT
+        )
+        if player.dollops < repair_fee:
+            return False
+        if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
+            return False
+
+        # Consume a spare — the unit's own first, otherwise a generic one.
+        if has_attached:
+            unit.spares_attached -= 1
+        elif has_generic:
+            player.give_resources(ResourceType.SPARES, 1)
+
+        player.spend_dollops(repair_fee)
+        if manufacturer is not None:
+            manufacturer.receive_dollops(repair_fee)
+        player.give_resources(ResourceType.FREIGHT, freight_qty)
+        self._credit_freight_to_transporter(freight_qty)
+
+        if air:
+            if unit is not None:
+                unit.status = "in_service"
+                unit.repair_completes_at_tick = None
+            else:
+                player.complete_capital_repair(item.item_id, 1)
+            self.io.print(
+                f"[CAPITAL REPAIR] {player.name}: repaired 1 × {item.name} "
+                f"same-season by air for {CURRENCY_SYMBOL}{repair_fee:.2f} "
+                f"+ {freight_qty} Freight."
+            )
+        else:
+            player.capital_repair_in_progress.append({
+                "item_id": item.item_id,
+                "count": 1,
+                "completes_at_tick": current_tick + 1,
+            })
+            self.io.print(
+                f"[CAPITAL REPAIR] {player.name}: shipped repair parts for "
+                f"1 × {item.name}; returns next season for "
+                f"{CURRENCY_SYMBOL}{repair_fee:.2f} + {freight_qty} Freight."
+            )
+        return True
+
     def _process_retirements(self, year: int, season: int) -> None:
         """Age every island's workers one season; remove retirees.
 
@@ -375,8 +866,19 @@ class Game:
                 f"\n[RETIREMENT] {player.name}: {len(retired)} worker(s) "
                 f"retired ({professions}). Recruit + retrain to replace."
             )
+        self._reconcile_training_flags()
+
+    def _reconcile_training_flags(self) -> None:
+        for player in self.players:
+            expected = self.training.dispatched_worker_ids(player.player_id)
+            player.workforce.reconcile_training_flags(expected)
+
+    def _advance_temporary_absences(self) -> None:
+        for player in self.players:
+            player.workforce.advance_absences()
 
     def _process_training_returns(self, year: int, season: int) -> None:
+        self._reconcile_training_flags()
         player_map = {p.player_id: p for p in self.players}
         returned_batches = self.training.process_returns(year, season)
         for batch in returned_batches:
@@ -393,7 +895,10 @@ class Game:
                 f"as {batch.target_profession}."
             )
             returned = player.workforce.return_from_training(
-                batch.worker_ids, batch.target_profession
+                batch.worker_ids,
+                batch.target_profession,
+                batch.engineer_specialty,
+                batch.settling_seasons_on_return,
             )
             if returned:
                 self.io.print(
@@ -412,6 +917,7 @@ class Game:
                     f"rejoin the roster"
                     f"{f' ({missing_text})' if missing_text else ''}."
                 )
+        self._reconcile_training_flags()
 
     def _process_staffing_returns(self, year: int, season: int) -> None:
         """Return visiting medical staff to their home island at contract end."""
@@ -456,6 +962,8 @@ class Game:
             final_rankings=rankings,
             deal_count=len(self.ledger.deals),
             price_history=self.market.price_history,
+            money_supply=list(self._money_supply_history),
+            resource_flow=self.resource_flow,
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],
@@ -527,15 +1035,25 @@ class Game:
             "role_names": [r.name for r in p.roles],
             "is_human": p.is_human,
             "dollops": p.dollops,
+            "household_cash": p.household_cash,
             "production_capacity": p.production_capacity,
             "population": p.population,
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
             "wealth_history": p.wealth_history,
+            "capital_units": {
+                item_id: [u.to_dict() for u in units]
+                for item_id, units in p.capital_units.items()
+            },
+            # Legacy aggregate views kept for back-compat readers; derived from
+            # capital_units above and re-migrated into units on load.
             "capital_inventory": dict(p.capital_inventory),
             "capital_acquired_ticks": {
                 item_id: list(ticks) for item_id, ticks in p.capital_acquired_ticks.items()
             },
             "capital_in_transit": list(p.capital_in_transit),
+            "capital_warranties": dict(p.capital_warranties),
+            "failed_capital": dict(p.failed_capital),
+            "capital_repair_in_progress": list(p.capital_repair_in_progress),
             "active_patents": {k: list(v) for k, v in p.active_patents.items()},
             "personal_cash": p.personal_cash,
             "holdings": dict(p.holdings),
@@ -550,10 +1068,12 @@ class Game:
                         "experience_seasons": w.experience_seasons,
                         "in_training": w.in_training,
                         "on_contract": w.on_contract,
+                        "absent_seasons": w.absent_seasons,
                         "settling_seasons": w.settling_seasons,
                         "age_seasons": w.age_seasons,
                         "has_mba": w.has_mba,
                         "profession": w.profession,
+                        "engineer_specialty": w.engineer_specialty,
                     }
                     for w in p.workforce.workers
                 ],
@@ -588,6 +1108,9 @@ class Game:
                     "dollops_to_educator": r.dollops_to_educator,
                     "dollops_to_transporter": r.dollops_to_transporter,
                     "target_profession": r.target_profession,
+                    "engineer_specialty": r.engineer_specialty,
+                    "duration_seasons": r.duration_seasons,
+                    "settling_seasons_on_return": r.settling_seasons_on_return,
                     "proposed_year": r.proposed_year,
                     "proposed_season": r.proposed_season,
                     "status": r.status.value,
@@ -663,6 +1186,8 @@ class Game:
                     "external_funded": l.external_funded,
                     "posted_at_issue": l.posted_at_issue,
                     "reserve_ratio_at_issue": l.reserve_ratio_at_issue,
+                    "collateral_item_id": l.collateral_item_id,
+                    "secured": l.secured,
                 }
                 for l in self.loan_ledger.all_loans()
             ],
@@ -720,18 +1245,17 @@ class Game:
                 name=pd["name"],
                 roles=roles,
                 dollops=pd["dollops"],
+                household_cash=pd.get("household_cash", 0.0),
                 is_human=pd["is_human"],
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
-                capital_inventory=_migrate_capital_inventory(
-                    pd.get("capital_inventory", {})
-                ),
-                capital_acquired_ticks=_migrate_capital_ticks(
-                    pd.get("capital_acquired_ticks", {})
-                ),
+                capital_units=_migrate_capital_units(pd),
                 capital_in_transit=_migrate_capital_in_transit(
                     pd.get("capital_in_transit", [])
+                ),
+                capital_repair_in_progress=_migrate_capital_in_transit(
+                    pd.get("capital_repair_in_progress", [])
                 ),
                 active_patents={k: list(v) for k, v in pd.get("active_patents", {}).items()},
                 personal_cash=pd.get("personal_cash", 0.0),
@@ -756,10 +1280,12 @@ class Game:
                     experience_seasons=w["experience_seasons"],
                     in_training=w.get("in_training", False),
                     on_contract=w.get("on_contract", False),
+                    absent_seasons=w.get("absent_seasons", 0),
                     settling_seasons=w.get("settling_seasons", 0),
                     age_seasons=w.get("age_seasons", 0),
                     has_mba=w.get("has_mba", False),
                     profession=w.get("profession", Profession.UNSKILLED.value),
+                    engineer_specialty=w.get("engineer_specialty", ""),
                 )
                 for w in wf_data.get("workers", [])
             ]
@@ -807,6 +1333,8 @@ class Game:
                 external_funded=loan_d.get("external_funded", 0.0),
                 posted_at_issue=loan_d.get("posted_at_issue", 0.0),
                 reserve_ratio_at_issue=loan_d.get("reserve_ratio_at_issue", 0.0),
+                collateral_item_id=loan_d.get("collateral_item_id"),
+                secured=bool(loan_d.get("secured", False)),
             )
             game.loan_ledger.loans.append(loan)
         game.lease_ledger = LeaseLedger()
@@ -835,7 +1363,22 @@ class Game:
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
+        player_by_id = {player.player_id: player for player in game.players}
         for rd in td.get("requests", []):
+            target_profession = rd.get(
+                "target_profession", Profession.UNSKILLED.value
+            )
+            if "settling_seasons_on_return" in rd:
+                settling_on_return = rd.get("settling_seasons_on_return", 0)
+            else:
+                campus = player_by_id.get(rd.get("educator_id"))
+                settling_on_return = settling_seasons_on_return(
+                    target_profession,
+                    has_technical_workshop=(
+                        campus_has_technical_workshop(campus)
+                        if campus is not None else True
+                    ),
+                )
             req = TrainingRequest(
                 batch_id=rd["batch_id"],
                 requester_id=rd["requester_id"],
@@ -844,7 +1387,10 @@ class Game:
                 transporter_id=rd.get("transporter_id"),
                 dollops_to_educator=rd.get("dollops_to_educator", 0),
                 dollops_to_transporter=rd.get("dollops_to_transporter", 0),
-                target_profession=rd.get("target_profession", Profession.UNSKILLED.value),
+                target_profession=target_profession,
+                engineer_specialty=rd.get("engineer_specialty", ""),
+                duration_seasons=rd.get("duration_seasons", 0),
+                settling_seasons_on_return=settling_on_return,
                 proposed_year=rd.get("proposed_year", 0),
                 proposed_season=rd.get("proposed_season", 0),
                 status=TrainingStatus(rd["status"]),
@@ -909,7 +1455,7 @@ class Game:
         )
         game.event_resolver = SeasonEventResolver(charts)
         production = ProductionEngine()
-        trading = TradingEngine(game.market, game.ledger)
+        trading = TradingEngine(game.market, game.ledger, game.players)
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
             game.staffing, game.loan_ledger, game.lease_ledger,

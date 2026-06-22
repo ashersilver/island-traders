@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Island Traders — Hybrid island (cinematic base + live layer)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#f6b93b; --gold-2:#ffd98a; --cyan:#22d3ee; --cyan-2:#7af0ff;
+  --green:#34e0a1; --red:#ff5d6c; --txt:#bccbe0; --dim:#6a809b; --head:#eef5ff;
+  --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.075);
+  --stroke:rgba(255,255,255,.09); --stroke-2:rgba(255,255,255,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Sora',system-ui,sans-serif;color:var(--txt);min-height:100vh;padding:18px;letter-spacing:.1px;
+  background:
+    radial-gradient(1100px 640px at 14% -10%, rgba(34,211,238,.15), transparent 60%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(246,185,59,.14), transparent 55%),
+    radial-gradient(900px 760px at 50% 124%, rgba(80,120,255,.12), transparent 60%),
+    linear-gradient(180deg,#070d18,#05080f 60%,#04060c)}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.gold{color:var(--gold)} .green{color:var(--green)} .red{color:var(--red)} .cy{color:var(--cyan)} .dim{color:var(--dim)}
+.app{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+.bar{display:flex;align-items:center;gap:18px;padding:12px 18px;border-radius:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+  border:1px solid var(--stroke);backdrop-filter:blur(14px);box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 40px -24px #000}
+.brand{display:flex;align-items:center;gap:11px;font-weight:600;color:var(--head)}
+.logo{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:18px;
+  background:radial-gradient(120% 120% at 30% 20%,#123,#06121f);border:1px solid var(--stroke-2);
+  box-shadow:0 0 22px -4px rgba(34,211,238,.55), inset 0 0 14px rgba(34,211,238,.18)}
+.season-mini{display:flex;align-items:center;gap:10px;padding:6px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--stroke)}
+.ring{--p:62;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(var(--gold) calc(var(--p)*1%), rgba(255,255,255,.08) 0)}
+.ring i{width:22px;height:22px;border-radius:50%;background:#0a1322;display:grid;place-items:center;font-style:normal;font-size:9px;font-weight:600;color:var(--gold-2)}
+.spacer{flex:1}
+.hero{text-align:right;line-height:1.05}
+.hero .lbl{font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim)}
+.hero .val{font-size:28px;font-weight:700;color:var(--gold);text-shadow:0 0 26px rgba(246,185,59,.45)}
+.hero .val small{font-size:14px;font-weight:500;color:var(--gold-2);opacity:.8}
+.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:600;color:#06121f;
+  background:linear-gradient(135deg,var(--gold-2),var(--gold));box-shadow:0 0 20px -4px rgba(246,185,59,.6)}
+.pill{padding:5px 11px;border-radius:999px;font-size:11.5px;border:1px solid var(--stroke);background:var(--glass);color:var(--cyan-2)}
+.live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,224,161,.55)}70%{box-shadow:0 0 0 7px rgba(52,224,161,0)}100%{box-shadow:0 0 0 0 rgba(52,224,161,0)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes pin{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes flicker{0%,100%{opacity:.22}45%{opacity:.5}48%{opacity:.16}52%{opacity:.46}}
+
+.grid{display:grid;grid-template-columns:270px 1fr 322px;gap:14px;align-items:start}
+.card{border-radius:18px;padding:15px 16px;background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--stroke);backdrop-filter:blur(16px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 24px 50px -34px #000}
+.card+.card{margin-top:14px}
+.card h3{font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:8px;margin-bottom:12px}
+
+.stat{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,.05);font-size:13px}
+.stat:first-child{border-top:none}.stat .k{color:var(--dim)}.stat .v{font-weight:500;color:var(--head)}
+.gauge{height:6px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden;width:96px}
+.gauge i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--cyan),var(--green))}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;flex-direction:column;gap:5px;padding:9px 11px;border-radius:13px;background:var(--glass);border:1px solid var(--stroke);min-width:76px;flex:1}
+.chip .t{font-size:11px;color:var(--dim);display:flex;justify-content:space-between;gap:6px}
+.chip .q{font-size:17px;font-weight:600;color:var(--head)}
+
+/* ===== HYBRID ISLAND STAGE ===== */
+.stage{position:relative;border-radius:20px;overflow:hidden;height:560px;
+  border:1px solid var(--stroke-2);box-shadow:0 30px 70px -30px #000, 0 0 70px -22px rgba(246,185,59,.3)}
+.stage .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;animation:float 11s ease-in-out infinite}
+.stage .tint{position:absolute;inset:0;mix-blend-mode:soft-light;background:linear-gradient(180deg,rgba(255,180,90,.16),transparent 60%)}
+.stage .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(5,8,15,.32) 0,transparent 26%,transparent 60%,rgba(5,8,15,.9) 100%)}
+.stage .outage{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 120px rgba(255,60,80,.5);animation:flicker 3.5s infinite}
+.stage .toolbar{position:absolute;top:13px;left:13px;right:13px;display:flex;gap:8px;align-items:center;z-index:5}
+.seg{display:flex;gap:3px;padding:3px;border-radius:12px;background:rgba(8,14,24,.62);border:1px solid var(--stroke-2);backdrop-filter:blur(8px)}
+.seg button{border:none;background:transparent;color:var(--dim);font:inherit;font-size:12px;padding:6px 11px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:5px}
+.seg button.on{background:linear-gradient(180deg,rgba(246,185,59,.9),rgba(246,185,59,.7));color:#1a1206;font-weight:600;box-shadow:0 0 16px -4px rgba(246,185,59,.7)}
+.seg.w button.on{background:linear-gradient(180deg,rgba(255,93,108,.9),rgba(255,93,108,.7));color:#2a0a0d}
+.cond-chip{margin-left:auto;display:flex;align-items:center;gap:7px;padding:7px 11px;border-radius:11px;font-size:12px;font-weight:600;color:#ffd2d6;
+  background:rgba(40,10,14,.66);border:1px solid rgba(255,93,108,.5);backdrop-filter:blur(8px)}
+.cond-chip .b{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 1.6s infinite}
+
+/* equipment pins (the live layer) */
+.pin{position:absolute;z-index:6;transform:translate(-50%,-100%);animation:pin 5s ease-in-out infinite}
+.pin .dot{width:15px;height:15px;border-radius:50%;margin:0 auto;border:2px solid #fff;
+  background:radial-gradient(circle at 35% 30%,var(--gold-2),var(--gold));box-shadow:0 0 0 4px rgba(246,185,59,.25),0 0 16px rgba(246,185,59,.8)}
+.pin .lab{margin-top:6px;font-size:11px;font-weight:600;color:#fff;white-space:nowrap;padding:3px 8px;border-radius:8px;
+  background:rgba(8,14,24,.74);border:1px solid var(--stroke-2);backdrop-filter:blur(6px);text-shadow:0 1px 6px #000}
+.pin .lab small{color:var(--gold-2);font-weight:500}
+.pin.ghost{animation:none;opacity:.92}
+.pin.ghost .dot{background:transparent;border:2px dashed var(--cyan-2);box-shadow:0 0 0 4px rgba(34,211,238,.15)}
+.pin.ghost .lab{color:var(--cyan-2);border-style:dashed}
+.stage .meta{position:absolute;left:18px;bottom:16px;right:18px;z-index:5;display:flex;align-items:flex-end;gap:16px}
+.stage .iname{font-size:24px;font-weight:600;color:#fff;text-shadow:0 2px 18px rgba(0,0,0,.85)}
+.stage .irole{font-size:12.5px;color:var(--gold-2);text-shadow:0 1px 10px #000}
+.tally{margin-left:auto;display:flex;gap:8px}
+.tally .t{padding:7px 11px;border-radius:12px;background:rgba(8,14,24,.6);border:1px solid var(--stroke-2);backdrop-filter:blur(8px);text-align:center}
+.tally .t .k{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--dim)}
+.tally .t .v{font-size:16px;font-weight:600;color:var(--head)}
+
+/* build & develop */
+.bd{display:flex;gap:11px;align-items:center;padding:10px 0;border-top:1px solid rgba(255,255,255,.05)}
+.bd:first-of-type{border-top:none}
+.bd .box{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:13px;flex-shrink:0;
+  background:rgba(52,224,161,.16);border:1px solid rgba(52,224,161,.45);color:var(--green)}
+.bd.off .box{background:rgba(255,255,255,.04);border:1px dashed var(--stroke-2);color:var(--dim)}
+.bd .body{flex:1}
+.bd .h{font-size:13.5px;color:var(--head);font-weight:500;display:flex;align-items:center;gap:7px}
+.bd .req{font-size:9px;font-weight:600;letter-spacing:.5px;padding:2px 6px;border-radius:6px;background:rgba(246,185,59,.16);color:var(--gold-2);border:1px solid rgba(246,185,59,.35)}
+.bd .s{font-size:11.5px;color:var(--dim)}
+.bd .cost{font-size:12.5px;font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',monospace}
+.bd.off .cost{color:var(--cyan-2)}
+.mini-mkt{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-top:1px solid rgba(255,255,255,.05)}
+.mini-mkt:first-of-type{border-top:none}
+.mini-mkt .num{font-family:'IBM Plex Mono',monospace}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="bar">
+    <div class="brand"><span class="logo">🏝</span> Island&nbsp;Traders</div>
+    <div class="season-mini"><span class="ring" style="--p:62"><i>2:41</i></span>
+      <div style="line-height:1.15"><div style="font-size:13px;color:var(--head);font-weight:500">Year 2 · Summer</div>
+        <div style="font-size:10.5px;color:var(--dim)"><span class="live"></span> &nbsp;live · 5 acting</div></div></div>
+    <span class="pill">Mining &amp; Oil</span>
+    <div class="spacer"></div>
+    <div class="hero"><div class="lbl">Net worth</div><div class="val num">1,284 <small>Dp</small></div>
+      <div class="num green" style="font-size:12px;font-weight:600">▲ 92 Dp this season</div></div>
+    <div class="avatar">AS</div>
+  </div>
+
+  <div class="grid">
+
+    <!-- LEFT: stats -->
+    <div>
+      <div class="card">
+        <h3>Mining &amp; Oil</h3>
+        <div class="stat"><span class="k">Treasury</span><span class="v num gold">412 Dp</span></div>
+        <div class="stat"><span class="k">Personal cash</span><span class="v num gold">1,500 Dp</span></div>
+        <div class="stat"><span class="k">Ownership</span><span class="v num">60% · float 40%</span></div>
+        <div class="stat"><span class="k">Workers</span><span class="v num">14 / 16</span></div>
+        <div class="stat"><span class="k">Efficiency</span><span class="v"><span class="gauge"><i style="width:82%"></i></span></span></div>
+        <div class="stat"><span class="k">Capacity</span><span class="v"><span class="gauge"><i style="width:54%"></i></span></span></div>
+      </div>
+      <div class="card">
+        <h3>Inventory</h3>
+        <div class="chips">
+          <div class="chip"><div class="t"><span>⛏ Ore</span><span class="num">58 Dp</span></div><div class="q num">9</div></div>
+          <div class="chip"><div class="t"><span>🛢 Oil</span><span class="num">441 Dp</span></div><div class="q num">48</div></div>
+          <div class="chip"><div class="t"><span>⚙ Metal</span><span class="num">76 Dp</span></div><div class="q num">4</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: the hybrid island stage -->
+    <div>
+      <div class="stage">
+        <img class="art" src="/island_traders/server/static/island-art/miner-night.png" alt="Mining & Oil island">
+        <div class="tint"></div><div class="outage"></div><div class="scrim"></div>
+
+        <div class="toolbar">
+          <div class="seg">
+            <button>❄ Spring</button><button class="on">☀ Summer</button><button>🍂 Autumn</button><button>❄ Winter</button>
+          </div>
+          <div class="seg w">
+            <button class="on">⚡ Outage</button><button>🌊 Normal</button>
+          </div>
+          <div class="cond-chip"><span class="b"></span> Power outage · 2 seasons left · −50%</div>
+        </div>
+
+        <div class="pin" style="left:30%;top:40%"><div class="dot"></div><div class="lab">Excavator <small>+40 Ore</small></div></div>
+        <div class="pin" style="left:50%;top:34%"><div class="dot"></div><div class="lab">Crusher</div></div>
+        <div class="pin" style="left:68%;top:52%"><div class="dot"></div><div class="lab">Oil Rig <small>+40 Oil</small></div></div>
+        <div class="pin ghost" style="left:80%;top:40%"><div class="dot"></div><div class="lab">+ Refinery <small>100 Dp</small></div></div>
+
+        <div class="meta">
+          <div>
+            <div class="irole">⛏ Miner · governed by Maria · 🌙 night</div>
+            <div class="iname">Mining &amp; Oil</div>
+          </div>
+          <div class="tally">
+            <div class="t"><div class="k">Ore</div><div class="v num">9</div></div>
+            <div class="t"><div class="k">Oil</div><div class="v num">48</div></div>
+            <div class="t"><div class="k">Capacity</div><div class="v num red">54%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Build & Develop + market sliver -->
+    <div>
+      <div class="card">
+        <h3>Build &amp; Develop <span class="dim" style="margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0">tap to place</span></h3>
+        <div class="bd"><div class="box">✓</div><div class="body"><div class="h">Excavator <span class="req">Required</span></div><div class="s">+40 Ore capacity · placed</div></div><div class="cost">70</div></div>
+        <div class="bd"><div class="box">✓</div><div class="body"><div class="h">Crusher <span class="req">Required</span></div><div class="s">Refines Ore → Metal · placed</div></div><div class="cost">50</div></div>
+        <div class="bd"><div class="box">✓</div><div class="body"><div class="h">Oil Rig <span class="req">Required</span></div><div class="s">+40 Oil capacity · placed</div></div><div class="cost">110</div></div>
+        <div class="bd off"><div class="box">＋</div><div class="body"><div class="h">Refinery</div><div class="s">+20 Oil · enables Refinery Specialist</div></div><div class="cost">100</div></div>
+        <div class="bd off"><div class="box">＋</div><div class="body"><div class="h">Enhanced Crusher &amp; Smelter</div><div class="s">Higher Metal yield</div></div><div class="cost">140</div></div>
+      </div>
+      <div class="card">
+        <h3>Market <span class="live" style="margin-left:auto"></span></h3>
+        <div class="mini-mkt"><span class="gold">🛢 Oil · your surplus</span><span class="num"><span class="dim">9.50</span> <span class="green">+0.40</span></span></div>
+        <div class="mini-mkt"><span>⛏ Ore</span><span class="num"><span class="dim">6.40</span> <span class="red">−0.20</span></span></div>
+        <div class="mini-mkt"><span>⚙ Metal</span><span class="num"><span class="dim">9.00</span> <span class="dim">0.00</span></span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

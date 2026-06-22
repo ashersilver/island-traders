@@ -10,11 +10,11 @@ has an annual quota limiting how many can be trained per game year; Professors
 additionally have a per-season cap.
 
 Workers are also classified into one of three **bands** — see WorkerBand:
-  - MANAGER:    university-trained (Education pipeline; Doctor=3 seasons,
+  - MANAGER:    university-trained (Education pipeline; Doctor=4 seasons,
                 Nurse=1 season, others=2 seasons)
-  - TECHNICIAN: vocationally trained (Educator workshop + Instructor;
-                1 season away at the Education Island, then a 75%-productivity
-                settling season on the home island before reaching 100%)
+  - TECHNICIAN: vocationally trained (Instructor + optional Educator workshop;
+                1 season away with the workshop, otherwise 2 seasons away and
+                a 50%-productivity settling season on the home island)
   - WORKER:     hired directly from the island population (no formal training)
 """
 from __future__ import annotations
@@ -38,6 +38,7 @@ class Profession(str, Enum):
     OIL_EXTRACTION       = "OilExtractionWorker"
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
+    ACTUARY              = "Actuary"
     PROFESSOR            = "Professor"
     TECHNICAL_DIRECTOR   = "TechnicalDirector"
     MECHANIC             = "Mechanic"          # Technician band, multi-island
@@ -52,8 +53,12 @@ class Profession(str, Enum):
     # Banker — technician-tier clerical staff
     BANKING_ANALYST      = "BankingAnalyst"    # Technician (Banker)
     BANKING_CLERK        = "BankingClerk"      # Technician (Banker)
+    # Manufacturer — skilled trades
+    TRADESMAN            = "Tradesman"         # Technician (Manufacturer)
     # Doctor — technician-tier medical support
     MEDICAL_ORDERLY      = "MedicalOrderly"    # Technician (Doctor)
+    MEDICAL_RESEARCHER   = "MedicalResearcher" # Manager (Doctor)
+    MEDICAL_TECHNICIAN   = "MedicalTechnician" # Technician (Doctor)
     # Cross-island sustenance support
     CHEF                 = "Chef"              # Technician (all islands)
 
@@ -63,6 +68,17 @@ class WorkerBand(str, Enum):
     MANAGER    = "Manager"      # university-educated
     TECHNICIAN = "Technician"   # apprenticeship-trained
     WORKER     = "Worker"       # untrained / hired from population
+
+
+class EngineerSpecialty(str, Enum):
+    """Optional fourth-season/return-course specialization for Engineers."""
+    INDUSTRIAL = "Industrial"
+    MECHANICAL = "Mechanical"
+    ELECTRICAL = "Electrical"
+    CHEMICAL = "Chemical"
+
+
+ENGINEER_SPECIALTY_STACK_CAP = 2
 
 
 # Each profession's band classification.
@@ -84,6 +100,7 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.OIL_EXTRACTION:      WorkerBand.TECHNICIAN,
     Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
     Profession.BANKER:              WorkerBand.MANAGER,
+    Profession.ACTUARY:             WorkerBand.TECHNICIAN,
     Profession.PROFESSOR:           WorkerBand.MANAGER,
     Profession.TECHNICAL_DIRECTOR:  WorkerBand.MANAGER,
     Profession.MECHANIC:            WorkerBand.TECHNICIAN,
@@ -98,8 +115,12 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     # Banker
     Profession.BANKING_ANALYST:     WorkerBand.TECHNICIAN,
     Profession.BANKING_CLERK:       WorkerBand.TECHNICIAN,
+    # Manufacturer
+    Profession.TRADESMAN:           WorkerBand.TECHNICIAN,
     # Doctor
     Profession.MEDICAL_ORDERLY:     WorkerBand.TECHNICIAN,
+    Profession.MEDICAL_RESEARCHER:  WorkerBand.MANAGER,
+    Profession.MEDICAL_TECHNICIAN:  WorkerBand.TECHNICIAN,
     # Cross-island
     Profession.CHEF:                WorkerBand.TECHNICIAN,
 }
@@ -141,17 +162,17 @@ BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     },
     "Banker": {
         WorkerBand.MANAGER:    ["Banker"],
-        WorkerBand.TECHNICIAN: ["Banking Analyst", "Banking Clerk", "Chef"],
+        WorkerBand.TECHNICIAN: ["Banking Analyst", "Actuary", "Banking Clerk", "Chef"],
         WorkerBand.WORKER:     ["Receptionist"],
     },
     "Manufacturer": {
         WorkerBand.MANAGER:    ["Engineer"],
-        WorkerBand.TECHNICIAN: ["Factory Foreman", "Assembly Tech", "Mechanic", "Chef"],
+        WorkerBand.TECHNICIAN: ["Factory Foreman", "Tradesman", "Assembly Tech", "Mechanic", "Chef"],
         WorkerBand.WORKER:     ["Assembler"],
     },
     "Doctor": {
-        WorkerBand.MANAGER:    ["Doctor", "Nurse"],
-        WorkerBand.TECHNICIAN: ["Medical Orderly", "Chef"],
+        WorkerBand.MANAGER:    ["Doctor", "Nurse", "Medical Researcher"],
+        WorkerBand.TECHNICIAN: ["Medical Technician", "Medical Orderly", "Chef"],
         WorkerBand.WORKER:     ["Aide"],
     },
 }
@@ -165,15 +186,17 @@ def primary_title(role_name: str, band: WorkerBand) -> str:
 
 
 # Education pipeline duration in seasons (per Manager profession).
-# Canonical (education-model.md, ruled 2026-05-17): Doctor 3, Nurse 1,
-# all other Managers 2.
+# Canonical (#18 reconciliation, ruled 2026-06-18): Doctor 4, Nurse 1,
+# all other Managers 2, except Engineer now takes 3 seasons before an
+# optional 4th specialty season.
 EDUCATION_SEASONS: dict[Profession, int] = {
-    Profession.DOCTOR:            3,
+    Profession.DOCTOR:            4,
     Profession.NURSE:             1,
-    Profession.ENGINEER:          2,
+    Profession.ENGINEER:          3,
     Profession.FARMER:             2,
     Profession.MINER:              2,
     Profession.BANKER:             2,
+    Profession.MEDICAL_RESEARCHER: 2,
     Profession.PROFESSOR:          2,
     Profession.TECHNICAL_DIRECTOR: 2,
     Profession.LOGISTICS_MANAGER:  2,
@@ -182,10 +205,10 @@ EDUCATION_SEASONS: dict[Profession, int] = {
 
 # Apprenticeship pipeline: number of seasons the apprentice is *away* at
 # the Education Island.  Canonical (education-model.md, ruled 2026-05-17):
-# 1 season away for every Technician, followed by exactly one
-# 75%-productivity "settling" season on the home island (the settling
-# season is NOT counted here — see APPRENTICESHIP_SETTLING_SEASONS and
-# Worker.settling_seasons).
+# 1 season away for every Technician when the campus has a Technical Workshop.
+# Without that facility, the #18 rule adds one away season and one 50%
+# settling season on return; see training_duration and
+# settling_seasons_on_return.
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.FARMING_TECHNICIAN:  1,
     Profession.HORTICULTURALIST:    1,
@@ -206,17 +229,20 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     # Banker technicians
     Profession.BANKING_ANALYST:     1,
     Profession.BANKING_CLERK:       1,
+    Profession.ACTUARY:             1,
+    Profession.TRADESMAN:           1,
     # Doctor technicians
     Profession.MEDICAL_ORDERLY:     1,
+    Profession.MEDICAL_TECHNICIAN:  1,
     # Cross-island technicians
     Profession.CHEF:                1,
 }
 
-# How many post-return seasons a freshly-qualified apprentice works at
-# reduced productivity on the home island before reaching 100%.
+# How many post-return seasons a freshly-qualified apprentice without a
+# Technical Workshop works at reduced productivity before reaching 100%.
 APPRENTICESHIP_SETTLING_SEASONS: int = 1
 # Productivity multiplier applied during each settling season.
-APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.75
+APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.50
 
 
 # Which professions are primarily associated with each island role.
@@ -245,15 +271,38 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
         Profession.INSTRUCTOR,
         Profession.CHEF,
     ],
-    "Banker":        [Profession.BANKER, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF],
+    "Banker":        [Profession.BANKER, Profession.ACTUARY, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF],
     "Manufacturer":  [
         Profession.FACTORY_FOREMAN,
+        Profession.TRADESMAN,
         Profession.ASSEMBLY_WORKER,
         Profession.ENGINEER,
         Profession.MECHANIC,
         Profession.CHEF,
     ],
-    "Doctor":        [Profession.DOCTOR, Profession.NURSE, Profession.MEDICAL_ORDERLY, Profession.CHEF],
+    "Doctor":        [
+        Profession.DOCTOR,
+        Profession.NURSE,
+        Profession.MEDICAL_RESEARCHER,
+        Profession.MEDICAL_TECHNICIAN,
+        Profession.MEDICAL_ORDERLY,
+        Profession.CHEF,
+    ],
+}
+
+# Training that uses lab Reagents in addition to normal Expertise/Course slots.
+SCIENCE_TRAINING_PROFESSIONS: set[Profession] = {
+    Profession.FARMER,
+    Profession.HORTICULTURALIST,
+    Profession.VETERINARIAN,
+    Profession.MINER,
+    Profession.REFINERY_SPECIALIST,
+    Profession.PROFESSOR,
+    Profession.DOCTOR,
+    Profession.NURSE,
+    Profession.MEDICAL_RESEARCHER,
+    Profession.MEDICAL_TECHNICIAN,
+    Profession.ENGINEER,
 }
 
 # Human-readable label for display
@@ -274,6 +323,7 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.OIL_EXTRACTION:      "Oil Extraction Worker",
     Profession.REFINERY_SPECIALIST: "Refiner",
     Profession.BANKER:              "Banker (specialist)",
+    Profession.ACTUARY:             "Actuary",
     Profession.PROFESSOR:           "Professor",
     Profession.TECHNICAL_DIRECTOR:  "Technical Director",
     Profession.MECHANIC:            "Mechanic",
@@ -288,8 +338,12 @@ PROFESSION_LABEL: dict[Profession, str] = {
     # Banker
     Profession.BANKING_ANALYST:     "Banking Analyst",
     Profession.BANKING_CLERK:       "Banking Clerk",
+    # Manufacturer
+    Profession.TRADESMAN:           "Tradesman",
     # Doctor
     Profession.MEDICAL_ORDERLY:     "Medical Orderly",
+    Profession.MEDICAL_RESEARCHER:  "Medical Researcher",
+    Profession.MEDICAL_TECHNICIAN:  "Medical Technician",
     # Cross-island
     Profession.CHEF:                "Chef",
 }

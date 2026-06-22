@@ -17,18 +17,26 @@ from ..constants import (
     CARGO_TRANSIT_SEASONS, MAX_CLASS_SIZE_PER_COURSE,
 )
 from .profession import (
-    Profession, WorkerBand, band_of,
+    Profession, WorkerBand, EngineerSpecialty, band_of,
     EDUCATION_SEASONS, APPRENTICESHIP_SEASONS,
+    APPRENTICESHIP_SETTLING_SEASONS,
 )
+
+TECHNICAL_WORKSHOP_ITEM_ID = "educator.technical_workshop"
+
+
+def campus_has_technical_workshop(campus_player) -> bool:
+    inventory = getattr(campus_player, "capital_inventory", {}) or {}
+    return int(inventory.get(TECHNICAL_WORKSHOP_ITEM_ID, 0) or 0) > 0
 
 
 def away_seasons(profession: str) -> int:
     """Seasons a trainee is away for the given profession.
 
     Manager-band → university course duration (EDUCATION_SEASONS, e.g.
-    Doctor 3, Nurse 1, others 2).  Technician-band → apprenticeship
-    away-duration (APPRENTICESHIP_SEASONS, 1 season; the post-return 75%
-    settling season is tracked on the Worker, not here).  Unknown
+    Doctor 4, Nurse 1, others 2).  Technician-band → baseline
+    apprenticeship away-duration (APPRENTICESHIP_SEASONS, 1 season).  Use
+    training_duration when campus facilities should affect the result. Unknown
     professions fall back to 1 season.
     """
     try:
@@ -41,6 +49,51 @@ def away_seasons(profession: str) -> int:
     if band == WorkerBand.TECHNICIAN:
         return APPRENTICESHIP_SEASONS.get(prof, 1)
     return 1
+
+
+def training_duration(
+    profession: str,
+    *,
+    has_technical_workshop: bool = True,
+    engineer_specialty: str = "",
+    returning_engineer: bool = False,
+) -> int:
+    if profession == Profession.ENGINEER.value and engineer_specialty:
+        return engineer_training_duration(engineer_specialty, returning_engineer)
+    try:
+        prof = Profession(profession)
+    except ValueError:
+        return 1
+    if band_of(prof) == WorkerBand.TECHNICIAN and not has_technical_workshop:
+        return APPRENTICESHIP_SEASONS.get(prof, 1) + 1
+    return away_seasons(profession)
+
+
+def settling_seasons_on_return(
+    profession: str,
+    *,
+    has_technical_workshop: bool = True,
+) -> int:
+    try:
+        prof = Profession(profession)
+    except ValueError:
+        return 0
+    if band_of(prof) == WorkerBand.TECHNICIAN and not has_technical_workshop:
+        return APPRENTICESHIP_SETTLING_SEASONS
+    return 0
+
+
+def engineer_training_duration(
+    specialty: str = "",
+    returning_engineer: bool = False,
+) -> int:
+    if not specialty:
+        return EDUCATION_SEASONS[Profession.ENGINEER]
+    try:
+        EngineerSpecialty(specialty)
+    except ValueError:
+        return EDUCATION_SEASONS[Profession.ENGINEER]
+    return 1 if returning_engineer else EDUCATION_SEASONS[Profession.ENGINEER] + 1
 
 
 class TrainingCapacityError(Exception):
@@ -66,6 +119,9 @@ class TrainingRequest:
     dollops_to_educator: float
     dollops_to_transporter: float
     target_profession: str          # profession workers will graduate into
+    engineer_specialty: str = ""
+    duration_seasons: int = 0
+    settling_seasons_on_return: int = 0
     proposed_year: int = -1
     proposed_season: int = -1       # for per-season caps (e.g. Professor)
     status: TrainingStatus = TrainingStatus.AWAITING_EDUCATOR
@@ -115,8 +171,11 @@ class TrainingRequest:
                 if self.transporter_id is not None else "unassigned"
             )
             transport_str = f"{trn} ({self.dollops_to_transporter:.0f} {sym})"
+        target = self.target_profession
+        if self.engineer_specialty:
+            target = f"{target} ({self.engineer_specialty})"
         return (
-            f"TrainingRequest #{self.batch_id}: {req} → {len(self.worker_ids)} × {self.target_profession}  "
+            f"TrainingRequest #{self.batch_id}: {req} → {len(self.worker_ids)} × {target}  "
             f"| Educator: {edu} ({self.dollops_to_educator:.0f} {sym})  "
             f"| Transport: {transport_str}  "
             f"| Status: {self.status.value}"
@@ -160,6 +219,7 @@ class TrainingRegistry:
         year: int,
         season: int,
         exclude_batch_id: int | None = None,
+        engineer_specialty: str = "",
     ) -> int:
         """Count committed trainees in one course-running cohort."""
         return sum(
@@ -167,6 +227,7 @@ class TrainingRegistry:
             for r in self._requests
             if r.educator_id == educator_id
             and r.target_profession == profession
+            and r.engineer_specialty == engineer_specialty
             and r.status in (TrainingStatus.AWAITING_TRANSPORT, TrainingStatus.DISPATCHED)
             and r.batch_id != exclude_batch_id
             and self._cohort_year_season(r, year, season) == (year, season)
@@ -236,6 +297,9 @@ class TrainingRegistry:
         season: int = 0,
         transport_mode: str = "transporter",
         tickets_supplied_by_requester: int = 0,
+        engineer_specialty: str = "",
+        duration_seasons: int = 0,
+        settling_seasons_on_return: int = 0,
     ) -> TrainingRequest:
         count = len(worker_ids)
         if len(set(worker_ids)) != count:
@@ -274,6 +338,9 @@ class TrainingRegistry:
             dollops_to_educator=dollops_to_educator,
             dollops_to_transporter=dollops_to_transporter,
             target_profession=target_profession,
+            engineer_specialty=engineer_specialty,
+            duration_seasons=duration_seasons,
+            settling_seasons_on_return=settling_seasons_on_return,
             proposed_year=year,
             proposed_season=season,
             transport_mode=transport_mode,
@@ -360,7 +427,7 @@ class TrainingRegistry:
         req.dispatched_year = year
         req.dispatched_season = season
         # Profession-dependent course/apprenticeship duration (Phase 3).
-        away = away_seasons(req.target_profession)
+        away = req.duration_seasons or away_seasons(req.target_profession)
         # Cargo adds one extra season of transit delay
         extra = CARGO_TRANSIT_SEASONS if req.transport_mode == "cargo" else 0
         ret_season = season + away + extra
@@ -414,7 +481,7 @@ class TrainingRegistry:
             ):
                 continue
             cohort_year, cohort_season = self._cohort_year_season(r, year, season)
-            key = (r.target_profession, cohort_year, cohort_season)
+            key = (r.target_profession, r.engineer_specialty, cohort_year, cohort_season)
             cohorts[key] = cohorts.get(key, 0) + len(r.worker_ids)
         return sum(self._classrooms_needed(count) for count in cohorts.values())
 
@@ -494,6 +561,19 @@ class TrainingRegistry:
             and r.requester_id != r.educator_id
             and r.status == TrainingStatus.DISPATCHED
         )
+
+    def dispatched_training_targets(self, requester_id: int) -> dict[int, str]:
+        """Map dispatched trainee worker IDs to their target profession."""
+        targets: dict[int, str] = {}
+        for req in self._requests:
+            if req.requester_id != requester_id or req.status != TrainingStatus.DISPATCHED:
+                continue
+            for worker_id in req.worker_ids:
+                targets[worker_id] = req.target_profession
+        return targets
+
+    def dispatched_worker_ids(self, requester_id: int) -> set[int]:
+        return set(self.dispatched_training_targets(requester_id))
 
     def reserved_worker_ids(self, requester_id: int) -> set[int]:
         """Workers already committed to non-terminal training requests."""

@@ -35,10 +35,10 @@ intro:
     resolves, the bank may quote any rate and the applicant may counter,
     1/2/3-year terms and the original-amount/original-rate annual
     rollover, the +1-season processing delay without a computing centre.
-  - **Educator:** Manager (Course-gated university) vs Technician
-    (apprenticeship slot-pool + Instructor) pipelines, profession-
-    dependent durations, the 75% settling season, Course/Expertise
-    economics, the MBA request (2 Professors + 3 Courses).
+  - **Educator:** Manager vs Technician pipelines, profession-dependent
+    durations, Technical Workshop fast-track seats, the no-workshop 50%
+    settling season, Course/Expertise economics, the MBA request
+    (2 Professors + 3 Courses).
   - **All roles:** capital items wear out and need maintenance +
     eventual replacement from the Manufacturer; workers age and retire
     and must be replaced (recruit + train) — plan ahead.

@@ -76,9 +76,13 @@ def action_option_payload(action: TurnAction, player) -> dict:
     if action == TurnAction.OFFER_LOAN and not _player_has_role(player, "Banker"):
         enabled = False
         disabled_reason = "Only Banking can offer loans."
-    elif action == TurnAction.SELL_INSURANCE and not _player_has_role(player, "Banker"):
-        enabled = False
-        disabled_reason = "Only Banking can sell insurance."
+    elif action == TurnAction.SELL_INSURANCE:
+        if not _player_has_role(player, "Banker"):
+            enabled = False
+            disabled_reason = "Only Banking can sell insurance."
+        elif player.workforce.count_profession(Profession.ACTUARY.value) <= 0:
+            enabled = False
+            disabled_reason = "Banking needs an Actuary to sell insurance."
     elif action == TurnAction.ARRANGE_TRANSPORT and not _player_has_role(player, "Transporter"):
         enabled = False
         disabled_reason = "Only Transportation can arrange training transport."
@@ -245,7 +249,7 @@ class WebSocketIOAdapter(IOAdapter):
         if send_fn:
             send_fn(msg)
 
-    def _send_and_wait(self, msg: dict, timeout: float = 300) -> object:
+    def _send_and_wait(self, msg: dict, timeout: float | None = None) -> object:
         pid = self._active_pid()
         if pid is None:
             # No active player on this thread — fall back to defaults.
@@ -276,7 +280,7 @@ class WebSocketIOAdapter(IOAdapter):
             self._player_responses[pid] = None
             self._player_pending_msgs.pop(pid, None)
 
-        if not signalled:
+        if timeout is not None and not signalled:
             logger.warning(
                 "Player %d: _send_and_wait timed out after %.0fs for %s",
                 pid, timeout, msg.get("type", "?"),
@@ -305,7 +309,13 @@ class WebSocketIOAdapter(IOAdapter):
         with self._player_locks[player_id]:
             msg = self._player_pending_msgs.get(player_id)
             if not msg:
-                return False
+                if player_id in self._player_ready_flags:
+                    msg = {
+                        "type": "choose_action_parked",
+                        "player_id": player_id,
+                    }
+                else:
+                    return False
             replay = dict(msg)
             replay["replayed"] = True
         self._send_to(player_id, replay)

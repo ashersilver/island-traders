@@ -78,7 +78,21 @@ def test_pending_prompt_can_be_replayed_after_reconnect():
     io.receive_response(0, "end_turn")
     t.join(timeout=1)
     assert result["value"] == "end_turn"
-    assert io.replay_pending_prompt(0) is False
+
+
+def test_parked_prompt_can_be_replayed_after_reconnect_or_menu_recovery():
+    sent: list[tuple[int, dict]] = []
+    io = WebSocketIOAdapter(
+        "g1c",
+        broadcast_fn=lambda m: None,
+        player_send_fns={0: lambda m: sent.append((0, m))},
+    )
+    io.begin_season()
+    io.mark_player_ready(0)
+
+    assert io.replay_pending_prompt(0) is True
+    assert sent[-1][1]["type"] == "choose_action_parked"
+    assert sent[-1][1]["replayed"] is True
 
 
 def test_interrupt_all_unblocks_every_pending_prompt():
@@ -106,6 +120,32 @@ def test_interrupt_all_unblocks_every_pending_prompt():
         t.join(timeout=2)
 
     assert sorted(results) == [(0, None), (1, None), (2, None)]
+
+
+def test_default_prompt_wait_has_no_hidden_five_minute_timeout():
+    """Online prompts should be governed by the season timer, not a shorter
+    adapter timeout. Explicit timeout=... is still available for tests.
+    """
+    io = WebSocketIOAdapter(
+        "g2a", broadcast_fn=lambda m: None, player_send_fns={0: lambda m: None},
+    )
+    io.begin_season()
+
+    result = {}
+
+    def waiter():
+        io.set_active_player(0)
+        result["value"] = io._send_and_wait({"type": "choose_action"})
+
+    t = threading.Thread(target=waiter, daemon=True)
+    t.start()
+    time.sleep(0.35)
+
+    assert result == {}
+
+    io.interrupt_all()
+    t.join(timeout=1)
+    assert result["value"] is None
 
 
 def test_interrupted_confirm_cancels_instead_of_accepting():
@@ -351,6 +391,29 @@ def test_turn_manager_parallel_mode_dispatch():
     assert results == []
     results = tm._run_season_sequential(0, 0, {})
     assert results == []
+
+
+def test_parallel_turn_manager_calls_release_hook_after_threads_complete():
+    from island_traders.engine.turn import TurnManager
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.engine.trading import TradingEngine
+    from island_traders.models.market import Market
+    from island_traders.cli.prompts import FakeIOAdapter
+    from island_traders.models.deal import DealLedger
+
+    market = Market()
+    tm = TurnManager(
+        players=[],
+        production_engine=ProductionEngine(),
+        trading_engine=TradingEngine(market, DealLedger()),
+        market=market,
+        io_adapter=FakeIOAdapter(),
+    )
+    calls = []
+    tm.wait_for_parallel_season_release = lambda y, s: calls.append((y, s))
+
+    assert tm._run_season_parallel(2, 3, {}) == []
+    assert calls == [(2, 3)]
 
 
 def test_concurrent_ensure_player_does_not_create_duplicate_events():

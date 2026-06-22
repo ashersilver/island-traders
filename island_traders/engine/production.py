@@ -7,6 +7,7 @@ from ..engine.events import EventResult
 from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
+    OUTPUT_PRODUCTION_INPUTS,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     KITCHEN_SPECS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
@@ -15,6 +16,13 @@ from ..constants import (
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, find_item, recipe_for
 from ..models.profession import Profession, WorkerBand, band_of, PROFESSION_BAND
+from .engineering import (
+    active_engineer_specialty_counts,
+    adjusted_capacity_for_engineers,
+    adjusted_recipe_for_engineers,
+    adjusted_workforce_for_engineers,
+    electrical_efficiency_bonus,
+)
 
 
 def _band_of_profession_str(profession: str) -> WorkerBand | None:
@@ -40,6 +48,10 @@ class InsufficientInputsError(Exception):
 
 
 class ProductionEngine:
+    # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
+    # simulation.  None during normal play and in direct unit-test construction.
+    telemetry: object | None = None
+
     def _has_active_profession(self, player: Player, profession: str) -> bool:
         return any(w.profession == profession for w in player.workforce.active_workers)
 
@@ -146,6 +158,14 @@ class ProductionEngine:
         if second_used:
             player.give_resources(second, second_used)
         player.receive_resources(ResourceType.FOOD, food_qty)
+        if self.telemetry is not None:
+            self.telemetry.record_consumed(ResourceType.GRAIN, grain_needed)
+            self.telemetry.record_consumed(ResourceType.PRODUCE, produce_needed)
+            if first_used:
+                self.telemetry.record_consumed(first, first_used)
+            if second_used:
+                self.telemetry.record_consumed(second, second_used)
+            self.telemetry.record_produced(ResourceType.FOOD, food_qty)
         return food_qty, ""
 
     def _adjust_recipe_for_player(
@@ -218,6 +238,7 @@ class ProductionEngine:
         natural = player.workforce.labour_productivity_factor(
             total_skilled, total_unskilled, list(all_skilled_profs)
         )
+        natural = min(1.0, natural + electrical_efficiency_bonus(player))
         if not EXPERTISE_DEGRADATION_ENABLED:
             return natural
         floor = self.expertise_degradation_floor(player)
@@ -324,6 +345,11 @@ class ProductionEngine:
             raw = BASE_PRODUCTION.get(role_name, {})
         return {ResourceType(k): v for k, v in raw.items()}
 
+    def _output_inputs(self, role_name: str, output: ResourceType) -> dict[ResourceType, int]:
+        """Return inputs consumed only when a specific output is produced."""
+        raw = OUTPUT_PRODUCTION_INPUTS.get(role_name, {}).get(output.value, {})
+        return {ResourceType(k): v for k, v in raw.items()}
+
     def _seasonal_yield(self, role_name: str, season_name: str) -> float:
         """Seasonal base-yield multiplier (1.0 for Farmer — table already encodes it)."""
         if role_name == "Farmer":
@@ -353,6 +379,40 @@ class ProductionEngine:
                 totals = {r: max(0, int(round(qty * avg_mult)))
                           for r, qty in totals.items()}
         return totals
+
+    def _affordable_output_inputs(
+        self,
+        player: Player,
+        role_name: str,
+        outputs: dict[ResourceType, int],
+    ) -> tuple[dict[ResourceType, int], set[ResourceType]]:
+        """Return output-specific inputs that can be paid, plus skipped outputs.
+
+        Output-specific gates are intentionally non-atomic: if an Educator lacks
+        Reagents for Patents, Expertise/Courses still run.
+        """
+        inventory_after_inputs = {
+            resource: player.inventory.get(resource)
+            for resource in ResourceType
+        }
+        consumed: dict[ResourceType, int] = {}
+        skipped: set[ResourceType] = set()
+        for output, qty in outputs.items():
+            if qty <= 0:
+                continue
+            needs = self._output_inputs(role_name, output)
+            missing = [
+                resource
+                for resource, amount in needs.items()
+                if inventory_after_inputs.get(resource, 0) < amount
+            ]
+            if missing:
+                skipped.add(output)
+                continue
+            for resource, amount in needs.items():
+                inventory_after_inputs[resource] = inventory_after_inputs.get(resource, 0) - amount
+                consumed[resource] = consumed.get(resource, 0) + amount
+        return consumed, skipped
 
     def _freight_surcharge(self, product_line: str | None, qty: int) -> int:
         """Return Freight units consumed to ship produced goods (Manufacturer only)."""
@@ -400,10 +460,15 @@ class ProductionEngine:
         inputs = self._all_inputs(player, season_name, product_line)
         missing = {r: qty for r, qty in inputs.items() if player.inventory.get(r) < qty}
         if missing:
+            if self.telemetry is not None:
+                for r in missing:
+                    self.telemetry.record_starvation(r)
             raise InsufficientInputsError(player.role_names(), missing)
 
         for r, qty in inputs.items():
             player.give_resources(r, qty)
+            if self.telemetry is not None:
+                self.telemetry.record_consumed(r, qty)
 
         workforce_factor = self._labour_productivity_factor(player, season_name, product_line)
         effective_factor = max(player.production_capacity, workforce_factor)
@@ -411,7 +476,17 @@ class ProductionEngine:
         produced: dict[ResourceType, int] = {}
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
-            for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
+            role_outputs = self._role_outputs(role.name, season_name, product_line)
+            output_inputs, skipped_outputs = self._affordable_output_inputs(
+                player, role.name, role_outputs
+            )
+            for r, qty in output_inputs.items():
+                player.give_resources(r, qty)
+                if self.telemetry is not None:
+                    self.telemetry.record_consumed(r, qty)
+            for r, base_qty in role_outputs.items():
+                if r in skipped_outputs:
+                    continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
                     qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
@@ -425,6 +500,8 @@ class ProductionEngine:
                         # If not enough freight, ship anyway (partial loss already modelled by can_produce check)
                     player.receive_resources(r, qty)
                     produced[r] = produced.get(r, 0) + qty
+                    if self.telemetry is not None:
+                        self.telemetry.record_produced(r, qty)
 
         player.workforce.apply_season_work()
         return produced
@@ -459,6 +536,7 @@ class ProductionEngine:
         workforce_factor = player.workforce.labour_productivity_factor(
             total_skilled_req, total_unskilled_req, skilled_profs_list
         )
+        workforce_factor = min(1.0, workforce_factor + electrical_efficiency_bonus(player))
         effective_factor = max(player.production_capacity, workforce_factor)
         fill_pct = round(player.workforce.workforce_fill_rate(
             self._seasonal_workforce_required(player, season_name)
@@ -467,9 +545,23 @@ class ProductionEngine:
 
         outputs: dict[ResourceType, int] = {}
         freight_surcharge = 0
+        output_specific_inputs: dict[ResourceType, int] = {}
+        skipped_outputs: dict[str, list[ResourceType]] = {}
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
-            for r, base_qty in self._role_outputs(role.name, season_name, product_line).items():
+            role_outputs = self._role_outputs(role.name, season_name, product_line)
+            role_specific_inputs, role_skipped = self._affordable_output_inputs(
+                player, role.name, role_outputs
+            )
+            if role_skipped:
+                skipped_outputs[role.name] = sorted(role_skipped, key=lambda r: r.value)
+            for resource, qty_needed in role_specific_inputs.items():
+                output_specific_inputs[resource] = (
+                    output_specific_inputs.get(resource, 0) + qty_needed
+                )
+            for r, base_qty in role_outputs.items():
+                if r in role_skipped:
+                    continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
                     qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
@@ -483,6 +575,8 @@ class ProductionEngine:
             "can_produce": can,
             "missing_inputs": missing,
             "inputs_consumed": inputs,
+            "output_specific_inputs": output_specific_inputs,
+            "skipped_outputs": skipped_outputs,
             "outputs": outputs,
             "event": event_result.event_name,
             "yield_modifier": event_result.yield_modifier,
@@ -505,11 +599,19 @@ class ProductionEngine:
             result["freight_surcharge"] = freight_surcharge
         return result
 
-    def _capacity_limit(self, player: Player, role_name: str, output: ResourceType) -> int | None:
+    def _capacity_limit(
+        self,
+        player: Player,
+        role_name: str,
+        output: ResourceType,
+        season_name: str = "Spring",
+    ) -> int | None:
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if not recipe:
             return None
         recipe = self._adjust_recipe_for_player(recipe, player)
+        engineer_counts = active_engineer_specialty_counts(player)
+        recipe = adjusted_recipe_for_engineers(recipe, engineer_counts)
 
         mult = player.patent_input_multiplier(recipe.output)
         if mult < 1.0:
@@ -524,7 +626,20 @@ class ProductionEngine:
             WorkerBand.TECHNICIAN: bands.get("Technician", 0),
             WorkerBand.WORKER: bands.get("Worker", 0),
         }
+        wf_by_band = adjusted_workforce_for_engineers(wf_by_band, engineer_counts)
         on_hand = {r.value: player.inventory.get(r) for r in ResourceType}
+        if (
+            role_name == "Farmer"
+            and output.value in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+            and output not in (ResourceType.FOOD, ResourceType.MEAT)
+        ):
+            enough_for_seasonal_run = all(
+                player.inventory.get(ResourceType(resource)) >= amount
+                for resource, amount in FARMER_SEASONAL_CONVERSION[season_name]["inputs"].items()
+            )
+            on_hand = dict(on_hand)
+            for resource in recipe.inputs:
+                on_hand[resource] = float("inf") if enough_for_seasonal_run else 0
         if role_name == "Farmer" and output == ResourceType.FOOD:
             # Packaged Food accepts either Fish or Meat as its protein.
             on_hand[ResourceType.FISH.value] = (
@@ -538,6 +653,7 @@ class ProductionEngine:
             workforce=wf_by_band,
             on_hand=on_hand,
         )
+        cap = adjusted_capacity_for_engineers(cap, engineer_counts, recipe.output)
         if cap.max_producible == float("inf"):
             return None
         return max(0, floor(cap.max_producible))
@@ -571,7 +687,9 @@ class ProductionEngine:
                         continue
                     if role.name == "Miner" and output == ResourceType.METAL:
                         preview_qty = int(preview_qty * self._metal_recipe_multiplier(player))
-                    capacity_limit = self._capacity_limit(player, role.name, output)
+                    capacity_limit = self._capacity_limit(
+                        player, role.name, output, season_name
+                    )
                     max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
                     options.append({
                         "role": role.name,
@@ -585,7 +703,9 @@ class ProductionEngine:
             if role.name == "Farmer":
                 # Meat is a deliberate livestock line: 4 Grain feedstock per
                 # Meat, with Veterinarian depth protecting late-season output.
-                meat_capacity = self._capacity_limit(player, role.name, ResourceType.MEAT)
+                meat_capacity = self._capacity_limit(
+                    player, role.name, ResourceType.MEAT, season_name
+                )
                 if meat_capacity and meat_capacity > 0:
                     meat_max = int(
                         meat_capacity
@@ -614,7 +734,9 @@ class ProductionEngine:
                     player.inventory.get(ResourceType.FISH)
                     + player.inventory.get(ResourceType.MEAT),
                 )
-                capacity_limit = self._capacity_limit(player, role.name, ResourceType.FOOD)
+                capacity_limit = self._capacity_limit(
+                    player, role.name, ResourceType.FOOD, season_name
+                )
                 max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
                 if max_qty > 0:
                     options.append({
@@ -640,6 +762,23 @@ class ProductionEngine:
         season_name: str,
         product_line: str | None,
     ) -> dict[ResourceType, int]:
+        if (
+            role_name == "Farmer"
+            and output.value in FARMER_SEASONAL_CONVERSION[season_name]["outputs"]
+            and output not in (ResourceType.FOOD, ResourceType.MEAT)
+        ):
+            role = next(r for r in player.roles if r.name == role_name)
+            role_player = self._role_player(player, role)
+            base_inputs = self._all_inputs(role_player, season_name, product_line)
+            if preview_qty <= 0 or qty <= 0:
+                return {}
+            ratio = min(1.0, qty / preview_qty)
+            return {
+                r: ceil(amount * ratio)
+                for r, amount in base_inputs.items()
+                if ceil(amount * ratio) > 0
+            }
+
         recipe = recipe_for(PRODUCTION_RECIPES, role_name, output.value)
         if recipe:
             if role_name == "Farmer" and output == ResourceType.FOOD:
@@ -655,6 +794,9 @@ class ProductionEngine:
                     inputs[ResourceType.MEAT] = meat_used
                 return inputs
             recipe = self._adjust_recipe_for_player(recipe, player)
+            recipe = adjusted_recipe_for_engineers(
+                recipe, active_engineer_specialty_counts(player)
+            )
             mult = player.patent_input_multiplier(recipe.output)
             return {
                 ResourceType(resource): ceil(amount * mult * qty)
@@ -720,10 +862,21 @@ class ProductionEngine:
             if player.inventory.get(r) < amount
         }
         if missing:
+            if self.telemetry is not None:
+                for r in missing:
+                    self.telemetry.record_starvation(r)
             raise InsufficientInputsError(role_name, missing)
 
         for r, amount in inputs.items():
             player.give_resources(r, amount)
+            if self.telemetry is not None:
+                self.telemetry.record_consumed(r, amount)
+        player._oil_consumed_this_year = (
+            getattr(player, "_oil_consumed_this_year", 0)
+            + inputs.get(ResourceType.OIL, 0)
+        )
         player.receive_resources(output, qty)
+        if self.telemetry is not None:
+            self.telemetry.record_produced(output, qty)
         player.workforce.apply_season_work()
         return {output: qty}

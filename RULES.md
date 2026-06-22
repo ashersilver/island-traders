@@ -47,15 +47,24 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 **sealed-bid auction** (see Auction Phase below) and a single player may win
 **more than one** island.
 
-| Role | Island | Produces | Needs to Produce |
-|---|---|---|---|
-| **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil |
-| **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment |
-| **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) |
-| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment |
-| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* |
-| **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment |
+| Role | Island | Produces | Needs to Produce | Activity |
+|---|---|---|---|---|
+| **Farmer** | Agriculture, Fisheries & Foods Island | Food, Fish | Farm Machinery, Oil | Medium |
+| **Miner** | Mining & Oil Island | Ore, **Metal**, Oil | Oil, Freight, Mining Equipment | Low |
+| **Transporter** | Transportation & Shipping Island | Freight, **Passenger Seats** | Oil, Fish (crew provisions) | Medium |
+| **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment | High |
+| **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* | High |
+| **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight | Medium |
+| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
+
+> **Activity index (how busy a role is):** roles differ in how many decisions
+> and interactions they demand each season — factor this into your auction
+> bidding. **Low** (Miner) is a single, steady extraction loop — a good first
+> role. **Medium** (Farmer, Transporter, Manufacturer) adds a balancing act or a
+> per-season choice. **High** (Educator, Banker, Doctor) means constant
+> negotiation, financial judgement, or inter-island logistics every turn —
+> rewarding for experienced players. The digital edition shows each island's
+> activity index on its auction briefing card.
 
 > **Multi-role play:** A single player can win multiple islands in the auction
 > (they manage each island independently). If two or more humans want to
@@ -568,22 +577,21 @@ reaching full output; Manager (university) graduates have no settling
 penalty.
 
 > **Tip:** Doctors are away **3** seasons — plan the gap.  Send
-> Technicians by cargo in Winter to absorb the extra absence cheaply,
-> and remember the 75% settling season when timing returns for a busy
-> production season.
+> Technicians by cargo in Winter to absorb the extra absence cheaply.
+> Without a Technical Workshop, remember the 50% settling season when
+> timing returns for a busy production season.
 
 ---
 
 ## Vaccines
 
-The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents a course of vaccination for one worker or resident.
+The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents one dose for Winter flu protection.
 
 - **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Expertise + Capital).
-- **Effect:** A Vaccine applied to a worker improves their wellness for **4 seasons**, conferring a small efficiency bonus and reducing the likelihood of illness-related absences.
+- **Winter flu:** Each Winter, one flu strain affects every island and can reduce productivity by up to 20% for that season.
+- **Effect:** Each island automatically administers up to 1 Vaccine per 20 residents from its inventory. Full coverage reduces that island's flu loss by 80%; partial coverage scales proportionally.
 - **Trading:** Vaccines can be sold on the market or traded peer-to-peer like any other resource.
 - **Base price:** 40 Dp per unit.
-
-> In future expansions the wellness mechanic will interact with the workplace injury and illness system to reduce downtime on labour-intensive islands.
 
 ---
 
@@ -895,7 +903,7 @@ Bullet bond — pay principal × (1+rate) at maturity, or Roll Over.
 
 **Market floor/ceiling:** 20% – 500% of base price.
 
-**Vaccines:** Healthcare produces 1/season; each unit improves worker wellness for 4 seasons.
+**Vaccines:** Healthcare produces 1/season; each unit helps cover 20 residents against Winter flu for that season.
 
 **Patents:** Educator produces 1/season; each Patent applied gives –20% input
 cost on the chosen output (max 3 per output).

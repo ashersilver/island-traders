@@ -1,8 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from .profession import (
-    Profession, WorkerBand, band_of,
-    APPRENTICESHIP_SETTLING_SEASONS, APPRENTICESHIP_SETTLING_EFFICIENCY,
+    Profession, WorkerBand, EngineerSpecialty, band_of,
+    APPRENTICESHIP_SETTLING_EFFICIENCY,
 )
 
 
@@ -34,6 +34,13 @@ class Worker:
     # Set True while the worker is on a staffing contract at another island.
     # Excludes them from the home island's active workforce during the contract.
     on_contract: bool = False
+    # Temporary non-training absence, currently used for workplace injuries.
+    # Decremented at season end; unlike in_training, this is not part of the
+    # university pipeline and must not appear in training counts.
+    absent_seasons: int = 0
+    # Optional Engineer specialization earned by a fourth consecutive season
+    # or a later one-season return course.
+    engineer_specialty: str = ""
 
     @property
     def plateau(self) -> float:
@@ -51,8 +58,13 @@ class Worker:
     def tier_name(self) -> str:
         if self.in_training:
             return "At College"
+        if self.absent_seasons > 0:
+            return "Absent"
         if self.profession == Profession.UNSKILLED.value:
             return "Unskilled"
+        if self.profession == Profession.ENGINEER.value and self.engineer_specialty:
+            suffix = " — settling" if self.settling_seasons > 0 else ""
+            return f"Engineer ({self.engineer_specialty}){suffix}"
         levels = ["", "Basic", "Skilled", "Expert"]
         level_str = levels[min(self.training_level, 3)]
         suffix = " — settling" if self.settling_seasons > 0 else ""
@@ -79,13 +91,21 @@ class Worker:
     def depart_for_training(self) -> None:
         self.in_training = True
 
-    def return_from_training(self, target_profession: str | None = None) -> None:
+    def return_from_training(
+        self,
+        target_profession: str | None = None,
+        engineer_specialty: str = "",
+        settling_seasons_on_return: int = 0,
+    ) -> None:
         self.in_training = False
         self.train(target_profession)
-        # Apprenticeship (Technician band) graduates work a reduced-output
-        # settling season on the home island; university graduates do not.
+        if self.profession == Profession.ENGINEER.value and engineer_specialty:
+            try:
+                self.engineer_specialty = EngineerSpecialty(engineer_specialty).value
+            except ValueError:
+                self.engineer_specialty = ""
         if band_of(self.profession) == WorkerBand.TECHNICIAN:
-            self.settling_seasons = APPRENTICESHIP_SETTLING_SEASONS
+            self.settling_seasons = max(0, settling_seasons_on_return)
 
 
 @dataclass
@@ -99,6 +119,7 @@ class Workforce:
         training_level: int = 0,
         profession: str = Profession.UNSKILLED.value,
         age_seasons: int = 0,
+        engineer_specialty: str = "",
     ) -> list[Worker]:
         new: list[Worker] = []
         for _ in range(count):
@@ -107,6 +128,7 @@ class Workforce:
                 training_level=training_level,
                 profession=profession,
                 age_seasons=age_seasons,
+                engineer_specialty=engineer_specialty,
             )
             self._next_id += 1
             self.workers.append(w)
@@ -140,7 +162,10 @@ class Workforce:
 
     @property
     def active_workers(self) -> list[Worker]:
-        return [w for w in self.workers if not w.in_training and not w.on_contract]
+        return [
+            w for w in self.workers
+            if not w.in_training and not w.on_contract and w.absent_seasons <= 0
+        ]
 
     @property
     def active_count(self) -> int:
@@ -179,20 +204,29 @@ class Workforce:
             out[band_of(w.profession).value] += 1
         return out
 
-    def training_band_summary(self) -> dict[str, int]:
-        """Away-at-training counts keyed by home band name."""
+    def training_band_summary(
+        self, training_targets: dict[int, str] | None = None
+    ) -> dict[str, int]:
+        """Away-at-training counts keyed by target band name."""
         out = {b.value: 0 for b in WorkerBand}
         for w in self.workers:
             if w.in_training:
-                out[band_of(w.profession).value] += 1
+                profession = (
+                    training_targets.get(w.worker_id, w.profession)
+                    if training_targets else w.profession
+                )
+                out[band_of(profession).value] += 1
         return out
 
-    def profession_summary(self) -> dict[str, dict[str, int]]:
+    def profession_summary(
+        self, training_targets: dict[int, str] | None = None
+    ) -> dict[str, dict[str, int]]:
         """Per-profession counts: {"Factory Foreman": {"active": 2, "training": 1}, ...}.
 
         Uses the raw profession value as the key (e.g. "factory_foreman") and
-        also includes a "label" entry for display.  Unskilled workers are
-        omitted unless present.
+        also includes a "label" entry for display.  In-training workers are
+        grouped under their target profession when the caller supplies the
+        training registry's worker-id → target map.
         """
         from ..models.profession import PROFESSION_LABEL, Profession
         active: dict[str, int] = {}
@@ -200,8 +234,10 @@ class Workforce:
         for w in self.workers:
             key = w.profession
             if w.in_training:
+                if training_targets:
+                    key = training_targets.get(w.worker_id, key)
                 training[key] = training.get(key, 0) + 1
-            else:
+            elif not w.on_contract:
                 active[key] = active.get(key, 0) + 1
         all_profs = set(active) | set(training)
         result = {}
@@ -245,6 +281,16 @@ class Workforce:
     def mechanic_count(self) -> int:
         return self.count_profession(Profession.MECHANIC.value)
 
+    def engineer_specialty_counts(self) -> dict[str, int]:
+        counts = {specialty.value: 0 for specialty in EngineerSpecialty}
+        for worker in self.active_workers:
+            if (
+                worker.profession == Profession.ENGINEER.value
+                and worker.engineer_specialty in counts
+            ):
+                counts[worker.engineer_specialty] += 1
+        return counts
+
     def workforce_fill_rate(self, required: int) -> float:
         if required <= 0:
             return 1.0
@@ -267,6 +313,54 @@ class Workforce:
                 dispatched.append(w)
         return dispatched
 
+    def mark_absent(self, worker_ids: list[int], seasons: int = 1) -> list[Worker]:
+        """Temporarily remove active workers from production without training them."""
+        marked = []
+        if seasons <= 0:
+            return marked
+        id_set = set(worker_ids)
+        for w in self.workers:
+            if (
+                w.worker_id in id_set
+                and not w.in_training
+                and not w.on_contract
+            ):
+                w.absent_seasons = max(w.absent_seasons, seasons)
+                marked.append(w)
+        return marked
+
+    def advance_absences(self) -> list[Worker]:
+        """Tick temporary absences down by one season; return workers made active."""
+        returned = []
+        for w in self.workers:
+            if w.absent_seasons > 0:
+                w.absent_seasons -= 1
+                if w.absent_seasons == 0:
+                    returned.append(w)
+        return returned
+
+    def reconcile_training_flags(
+        self, dispatched_worker_ids: set[int]
+    ) -> dict[str, list[int]]:
+        """Make worker.in_training match the dispatched training ledger.
+
+        This clears orphaned flags left by cancelled/removed batches and marks
+        existing dispatched trainees if a save or manual path missed the flag.
+        """
+        cleared: list[int] = []
+        marked: list[int] = []
+        existing_ids = {w.worker_id for w in self.workers}
+        for w in self.workers:
+            should_be_training = w.worker_id in dispatched_worker_ids
+            if should_be_training and not w.in_training:
+                w.in_training = True
+                marked.append(w.worker_id)
+            elif not should_be_training and w.in_training:
+                w.in_training = False
+                cleared.append(w.worker_id)
+        missing = sorted(dispatched_worker_ids - existing_ids)
+        return {"cleared": cleared, "marked": marked, "missing": missing}
+
     def remove_workers(self, worker_ids: list[int]) -> list[Worker]:
         """Permanently remove workers (fatalities). Returns removed workers."""
         id_set = set(worker_ids)
@@ -275,12 +369,20 @@ class Workforce:
         return removed
 
     def return_from_training(
-        self, worker_ids: list[int], target_profession: str | None = None
+        self,
+        worker_ids: list[int],
+        target_profession: str | None = None,
+        engineer_specialty: str = "",
+        settling_seasons_on_return: int = 0,
     ) -> list[Worker]:
         returned = []
         for w in self.workers:
             if w.worker_id in worker_ids and w.in_training:
-                w.return_from_training(target_profession)
+                w.return_from_training(
+                    target_profession,
+                    engineer_specialty,
+                    settling_seasons_on_return,
+                )
                 returned.append(w)
         return returned
 

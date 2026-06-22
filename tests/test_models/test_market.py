@@ -3,7 +3,7 @@ from island_traders.models.market import Market, InsufficientSupplyError
 from island_traders.models.player import Player, InsufficientFundsError
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
-from island_traders.constants import BASE_PRICES
+from island_traders.constants import BASE_PRICES, MARKET_MAKER_DEPTH_PER_RESOURCE
 
 
 def make_player(pid, role_name, dollops=200.0):
@@ -39,7 +39,9 @@ def test_execute_buy_transfers_resources_and_gold():
     m = Market()
     m.post_supply(ResourceType.FOOD, 10)
     buyer = make_player(0, "Banker")
+    expected_paid = m.market_maker_ask(ResourceType.FOOD) * 3
     paid = m.execute_buy(buyer, ResourceType.FOOD, 3)
+    assert paid == expected_paid
     assert buyer.inventory.get(ResourceType.FOOD) == 3
     assert buyer.dollops == 200.0 - paid
 
@@ -72,8 +74,58 @@ def test_execute_sell_increases_supply():
     m = Market()
     seller = make_player(0, "Farmer")
     seller.receive_resources(ResourceType.FOOD, 4)
-    m.execute_sell(seller, ResourceType.FOOD, 4)
+    expected_received = m.market_maker_bid(ResourceType.FOOD) * 4
+    starting_dollops = seller.dollops
+    received = m.execute_sell(seller, ResourceType.FOOD, 4)
+    assert received == expected_received
+    assert seller.dollops == starting_dollops + received
     assert m.supply.get(ResourceType.FOOD, 0) == 4
+
+
+def test_formula_market_buy_depth_is_finite_per_season():
+    m = Market()
+    m.post_supply(ResourceType.FOOD, MARKET_MAKER_DEPTH_PER_RESOURCE + 1)
+    buyer = make_player(0, "Banker", dollops=5000.0)
+
+    m.execute_buy(buyer, ResourceType.FOOD, MARKET_MAKER_DEPTH_PER_RESOURCE)
+
+    assert m.market_maker_buy_depth(ResourceType.FOOD) == 0
+    with pytest.raises(InsufficientSupplyError):
+        m.execute_buy(buyer, ResourceType.FOOD, 1)
+
+
+def test_formula_market_buy_does_not_consume_player_asks():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    buyer = make_player(2, "Banker")
+    seller.receive_resources(ResourceType.FOOD, 5)
+    offer = m.post_offer(seller, ResourceType.FOOD, 12.0, 5)
+
+    with pytest.raises(InsufficientSupplyError):
+        m.execute_buy(buyer, ResourceType.FOOD, 1)
+
+    assert offer.remaining == 5
+    assert buyer.inventory.get(ResourceType.FOOD) == 0
+    assert seller.dollops == 200.0
+
+
+def test_formula_market_sell_depth_is_finite_and_resets_with_season():
+    m = Market()
+    seller = make_player(0, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, MARKET_MAKER_DEPTH_PER_RESOURCE + 1)
+
+    m.execute_sell(seller, ResourceType.FOOD, MARKET_MAKER_DEPTH_PER_RESOURCE)
+    assert m.market_maker_sell_depth(ResourceType.FOOD) == 0
+
+    with pytest.raises(InsufficientSupplyError):
+        m.execute_sell(seller, ResourceType.FOOD, 1)
+    assert seller.inventory.get(ResourceType.FOOD) == 1
+
+    m.set_season(0, 1)
+    m.execute_sell(seller, ResourceType.FOOD, 1)
+    assert m.market_maker_sell_depth(ResourceType.FOOD) == (
+        MARKET_MAKER_DEPTH_PER_RESOURCE - 1
+    )
 
 
 def test_snapshot_appends_entry():
@@ -382,3 +434,109 @@ def test_supply_and_demand_counters_decrement_on_cancelled_orders():
     m.post_bid(buyer, ResourceType.FOOD, 8.0, 1)       # cancels first 3
     assert m.supply[ResourceType.FOOD] == 2
     assert m.demand[ResourceType.FOOD] == 1
+
+
+def test_expired_season_offer_refunds_unsold_resources():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 2)
+    market.set_season(0, 0)
+    offer = market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 2)
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 0
+
+    market.set_season(0, 1)
+    market.expire_season_offers()
+
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 2
+    assert market.supply.get(ResourceType.FARM_MACHINERY, 0) == 0
+
+
+def test_expire_current_season_offer_refunds_at_season_close():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    market.set_season(0, 0)
+    offer = market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 1)
+
+    market.expire_season_offers(expire_current=True)
+
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FARM_MACHINERY) == 1
+
+
+def test_open_offer_value_counts_seller_escrowed_inventory():
+    market = Market()
+    seller = make_player(1, "Manufacturer")
+    seller.receive_resources(ResourceType.FARM_MACHINERY, 2)
+    market.post_offer(seller, ResourceType.FARM_MACHINERY, 45.0, 2)
+
+    value = market.open_offer_value(
+        seller.player_id,
+        {ResourceType.FARM_MACHINERY: 50.0},
+    )
+
+    assert value == 100.0
+
+
+def test_market_emits_and_drains_events():
+    m = Market()
+    seller = make_player(1, "Miner", dollops=200.0)
+    buyer = make_player(2, "Manufacturer", dollops=500.0)
+    seller.receive_resources(ResourceType.ORE, 10)
+
+    m.post_offer(seller, ResourceType.ORE, price_per_unit=20.0, qty=5)
+    m.post_bid(buyer, ResourceType.ORE, price_per_unit=18.0, qty=2)
+
+    events = m.drain_events()
+    kinds = [(e["resource"], e["side"], e["action"], e["actor"]) for e in events]
+    assert ("Ore", "ask", "posted", seller.name) in kinds
+    assert ("Ore", "bid", "posted", buyer.name) in kinds
+    # draining clears the buffer
+    assert m.drain_events() == []
+
+
+def test_market_emits_fill_event_on_buy():
+    m = Market()
+    seller = make_player(1, "Miner", dollops=200.0)
+    buyer = make_player(2, "Manufacturer", dollops=500.0)
+    seller.receive_resources(ResourceType.ORE, 10)
+    m.post_offer(seller, ResourceType.ORE, price_per_unit=20.0, qty=5)
+    m.drain_events()  # clear the 'posted' event
+
+    m.buy_from_offers(buyer, ResourceType.ORE, qty=3)
+    fills = [e for e in m.drain_events() if e["action"] == "filled"]
+    assert fills and fills[0]["resource"] == "Ore"
+    assert fills[0]["side"] == "ask" and fills[0]["quantity"] == 3
+    assert fills[0]["actor"] == buyer.name
+
+
+def test_equipment_bought_from_market_installs_as_farmer_capital():
+    market = Market()
+    market.set_season(1, 2)
+    manufacturer = make_player(1, "Manufacturer")
+    farmer = make_player(2, "Farmer", dollops=500.0)
+    manufacturer.receive_resources(ResourceType.FARM_MACHINERY, 2)
+
+    market.post_offer(manufacturer, ResourceType.FARM_MACHINERY, 60.0, 2)
+    paid, bought = market.buy_from_offers(farmer, ResourceType.FARM_MACHINERY, 1)
+
+    assert paid == 60.0
+    assert bought == 1
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert farmer.capital_count("farmer.tractor") == 1
+    assert farmer.capital_acquired_ticks["farmer.tractor"] == [6]
+    assert manufacturer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+
+
+def test_mining_equipment_bought_from_market_installs_as_miner_capital():
+    market = Market()
+    manufacturer = make_player(1, "Manufacturer")
+    miner = make_player(2, "Miner", dollops=500.0)
+    manufacturer.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
+
+    market.post_offer(manufacturer, ResourceType.MINING_EQUIPMENT, 70.0, 1)
+    market.buy_from_offers(miner, ResourceType.MINING_EQUIPMENT, 1)
+
+    assert miner.inventory.get(ResourceType.MINING_EQUIPMENT) == 0
+    assert miner.capital_count("miner.excavator") == 1

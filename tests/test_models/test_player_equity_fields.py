@@ -39,4 +39,4 @@ def test_net_worth_ignores_islands_without_a_price():
 def test_cap_table_field_round_trips_via_helper():
     p = _player(cap_table=CapTable.new_with_majority("0"))
     assert p.cap_table.held_by("0") == 60
-    assert p.cap_table.public_float() == 40
+    assert p.cap_table.unissued() == 40

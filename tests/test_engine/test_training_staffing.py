@@ -57,9 +57,12 @@ def _staff(educator: Player, profession: Profession, count: int) -> None:
     )
 
 
-def _fund_training(educator: Player, courses: int = 20, expertise: int = 20) -> None:
+def _fund_training(
+    educator: Player, courses: int = 20, expertise: int = 20, reagents: int = 20
+) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, reagents)
 
 
 def test_manager_capacity_min_of_2x_professor_and_lecturer():
@@ -89,15 +92,15 @@ def test_technical_capacity_min_of_2x_td_and_instructors_staffing_only():
     educator = _player(1, "Educator")
     _staff(educator, Profession.TECHNICAL_DIRECTOR, 2)
     _staff(educator, Profession.INSTRUCTOR, 3)
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     assert tm._technical_course_capacity(educator) == 3
 
-    educator.capital_inventory.clear()
+    educator.capital_units.clear()
     # Staffing unchanged — workshop check happens separately.
     assert tm._technical_course_capacity(educator) == 3
 
 
-def test_technical_course_requires_workshop_prerequisite():
+def test_technical_course_can_run_without_workshop_prerequisite():
     training = TrainingRegistry()
     tm = _turn_manager(training)
     educator = _player(1, "Educator")
@@ -109,8 +112,8 @@ def test_technical_course_requires_workshop_prerequisite():
         educator, _request(Profession.FARMING_TECHNICIAN.value)
     )
 
-    assert not ok
-    assert "no Technical Workshop" in msg
+    assert ok
+    assert msg == ""
 
 
 def test_manager_course_does_not_require_workshop():
@@ -156,15 +159,18 @@ def test_staff_locked_for_course_duration():
 def test_expertise_debited_per_course():
     tm = _turn_manager()
     educator = _player(1, "Educator")
-    _fund_training(educator, courses=4, expertise=4)
+    _fund_training(educator, courses=4, expertise=8)
 
     tm._consume_training_capacity(educator, _request(Profession.NURSE.value))
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 7
 
     tm._consume_training_capacity(
         educator, _request(Profession.FARMING_TECHNICIAN.value)
     )
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 6
+
+    tm._consume_training_capacity(educator, _request(Profession.DOCTOR.value))
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
 
 
 def test_course_slot_debited_per_course_unchanged():
@@ -233,7 +239,7 @@ def test_technical_workshop_caps_trainee_headcount():
     _staff(educator, Profession.INSTRUCTOR, 6)
     _fund_training(educator)
     # 1 workshop = 6 trainee seats.
-    educator.capital_inventory["educator.technical_workshop"] = 1
+    educator.add_capital("educator.technical_workshop", 1)
 
     # First batch of 4 trainees fits (6 - 0 = 6 seats free; uses 4).
     # Bypass propose() to avoid the annual university intake cap — this
@@ -269,7 +275,7 @@ def test_technical_workshop_caps_trainee_headcount():
     assert "4/6 trainee seat(s)" in msg
 
     # With a second workshop the same batch fits (12 - 4 = 8 free; uses 3).
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     ok2, _ = tm._training_capacity_status(educator, req2)
     assert ok2 is True
 

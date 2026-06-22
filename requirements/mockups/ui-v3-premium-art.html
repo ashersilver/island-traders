@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Island Traders — Premium, art-forward</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#f6b93b; --gold-2:#ffd98a; --cyan:#22d3ee; --cyan-2:#7af0ff;
+  --green:#34e0a1; --red:#ff5d6c; --txt:#bccbe0; --dim:#6a809b; --head:#eef5ff;
+  --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.075);
+  --stroke:rgba(255,255,255,.09); --stroke-2:rgba(255,255,255,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Sora',system-ui,sans-serif;color:var(--txt);min-height:100vh;padding:18px;letter-spacing:.1px;
+  background:
+    radial-gradient(1100px 640px at 14% -10%, rgba(34,211,238,.15), transparent 60%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(246,185,59,.14), transparent 55%),
+    radial-gradient(900px 760px at 50% 124%, rgba(80,120,255,.12), transparent 60%),
+    linear-gradient(180deg,#070d18,#05080f 60%,#04060c);
+}
+.num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.gold{color:var(--gold)} .green{color:var(--green)} .red{color:var(--red)} .cy{color:var(--cyan)} .dim{color:var(--dim)}
+.app{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+.bar{display:flex;align-items:center;gap:18px;padding:12px 18px;border-radius:18px;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+  border:1px solid var(--stroke);backdrop-filter:blur(14px);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 40px -24px #000}
+.brand{display:flex;align-items:center;gap:11px;font-weight:600;color:var(--head);letter-spacing:.3px}
+.logo{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:18px;
+  background:radial-gradient(120% 120% at 30% 20%,#123,#06121f);border:1px solid var(--stroke-2);
+  box-shadow:0 0 22px -4px rgba(34,211,238,.55), inset 0 0 14px rgba(34,211,238,.18)}
+.season{display:flex;align-items:center;gap:10px;padding:6px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--stroke)}
+.ring{--p:62;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  background:conic-gradient(var(--gold) calc(var(--p)*1%), rgba(255,255,255,.08) 0)}
+.ring i{width:22px;height:22px;border-radius:50%;background:#0a1322;display:grid;place-items:center;font-style:normal;font-size:9px;font-weight:600;color:var(--gold-2)}
+.spacer{flex:1}
+.hero{text-align:right;line-height:1.05}
+.hero .lbl{font-size:10.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim)}
+.hero .val{font-size:28px;font-weight:700;color:var(--gold);text-shadow:0 0 26px rgba(246,185,59,.45)}
+.hero .val small{font-size:14px;font-weight:500;color:var(--gold-2);opacity:.8}
+.delta{font-size:12px;font-weight:600}
+.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:600;color:#06121f;
+  background:linear-gradient(135deg,var(--gold-2),var(--gold));box-shadow:0 0 20px -4px rgba(246,185,59,.6)}
+.pill{padding:5px 11px;border-radius:999px;font-size:11.5px;border:1px solid var(--stroke);background:var(--glass);color:var(--cyan-2)}
+.live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(52,224,161,.7);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,224,161,.55)}70%{box-shadow:0 0 0 7px rgba(52,224,161,0)}100%{box-shadow:0 0 0 0 rgba(52,224,161,0)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+.grid{display:grid;grid-template-columns:360px 1fr 320px;gap:14px;align-items:start}
+.card{border-radius:18px;padding:15px 16px;background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--stroke);backdrop-filter:blur(16px);box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 24px 50px -34px #000}
+.card+.card{margin-top:14px}
+.card h3{font-size:12px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);
+  display:flex;align-items:center;gap:8px;margin-bottom:12px}
+
+/* ===== HERO ISLAND RENDER ===== */
+.island-hero{position:relative;border-radius:20px;overflow:hidden;height:330px;
+  border:1px solid var(--stroke-2);box-shadow:0 30px 70px -30px #000, 0 0 60px -20px rgba(246,185,59,.35)}
+.island-hero .art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  animation:float 9s ease-in-out infinite}
+.island-hero .scrim{position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(5,8,15,.25) 0%,transparent 30%,rgba(5,8,15,.55) 72%,rgba(5,8,15,.94) 100%)}
+.island-hero .ring-glow{position:absolute;inset:0;box-shadow:inset 0 0 80px rgba(246,185,59,.14), inset 0 0 30px rgba(0,0,0,.5)}
+.island-hero .tag{position:absolute;top:13px;left:13px;display:flex;gap:7px}
+.island-hero .meta{position:absolute;left:16px;right:16px;bottom:14px}
+.island-hero .iname{font-size:20px;font-weight:600;color:#fff;text-shadow:0 2px 18px rgba(0,0,0,.8)}
+.island-hero .irole{font-size:12px;color:var(--gold-2);text-shadow:0 1px 10px rgba(0,0,0,.8)}
+.island-hero .net{margin-top:8px;display:flex;align-items:baseline;gap:8px}
+.island-hero .net b{font-size:26px;font-weight:700;color:#fff;text-shadow:0 0 24px rgba(246,185,59,.5)}
+.float-chips{position:absolute;right:13px;bottom:14px;display:flex;gap:8px}
+.fchip{padding:7px 10px;border-radius:12px;background:rgba(8,14,24,.6);border:1px solid var(--stroke-2);backdrop-filter:blur(8px);text-align:center}
+.fchip .k{font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim)}
+.fchip .v{font-size:15px;font-weight:600;color:var(--head)}
+
+.stat{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,.05);font-size:13px}
+.stat:first-child{border-top:none}
+.stat .k{color:var(--dim)} .stat .v{font-weight:500;color:var(--head)}
+.gauge{height:6px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden;width:104px}
+.gauge i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--cyan),var(--green))}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:flex;flex-direction:column;gap:5px;padding:9px 11px;border-radius:13px;background:var(--glass);border:1px solid var(--stroke);min-width:88px;flex:1}
+.chip .t{font-size:11px;color:var(--dim);display:flex;justify-content:space-between;gap:8px}
+.chip .q{font-size:17px;font-weight:600;color:var(--head)}
+.chip .bar{height:4px;border-radius:4px;background:rgba(255,255,255,.08);overflow:hidden}
+.chip .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-2))}
+
+.mkt{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:13px}
+.mkt th{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);text-align:right;padding:0 10px 4px;font-weight:500}
+.mkt th:first-child{text-align:left}
+.mkt td{padding:9px 10px;background:var(--glass);border-top:1px solid var(--stroke);border-bottom:1px solid var(--stroke)}
+.mkt td:first-child{border-left:1px solid var(--stroke);border-radius:11px 0 0 11px;text-align:left;color:var(--head);font-weight:500}
+.mkt td:last-child{border-right:1px solid var(--stroke);border-radius:0 11px 11px 0}
+.mkt td.n{text-align:right;font-family:'IBM Plex Mono',monospace}
+.mkt tr.hot td{background:linear-gradient(90deg,rgba(246,185,59,.14),rgba(246,185,59,.03));border-color:rgba(246,185,59,.35)}
+.spark{display:inline-flex;gap:2px;align-items:flex-end;height:18px;vertical-align:middle}
+.spark i{width:3px;border-radius:2px;background:var(--cyan);opacity:.8}
+
+.opp{display:flex;gap:12px;align-items:center;padding:13px;border-radius:15px;
+  background:linear-gradient(135deg,rgba(52,224,161,.14),rgba(34,211,238,.05));border:1px solid rgba(52,224,161,.28)}
+.opp .icon{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:20px;background:rgba(52,224,161,.16);border:1px solid rgba(52,224,161,.4)}
+.opp .body{flex:1}
+.opp .body .h{font-weight:600;color:var(--head);font-size:14px}
+.opp .body .s{font-size:12px;color:var(--dim)}
+.btn{padding:9px 15px;border-radius:12px;font-weight:600;font-size:13px;cursor:pointer;border:1px solid var(--stroke-2);color:#06121f;
+  background:linear-gradient(135deg,var(--gold-2),var(--gold));box-shadow:0 0 22px -6px rgba(246,185,59,.7)}
+.btn.ghost{background:var(--glass);color:var(--cyan-2);border-color:var(--stroke)}
+
+.ev{display:flex;gap:11px;padding:11px 0;border-top:1px solid rgba(255,255,255,.05)}
+.ev:first-of-type{border-top:none}
+.ev .sev{width:6px;border-radius:6px;flex-shrink:0}
+.ev .c-info{background:var(--cyan)} .ev .c-warn{background:var(--gold)} .ev .c-bad{background:var(--red)}
+.ev .h{font-size:13px;color:var(--head);font-weight:500}
+.ev .s{font-size:11.5px;color:var(--dim)}
+
+.chat .row{display:flex;gap:9px;align-items:center;padding:8px 0}
+.chat .who{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#06121f;background:linear-gradient(135deg,#7af0ff,#22d3ee)}
+.chat .who.ai{background:linear-gradient(135deg,#c6a4ff,#8b5cf6)}
+.chat .msg{font-size:12.5px;color:var(--txt);line-height:1.4}
+.chat .msg b{color:var(--head);font-weight:600}
+.unread{margin-left:auto;background:var(--red);color:#fff;border-radius:999px;font-size:10px;font-weight:600;min-width:18px;height:18px;display:grid;place-items:center;padding:0 5px}
+.composer{margin-top:10px;display:flex;gap:8px}
+.composer input{flex:1;background:rgba(0,0,0,.25);border:1px solid var(--stroke);border-radius:11px;padding:9px 11px;color:var(--txt);font:inherit}
+.composer input::placeholder{color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="bar">
+    <div class="brand"><span class="logo">🏝</span> Island&nbsp;Traders</div>
+    <div class="season"><span class="ring" style="--p:62"><i>2:41</i></span>
+      <div style="line-height:1.15"><div style="font-size:13px;color:var(--head);font-weight:500">Year 2 · Summer</div>
+        <div style="font-size:10.5px;color:var(--dim)"><span class="live"></span> &nbsp;live · 5 acting</div></div></div>
+    <span class="pill">Mining &amp; Oil</span>
+    <div class="spacer"></div>
+    <div class="hero"><div class="lbl">Net worth</div><div class="val num">1,284 <small>Dp</small></div>
+      <div class="delta green num">▲ 92 Dp this season</div></div>
+    <div class="avatar">AS</div>
+  </div>
+
+  <div class="grid">
+
+    <!-- LEFT: art-forward island hero -->
+    <div>
+      <div class="island-hero">
+        <img class="art" src="/island_traders/server/static/island-art/miner-night.png" alt="Mining & Oil island at night">
+        <div class="scrim"></div><div class="ring-glow"></div>
+        <div class="tag"><span class="pill" style="background:rgba(8,14,24,.6);backdrop-filter:blur(6px)">⛏ Miner</span>
+          <span class="pill" style="background:rgba(8,14,24,.6);backdrop-filter:blur(6px);color:var(--gold-2)">🌙 Night · Summer</span></div>
+        <div class="meta">
+          <div class="iname">Mining &amp; Oil</div>
+          <div class="irole">Governed by Maria</div>
+          <div class="net"><b class="num">412</b><span class="dim">Dp treasury</span>
+            <span class="gold num" style="margin-left:auto;font-size:13px">1,500 Dp personal</span></div>
+        </div>
+        <div class="float-chips">
+          <div class="fchip"><div class="k">Workers</div><div class="v num">14/16</div></div>
+          <div class="fchip"><div class="k">Capacity</div><div class="v num green">96%</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Inventory <span class="dim" style="margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0">market value</span></h3>
+        <div class="chips">
+          <div class="chip"><div class="t"><span>⛏ Ore</span><span class="num">58 Dp</span></div><div class="q num">9</div><div class="bar"><i style="width:40%"></i></div></div>
+          <div class="chip"><div class="t"><span>🛢 Oil</span><span class="num">441 Dp</span></div><div class="q num">48</div><div class="bar"><i style="width:90%"></i></div></div>
+          <div class="chip"><div class="t"><span>⚙ Metal</span><span class="num">76 Dp</span></div><div class="q num">4</div><div class="bar"><i style="width:24%"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER: market + opportunity -->
+    <div>
+      <div class="card">
+        <h3>Market board <span class="dim" style="margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0">live order book</span></h3>
+        <table class="mkt">
+          <thead><tr><th>Commodity</th><th>7-season</th><th>Bid</th><th>Ask</th><th>Δ</th></tr></thead>
+          <tbody>
+            <tr class="hot"><td>🛢 Oil <span class="dim" style="font-size:10px">· your surplus</span></td>
+              <td><span class="spark"><i style="height:8px"></i><i style="height:11px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:12px"></i><i style="height:17px"></i></span></td>
+              <td class="n">8.90</td><td class="n gold">9.50</td><td class="n green">+0.40</td></tr>
+            <tr><td>⛏ Ore</td>
+              <td><span class="spark"><i style="height:13px"></i><i style="height:11px"></i><i style="height:12px"></i><i style="height:9px"></i><i style="height:8px"></i><i style="height:7px"></i></span></td>
+              <td class="n">6.10</td><td class="n">6.40</td><td class="n red">−0.20</td></tr>
+            <tr><td>⚙ Goods</td>
+              <td><span class="spark"><i style="height:9px"></i><i style="height:10px"></i><i style="height:10px"></i><i style="height:11px"></i><i style="height:10px"></i><i style="height:11px"></i></span></td>
+              <td class="n">8.70</td><td class="n">9.00</td><td class="n dim">0.00</td></tr>
+            <tr><td>🍞 Food</td>
+              <td><span class="spark"><i style="height:7px"></i><i style="height:8px"></i><i style="height:10px"></i><i style="height:9px"></i><i style="height:12px"></i><i style="height:13px"></i></span></td>
+              <td class="n">3.10</td><td class="n">3.40</td><td class="n green">+0.10</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h3>Best move this season</h3>
+        <div class="opp">
+          <div class="icon">📈</div>
+          <div class="body"><div class="h">Sell 30 Oil into the standing bid</div>
+            <div class="s">Kai (Transporter) needs Oil · clears at 9.50 Dp → <span class="green num">+285 Dp</span></div></div>
+          <button class="btn">Open desk</button>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:11px">
+          <div class="opp" style="flex:1;background:linear-gradient(135deg,rgba(246,185,59,.12),rgba(246,185,59,.03));border-color:rgba(246,185,59,.25)">
+            <div class="icon" style="background:rgba(246,185,59,.16);border-color:rgba(246,185,59,.4)">🎓</div>
+            <div class="body"><div class="h">Train 2 Engineers</div><div class="s">2 of 3 campus seats left</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: conditions + chat -->
+    <div>
+      <div class="card">
+        <h3>Conditions</h3>
+        <div class="ev"><div class="sev c-bad"></div><div><div class="h">Power outage — your island</div><div class="s">Production −50% · 2 seasons remaining</div></div></div>
+        <div class="ev"><div class="sev c-warn"></div><div><div class="h">Drought — Agriculture</div><div class="s">Food yield at 50% this season</div></div></div>
+        <div class="ev"><div class="sev c-info"></div><div><div class="h">Funding rate cut</div><div class="s">1-yr term now 6.0% · cheaper loans</div></div></div>
+      </div>
+      <div class="card chat">
+        <h3>Chat <span class="live" style="margin-left:auto"></span></h3>
+        <div class="row"><span class="who">MA</span><div class="msg"><b>Maria</b> · I can spare 20 Oil if you beat market…</div><span class="unread">2</span></div>
+        <div class="row"><span class="who ai">🤖</span><div class="msg"><b>Kai</b> <span class="cy" style="font-size:10px">AI</span> · I'll ship that Oil for 6 Dp by Autumn.</div></div>
+        <div class="composer"><input placeholder="Message · @Kai to ping the AI"><button class="btn ghost">Send</button></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

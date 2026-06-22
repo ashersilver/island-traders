@@ -17,6 +17,7 @@ def test_farmer_produces_with_inputs(farmer, normal_event):
     assert ResourceType.GRAIN in produced
     assert ResourceType.PRODUCE in produced
     assert ResourceType.FISH in produced
+    assert farmer.capital_count("farmer.tractor") == 1
     assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
     assert farmer.inventory.get(ResourceType.OIL) == 0
 
@@ -25,6 +26,18 @@ def test_farmer_cannot_produce_without_inputs(farmer, normal_event):
     engine = ProductionEngine()
     with pytest.raises(InsufficientInputsError):
         engine.produce(farmer, normal_event)
+
+
+def test_farmer_production_no_longer_requires_farm_machinery_stock(farmer, normal_event):
+    farmer.receive_resources(ResourceType.OIL, 1)
+
+    produced = ProductionEngine().produce(farmer, normal_event, season_name="Spring")
+
+    assert produced[ResourceType.GRAIN] > 0
+    assert produced[ResourceType.PRODUCE] > 0
+    assert produced[ResourceType.FISH] > 0
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
+    assert farmer.capital_count("farmer.tractor") == 0
 
 
 def test_farmer_seasonal_outputs_differ(farmer, normal_event):
@@ -42,7 +55,8 @@ def test_outage_blocks_production(farmer, outage_event):
     engine = ProductionEngine()
     produced = engine.produce(farmer, outage_event)
     assert produced == {}
-    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 1
+    assert farmer.capital_count("farmer.tractor") == 1
+    assert farmer.inventory.get(ResourceType.FARM_MACHINERY) == 0
     assert farmer.inventory.get(ResourceType.OIL) == 1
 
 
@@ -56,18 +70,17 @@ def test_banker_produces_finance_commodity(banker, normal_event):
     assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_needs_reagents_and_finance(normal_event):
-    """2026-06-02 rebalance: Educator consumes both Reagents and Finance
-    as production inputs (Finance creates demand for Banker output)."""
+def test_educator_expertise_runs_without_reagents(normal_event):
+    """Generic Education output is classroom-based; Reagents gate Patents and
+    science-track training, not all Expertise/Courses production."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
-    educator.receive_resources(ResourceType.REAGENTS, 1)
-    educator.receive_resources(ResourceType.FINANCE, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
+    assert ResourceType.PATENTS not in produced
 
 
 def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
@@ -90,7 +103,8 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     from island_traders.models.role import ROLES
 
     miner = Player(12, "Miner", [ROLES["Miner"]], 100.0, is_human=False)
-    miner.receive_resources(ResourceType.OIL, 1)
+    miner.receive_resources(ResourceType.ORE, 2)
+    miner.receive_resources(ResourceType.OIL, 2)
     miner.receive_resources(ResourceType.FREIGHT, 1)
     miner.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
 
@@ -98,6 +112,24 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
 
     assert produced[ResourceType.ORE] == 40
     assert produced[ResourceType.METAL] == 20
+    assert produced[ResourceType.OIL] == 40
+    assert miner.inventory.get(ResourceType.ORE) == 40
+    assert miner.inventory.get(ResourceType.OIL) == 40
+    assert miner.capital_count("miner.excavator") == 1
+
+
+def test_miner_skips_metal_without_starting_ore_for_smelting(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    miner = Player(13, "Miner", [ROLES["Miner"]], 100.0, is_human=False)
+    miner.receive_resources(ResourceType.OIL, 2)
+    miner.receive_resources(ResourceType.FREIGHT, 1)
+
+    produced = ProductionEngine().produce(miner, normal_event, season_name="Spring")
+
+    assert produced[ResourceType.ORE] == 40
+    assert ResourceType.METAL not in produced
     assert produced[ResourceType.OIL] == 40
 
 
@@ -176,7 +208,7 @@ def test_manufacturer_freight_surcharge_uses_board_scale_quantity():
     )
 
     line = MANUFACTURER_PRODUCT_LINES["MiningEquipment"]
-    board_scale_qty = round(line["qty"] / PRODUCER_PRODUCTIVITY_MULTIPLIER)
+    board_scale_qty = max(1, round(line["qty"] / PRODUCER_PRODUCTIVITY_MULTIPLIER))
     engine = ProductionEngine()
 
     assert engine._freight_surcharge("MiningEquipment", line["qty"]) == (
@@ -195,6 +227,7 @@ def test_production_options_show_per_product_current_max(normal_event):
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
     farmer.receive_resources(ResourceType.OIL, 10)
+    farmer.receive_resources(ResourceType.FARM_MACHINERY, 1)
 
     options = ProductionEngine().production_options(farmer, normal_event, season_name="Spring")
     by_output = {option["output"]: option for option in options}

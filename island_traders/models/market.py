@@ -1,9 +1,17 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from .resource import ResourceType
+from .resource import ResourceType, NON_TRADABLE_RESOURCES
 from .player import Player, InsufficientFundsError
 from .resource import InsufficientResourceError
-from ..constants import BASE_PRICES, PRICE_ELASTICITY, MIN_PRICE_MULTIPLIER, MAX_PRICE_MULTIPLIER
+from ..constants import (
+    BASE_PRICES,
+    MARKET_MAKER_DEPTH_PER_RESOURCE,
+    MARKET_MAKER_SPREAD,
+    MAX_PRICE_MULTIPLIER,
+    MIN_PRICE_MULTIPLIER,
+    PRICE_ELASTICITY,
+    SEASONS,
+)
 
 
 class InsufficientSupplyError(Exception):
@@ -74,6 +82,34 @@ class Market:
     _next_offer_id: int = 0
     _next_bid_id: int = 0
     _current_season_key: tuple[int, int] = (0, 0)
+    _maker_supply: dict[ResourceType, int] = field(default_factory=dict)
+    _maker_buy_depth: dict[ResourceType, int] = field(default_factory=dict)
+    _maker_sell_depth: dict[ResourceType, int] = field(default_factory=dict)
+    # Discrete market events (posted asks/bids, fills) since the last drain.
+    # The server drains these and pushes them to clients so they can react
+    # between full-state broadcasts (Issue #4).
+    _event_log: list[dict] = field(default_factory=list)
+    # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
+    # simulation. None during normal play, so live games pay nothing.
+    telemetry: object | None = None
+
+    def _emit_market_event(self, rtype: ResourceType, side: str, action: str,
+                           price: float, quantity: int, actor: str) -> None:
+        if quantity <= 0:
+            return
+        self._event_log.append({
+            "resource": rtype.value,
+            "side": side,          # "ask" (sell offer) | "bid" (buy order)
+            "action": action,      # "posted" | "filled"
+            "price": round(price, 2),
+            "quantity": int(quantity),
+            "actor": actor,
+        })
+
+    def drain_events(self) -> list[dict]:
+        """Return and clear the buffered market events."""
+        events, self._event_log = self._event_log, []
+        return events
 
     def current_price(self, rtype: ResourceType) -> float:
         s = self.supply.get(rtype, 0)
@@ -90,34 +126,76 @@ class Market:
         return round(base * factor, 2)
 
     def current_prices(self) -> dict[ResourceType, float]:
-        return {r: self.current_price(r) for r in ResourceType}
+        # Non-tradable resources (e.g. Spares) carry no market price.
+        return {
+            r: self.current_price(r)
+            for r in ResourceType
+            if r not in NON_TRADABLE_RESOURCES
+        }
+
+    def market_maker_ask(self, rtype: ResourceType) -> float:
+        return round(self.current_price(rtype) * (1.0 + MARKET_MAKER_SPREAD), 2)
+
+    def market_maker_bid(self, rtype: ResourceType) -> float:
+        return round(self.current_price(rtype) * (1.0 - MARKET_MAKER_SPREAD), 2)
+
+    def _maker_depth_remaining(
+        self, bucket: dict[ResourceType, int], rtype: ResourceType
+    ) -> int:
+        return bucket.get(rtype, MARKET_MAKER_DEPTH_PER_RESOURCE)
+
+    def market_maker_buy_depth(self, rtype: ResourceType) -> int:
+        """Units the formula market will still sell this season."""
+        return self._maker_depth_remaining(self._maker_buy_depth, rtype)
+
+    def market_maker_sell_depth(self, rtype: ResourceType) -> int:
+        """Units the formula market will still buy this season."""
+        return self._maker_depth_remaining(self._maker_sell_depth, rtype)
 
     def post_supply(self, rtype: ResourceType, qty: int) -> None:
         self.supply[rtype] = self.supply.get(rtype, 0) + qty
+        self._maker_supply[rtype] = self._maker_supply.get(rtype, 0) + qty
 
     def post_demand(self, rtype: ResourceType, qty: int) -> None:
         self.demand[rtype] = self.demand.get(rtype, 0) + qty
 
     def execute_buy(self, buyer: Player, rtype: ResourceType, qty: int) -> float:
-        available = self.supply.get(rtype, 0)
+        available = self._maker_supply.get(rtype, 0)
         if available < qty:
             raise InsufficientSupplyError(
                 f"Market has only {available} {rtype.value}, requested {qty}"
             )
-        price = self.current_price(rtype)
+        depth = self.market_maker_buy_depth(rtype)
+        if depth < qty:
+            raise InsufficientSupplyError(
+                f"Market maker will sell only {depth} {rtype.value} this season, requested {qty}"
+            )
+        price = self.market_maker_ask(rtype)
         total = price * qty
         buyer.spend_dollops(total)
-        buyer.receive_resources(rtype, qty)
-        self.supply[rtype] = available - qty
+        buyer.receive_resources(rtype, qty, acquired_tick=self._current_tick())
+        self._maker_supply[rtype] = available - qty
+        self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
+        self._maker_buy_depth[rtype] = depth - qty
         self.post_demand(rtype, qty)
+        if self.telemetry is not None:
+            self.telemetry.record_traded(rtype, qty)
         return total
 
     def execute_sell(self, seller: Player, rtype: ResourceType, qty: int) -> float:
+        depth = self.market_maker_sell_depth(rtype)
+        if depth < qty:
+            raise InsufficientSupplyError(
+                f"Market maker will buy only {depth} {rtype.value} this season, requested {qty}"
+            )
         seller.give_resources(rtype, qty)
-        price = self.current_price(rtype)
+        price = self.market_maker_bid(rtype)
         total = price * qty
         seller.receive_dollops(total)
         self.post_supply(rtype, qty)
+        self._maker_sell_depth[rtype] = depth - qty
+        if self.telemetry is not None:
+            self.telemetry.record_traded(rtype, qty)
         return total
 
     def apply_price_shock(self, rtype: ResourceType, multiplier: float, duration_seasons: int) -> None:
@@ -133,6 +211,12 @@ class Market:
 
     def set_season(self, year: int, season: int) -> None:
         self._current_season_key = (year, season)
+        self._maker_buy_depth = {}
+        self._maker_sell_depth = {}
+
+    def _current_tick(self) -> int:
+        year, season = self._current_season_key
+        return year * len(SEASONS) + season
 
     def cancel_player_orders(self, player_id: int, rtype: ResourceType) -> None:
         """Cancel every standing bid AND ask by ``player_id`` on ``rtype``.
@@ -150,7 +234,9 @@ class Market:
                     and offer.remaining > 0):
                 qty = offer.remaining
                 if offer._seller is not None:
-                    offer._seller.receive_resources(rtype, qty)
+                    offer._seller.receive_resources(
+                        rtype, qty, acquired_tick=self._current_tick()
+                    )
                 offer.remaining = 0
                 self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
         for bid in self._bids:
@@ -163,6 +249,8 @@ class Market:
 
     def post_offer(self, seller: Player, rtype: ResourceType,
                    price_per_unit: float, qty: int) -> MarketOffer:
+        if rtype in NON_TRADABLE_RESOURCES:
+            raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
             raise ValueError("Offer quantity must be positive")
         if price_per_unit <= 0:
@@ -190,13 +278,16 @@ class Market:
         )
         self._offers.append(offer)
         self._next_offer_id += 1
-        self.post_supply(rtype, qty)
+        self.supply[rtype] = self.supply.get(rtype, 0) + qty
+        self._emit_market_event(rtype, "ask", "posted", price, qty, seller.name)
         self._auto_match_offer(offer)
         self._check_tight_spread(rtype)
         return offer
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
                  price_per_unit: float, qty: int) -> MarketBid:
+        if rtype in NON_TRADABLE_RESOURCES:
+            raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
             raise ValueError("Bid quantity must be positive")
         if price_per_unit <= 0:
@@ -225,6 +316,7 @@ class Market:
         self._bids.append(bid)
         self._next_bid_id += 1
         self.post_demand(rtype, qty)
+        self._emit_market_event(rtype, "bid", "posted", price, qty, buyer.name)
         self._auto_match_bid(bid)
         self._check_tight_spread(rtype)
         return bid
@@ -261,10 +353,14 @@ class Market:
                 # Even the cheapest crossing ask is unaffordable — stop.
                 break
             buyer.spend_dollops(cost)
-            buyer.receive_resources(bid.resource, qty)
+            buyer.receive_resources(
+                bid.resource, qty, acquired_tick=self._current_tick()
+            )
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(bid.resource, qty)
 
     def _auto_match_offer(self, offer: MarketOffer) -> None:
         """Cross a new ask against resting bids while the price covers them.
@@ -300,10 +396,14 @@ class Market:
                 bid.remaining = 0
                 continue
             buyer.spend_dollops(cost)
-            buyer.receive_resources(offer.resource, qty)
+            buyer.receive_resources(
+                offer.resource, qty, acquired_tick=self._current_tick()
+            )
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(offer.resource, qty)
 
     # Threshold for automatic execution of near-crossing orders (2026-05-28).
     # A spread of 2.5% or less is close enough to be auto-accepted, executing
@@ -349,10 +449,12 @@ class Market:
             if buyer.dollops < cost:
                 break
             buyer.spend_dollops(cost)
-            buyer.receive_resources(rtype, qty)
+            buyer.receive_resources(rtype, qty, acquired_tick=self._current_tick())
             seller.receive_dollops(cost)
             ask.remaining -= qty
             bid.remaining -= qty
+            if self.telemetry is not None:
+                self.telemetry.record_traded(rtype, qty)
 
     def available_offers(self, rtype: ResourceType) -> list[MarketOffer]:
         return sorted(
@@ -401,8 +503,11 @@ class Market:
             bought += take
             if offer._seller is not None and offer.seller_id != buyer.player_id:
                 offer._seller.receive_dollops(cost)
-        buyer.receive_resources(rtype, bought)
+        buyer.receive_resources(rtype, bought, acquired_tick=self._current_tick())
         self.post_demand(rtype, bought)
+        if bought > 0:
+            avg = total_cost / bought
+            self._emit_market_event(rtype, "ask", "filled", avg, bought, buyer.name)
         return total_cost, bought
 
     def sell_to_bids(self, seller: Player, rtype: ResourceType,
@@ -439,16 +544,21 @@ class Market:
         sold = 0
         for bid, buyer, take, cost in fills:
             buyer.spend_dollops(cost)
-            buyer.receive_resources(rtype, take)
+            buyer.receive_resources(rtype, take, acquired_tick=self._current_tick())
             seller.receive_dollops(cost)
             bid.remaining -= take
             total_paid += cost
             sold += take
+        if sold > 0:
+            avg = total_paid / sold
+            self._emit_market_event(rtype, "bid", "filled", avg, sold, seller.name)
         return total_paid, sold
 
     def market_summary(self) -> dict[str, dict]:
         result = {}
         for rtype in ResourceType:
+            if rtype in NON_TRADABLE_RESOURCES:
+                continue  # Spares are never traded — no order book.
             best_offer = self.best_offer(rtype)
             best_bid = self.best_bid(rtype)
             ask_qty = sum(o.remaining for o in self._offers
@@ -465,15 +575,49 @@ class Market:
                 "best_price": ask_price,
                 "quantity": ask_qty,
                 "formula_price": self.current_price(rtype),
+                "market_maker_bid": self.market_maker_bid(rtype),
+                "market_maker_ask": self.market_maker_ask(rtype),
+                "market_maker_buy_depth": self.market_maker_buy_depth(rtype),
+                "market_maker_sell_depth": self.market_maker_sell_depth(rtype),
             }
         return result
 
-    def expire_season_offers(self) -> None:
+    def open_offer_value(
+        self,
+        seller_id: int,
+        prices: dict[ResourceType, float],
+    ) -> float:
+        """Inventory value still owned by a seller but escrowed in live asks."""
+        return sum(
+            offer.remaining * prices.get(offer.resource, self.current_price(offer.resource))
+            for offer in self._offers
+            if offer.seller_id == seller_id and offer.remaining > 0
+        )
+
+    def expire_season_offers(self, *, expire_current: bool = False) -> None:
         for offer in self._offers:
-            if offer.remaining > 0 and offer.season_key != self._current_season_key:
+            if offer.remaining > 0 and (
+                expire_current or offer.season_key != self._current_season_key
+            ):
+                if offer._seller is not None:
+                    offer._seller.receive_resources(
+                        offer.resource,
+                        offer.remaining,
+                        acquired_tick=self._current_tick(),
+                    )
+                self.supply[offer.resource] = max(
+                    0,
+                    self.supply.get(offer.resource, 0) - offer.remaining,
+                )
                 offer.remaining = 0
         for bid in self._bids:
-            if bid.remaining > 0 and bid.season_key != self._current_season_key:
+            if bid.remaining > 0 and (
+                expire_current or bid.season_key != self._current_season_key
+            ):
+                self.demand[bid.resource] = max(
+                    0,
+                    self.demand.get(bid.resource, 0) - bid.remaining,
+                )
                 bid.remaining = 0
 
     def reset_period_signals(self) -> None:

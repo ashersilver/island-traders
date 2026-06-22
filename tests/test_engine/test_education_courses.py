@@ -15,7 +15,7 @@ from island_traders.constants import (
     BASE_PRICES, MAX_CLASS_SIZE_PER_COURSE, UNIVERSITY_CAPACITY,
     STARTING_WORKFORCE, STARTING_WORKERS_BY_PROFESSION, STARTING_INVENTORY,
 )
-from island_traders.constants_capacity import PRODUCTION_RECIPES
+from island_traders.constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from island_traders.models.resource import ResourceType
 from island_traders.models.profession import (
     Profession, PROFESSION_BAND, WorkerBand, PROFESSION_LABEL,
@@ -42,6 +42,36 @@ def test_educator_has_courses_recipe_consuming_expertise():
     assert courses.inputs.get("Expertise", 0) > 0, "Courses must consume Expertise"
     patents = next(r for r in edu if r.output == "Patents")
     assert patents.inputs.get("Expertise", 0) > 0, "Patents now consume Expertise too"
+
+
+def test_lecture_hall_provides_courses_capacity():
+    hall = next(item for item in CAPITAL_CATALOGUE if item.item_id == "educator.lecture_hall")
+    assert hall.effects["capacity"].get("Courses", 0) >= 4
+
+
+def test_staffed_educator_can_produce_course_slots():
+    from island_traders.engine.events import EventResult
+    from island_traders.engine.production import ProductionEngine
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    educator = Player(0, "Edu", [ROLES["Educator"]], 100.0, is_human=True)
+    educator.add_capital("educator.lecture_hall", 1)
+    educator.receive_resources(ResourceType.REAGENTS, 10)
+    educator.receive_resources(ResourceType.EXPERTISE, 10)
+    educator.workforce.add_workers(
+        2, training_level=1, profession=Profession.PROFESSOR.value
+    )
+    educator.workforce.add_workers(
+        4, training_level=1, profession=Profession.INSTRUCTOR.value
+    )
+
+    options = ProductionEngine().production_options(
+        educator, EventResult("Normal Operations"), "Spring"
+    )
+    courses = next(option for option in options if option["output"] == ResourceType.COURSES)
+
+    assert courses["max_qty"] == 4
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +175,7 @@ def test_standard_training_pending_without_courses():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=70.0,
-        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
+        target_profession="Banker",  # non-science Manager-tier → Course-gated
         year=0, season=0, transport_mode="air_ticket",
     )
     io = FakeIOAdapter()
@@ -180,7 +210,7 @@ def test_standard_training_consumes_one_course_for_small_class():
         worker_ids=[w.worker_id for w in workers],
         educator_id=educator.player_id,
         dollops_to_educator=100.0,
-        target_profession="Nurse",  # Manager-tier → Course-gated (Phase 3)
+        target_profession="Lecturer",  # non-science Manager-tier → Course-gated
         year=0, season=0, transport_mode="air_ticket",
     )
     io = FakeIOAdapter()

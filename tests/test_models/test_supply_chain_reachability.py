@@ -35,14 +35,6 @@ KNOWN_NONPRODUCED_RECIPE_OUTPUTS = {
     # Service output: the Banker SELLS insurance via the insurance action; it is
     # not a tradeable commodity produced each season.  Permanent exception.
     "InsurancePolicies",
-    # KNOWN GAP (pre-existing, flagged 2026-06-02): Farmer has a Grain->Meat
-    # capacity recipe (livestock) and Meat is priced + consumed in the
-    # sustenance basket, but FARMER_SEASONAL_CONVERSION never produces Meat, so
-    # it is currently unobtainable.  Protein demand is met by Fish, so nothing
-    # breaks today.  Resolve by either giving the Farmer a Meat output or
-    # removing the orphan recipe/price.  Allowlisted so the test still guards
-    # against NEW unproduced outputs.
-    "Meat",
 }
 
 
@@ -56,6 +48,9 @@ def _active_outputs() -> set[str]:
         produced.update(season["outputs"].keys())
     for line in MANUFACTURER_PRODUCT_LINES.values():
         produced.add(line["output"])
+    # Farmer livestock is an explicit product option gated by Livestock Barn
+    # capacity and Grain feedstock, not by the seasonal crop/fishing table.
+    produced.add("Meat")
     # Kitchens (any island) convert raw ingredients into Food.
     produced.add("Food")
     return produced

@@ -63,16 +63,18 @@ def test_primary_title_examples():
 
 
 def test_education_and_apprenticeship_durations():
-    # Phase 3 (ruled 2026-05-17): Doctor 3 seasons, Nurse 1, others 2.
-    assert EDUCATION_SEASONS[Profession.DOCTOR] == 3
+    # #18 reconciliation (ruled 2026-06-18): Doctor 4 seasons, Nurse 1,
+    # Engineer 3, other Managers 2.
+    assert EDUCATION_SEASONS[Profession.DOCTOR] == 4
     assert EDUCATION_SEASONS[Profession.NURSE] == 1
-    assert EDUCATION_SEASONS[Profession.ENGINEER] == 2
-    # Every Technician apprenticeship is exactly 1 season away at Education,
-    # followed by one 75%-productivity settling season on the home island.
+    assert EDUCATION_SEASONS[Profession.ENGINEER] == 3
+    # Every Technician apprenticeship is 1 season away when the campus has a
+    # Technical Workshop; no-workshop courses add one 50%-productivity settling
+    # season on the home island.
     for p, seasons in APPRENTICESHIP_SEASONS.items():
         assert seasons == 1
     assert APPRENTICESHIP_SETTLING_SEASONS == 1
-    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.75
+    assert APPRENTICESHIP_SETTLING_EFFICIENCY == 0.50
 
 
 def test_workforce_band_helpers():
@@ -111,9 +113,13 @@ def test_new_transporter_professions_have_correct_bands():
 def test_new_technician_professions_for_educator_banker_doctor():
     assert band_of(Profession.LECTURER)        == WorkerBand.MANAGER
     assert band_of(Profession.INSTRUCTOR)      == WorkerBand.TECHNICIAN
+    assert band_of(Profession.ACTUARY)         == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_ANALYST) == WorkerBand.TECHNICIAN
     assert band_of(Profession.BANKING_CLERK)   == WorkerBand.TECHNICIAN
+    assert band_of(Profession.TRADESMAN)       == WorkerBand.TECHNICIAN
     assert band_of(Profession.MEDICAL_ORDERLY) == WorkerBand.TECHNICIAN
+    assert band_of(Profession.MEDICAL_RESEARCHER) == WorkerBand.MANAGER
+    assert band_of(Profession.MEDICAL_TECHNICIAN) == WorkerBand.TECHNICIAN
 
 
 def test_transporter_band_titles_use_new_profession_names():
@@ -172,8 +178,10 @@ def test_playtest_phantom_titles_are_resolved():
         for profession in ROLE_PROFESSIONS["Manufacturer"]
     }
     assert "Factory Foreman" in manufacturer_labels
+    assert "Tradesman" in manufacturer_labels
     assert "Assembly Tech" in manufacturer_labels
     assert "Factory Foreman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
+    assert "Tradesman" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
     assert "Assembly Tech" in BAND_TITLES["Manufacturer"][WorkerBand.TECHNICIAN]
 
     miner_labels = {

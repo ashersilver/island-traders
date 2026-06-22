@@ -44,6 +44,37 @@ def test_injuries_occur_with_certainty_rng(miner):
     assert len(reports[0].injured_worker_ids) > 0
 
 
+def test_injuries_use_temporary_absence_not_training_flag(miner):
+    class AlwaysRNG:
+        def random(self):
+            return 0.0
+
+    reports = apply_workplace_risks(
+        [miner], year=0, season_index=0, banker_players=[], rng=AlwaysRNG()
+    )
+    injured_ids = set(reports[0].injured_worker_ids)
+
+    assert injured_ids
+    assert miner.workforce.training_count == 0
+    assert all(
+        not worker.in_training
+        for worker in miner.workforce.workers
+        if worker.worker_id in injured_ids
+    )
+    assert all(
+        worker.absent_seasons == 1
+        for worker in miner.workforce.workers
+        if worker.worker_id in injured_ids
+    )
+    assert injured_ids.isdisjoint(
+        {worker.worker_id for worker in miner.workforce.active_workers}
+    )
+
+    miner.workforce.advance_absences()
+
+    assert all(worker.absent_seasons == 0 for worker in miner.workforce.workers)
+
+
 def test_no_injuries_with_never_rng(miner):
     """With a forced rng that always returns 1.0, no worker should be injured or die."""
     class NeverRNG:

@@ -211,8 +211,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Educator",
         cost=50.0,
         delivery_seasons=0,
-        effects={"capacity": {"Expertise": 4}, "education_slots": 2},
-        description="+4 Expertise, +2 Education slots",
+        effects={"capacity": {"Expertise": 4, "Courses": 4}, "education_slots": 2},
+        description="+4 Expertise, +4 Courses, +2 Education slots",
     ),
     CapitalItem(
         item_id="educator.library",
@@ -407,21 +407,21 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Farmer ----------------------------------------------------------
     ProductionRecipe(
         role="Farmer", output="Grain",
-        inputs={"Oil": 10 / 6},
+        inputs={"Oil": 5 / 6},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Farm equipment fuel",
+        description="Farm equipment fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Fish",
-        inputs={"Oil": 10 / 3},
+        inputs={"Oil": 5 / 3},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Fishing fleet fuel",
+        description="Fishing fleet fuel (halved 2026-06-04 playtest balance)",
     ),
     ProductionRecipe(
         role="Farmer", output="Produce",
-        inputs={"Oil": 5.0},
+        inputs={"Oil": 2.5},
         manager_per_unit=0.1, technician_per_unit=0.4, worker_per_unit=1.0,
-        description="Field produce; Horticulturalists improve the line",
+        description="Field produce; Horticulturalists improve the line (oil halved 2026-06-04)",
     ),
     ProductionRecipe(
         role="Farmer", output="Meat",
@@ -469,13 +469,13 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
     # ----- Educator --------------------------------------------------------
     ProductionRecipe(
         role="Educator", output="Expertise",
-        inputs={"Reagents": 0.25},
+        inputs={},
         manager_per_unit=1.0, technician_per_unit=0.5, worker_per_unit=0.5,
         description="1 Professor required per unit of Expertise",
     ),
     ProductionRecipe(
         role="Educator", output="Courses",
-        inputs={"Reagents": 0.1, "Expertise": 1.0},
+        inputs={"Expertise": 1.0},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.0,
         description="1 Instructor + 0.5 Professor per Course; consumes 1 Expertise",
     ),

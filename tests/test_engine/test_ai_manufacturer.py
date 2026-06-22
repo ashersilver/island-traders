@@ -3,12 +3,14 @@ from __future__ import annotations
 from island_traders.engine.ai import AIStrategy
 from island_traders.engine.events import EventResult
 from island_traders.engine.production import ProductionEngine
+from island_traders.engine.revenue import revenue_opportunities
 from island_traders.engine.trading import TradingEngine
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
+from island_traders.constants import MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER
 
 
 def _player(pid: int, role: str, dollops: float = 500.0) -> Player:
@@ -31,9 +33,59 @@ def test_ai_manufacturer_chooses_a_feasible_line_without_demand():
 
     chosen = ai._choose_product_line(manufacturer, Market())
 
-    from island_traders.constants import MANUFACTURER_PRODUCT_LINES
     assert chosen in MANUFACTURER_PRODUCT_LINES
     assert "Reagents" not in MANUFACTURER_PRODUCT_LINES
+
+
+def test_revenue_opportunities_rank_ai_farmer_structural_farm_machinery_demand():
+    manufacturer = _manufacturer()
+    farmer = _player(2, "Farmer")
+    market = Market()
+
+    opportunities = revenue_opportunities(
+        manufacturer, market, [manufacturer, farmer], "Spring"
+    )
+    farm = next(
+        opp for opp in opportunities
+        if opp["output"] == ResourceType.FARM_MACHINERY.value
+    )
+    line = MANUFACTURER_PRODUCT_LINES["FarmMachinery"]
+    expected_input_cost = round(
+        (
+            market.current_price(ResourceType.METAL) * line["inputs"]["Metal"]
+            + market.current_price(ResourceType.OIL) * line["inputs"]["Oil"]
+            + market.current_price(ResourceType.FREIGHT)
+                * line["freight_per_unit"]
+                * max(1, round(line["qty"] / PRODUCER_PRODUCTIVITY_MULTIPLIER))
+        ) / line["qty"],
+        2,
+    )
+
+    assert farm["structural_demand_units"] == 1
+    assert farm["live_bid_units"] == 0
+    assert farm["unit_price"] == market.market_maker_bid(ResourceType.FARM_MACHINERY)
+    assert farm["unit_input_cost"] == expected_input_cost
+    assert farm["inputs_to_stockpile"] == {
+        "Metal": 2,
+        "Oil": 1,
+        "Freight": 1,
+    }
+
+
+def test_ai_manufacturer_selects_goods_over_speculative_ai_equipment_without_bid():
+    ai = AIStrategy()
+    manufacturer = _manufacturer()
+    farmer = _player(2, "Farmer")
+    market = Market()
+
+    chosen = ai._choose_product_line(
+        manufacturer,
+        market,
+        [manufacturer, farmer],
+        season_name="Spring",
+    )
+
+    assert chosen == "Goods"
 
 
 def test_ai_manufacturer_sticky_when_scores_within_ten_percent(monkeypatch):
@@ -73,6 +125,43 @@ def test_ai_manufacturer_falls_back_to_best_feasible_line(monkeypatch):
     # MiningEquipment has the higher demand but isn't feasible with metal=1,
     # oil=1; the AI falls back to the best feasible line (MedicalDevices).
     assert chosen == "MedicalDevices"
+
+
+def test_ai_manufacturer_procures_visible_human_demand_line(monkeypatch):
+    ai = AIStrategy()
+    manufacturer = _manufacturer(metal=0, oil=0)
+    manufacturer.dollops = 2000.0
+    market = Market()
+    miner = _player(2, "Miner")
+    miner.is_human = True
+    market.post_bid(miner, ResourceType.MINING_EQUIPMENT, 70.0, 5)
+
+    def demand_units(output):
+        return 0
+
+    monkeypatch.setattr(ai, "_manufacturer_demand_units", demand_units)
+
+    actions = ai.take_turn(
+        manufacturer,
+        market,
+        [manufacturer, miner, _player(3, "Doctor")],
+        ProductionEngine(),
+        TradingEngine(market, DealLedger()),
+        EventResult("Normal"),
+        "Spring",
+        0,
+        0,
+    )
+
+    metal_bid = market.best_bid(ResourceType.METAL)
+    oil_bid = market.best_bid(ResourceType.OIL)
+    assert manufacturer.ai_product_line == "MiningEquipment"
+    assert manufacturer.ai_product_line_human_demand is True
+    assert metal_bid is not None
+    assert metal_bid.remaining == 6
+    assert oil_bid is not None
+    assert oil_bid.remaining == 4
+    assert any("Manufacturer idle" in action for action in actions)
 
 
 def test_ai_manufacturer_idle_path_when_no_line_can_be_produced():

@@ -5,6 +5,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from island_traders.cli.prompts import FakeIOAdapter
+from island_traders.engine.events import EventResult
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.engine.turn import TurnAction
 from island_traders.models.profession import Profession
@@ -95,6 +96,55 @@ def test_action_payload_finance_gated():
     assert "Banking" in offer_loan["disabled_reason"]
 
 
+def test_game_state_exposes_winter_flu_payload():
+    mgr, room, players = _bootstrap_game(["Farmer", "Doctor"])
+    farmer = players[0]
+    room.game._last_event_results = {
+        farmer.player_id: EventResult(
+            "Normal Operations + Winter Flu",
+            yield_modifier=0.96,
+            flu_strain_loss=0.20,
+            flu_doses_needed=5,
+            flu_doses_administered=5,
+            flu_effective_loss=0.04,
+        )
+    }
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    player_state = next(
+        p for p in state["players"] if p["player_id"] == farmer.player_id
+    )
+
+    assert state["flu"] == {
+        "season": "Winter",
+        "strain_loss": 0.2,
+        "active": True,
+    }
+    assert player_state["flu_strain_loss"] == 0.2
+    assert player_state["flu_doses_needed"] == 5
+    assert player_state["flu_doses_administered"] == 5
+    assert player_state["flu_effective_loss"] == 0.04
+
+
+def test_game_state_exposes_qol_payload():
+    mgr, room, players = _bootstrap_game(["Farmer", "Doctor"])
+    farmer = players[0]
+    farmer._qol_score = 0.725
+    farmer._food_coverage = 0.8
+    farmer._health_coverage = 0.5
+    farmer._pollution_index = 0.125
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    player_state = next(
+        p for p in state["players"] if p["player_id"] == farmer.player_id
+    )
+
+    assert player_state["qol_score"] == 0.725
+    assert player_state["food_coverage"] == 0.8
+    assert player_state["health_coverage"] == 0.5
+    assert player_state["pollution_index"] == 0.125
+
+
 def test_training_pipeline_shape():
     mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
     educator, farmer = players
@@ -123,6 +173,8 @@ def test_training_pipeline_shape():
         "batch_id",
         "worker_count",
         "target_profession",
+        "engineer_specialty",
+        "duration_seasons",
         "status",
         "educator_player_id",
         "educator_name",
@@ -151,6 +203,35 @@ def test_training_pipeline_shape():
     assert batch["return_season"] == "Summer"
     assert batch["seasons_remaining"] == 1
     assert batch["counter_message"] is None
+
+
+def test_personnel_training_counts_group_by_target_profession():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    educator, farmer = players
+    worker = farmer.workforce.add_workers(1)[0]
+    worker_id = worker.worker_id
+    req = room.game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=25.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+        year=0,
+        season=0,
+        transport_mode="transporter",
+    )
+    room.game.training.educator_approve(req.batch_id)
+    room.game.training.arrange_transport(req.batch_id, transporter_id=educator.player_id)
+    room.game.training.dispatch(req.batch_id, year=0, season=0)
+    farmer.workforce.dispatch_for_training([worker_id])
+
+    state = mgr.get_game_state(room.room_id, "p1")
+    farmer_data = next(p for p in state["players"] if p["player_id"] == farmer.player_id)
+    professions = farmer_data["workforce_professions"]
+
+    assert professions[Profession.FARMING_TECHNICIAN.value]["training"] == 1
+    assert professions.get(Profession.UNSKILLED.value, {}).get("training", 0) == 0
+    assert farmer_data["workforce_training_bands"]["Technician"] == 1
 
 
 def test_training_pipeline_empty():
@@ -191,3 +272,23 @@ def test_decision_hint_target_structured():
         "type": "resource_shortfall",
         "resource": ResourceType.OIL.value,
     }
+
+
+def test_game_state_includes_revenue_opportunities():
+    mgr, room, players = _bootstrap_game(["Manufacturer", "Farmer"])
+    manufacturer = players[0]
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    manufacturer_data = next(
+        p for p in state["players"] if p["player_id"] == manufacturer.player_id
+    )
+    opportunities = manufacturer_data["revenue_opportunities"]
+    farm = next(
+        opp for opp in opportunities
+        if opp["output"] == ResourceType.FARM_MACHINERY.value
+    )
+
+    assert farm["product_line"] == "FarmMachinery"
+    assert farm["structural_demand_units"] >= 1
+    assert farm["inputs_to_stockpile"]["Metal"] > 0
+    assert farm["required_professions"]

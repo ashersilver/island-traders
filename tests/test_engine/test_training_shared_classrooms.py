@@ -39,12 +39,15 @@ def _staff_technical_course(educator: Player) -> None:
         3, training_level=1, profession=Profession.TECHNICAL_DIRECTOR.value
     )
     educator.workforce.add_workers(6, training_level=1, profession=Profession.INSTRUCTOR.value)
-    educator.capital_inventory["educator.technical_workshop"] = 3
+    educator.add_capital("educator.technical_workshop", 3)
 
 
-def _fund_training(educator: Player, courses: int = 20, expertise: int = 20) -> None:
+def _fund_training(
+    educator: Player, courses: int = 20, expertise: int = 20, reagents: int = 20
+) -> None:
     educator.receive_resources(ResourceType.COURSES, courses)
     educator.receive_resources(ResourceType.EXPERTISE, expertise)
+    educator.receive_resources(ResourceType.REAGENTS, reagents)
 
 
 def _request(
@@ -88,7 +91,7 @@ def test_same_profession_same_season_shares_one_classroom_and_one_course_slot():
     tm._consume_training_capacity(educator, first, 0, 0)
     _add_and_approve(training, first)
     assert educator.inventory.get(ResourceType.COURSES) == 1
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
     assert training.manager_courses_in_flight(educator.player_id) == 1
 
     ok, msg = tm._training_capacity_status(educator, second, 0, 0)
@@ -97,7 +100,7 @@ def test_same_profession_same_season_shares_one_classroom_and_one_course_slot():
     _add_and_approve(training, second)
 
     assert educator.inventory.get(ResourceType.COURSES) == 1
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 1
     assert training.manager_courses_in_flight(educator.player_id) == 1
 
 
@@ -121,7 +124,7 @@ def test_thirteenth_trainee_opens_second_classroom_and_charges_expertise():
     _add_and_approve(training, thirteenth)
 
     assert educator.inventory.get(ResourceType.COURSES) == 1
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 0
     assert training.manager_courses_in_flight(educator.player_id) == 2
 
 
@@ -145,7 +148,7 @@ def test_different_professions_or_seasons_do_not_share_classrooms():
             training.dispatch(req.batch_id, year=0, season=0)
 
     assert educator.inventory.get(ResourceType.COURSES) == 2
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 4
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 3
     assert training.manager_courses_in_flight(educator.player_id) == 3
 
 
@@ -183,19 +186,19 @@ def test_manager_and_technician_expertise_charged_per_incremental_classroom():
 
     tm._consume_training_capacity(educator, manager_first, 0, 0)
     _add_and_approve(training, manager_first)
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 10
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 9
 
     tm._consume_training_capacity(educator, manager_second, 0, 0)
     _add_and_approve(training, manager_second)
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 10
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 9
 
     tm._consume_training_capacity(educator, tech_first, 0, 0)
     _add_and_approve(training, tech_first)
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 9
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 8
 
     tm._consume_training_capacity(educator, tech_second, 0, 0)
     _add_and_approve(training, tech_second)
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 9
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 8
 
 
 def test_single_large_batch_still_needs_two_classrooms():
@@ -213,5 +216,5 @@ def test_single_large_batch_still_needs_two_classrooms():
     _add_and_approve(training, large)
 
     assert educator.inventory.get(ResourceType.COURSES) == 1
-    assert educator.inventory.get(ResourceType.EXPERTISE) == 2
+    assert educator.inventory.get(ResourceType.EXPERTISE) == 0
     assert training.manager_courses_in_flight(educator.player_id) == 2

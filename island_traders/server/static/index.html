@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Island Traders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg:      #070f1e;
@@ -265,12 +268,24 @@ button:active{transform:scale(.97)}
 /* ── GAME DASHBOARD ── */
 #screen-game{height:100vh;width:100vw;overflow:hidden}
 .game-grid{
-  display:grid;height:100vh;
+  display:grid;height:100vh;position:relative;
   grid-template-columns:280px 1fr 360px;
   grid-template-rows:48px 1fr 160px;
   grid-template-areas:"hdr hdr hdr" "side main info" "log log log";
   gap:2px;
 }
+/* Draggable column splitters (#114 follow-up): resize the left/right panels.
+   Positioned by JS (applyGridLayout); widths persist in localStorage. */
+.col-resizer{
+  position:absolute;top:48px;bottom:0;width:7px;z-index:40;
+  cursor:col-resize;background:transparent;transition:background .12s;
+}
+.col-resizer::after{
+  content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:3px;height:34px;border-radius:2px;background:var(--border);
+}
+.col-resizer:hover{background:rgba(10,189,227,.18)}
+.col-resizer:hover::after{background:var(--accent)}
 @media(max-width:1200px){
   .game-grid{
     grid-template-columns:1fr;
@@ -343,6 +358,81 @@ button:active{transform:scale(.97)}
 .g-log .err{color:var(--red)}
 .g-log .info{color:var(--accent)}
 
+/* --- Modular layout: hide/collapse tiles + presets (persisted) --- */
+.game-grid.hide-side{grid-template-columns:0 1fr 360px}
+.game-grid.hide-info{grid-template-columns:280px 1fr 0}
+.game-grid.hide-side.hide-info{grid-template-columns:0 1fr 0}
+.game-grid.hide-log{grid-template-rows:48px 1fr 0}
+.game-grid.hide-side .g-side{display:none}
+.game-grid.hide-info .g-info{display:none}
+.game-grid.hide-log  .g-log{display:none}
+@media(min-width:3000px){
+  .game-grid.hide-side{grid-template-columns:0 1fr 480px}
+  .game-grid.hide-info{grid-template-columns:380px 1fr 0}
+  .game-grid.hide-side.hide-info{grid-template-columns:0 1fr 0}
+}
+/* On narrow single-column layouts the element-level display:none still hides. */
+.layout-menu{position:relative}
+.layout-pop{
+  position:absolute;right:0;top:110%;z-index:60;min-width:170px;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:.4rem;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none
+}
+.layout-pop.open{display:block}
+.layout-pop .lp-row{display:flex;align-items:center;gap:.5rem;padding:.28rem .35rem;font-size:.8rem;color:var(--text);cursor:pointer;border-radius:4px}
+.layout-pop .lp-row:hover{background:var(--bg)}
+.layout-pop .lp-sep{height:1px;background:var(--border);margin:.35rem 0}
+.layout-pop .lp-head{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:.2rem .35rem}
+
+/* --- Log filter bar --- */
+.g-log{position:relative}
+.log-filter-bar{
+  position:sticky;top:-.5rem;z-index:5;display:flex;gap:.3rem;flex-wrap:wrap;
+  background:#04090f;padding:.3rem 0 .35rem;margin:-.5rem 0 .3rem;border-bottom:1px solid var(--border)
+}
+.log-filter-bar .lf-btn{
+  font-family:inherit;font-size:.68rem;padding:.18rem .55rem;border-radius:10px;cursor:pointer;
+  background:var(--bg);color:var(--dim);border:1px solid var(--border)
+}
+.log-filter-bar .lf-btn.active{background:var(--accent);color:#04090f;border-color:var(--accent);font-weight:700}
+/* --- Tile system: per-tile collapse/hide/reorder (UI v2 phase 1, #114) --- */
+.section[data-tile]>h3{position:relative}
+.tile-ctl{display:inline-flex;gap:.1rem;margin-left:auto;opacity:0;transition:opacity .15s}
+.section[data-tile]:hover .tile-ctl{opacity:.85}
+.tile-ctl button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.68rem;padding:0 .25rem;line-height:1.2}
+.tile-ctl button:hover{color:var(--accent)}
+.section.tile-collapsed>*:not(h3){display:none!important}
+.section.tile-hidden{display:none!important}
+.section[data-tile]>h3{display:flex;align-items:center;gap:.4rem}
+/* --- Trade Finder (UI v2 phase 1, #114) --- */
+#trade-finder .tf-active{background:var(--accent);color:#04090f;font-weight:700}
+#trade-finder table td{padding:.24rem .4rem}
+#trade-finder .tf-ai-badge{font-size:.66rem;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 .35rem;margin-left:.3rem}
+#trade-finder .tf-needs{color:var(--gold);font-size:.72rem}
+.g-log[data-filter="mine"]    .g-log-line:not(.log-mine){display:none}
+.g-log[data-filter="trades"]  .g-log-line:not([data-cat="trade"]){display:none}
+.g-log[data-filter="events"]  .g-log-line:not([data-cat="event"]){display:none}
+.g-log[data-filter="training"] .g-log-line:not([data-cat="training"]){display:none}
+
+/* --- Disaster modal --- */
+.disaster-overlay{
+  position:fixed;inset:0;z-index:200;background:rgba(2,6,12,.72);
+  display:none;align-items:center;justify-content:center;padding:1rem
+}
+.disaster-overlay.open{display:flex}
+.disaster-card{
+  background:var(--panel);border:1px solid rgba(220,50,50,.5);border-radius:10px;
+  max-width:440px;width:100%;padding:1.1rem 1.2rem;box-shadow:0 10px 40px rgba(0,0,0,.6)
+}
+.disaster-card h3{margin:0 0 .2rem;color:#f87171;font-size:1.15rem;display:flex;align-items:center;gap:.5rem}
+.disaster-card .dc-sub{color:var(--dim);font-size:.8rem;margin-bottom:.7rem}
+.disaster-card .dc-impact{display:flex;flex-direction:column;gap:.35rem;margin:.5rem 0 .9rem}
+.disaster-card .dc-row{display:flex;justify-content:space-between;font-size:.85rem;border-bottom:1px solid var(--border);padding-bottom:.3rem}
+.disaster-card .dc-row .dc-lbl{color:var(--dim)}
+.disaster-card .dc-row .dc-val{color:var(--heading);font-weight:700}
+.disaster-card .dc-actions{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-top:.4rem}
+.disaster-card .dc-mute{font-size:.72rem;color:var(--dim);display:flex;align-items:center;gap:.35rem;cursor:pointer}
+
 .section{margin-bottom:.9rem}
 .section h3{
   font-size:.75rem;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;
@@ -382,6 +472,18 @@ button:active{transform:scale(.97)}
 }
 .stat.net-wealth .lbl{font-size:.76rem;color:var(--gold);font-weight:800;text-transform:uppercase}
 .stat.net-wealth .val{font-size:1.35rem;font-weight:900;color:var(--gold)}
+
+.wealth-breakdown{
+  margin:.1rem 0 .5rem;padding:.4rem .55rem;
+  border:1px solid rgba(231,192,93,.3);border-radius:var(--radius);
+  background:rgba(231,192,93,.05);font-size:.8rem;
+}
+.wealth-breakdown .wb-row{display:flex;justify-content:space-between;padding:.1rem 0}
+.wealth-breakdown .wb-row.wb-total{
+  border-top:1px solid rgba(231,192,93,.3);margin-top:.2rem;padding-top:.25rem;font-weight:800;color:var(--gold)
+}
+.wealth-breakdown .wb-pos{color:var(--text)}
+.wealth-breakdown .wb-neg{color:#d98a8a}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
 .mkt-row .res{color:var(--text)}
@@ -455,6 +557,84 @@ button:active{transform:scale(.97)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 .popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+.cap-order-dialog{width:min(980px,96vw)}
+.cap-order-item{font-weight:700;margin-bottom:.7rem;color:var(--heading)}
+.cap-order-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:.8rem;align-items:start}
+.cap-order-options{display:grid;gap:.55rem}
+.cap-option{display:grid;grid-template-columns:24px minmax(0,1fr) 90px;gap:.55rem;align-items:start;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.14);padding:.65rem}
+.cap-option input[type=checkbox]{margin-top:.2rem}
+.cap-option input[type=number]{max-width:84px;margin:.25rem 0 0}
+.cap-option-title{font-weight:700;color:var(--heading);font-size:.84rem}
+.cap-option-copy{color:var(--dim);font-size:.74rem;line-height:1.35;margin-top:.12rem}
+.cap-option-cost{text-align:right;color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums;font-size:.78rem}
+.cap-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.45rem}
+.cap-controls select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.3rem}
+.cap-inline{display:flex;gap:.35rem;align-items:center;color:var(--text);font-size:.75rem}
+.cap-inline input{margin:0}
+.cap-info-btn{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--accent);background:rgba(10,189,227,.09);color:var(--accent);font-size:.68rem;font-weight:800;padding:0;margin-left:.25rem}
+.cap-info{display:none;margin-top:.45rem;border:1px solid rgba(116,167,255,.36);background:rgba(116,167,255,.08);color:#c9ddff;border-radius:6px;padding:.45rem;font-size:.72rem;line-height:1.35}
+.cap-info.active{display:block}
+.cap-quote{border:1px solid rgba(246,185,59,.38);background:rgba(246,185,59,.07);border-radius:8px;padding:.7rem;display:grid;gap:.35rem}
+.cap-quote-row{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:.5rem;align-items:baseline;padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.78rem}
+.cap-quote-row:last-child{border-bottom:0}
+.cap-quote-label{color:var(--dim)}
+.cap-quote-value{text-align:right;color:var(--text);font-weight:800;font-variant-numeric:tabular-nums}
+.cap-quote-row.total{border-top:1px solid rgba(246,185,59,.4);border-bottom:0;margin-top:.25rem;padding-top:.55rem}
+.cap-quote-row.total .cap-quote-label{color:var(--heading);font-weight:800}
+.cap-quote-row.total .cap-quote-value{color:var(--gold);font-size:1rem}
+.cap-quote-row.contingent .cap-quote-label,.cap-quote-row.contingent .cap-quote-value{color:var(--dim);font-size:.72rem}
+.cap-terms{border:1px solid var(--border);background:rgba(0,0,0,.14);border-radius:8px;margin-top:.65rem;padding:.7rem}
+.cap-terms h4{margin:0 0 .45rem;color:var(--accent);font-size:.82rem}
+.cap-terms ul{margin:0;padding-left:1rem;color:var(--dim);font-size:.73rem;line-height:1.45}
+@media(max-width:760px){
+  .cap-order-grid{grid-template-columns:1fr}
+  .cap-option{grid-template-columns:24px minmax(0,1fr)}
+  .cap-option-cost{text-align:left;grid-column:2}
+}
+
+/* ---- Non-blocking message layer (toasts + message modal) ----
+   Native alert()/confirm()/prompt() block the JS main thread, which freezes
+   the setInterval-driven season countdown.  These replacements never block,
+   so the timer keeps ticking.  A separate overlay (#msg-overlay) from the
+   IO-prompt overlay (#overlay) avoids clobbering an active game prompt. */
+#toast-stack{
+  position:fixed;top:.75rem;left:50%;transform:translateX(-50%);
+  z-index:400;display:flex;flex-direction:column;gap:.4rem;
+  max-width:min(520px,94vw);pointer-events:none;
+}
+.toast{
+  pointer-events:auto;background:var(--panel);border:1px solid var(--border);
+  border-left:4px solid var(--accent);border-radius:8px;
+  padding:.6rem .85rem;font-size:.82rem;color:var(--text);
+  box-shadow:0 6px 24px rgba(0,0,0,.35);
+  display:flex;gap:.6rem;align-items:flex-start;
+  animation:toast-in .18s ease-out;
+}
+.toast.error{border-left-color:var(--red)}
+.toast.success{border-left-color:var(--green)}
+.toast.info{border-left-color:var(--accent)}
+.toast .toast-msg{flex:1;white-space:pre-line;line-height:1.35}
+.toast .toast-x{cursor:pointer;color:var(--dim);font-weight:700;line-height:1}
+.toast.leaving{animation:toast-out .2s ease-in forwards}
+@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
+
+#msg-overlay{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
+  z-index:300;align-items:center;justify-content:center;
+}
+#msg-overlay.active{display:flex}
+#msg-dialog{
+  background:var(--panel);border:1px solid var(--accent);border-radius:10px;
+  padding:1.5rem;min-width:300px;max-width:90vw;max-height:90vh;overflow:auto;
+}
+#msg-dialog h3{color:var(--heading);margin-bottom:.85rem;font-size:1rem}
+#msg-dialog .msg-body{font-size:.85rem;line-height:1.45;white-space:pre-line}
+#msg-dialog label{display:block;font-size:.76rem;color:var(--dim);margin:.7rem 0 .2rem}
+#msg-dialog input[type=number],#msg-dialog input[type=text],#msg-dialog textarea{
+  width:100%;padding:.5rem;box-sizing:border-box;background:var(--bg);
+  border:1px solid var(--border);color:var(--text);border-radius:6px;
+}
 /* Personnel popup + general popup section styling (Phase 3) */
 .popup-section{margin-bottom:1rem}
 .popup-section:last-child{margin-bottom:0}
@@ -602,6 +782,157 @@ button:active{transform:scale(.97)}
 .depflow-lbl{font-family:inherit;font-size:12px;fill:var(--heading,#e8eaf6);font-weight:600}
 .depflow-res{font-family:inherit;font-size:10px;fill:var(--gold,#e7c05d)}
 .depflow-arrow{fill:none;stroke-width:1.5;marker-end:url(#arrowhead)}
+
+/* ============================================================
+   UI v3 — "dark prestige" theme shell (phase 1).
+   Appended last so it layers over the base styles. Scoped to the
+   default (dark) theme via :root:not([data-theme="day"]) so the
+   Bright Lagoon day theme keeps its existing solid styling.
+   Structure/behaviour unchanged — purely visual. A body.fx-off
+   class (reduce-effects toggle) drops blur/glow for long sessions.
+   ============================================================ */
+:root:not([data-theme="day"]){
+  --bg:#05080f; --panel:#0c1726; --panel2:#11203455; --border:#24364f;
+  --text:#c2d2e6; --heading:#f0f6ff; --accent:#22d3ee; --gold:#f6b93b;
+  --green:#34e0a1; --red:#ff5d6c; --dim:#6a809b; --radius:14px;
+  --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.07);
+  --stroke:rgba(255,255,255,.09); --stroke-2:rgba(255,255,255,.16);
+}
+:root:not([data-theme="day"]) body{
+  font-family:'Sora',system-ui,-apple-system,sans-serif;
+  background:
+    radial-gradient(1100px 640px at 12% -8%, rgba(34,211,238,.13), transparent 60%),
+    radial-gradient(1000px 720px at 100% 0%, rgba(246,185,59,.12), transparent 55%),
+    radial-gradient(900px 760px at 50% 124%, rgba(80,120,255,.10), transparent 60%),
+    linear-gradient(180deg,#070d18,#05080f 60%,#04060c);
+  background-attachment:fixed;
+}
+:root:not([data-theme="day"]) body.fx-off{background:#070d18}
+
+/* glass columns + header */
+:root:not([data-theme="day"]) .g-hdr{
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+  border-bottom:1px solid var(--stroke);backdrop-filter:blur(14px);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset;
+}
+:root:not([data-theme="day"]) .g-side,
+:root:not([data-theme="day"]) .g-info{
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  backdrop-filter:blur(10px);border-color:var(--stroke);
+}
+:root:not([data-theme="day"]) .g-main{background:transparent}
+:root:not([data-theme="day"]) .g-log{
+  background:rgba(3,7,13,.66);border-top:1px solid var(--stroke);backdrop-filter:blur(8px);
+}
+body.fx-off .g-hdr,body.fx-off .g-side,body.fx-off .g-info,body.fx-off .g-log{backdrop-filter:none}
+
+/* every panel becomes a glass card */
+:root:not([data-theme="day"]) .section{
+  background:linear-gradient(180deg,var(--glass-2),var(--glass));
+  border:1px solid var(--stroke);border-radius:var(--radius);
+  padding:.7rem .8rem;margin-bottom:.7rem;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -32px #000;
+}
+:root:not([data-theme="day"]) .section h3{
+  font-family:'Sora',sans-serif;color:var(--dim);font-weight:600;
+  letter-spacing:.12em;border-bottom:1px solid var(--stroke);
+}
+:root:not([data-theme="day"]) .stat{padding:.2rem 0}
+:root:not([data-theme="day"]) .stat .val{color:var(--heading)}
+
+/* tabular-mono numerals for the figures that matter */
+:root:not([data-theme="day"]) .stat .val,
+:root:not([data-theme="day"]) .comp-table td,
+:root:not([data-theme="day"]) .g-hdr .wealth,
+:root:not([data-theme="day"]) #s-networth,
+:root:not([data-theme="day"]) #s-dollops,
+:root:not([data-theme="day"]) #s-personal-cash{
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;
+}
+
+/* net-worth hero in the header */
+:root:not([data-theme="day"]) .g-hdr .wealth{
+  color:var(--gold);font-weight:600;font-size:1.18rem;letter-spacing:.01em;
+  text-shadow:0 0 22px rgba(246,185,59,.45);
+}
+body.fx-off .g-hdr .wealth{text-shadow:none}
+
+/* refine the tile control + buttons to match */
+:root:not([data-theme="day"]) .btn-gold{
+  box-shadow:0 0 22px -8px rgba(246,185,59,.7);
+}
+:root:not([data-theme="day"]) .market-board .icon-btn:hover,
+:root:not([data-theme="day"]) .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ---- UI v3 phase 2: cinematic island hero (left column crown) ---- */
+.island-hero-sec{padding:0!important;overflow:hidden}
+.island-hero{position:relative;height:188px;border-radius:inherit;overflow:hidden}
+.island-hero .ih-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;
+  transition:transform .6s ease}
+.island-hero:hover .ih-art{transform:scale(1.04)}
+body.fx-off .island-hero .ih-art{transition:none}
+body.fx-off .island-hero:hover .ih-art{transform:none}
+.island-hero .ih-scrim{position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(5,8,15,.12) 0,transparent 30%,rgba(5,8,15,.5) 70%,rgba(5,8,15,.94) 100%)}
+.island-hero .ih-tag{position:absolute;top:9px;left:9px;display:flex;gap:6px;font-size:10px}
+.island-hero .ih-tag span{padding:3px 8px;border-radius:999px;background:rgba(8,14,24,.6);
+  border:1px solid rgba(255,255,255,.18);color:#ffd98a;backdrop-filter:blur(6px);white-space:nowrap}
+body.fx-off .island-hero .ih-tag span,
+body.fx-off .island-hero .ih-chips .c{backdrop-filter:none}
+.island-hero .ih-meta{position:absolute;left:11px;right:10px;bottom:9px;display:flex;align-items:flex-end;gap:8px}
+.island-hero .ih-text{flex:1;min-width:0}
+.island-hero .ih-role{font-size:10.5px;color:#ffd98a;text-shadow:0 1px 8px #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.island-hero .ih-name{font-size:15.5px;font-weight:600;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);line-height:1.15}
+.island-hero .ih-chips{display:flex;gap:6px;flex-shrink:0}
+.island-hero .ih-chips .c{padding:5px 8px;border-radius:10px;background:rgba(8,14,24,.55);
+  border:1px solid rgba(255,255,255,.18);text-align:center;backdrop-filter:blur(6px)}
+.island-hero .ih-chips .c .k{font-size:8px;letter-spacing:.4px;text-transform:uppercase;color:#9fb2c9}
+.island-hero .ih-chips .c .v{font-size:12.5px;font-weight:600;color:#eef5ff;font-family:'IBM Plex Mono',ui-monospace,monospace}
+
+/* ---- UI v3 phase 3: live overlay (season tint, disaster FX, equipment pins) ---- */
+.island-hero .ih-tint{position:absolute;inset:0;pointer-events:none;mix-blend-mode:soft-light;opacity:.85;transition:background .5s}
+.island-hero[data-season="Spring"] .ih-tint{background:linear-gradient(180deg,rgba(120,230,150,.30),transparent 72%)}
+.island-hero[data-season="Summer"] .ih-tint{background:linear-gradient(180deg,rgba(255,200,90,.32),transparent 72%)}
+.island-hero[data-season="Autumn"] .ih-tint{background:linear-gradient(180deg,rgba(232,128,56,.34),transparent 72%)}
+.island-hero[data-season="Winter"] .ih-tint{background:linear-gradient(180deg,rgba(120,180,255,.30),transparent 72%)}
+body.fx-off .island-hero .ih-tint{display:none}
+.island-hero .ih-fx{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s}
+.island-hero.ih-disrupted .ih-fx{opacity:1;box-shadow:inset 0 0 70px rgba(255,60,80,.55);animation:heroflicker 3.6s infinite}
+@keyframes heroflicker{0%,100%{opacity:.85}45%{opacity:1}48%{opacity:.55}52%{opacity:.95}}
+body.fx-off .island-hero.ih-disrupted .ih-fx{animation:none;opacity:.6}
+.island-hero .ih-fxchip{position:absolute;top:9px;right:9px;z-index:7;display:none;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;color:#ffd2d6;
+  background:rgba(40,10,14,.7);border:1px solid rgba(255,93,108,.55);backdrop-filter:blur(6px)}
+.island-hero.ih-disrupted .ih-fxchip{display:flex}
+body.fx-off .island-hero .ih-fxchip{backdrop-filter:none}
+.island-hero .ih-pins{position:absolute;inset:0;pointer-events:none}
+.ih-pins .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto}
+.ih-pins .pdot{width:11px;height:11px;border-radius:50%;border:1.5px solid #fff;margin:auto;
+  background:radial-gradient(circle at 35% 30%,#ffd98a,#f6b93b);
+  box-shadow:0 0 0 3px rgba(246,185,59,.22),0 0 12px rgba(246,185,59,.85);animation:pinpulse 5s ease-in-out infinite}
+.ih-pins .pin.failed .pdot{background:radial-gradient(circle at 35% 30%,#ff9aa2,#ff5d6c);
+  box-shadow:0 0 0 3px rgba(255,93,108,.22),0 0 12px rgba(255,93,108,.85)}
+body.fx-off .ih-pins .pdot{animation:none}
+@keyframes pinpulse{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+.ih-pins .plab{position:absolute;left:50%;bottom:150%;transform:translateX(-50%);white-space:nowrap;
+  font-size:10px;font-weight:600;color:#fff;background:rgba(8,14,24,.88);border:1px solid rgba(255,255,255,.2);
+  border-radius:7px;padding:2px 7px;opacity:0;transition:opacity .15s;pointer-events:none;text-shadow:0 1px 4px #000}
+.ih-pins .pin:hover .plab{opacity:1}
+
+/* ---- UI v3 phase 4: Build & Develop panel ---- */
+.bd-head{font-size:.64rem;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);margin:.5rem 0 .15rem;font-weight:600}
+.bd-head:first-child{margin-top:0}
+.bd-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,.05)}
+.bd-row .bx{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex-shrink:0}
+.bd-row.owned .bx{background:rgba(52,224,161,.16);border:1px solid rgba(52,224,161,.4);color:var(--green)}
+.bd-row.owned.failed .bx{background:rgba(255,93,108,.16);border:1px solid rgba(255,93,108,.45);color:var(--red)}
+.bd-row.avail .bx{background:rgba(255,255,255,.04);border:1px dashed rgba(255,255,255,.28);color:var(--dim)}
+.bd-row .bd-body{flex:1;min-width:0}
+.bd-row .bd-name{font-size:.8rem;color:var(--heading);font-weight:500;display:flex;align-items:center;gap:6px}
+.bd-row.owned.failed .bd-name{color:#ffb3ba}
+.bd-row .bd-sub{font-size:.68rem;color:var(--dim)}
+.bd-row .bd-req{font-size:.58rem;font-weight:600;letter-spacing:.3px;padding:1px 5px;border-radius:5px;background:rgba(246,185,59,.16);color:#ffd98a;border:1px solid rgba(246,185,59,.35)}
+.bd-row .bd-cost{font-size:.74rem;font-weight:600;color:var(--gold);font-family:'IBM Plex Mono',ui-monospace,monospace;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -810,6 +1141,7 @@ button:active{transform:scale(.97)}
       <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
         <button id="btn-add-ai" class="btn-ghost btn-sm" onclick="addAI()">+ Add AI Player</button>
         <button id="btn-start-auction" class="btn-gold" onclick="startAuction()">Start Role Auction →</button>
+        <button id="btn-leave-room" class="btn-ghost btn-sm" onclick="leaveRoom()" style="margin-left:auto">← Leave Game</button>
       </div>
     </div>
     <div id="wr-require-notice" class="hidden" style="color:var(--dim);font-size:.8rem;padding:.4rem .6rem;background:var(--panel2);border-radius:var(--radius)">
@@ -843,7 +1175,8 @@ button:active{transform:scale(.97)}
     <div class="bid-panel hidden" id="bid-panel">
       <h3>Bid on: <span id="bid-panel-role">—</span></h3>
       <div class="bid-input-row">
-        <input type="number" id="bid-amount" min="0" step="1" value="0"/>
+        <input type="number" id="bid-amount" inputmode="numeric" min="0" step="1" placeholder="0"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();submitBid();}"/>
         <span class="dp-label">Dp</span>
       </div>
       <div class="bid-actions">
@@ -944,8 +1277,43 @@ button:active{transform:scale(.97)}
                 title="Re-open the action menu if it was hidden mid-turn">📋 Menu</button>
         <button class="btn-ghost btn-sm" id="download-log-btn" onclick="downloadGameLog()"
                 title="Download the full server-side game log as a .txt file for debugging">⬇ Log</button>
+        <div class="layout-menu">
+          <button class="btn-ghost btn-sm" id="layout-btn" onclick="toggleLayoutMenu(event)"
+                  title="Show/hide panels and switch layout presets">▦ Layout</button>
+          <div class="layout-pop" id="layout-pop">
+            <div class="lp-head">Presets</div>
+            <div class="lp-row" onclick="applyLayoutPreset('full')">▦ Full</div>
+            <div class="lp-row" onclick="applyLayoutPreset('no-log')">▤ Hide log</div>
+            <div class="lp-row" onclick="applyLayoutPreset('trader')">▥ Trader (market focus)</div>
+            <div class="lp-row" onclick="applyLayoutPreset('focus')">□ Focus (main only)</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Panels</div>
+            <div class="lp-row" onclick="togglePanel('side')"><input type="checkbox" id="lp-side" onclick="event.stopPropagation()"> Left sidebar</div>
+            <div class="lp-row" onclick="togglePanel('info')"><input type="checkbox" id="lp-info" onclick="event.stopPropagation()"> Right info</div>
+            <div class="lp-row" onclick="togglePanel('log')"><input type="checkbox" id="lp-log" onclick="event.stopPropagation()"> Game log</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Display</div>
+            <div class="lp-row" onclick="toggleReduceEffects()"><input type="checkbox" id="lp-fx" onclick="event.stopPropagation();toggleReduceEffects()"> Reduce effects (blur &amp; glow)</div>
+            <div class="lp-sep"></div>
+            <div class="lp-head">Tiles</div>
+            <div id="lp-tiles"></div>
+          </div>
+        </div>
         <span style="font-size:.65rem;color:var(--dim);margin-left:.4rem;cursor:pointer"
               onclick="showAboutDialog()" title="About / version info">v<span id="app-version-game">…</span></span>
+      </div>
+    </div>
+
+    <!-- Disaster pop-up — problem, impact, duration -->
+    <div class="disaster-overlay" id="disaster-overlay" onclick="if(event.target===this)dismissDisaster()">
+      <div class="disaster-card">
+        <h3 id="disaster-title">⛈ <span id="disaster-name">Event</span></h3>
+        <div class="dc-sub" id="disaster-sub">affecting your island</div>
+        <div class="dc-impact" id="disaster-impact"></div>
+        <div class="dc-actions">
+          <label class="dc-mute"><input type="checkbox" id="disaster-mute"> Don't pop these up</label>
+          <button class="btn-gold btn-sm" onclick="dismissDisaster()">Got it</button>
+        </div>
       </div>
     </div>
 
@@ -962,9 +1330,27 @@ button:active{transform:scale(.97)}
     </div>
 
     <div class="g-side">
+      <div class="section island-hero-sec" data-tile="hero" data-tile-label="Island hero" style="display:none">
+        <div class="island-hero" id="island-hero">
+          <img class="ih-art" id="hero-art" alt="" decoding="async">
+          <div class="ih-tint"></div>
+          <div class="ih-scrim"></div>
+          <div class="ih-fx"></div>
+          <div class="ih-pins" id="hero-pins"></div>
+          <div class="ih-tag" id="hero-tag"></div>
+          <div class="ih-fxchip" id="hero-fxchip"></div>
+          <div class="ih-meta">
+            <div class="ih-text">
+              <div class="ih-role" id="hero-role"></div>
+              <div class="ih-name" id="hero-name"></div>
+            </div>
+            <div class="ih-chips" id="hero-chips"></div>
+          </div>
+        </div>
+      </div>
       <div class="section island-map-container" id="island-map-svg"><!-- SVG --></div>
-      <div class="section">
-        <h3 id="tab-island-name">My Island</h3>
+      <div class="section" data-tile="status" data-tile-label="Island status">
+        <h3><span id="tab-island-name">My Island</span></h3>
         <div class="stat net-wealth"><span class="lbl">Net Worth</span><span class="val" id="s-networth" title="Your investor net worth = personal cash + value of your equity stakes + loans owed to you">—</span></div>
         <div class="stat"><span class="lbl">Role</span><span class="val" id="s-role">—</span></div>
         <div class="stat"><span class="lbl">💰 Personal Cash</span><span class="val gold" id="s-personal-cash" title="Your private investor wallet — auction budget left after your winning bid">—</span></div>
@@ -980,15 +1366,16 @@ button:active{transform:scale(.97)}
           </span>
         </div>
         <div class="stat"><span class="lbl">🏦 Island Treasury</span><span class="val gold" id="s-dollops" title="Your island's operating cash (buys inputs, pays wages & maintenance)">—</span></div>
-        <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. the public float">—</span></div>
+        <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. authorized unissued shares">—</span></div>
         <div class="stat" id="s-buyfloat-row" style="display:none">
-          <span class="lbl">Buy float</span>
+          <span class="lbl">Issue shares</span>
           <span class="val">
             <button class="btn-ghost btn-sm" id="s-buyfloat-btn" onclick="openBuyFloat()"
-              title="Buy public-float shares of your island at fair value (paid from personal cash)">Buy shares…</button>
+              title="Issue unissued shares of your island at fair value; personal cash becomes island treasury cash">Buy shares…</button>
           </span>
         </div>
-        <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" title="Liquidation value of the island (treasury + inventory + equipment − loans)">—</span></div>
+        <div class="stat"><span class="lbl">Island Value</span><span class="val" id="s-wealth" style="cursor:pointer" onclick="toggleWealthBreakdown()" title="Click for the full breakdown — why your island value is what it is">—</span></div>
+        <div id="s-wealth-breakdown" class="wealth-breakdown" style="display:none"></div>
         <div class="stat"><span class="lbl">Loans</span><span class="val red" id="s-loans">0 Dp</span></div>
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
@@ -1001,7 +1388,7 @@ button:active{transform:scale(.97)}
         <div class="stat"><span class="lbl">Population</span><span class="val" id="s-pop">—</span></div>
         <div class="stat" id="s-campus-load-row" style="display:none"><span class="lbl">Campus Load</span><span class="val" id="s-campus-load">0</span><span class="stat-hint" id="s-campus-load-hint" style="font-size:.65rem;color:var(--warn);margin-left:.3rem"></span></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="inventory" data-tile-label="Inventory">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Inventory
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1009,7 +1396,7 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="s-inventory">—</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="capacity" data-tile-label="Production capacity">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Production Capacity
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1018,7 +1405,16 @@ button:active{transform:scale(.97)}
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          🏗 Build &amp; Develop
+          <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
+                  onclick="openCapitalPicker()"
+                  title="Buy capital equipment (available on your turn)">＋ Build…</button>
+        </h3>
+        <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
+      </div>
+      <div class="section" data-tile="insurance" data-tile-label="Insurance">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Insurance <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Manage Insurance action</span>
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1026,7 +1422,7 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="s-insurance" style="font-size:.8rem">None</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="loans" data-tile-label="Loans">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Loans <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— see Roll Over Loan action</span>
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1043,23 +1439,39 @@ button:active{transform:scale(.97)}
         <div class="action-btns" id="prompt-btns"></div>
         <div id="prompt-input" style="margin-top:.5rem"></div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="hints" data-tile-label="Decision hints">
         <h3>Decision Hints</h3>
         <div class="decision-list" id="decision-hints">
           <span style="color:var(--dim);font-size:.82rem">Waiting for game state…</span>
         </div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="players" data-tile-label="All players">
         <h3>All Players</h3>
         <table class="comp-table">
           <thead><tr><th>Player</th><th>Role</th><th>Net Worth (Dp)</th><th>Treasury (Dp)</th><th>Active</th><th>Mgr</th><th>Tech</th><th>Worker</th></tr></thead>
           <tbody id="comp-tbody"></tbody>
         </table>
       </div>
+      <div class="section" id="trade-finder" data-tile="trade-finder" data-tile-label="Trade Finder">
+        <h3 style="display:flex;align-items:center;gap:.4rem">
+          🔎 Trade Finder
+          <span style="font-weight:normal;font-size:.7rem;color:var(--dim)">— who has it / who needs yours</span>
+        </h3>
+        <div style="display:flex;gap:.4rem;margin:.45rem 0;align-items:center;flex-wrap:wrap">
+          <input id="tf-search" list="tf-resources" placeholder="resource… e.g. Oil"
+                 style="flex:1;min-width:140px;max-width:230px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:.3rem .45rem"
+                 oninput="renderTradeFinder()"
+                 onkeydown="if(event.key==='Enter')event.preventDefault()">
+          <datalist id="tf-resources"></datalist>
+          <button class="btn-ghost btn-sm tf-active" id="tf-mode-have" onclick="setTradeFinderMode('have')">They have</button>
+          <button class="btn-ghost btn-sm" id="tf-mode-need" onclick="setTradeFinderMode('need')">They need mine</button>
+        </div>
+        <div id="tf-results" style="font-size:.8rem;color:var(--dim)">Type a resource to find who holds it.</div>
+      </div>
     </div>
 
     <div class="g-info">
-      <div class="section">
+      <div class="section" data-tile="conditions" data-tile-label="Conditions">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Conditions
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
@@ -1067,20 +1479,36 @@ button:active{transform:scale(.97)}
         </h3>
         <div id="conditions-panel" style="font-size:.82rem;line-height:1.4">—</div>
       </div>
-      <div class="section">
+      <div class="section" data-tile="funding" data-tile-label="Funding rates">
         <h3>Funding Rates</h3>
         <div id="funding-rates-panel" style="font-size:.82rem">—</div>
       </div>
-      <div class="section market-board">
+      <div class="section market-board" data-tile="market" data-tile-label="Market board">
         <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
           <span>Market Board</span>
           <button class="icon-btn" title="Open market board" onclick="showMarketBoardPopup()">⌕</button>
         </h3>
         <div id="market-panel" onclick="showMarketBoardPopup()" style="cursor:pointer">—</div>
       </div>
+      <div class="section" data-tile="deals" data-tile-label="Deals">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>Deals <span id="deals-badge" class="deals-badge" style="display:none"></span></span>
+          <button class="btn-ghost btn-sm" style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openProposeDealDialog()" title="Propose a peer-to-peer deal">＋ Propose</button>
+        </h3>
+        <div id="deals-panel" onclick="openDealsDialog()" style="cursor:pointer;font-size:.82rem;line-height:1.4">—</div>
+      </div>
     </div>
 
-    <div class="g-log" id="event-log"></div>
+    <div class="g-log" id="event-log" data-filter="all">
+      <div class="log-filter-bar" id="log-filter-bar">
+        <button class="lf-btn active" data-f="all"      onclick="setLogFilter('all')">All</button>
+        <button class="lf-btn"        data-f="mine"     onclick="setLogFilter('mine')">My island</button>
+        <button class="lf-btn"        data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
+        <button class="lf-btn"        data-f="events"   onclick="setLogFilter('events')">Events</button>
+        <button class="lf-btn"        data-f="training" onclick="setLogFilter('training')">Training</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1089,6 +1517,122 @@ button:active{transform:scale(.97)}
   <div class="dialog" id="dialog">
     <h3 id="dlg-title">Choose</h3>
     <div id="dlg-body"></div>
+  </div>
+</div>
+
+<!-- Capital Equipment Order form (#185) -->
+<div class="overlay" id="capital-order-overlay">
+  <div class="dialog cap-order-dialog">
+    <h3>Capital Equipment Order</h3>
+    <div id="cap-order-item" class="cap-order-item"></div>
+    <div class="cap-order-grid">
+      <div class="cap-order-options">
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-maintenance" checked onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Maintenance / warranty contract <button class="cap-info-btn" onclick="toggleCapOrderInfo('maintenance')" title="Show maintenance terms">i</button></div>
+            <div class="cap-option-copy">Prepaid repair cover using the #188 per-quarter Weibull failure model.</div>
+            <div class="cap-controls">
+              <select id="cap-order-term" oninput="updateCapOrderTotal()">
+                <option value="0">None</option>
+                <option value="1">1 year</option>
+                <option value="2">2 years</option>
+                <option value="3" selected>3 years</option>
+                <option value="4">4 years</option>
+                <option value="5">5 years</option>
+              </select>
+              <label class="cap-inline"><input type="checkbox" id="cap-order-predictive" checked onchange="updateCapOrderTotal()"> Predictive Maint.</label>
+            </div>
+            <div class="cap-info" id="cap-info-maintenance">Repair cost is roughly 35% of list price. Contract prices follow issue #188 and account for age, disasters, and sabotage risk.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-maint-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-guarantee" checked disabled>
+          <div>
+            <div class="cap-option-title">Manufacturer guarantee</div>
+            <div class="cap-option-copy">One season standard guarantee, no charge.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-spares-toggle" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Spares kits <button class="cap-info-btn" onclick="toggleCapOrderInfo('spares')" title="Show spares terms">i</button></div>
+            <div class="cap-option-copy">Each kit cuts one future repair by 50% when attached to this unit.</div>
+            <div class="cap-controls">
+              <input type="number" id="cap-order-spares" min="0" value="0" oninput="updateCapOrderTotal()">
+            </div>
+            <div class="cap-info" id="cap-info-spares">Spares cost 15% of list price per kit at order time. Building spares at failure costs 50% more.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-spares-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-expedited" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Expedited repair eligibility <button class="cap-info-btn" onclick="toggleCapOrderInfo('expedited')" title="Show expedited terms">i</button></div>
+            <div class="cap-option-copy">Allows fast repair after a failure when spares and air freight are available.</div>
+            <div class="cap-info" id="cap-info-expedited">Standard repair completes next season. Expedited repair needs attached spares plus air freight and is billed only at failure.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-expedite-cost">Contingent</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-financing" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Apply for bank financing <button class="cap-info-btn" onclick="toggleCapOrderInfo('financing')" title="Show financing terms">i</button></div>
+            <div class="cap-option-copy">Request a capital loan for the agreed order total.</div>
+            <div class="cap-info" id="cap-info-financing">Loan application amount equals the agreed total. Bank/manufacturer incentives are internal and not displayed in buyer pricing.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cap-quote" id="cap-order-total"></div>
+        <div class="cap-terms">
+          <h4>Standard Terms</h4>
+          <ul>
+            <li>Repair is approximately 35% of list price.</li>
+            <li>#188 uses per-quarter Weibull failure, adjusted by disasters and sabotage.</li>
+            <li>Each spares kit reduces one repair by 50%.</li>
+            <li>Spares built at failure cost 50% more.</li>
+            <li>Standard repair completes next season.</li>
+            <li>Expedited repair needs spares plus air freight.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalOrder()">Cancel</button>
+      <button onclick="submitCapitalOrder()">Send offer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Capital item picker: lists buildable equipment, then opens the order form
+     (#185) for the chosen item. Routed from the "Purchase Equipment" action. -->
+<div class="overlay" id="capital-pick-overlay">
+  <div class="dialog">
+    <h3>Purchase Equipment</h3>
+    <div id="cap-pick-list" style="display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0"></div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalPicker()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Non-blocking message layer (toasts + message modal). Separate from the
+     IO-prompt overlay above so it never disturbs an active game prompt, and
+     never blocks the event loop (the season countdown keeps ticking). -->
+<div id="toast-stack"></div>
+<div id="msg-overlay">
+  <div id="msg-dialog">
+    <h3 id="msg-title"></h3>
+    <div id="msg-content"></div>
   </div>
 </div>
 
@@ -1117,6 +1661,12 @@ let timerInterval = null;
 let auctionTimerEnd = 0;
 // Pause state (Issue #1)
 let isPaused = false;
+// Date.now() ms captured when the game is paused; while set, countdowns freeze
+// here instead of advancing with the wall clock.
+let pausedAtMs = 0;
+// Reference "now" for countdowns: frozen at the pause instant while paused, so
+// the displayed timer holds steady and doesn't tick down during a pause.
+function effectiveNowMs() { return (isPaused && pausedAtMs) ? pausedAtMs : Date.now(); }
 // Cached most-recent action-prompt payload so we can re-render it via the
 // "📋 Menu" recovery button when the action menu disappears mid-turn (e.g.
 // after cancelling a hint-driven modal or any other intermittent UI loss).
@@ -1187,42 +1737,49 @@ const ISLAND_BRIEFINGS = {
   Farmer: {
     title: 'Agriculture and Fisheries Island',
     summary: 'Feed the archipelago with Grain, Produce, Fish, Meat, and premium packaged Food. Protect machinery, fuel, and the specialists who make each line sing.',
+    complexity: { level: 'Medium', note: 'Seasonal yield table and a multi-line food basket to balance, but a steady production loop once set up.' },
     priorities: ['Balance Grain / Produce / protein', 'Secure Farm Machinery and Oil', 'Add Horticulturalist and Veterinarian depth'],
     full: `You produce Grain, Produce, Fish, and Meat, then may package balanced Food in an Industrial Kitchen for governors who prefer convenience over kitchen arithmetic. Other islands need a healthy mix of Produce, Grain, and either Fish or Meat; packaged Food saves them time and should command a premium.<br><br>Your strongest strategy is to become the archipelago’s reliable food-security partner: keep raw staples flowing, build the kitchen when the market will pay for convenience, and train Horticulturalists and Veterinarians before those lines become the bottleneck.`
   },
   Miner: {
     title: 'Mining and Exploration Island',
     summary: 'Supply the bones and blood of industry: Ore, Metal, and Oil. Guard your own Oil, keep Container Freight moving, and decide when to sell raw versus refine.',
+    complexity: { level: 'Low', note: 'The most straightforward island: a single extraction loop with a simple raw-vs-refine decision. A good first role.' },
     priorities: ['Protect Oil supply', 'Secure Container Freight', 'Invest in skilled extraction'],
     full: `You produce Ore, Metal, and Oil. Ore brings early cash, Metal is the higher-value industrial feedstock, and Oil powers half the board including your own operations.<br><br>Your strongest strategy is to become more than a quarry: keep production resilient, build refining depth, and make every industrial island negotiate with you for motion or materials.`
   },
   Transporter: {
     title: 'Transportation and Logistics Island',
     summary: 'Make the archipelago function as one economy. Produce both Container Freight and PassengerSeats; cargo moves goods, seats move the people who unlock growth and recovery.',
+    complexity: { level: 'Medium', note: 'Two services to balance and constant demand-anticipation, but no negotiation queues. Activity rises as freight becomes a paid service.' },
     priorities: ['Keep Oil and Food on hand', 'List Freight and PassengerSeats', 'Train transport specialists'],
     full: `You produce Container Freight and PassengerSeats. Freight enables trade; PassengerSeats enable training, nurse travel, and other high-value movement of people.<br><br>Your strongest strategy is to anticipate demand before it becomes a crisis: balance cargo and passenger capacity, keep routes staffed, and make yourself the island everyone has to plan around.`
   },
   Educator: {
     title: 'Education, Research and Training Island',
     summary: 'Turn population into capability. Maintain Expertise, produce Courses, and keep faculty depth high so the archipelago can train rather than stagnate.',
+    complexity: { level: 'High', note: 'Two training pipelines, course/expertise upkeep, and a request approval queue with counter-offers to every other island. Busy every season.' },
     priorities: ['Maintain Expertise', 'Keep Courses available', 'Protect Professors and Instructors'],
-    full: `You produce Expertise, Courses, and Patents. One Course serves a class of up to twelve trainees and consumes one Expertise per season to run.<br><br>Your strongest strategy is to sell progress itself: keep the training pipeline open, secure Reagents and PassengerSeats, and become the trusted route by which every other island scales.`
+    full: `You produce Expertise, Courses, and Patents. One Course serves a class of up to twelve trainees and consumes one Expertise per season to run. Reagents support Patents and science-track courses.<br><br>Your strongest strategy is to sell progress itself: keep the training pipeline open, secure PassengerSeats, and become the trusted route by which every other island scales.`
   },
   Banker: {
     title: 'Banking and Insurance Island',
     summary: 'Price time and risk. Your business is loans and insurance, not commodity production; your edge is seeing other islands’ bottlenecks before they do.',
+    complexity: { level: 'High', note: 'No production loop to fall back on — every turn is active financial judgement: rate negotiation, reserve ratios, underwriting, and reading the whole board. Rewards experienced players.' },
     priorities: ['Deploy capital wisely', 'Underwrite risk early', 'Maintain Expertise'],
     full: `You earn through loans and insurance. Productive borrowers turn your capital into future interest; risky industries and vulnerable islands need protection before disaster arrives.<br><br>Your strongest strategy is to be the best-informed player at the table: finance growth that can repay, insure danger before it becomes obvious, and never let somebody else’s bad plan become your bad balance sheet.`
   },
   Manufacturer: {
     title: 'ForgeHaven Manufacturing Island',
     summary: 'Sell growth itself. Choose the product line the archipelago will need next, and secure Metal, Oil, Container Freight, and the workforce to deliver it.',
+    complexity: { level: 'Medium', note: 'A product-line choice each season makes foresight matter more than volume; inputs and workforce need lining up, but the turn loop is contained.' },
     priorities: ['Read future demand', 'Secure industrial inputs', 'Train for chosen lines'],
     full: `You produce Farm Machinery, Mining Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
   },
   Doctor: {
     title: 'Healthcare and Health Research Island',
     summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
     full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
   },
@@ -1289,21 +1846,42 @@ function quickSeatHash(name) {
 
 function parseQuickSeat() {
   const p = new URLSearchParams(window.location.search);
+  const code = (p.get('code') || '').trim().toUpperCase() || null;
   const isCreate = p.get('create') === '1' || p.has('room');
-  const isJoin = p.has('join');
+  // A `code=` joins a room created any way (e.g. via the Create Game button),
+  // not just one made with a matching ?room= quick-seat URL.
+  const isJoin = p.has('join') || (!!code && !isCreate);
   if (!isCreate && !isJoin) return null;
-  const roomName = p.get('room') || p.get('join') || '';
+  const roomName = p.get('room') || p.get('join') || code || '';
   if (!roomName) return null;
+  // TEST/DEBUG: start<resource>=N seeds opening inventory for the role being
+  // taken (e.g. startfood=200 → Farmer starts with 200 Food). `startrole`
+  // overrides the keyed role; defaults to the bid `role`, else Farmer. Note we
+  // must exclude `startcapital`/`startrole`, which also begin with "start".
+  const debugInv = (() => {
+    const role = p.get('startrole') || p.get('role') || 'Farmer';
+    const RESERVED = new Set(['startrole', 'startcapital']);
+    const inv = {};
+    for (const [key, val] of p.entries()) {
+      const m = /^start(.+)$/i.exec(key);
+      if (!m || RESERVED.has(key.toLowerCase())) continue;
+      const qty = parseInt(val, 10);
+      if (Number.isFinite(qty) && qty > 0) inv[m[1]] = qty;
+    }
+    return Object.keys(inv).length ? { [role]: inv } : null;
+  })();
   return {
     mode: isCreate ? 'create' : 'join',
     roomName,
     roomId: quickSeatHash(roomName),
+    code,  // when set, join by code instead of the name-hash room id
     name: p.get('player') || 'Player',
     role: p.get('role') || null,
     bid: parseFloat(p.get('bid') || '0') || 0,
     invest: p.get('invest') || null,
     capital: p.get('startcapital') ? parseFloat(p.get('startcapital')) : null,
     season: p.get('season') ? parseInt(p.get('season'), 10) : null,
+    debugInv,
     bidPlaced: false,
     investDone: false,
   };
@@ -1355,6 +1933,7 @@ async function quickSeatStart() {
       };
       if (quickSeat.capital != null) body.starting_capital = quickSeat.capital;
       if (quickSeat.season != null) body.season_timer_seconds = quickSeat.season;
+      if (quickSeat.debugInv) body.debug_starting_inventory = quickSeat.debugInv;
       const room = await apiFetch('/api/rooms', 'POST', body);
       myPlayerId = room.players[0].player_id;
       rememberIdentity(quickSeat.name, room);
@@ -1377,14 +1956,20 @@ async function quickSeatJoinWithRetry(maxMs = 60000) {
   let lastErr = null;
   while (Date.now() - start < maxMs) {
     try {
-      const data = await apiFetch(`/api/rooms/${quickSeat.roomId}/join`, 'POST',
-        { name: quickSeat.name });
+      // With a code, join the room the host actually created (any room),
+      // via join-by-code — which also reconnects if the game has started.
+      // Otherwise fall back to the name-hash room id (paired ?room=/?join= URLs).
+      const data = quickSeat.code
+        ? await apiFetch('/api/rooms/join-by-code', 'POST',
+            { code: quickSeat.code, name: quickSeat.name })
+        : await apiFetch(`/api/rooms/${quickSeat.roomId}/join`, 'POST',
+            { name: quickSeat.name });
       myPlayerId = data.player_id;
       rememberIdentity(quickSeat.name, data.room);
       return data.room;
     } catch (e) {
       lastErr = e;
-      quickSeatBanner(`Waiting for room "${quickSeat.roomName}" to be created…`);
+      quickSeatBanner(`Waiting for room "${quickSeat.code || quickSeat.roomName}" to be created…`);
       await new Promise(r => setTimeout(r, 1500));
     }
   }
@@ -1447,6 +2032,11 @@ function showScreen(name) {
     builtTabsForRoles = null;
     activeTabRole = null;
     document.getElementById('island-tabs').innerHTML = '';
+    _loadColW();
+    restoreLayoutPrefs();
+    initTiles();
+    initResizers();
+    applyGridLayout();
   }
 }
 
@@ -1463,6 +2053,26 @@ async function createRoom() {
   const seasonTimer = +(v('c-season-timer') || 120);
   const preSeasonTimer = +(v('c-preseason-timer') || 30);
 
+  // TEST/DEBUG: ?startrole=Farmer&startfood=200&startoil=50 seeds the named
+  // role's opening inventory so a resource doesn't cloud a test. Any number of
+  // start<resource>=N params are honoured; the server matches resource names
+  // case-insensitively. Omit these in real games (presence marks a debug room).
+  const debugInv = (() => {
+    const sp = new URLSearchParams(window.location.search);
+    const role = sp.get('startrole') || 'Farmer';
+    const inv = {};
+    for (const [key, val] of sp.entries()) {
+      const m = /^start(.+)$/i.exec(key);
+      if (!m || key.toLowerCase() === 'startrole') continue;
+      const qty = parseInt(val, 10);
+      if (Number.isFinite(qty) && qty > 0) inv[m[1]] = qty;
+    }
+    return Object.keys(inv).length ? { [role]: inv } : null;
+  })();
+  if (debugInv) {
+    console.warn('[DEBUG SEED] creating debug room with starting inventory', debugInv);
+  }
+
   try {
     const room = await apiFetch('/api/rooms', 'POST', {
       name: roomName, max_players: maxPlayers, num_years: numYears,
@@ -1471,12 +2081,13 @@ async function createRoom() {
       auction_timer_seconds: auctionTimer,
       season_timer_seconds: seasonTimer,
       pre_season_timer_seconds: preSeasonTimer,
+      ...(debugInv ? { debug_starting_inventory: debugInv } : {}),
     });
     myPlayerId = room.players[0].player_id;
     rememberIdentity(name, room);
     enterWaiting(room);
   } catch(e) {
-    alert(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`);
+    showToast(`Could not create room. Make sure the Island Traders server is running at ${API}.\n\n${e.message}`, { type: 'error', ms: 8000 });
   }
 }
 
@@ -1504,7 +2115,7 @@ async function joinRoomById(roomId) {
     rememberIdentity(name, data.room);
     enterWaiting(data.room);
   } catch(e) {
-    alert('Could not join room.');
+    showToast('Could not join room.', { type: 'error' });
   }
 }
 
@@ -1568,7 +2179,9 @@ function renderWaitingRoom(room) {
   }).join('');
 
   // Only host can start
-  const isHost = room.creator_id === undefined || room.players[0]?.player_id === myPlayerId;
+  const isHost = room.creator_id === undefined
+    ? room.players[0]?.player_id === myPlayerId
+    : room.creator_id === myPlayerId;
   document.getElementById('btn-start-auction').style.display = isHost ? '' : 'none';
   document.getElementById('btn-add-ai').style.display = isHost ? '' : 'none';
 }
@@ -1590,7 +2203,7 @@ async function addAI() {
     const updated = await apiFetch(`/api/rooms/${currentRoomId}`);
     renderWaitingRoom(updated);
   } catch(e) {
-    alert('Failed to add AI player: ' + e.message);
+    showToast('Failed to add AI player: ' + e.message, { type: 'error' });
   }
 }
 
@@ -1598,8 +2211,34 @@ async function startAuction() {
   try {
     await apiFetch(`/api/rooms/${currentRoomId}/auction/start`, 'POST');
   } catch(e) {
-    alert('Cannot start auction: ' + e.message);
+    showToast('Cannot start auction: ' + e.message, { type: 'error' });
   }
+}
+
+function leaveRoom() {
+  // Non-blocking confirm (native confirm() would freeze the season countdown).
+  showConfirmModal('Leave game?', 'Leave this game? You will be removed from the room.', {
+    confirmLabel: 'Leave', cancelLabel: 'Stay', danger: true,
+    onConfirm: _doLeaveRoom,
+  });
+}
+
+async function _doLeaveRoom() {
+  const roomId = currentRoomId, playerId = myPlayerId;
+  try {
+    if (roomId && playerId) {
+      await apiFetch(`/api/rooms/${roomId}/leave`, 'POST', {player_id: playerId});
+    }
+  } catch(e) {
+    showToast('Could not leave the room: ' + e.message, { type: 'error' });
+    return;
+  }
+  // Tear down the socket without triggering the auto-reconnect, reset identity,
+  // and return to the landing screen.
+  if (ws) { ws.onclose = null; try { ws.close(); } catch(_) {} ws = null; }
+  currentRoomId = null; currentRoom = null; myPlayerId = null; myPlayerIdx = null;
+  showScreen('landing');
+  refreshPublicRooms();
 }
 
 // ==================== AUCTION ====================
@@ -1690,13 +2329,13 @@ function updateBudgetDisplay() {
 function startAuctionTimer() {
   if (timerInterval) clearInterval(timerInterval);
   timerInterval = setInterval(() => {
-    const remaining = Math.max(0, auctionTimerEnd - Date.now() / 1000);
+    const remaining = Math.max(0, auctionTimerEnd - effectiveNowMs() / 1000);
     const el = document.getElementById('timer-val');
     if (el) {
       el.textContent = Math.ceil(remaining);
       el.style.color = remaining < 10 ? 'var(--red)' : 'var(--gold)';
     }
-    if (remaining <= 0) clearInterval(timerInterval);
+    if (remaining <= 0 && !isPaused) clearInterval(timerInterval);
   }, 500);
 }
 
@@ -1708,8 +2347,12 @@ function selectRole(roleName) {
   const panel = document.getElementById('bid-panel');
   panel.classList.remove('hidden');
   document.getElementById('bid-panel-role').textContent = roleName;
+  // Show an existing bid for editing; otherwise the box opens empty
+  // (input convention, #114) and focus lands in it ready to type.
   const current = myBids[roleName] || 0;
-  document.getElementById('bid-amount').value = current;
+  const bidInput = document.getElementById('bid-amount');
+  bidInput.value = current > 0 ? current : '';
+  bidInput.focus();
   document.getElementById('bid-msg').textContent = '';
 }
 
@@ -1764,12 +2407,38 @@ function showAuctionResult(msg) {
 
 }
 
+// Activity-index colours (issue #27): how much hands-on work a role demands
+// each season, so players can factor effort into their island bidding.
+const COMPLEXITY_COLORS = { High: '#e74c3c', Medium: '#e7c05d', Low: '#27ae60' };
+
+// Compact inline chip for the auction card.
+function complexityChip(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<span title="${esc(c.note || '')}" style="display:inline-block;font-size:.68rem;font-weight:700;`
+    + `text-transform:uppercase;letter-spacing:.04em;color:${col};border:1px solid ${col}88;`
+    + `border-radius:999px;padding:.05rem .5rem;white-space:nowrap">${esc(c.level)} activity</span>`;
+}
+
+// Fuller line for the read-more briefing dialog.
+function complexityLine(b) {
+  if (!b || !b.complexity) return '';
+  const c = b.complexity;
+  const col = COMPLEXITY_COLORS[c.level] || '#aaa';
+  return `<div style="margin-top:.8rem;font-size:.82rem"><strong style="color:${col}">`
+    + `Activity index: ${esc(c.level)}</strong> — ${esc(c.note || '')}</div>`;
+}
+
 function renderAuctionBriefingCard(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return '';
   const color = ROLE_COLORS[role] || '#aaa';
   return `<div style="margin-bottom:.6rem;padding:.8rem;border:1px solid ${color}66;border-radius:8px;background:${color}10">
-    <div style="font-weight:800;color:${color}">${esc(b.title)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:.5rem">
+      <span style="font-weight:800;color:${color}">${esc(b.title)}</span>
+      ${complexityChip(b)}
+    </div>
     <div style="font-size:.84rem;line-height:1.4;margin-top:.35rem">${esc(b.summary)}</div>
     <div style="font-size:.76rem;color:var(--dim);margin-top:.35rem">Priorities: ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-ghost btn-sm" style="margin-top:.55rem" onclick="showIslandBriefing('${esc(role)}')">Read full briefing</button>
@@ -1780,6 +2449,7 @@ function showIslandBriefing(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return;
   const body = `<p style="line-height:1.5">${b.full}</p>
+    ${complexityLine(b)}
     <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
   showDlg(b.title, body);
@@ -1834,7 +2504,7 @@ function onIslandGuaranteeState(gs) {
     subEl.innerHTML =
       `You ended the auction without an island. ` +
       `Choose one to take from an AI player that won extras — the AI must sell at the price shown below. ` +
-      `<a href="#" onclick="event.preventDefault();alert(GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
+      `<a href="#" onclick="event.preventDefault();showInfoModal('How the price is calculated', GUARANTEE_PRICING_EXPLAINER);return false;">how is the price calculated?</a>`;
     actionsEl.classList.remove('hidden');
     spectatorEl.classList.add('hidden');
     offersEl.innerHTML = offers.map(o => {
@@ -2087,16 +2757,17 @@ function submitInvestment(ready) {
   }
 }
 
-// ==================== EQUITY: buy out the public float (Phase 3) ==========
+// ==================== EQUITY: issue unissued shares (Phase 3) ==============
 let _buyFloatState = null;   // { shares, price, cash } when buying is offered
 function openBuyFloat() {
   if (!_buyFloatState || !ws || ws.readyState !== WebSocket.OPEN) return;
   const { shares: avail, price, cash } = _buyFloatState;
   const maxAfford = price > 0 ? Math.floor(cash / price) : 0;
   const maxBuy = Math.min(avail, maxAfford);
-  const prompt = `Buy public-float shares of your island.\n`
+  const prompt = `Issue unissued shares of your island.\n`
     + `Available: ${avail}  ·  Price/share: ${price.toFixed(2)} Dp  ·  `
     + `Your cash: ${cash.toFixed(1)} Dp (affords ${maxAfford}).\n`
+    + `Personal cash becomes island treasury cash.\n`
     + `How many shares to buy? (1–${maxBuy})`;
   const raw = window.prompt(prompt, String(maxBuy));
   if (raw === null) return;
@@ -2138,6 +2809,192 @@ function roleShortName(role) {
 
 function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
+}
+
+// Capital Equipment Order form (#185): collects order conditions and sends a
+// `capital_order` offer. The server routes it to the Manufacturer review flow.
+let capOrderItem = null;
+function moneyDp(value) {
+  return `${(Math.round((Number(value) || 0) * 100) / 100).toFixed(2)} Dp`;
+}
+function openCapitalOrder(itemId) {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  const it = cat.find(c => c.item_id === itemId);
+  if (!it) return;
+  capOrderItem = it;
+  const arrival = it.delivery_seasons === 0 ? 'arrives now'
+    : `${it.delivery_seasons}-season delivery`;
+  document.getElementById('cap-order-item').textContent =
+    `${it.name} — ${it.cost} Dp · ${arrival}`;
+  document.getElementById('cap-order-maintenance').checked = true;
+  document.getElementById('cap-order-term').value = '3';
+  document.getElementById('cap-order-predictive').checked = true;
+  document.getElementById('cap-order-spares-toggle').checked = false;
+  document.getElementById('cap-order-spares').value = 0;
+  document.getElementById('cap-order-expedited').checked = false;
+  document.getElementById('cap-order-financing').checked = false;
+  document.querySelectorAll('#capital-order-overlay .cap-info').forEach(el => el.classList.remove('active'));
+  updateCapOrderTotal();
+  document.getElementById('capital-order-overlay').classList.add('active');
+}
+function closeCapitalOrder() {
+  document.getElementById('capital-order-overlay').classList.remove('active');
+  capOrderItem = null;
+}
+function toggleCapOrderInfo(key) {
+  const el = document.getElementById(`cap-info-${key}`);
+  if (el) el.classList.toggle('active');
+}
+// "Purchase Equipment" action → pick a buildable item, then open the #185/#188
+// order form for it (term contract, financing, etc.). Replaces the legacy
+// server-driven item picker so the one obvious button reaches the new modal.
+function openCapitalPicker() {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  const avail = cat.filter(c => c.owned <= 0);
+  if (!avail.length) {
+    showToast('No buildable equipment available for this island.');
+    return;
+  }
+  if (avail.length === 1) { openCapitalOrder(avail[0].item_id); return; }
+  const el = document.getElementById('cap-pick-list');
+  el.innerHTML = avail.map(c => {
+    const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+    const req = c.cash_only ? 'cash-only' : 'requires equipment';
+    return `<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
+      + `${esc(c.name)} — ${c.cost} Dp · ${req} · ${arrival}`
+      + (c.mandatory ? ' · Required' : '') + `</button>`;
+  }).join('');
+  document.getElementById('capital-pick-overlay').classList.add('active');
+}
+function closeCapitalPicker() {
+  document.getElementById('capital-pick-overlay').classList.remove('active');
+}
+function pickCapitalItem(itemId) {
+  closeCapitalPicker();
+  openCapitalOrder(itemId);
+}
+// #188 maintenance/warranty contract cost per $100, by term: [baseline, predictive].
+const CAP_CONTRACT_PER_100 = {
+  1: [8.62, 7.11], 2: [19.90, 14.82], 3: [35.70, 23.94],
+  4: [55.29, 34.88], 5: [78.23, 47.91],
+};
+function updateCapOrderTotal() {
+  if (!capOrderItem) return;
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const termEl = document.getElementById('cap-order-term');
+  const predictiveEl = document.getElementById('cap-order-predictive');
+  termEl.disabled = !wantsMaintenance;
+  predictiveEl.disabled = !wantsMaintenance;
+  const term = wantsMaintenance ? parseInt(termEl.value, 10) : 0;
+  const predictive = document.getElementById('cap-order-predictive').checked;
+  const sparesToggle = document.getElementById('cap-order-spares-toggle');
+  const sparesInput = document.getElementById('cap-order-spares');
+  if (parseInt(sparesInput.value || '0', 10) > 0) sparesToggle.checked = true;
+  sparesInput.disabled = !sparesToggle.checked;
+  const kits = sparesToggle.checked
+    ? Math.max(0, parseInt(sparesInput.value || '0', 10)) : 0;
+  const rate = CAP_CONTRACT_PER_100[term];
+  const contract = rate
+    ? Math.round((predictive ? rate[1] : rate[0]) * capOrderItem.cost / 100 * 100) / 100 : 0;
+  const sparesCost = Math.round(0.15 * capOrderItem.cost * kits * 100) / 100;
+  const total = Math.round((capOrderItem.cost + contract + sparesCost) * 100) / 100;
+  const expeditedEstimate = Math.round(0.15 * capOrderItem.cost * 100) / 100;
+  const maintLabel = term
+    ? `${term}yr contract${predictive ? ' · Predictive Maint.' : ''}`
+    : 'No maintenance contract';
+  document.getElementById('cap-maint-cost').textContent = moneyDp(contract);
+  document.getElementById('cap-spares-cost').textContent =
+    kits ? `${moneyDp(sparesCost)} (${kits}x)` : moneyDp(0);
+  document.getElementById('cap-expedite-cost').textContent =
+    document.getElementById('cap-order-expedited').checked
+      ? `~${moneyDp(expeditedEstimate)} at failure`
+      : 'Optional';
+  document.getElementById('cap-order-total').innerHTML = `
+    <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">${esc(maintLabel)}</div><div class="cap-quote-value">${moneyDp(contract)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Manufacturer guarantee</div><div class="cap-quote-value">${moneyDp(0)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits}</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
+    <div class="cap-quote-row total"><div class="cap-quote-label">Recommended total</div><div class="cap-quote-value">${moneyDp(total)}</div></div>
+    <div class="cap-quote-row contingent"><div class="cap-quote-label">+ Expedited repair, if eligible</div><div class="cap-quote-value">~${moneyDp(expeditedEstimate)}</div></div>
+  `;
+}
+function submitCapitalOrder() {
+  if (!capOrderItem) return;
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const wantsSpares = document.getElementById('cap-order-spares-toggle').checked;
+  sendWsMessage({
+    type: 'capital_order',
+    item_id: capOrderItem.item_id,
+    maintenance_term_years: wantsMaintenance ? parseInt(document.getElementById('cap-order-term').value, 10) : 0,
+    predictive_maintenance: wantsMaintenance && document.getElementById('cap-order-predictive').checked,
+    spares_kits: wantsSpares ? Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)) : 0,
+    expedited_eligible: document.getElementById('cap-order-expedited').checked,
+    financing: document.getElementById('cap-order-financing').checked,
+  });
+  closeCapitalOrder();
+}
+
+function capitalNegotiationLabel(n) {
+  if (!n) return 'capital order';
+  const item = n.name || n.item_id || 'capital equipment';
+  const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
+  return `${item} (${moneyDp(total)})`;
+}
+function onCapitalNegotiationAck(msg) {
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const type = msg.result === 'declined' ? 'error'
+    : msg.result === 'countered' ? 'info' : 'success';
+  showToast(`Capital order ${msg.result || 'updated'}: ${label}`, { type });
+  addLog(`📦 Capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
+}
+function onCapitalNegotiationPush(msg) {
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const from = msg.from ? `${msg.from}: ` : '';
+  showToast(`${from}capital order ${msg.result || 'updated'}: ${label}`, { type: 'info' });
+  addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, 'info');
+}
+
+// UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
+// the island can still build (from capacity.capital_catalogue). The header
+// "＋ Build…" button launches the existing Purchase Equipment action; an
+// "Available" row opens the richer Capital Equipment Order form (#185).
+function renderBuildDevelop(me) {
+  const el = document.getElementById('build-develop-list');
+  if (!el) return;
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  if (!cat.length) {
+    el.innerHTML = '<span style="color:var(--dim)">No buildable equipment for this island.</span>';
+    return;
+  }
+  const owned = cat.filter(c => c.owned > 0);
+  const avail = cat.filter(c => c.owned <= 0);
+  let html = '';
+  if (owned.length) {
+    html += '<div class="bd-head">Built</div>' + owned.map(c => {
+      const failed = c.failed > 0;
+      const sub = failed ? `${c.failed} failed — needs repair`
+        : (c.cash_only ? 'cash-only' : esc(c.role));
+      return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
+        <div class="bx">${failed ? '⚠' : '✓'}</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''}</div>
+          <div class="bd-sub">${sub}</div></div></div>`;
+    }).join('');
+  }
+  if (avail.length) {
+    html += '<div class="bd-head">Available</div>' + avail.map(c => {
+      const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+      const sub = (c.cash_only ? 'cash-only' : 'requires equipment') + ' · ' + arrival;
+      const req = c.mandatory ? '<span class="bd-req">Required</span>' : '';
+      return `<div class="bd-row avail" style="cursor:pointer" title="Order ${esc(c.name)} with options" onclick="openCapitalOrder('${c.item_id}')">
+        <div class="bx">＋</div>
+        <div class="bd-body"><div class="bd-name">${esc(c.name)} ${req}</div>
+          <div class="bd-sub">${sub}</div></div>
+        <div class="bd-cost">${c.cost} Dp</div></div>`;
+    }).join('');
+  }
+  el.innerHTML = html;
 }
 
 function renderCapacityPanel(capacity) {
@@ -2405,16 +3262,31 @@ function respondTrainingCounter(batchId, action) {
   } else if (action === 'reject') {
     sendWsMessage({ type: 'training_counter_response', batch_id: batchId, action: 'reject' });
   } else {
-    // Prompt for counter price — show a simple overlay input
-    const price = prompt('Your counter-offer to the Educator (Dp):', '');
-    if (!price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) return;
-    const msg = prompt('Message to Educator (optional):', '') || '';
-    sendWsMessage({
-      type: 'training_counter_response',
-      batch_id: batchId,
-      action: 'counter',
-      new_fee: parseFloat(price),
-      message: msg,
+    // Non-blocking counter-offer form (native prompt() would freeze the
+    // season countdown). One modal collects both the price and the message.
+    showPromptModal('Counter-offer to the Educator', {
+      submitLabel: 'Send counter',
+      fields: [
+        {
+          name: 'price', label: 'Your counter-offer (Dp)', type: 'number',
+          placeholder: 'e.g. 80',
+          validate: (v) => (isNaN(parseFloat(v)) || parseFloat(v) <= 0)
+            ? 'Enter a counter-offer greater than 0.' : null,
+        },
+        {
+          name: 'message', label: 'Message to Educator (optional)',
+          type: 'textarea', optional: true,
+        },
+      ],
+      onSubmit: (vals) => {
+        sendWsMessage({
+          type: 'training_counter_response',
+          batch_id: batchId,
+          action: 'counter',
+          new_fee: parseFloat(vals.price),
+          message: vals.message || '',
+        });
+      },
     });
   }
 }
@@ -2980,7 +3852,33 @@ function requestState() {
 }
 
 // ==================== MESSAGE HANDLERS ====================
+// Replay guard (#114 follow-up): the server replays the pending IO prompt on
+// every get_state, and sendResponse() fires requestState() at +120ms/+500ms
+// after each answer.  So a freshly-opened input dialog would be rebuilt 1-2
+// times, each rebuild detaching the focused field and wiping anything typed —
+// this is the "field showed 1–23 but I couldn't type over it, only the spinner
+// worked" bug.  If a replay carries the SAME prompt already on screen, ignore
+// it so focus and any in-progress input survive.
+const _DIALOG_PROMPTS = new Set([
+  'choose_quantity', 'choose_resource', 'choose_profession', 'choose_option',
+  'choose_player', 'confirm', 'ask_dollop_amount', 'ask_text', 'market_buy_bulk']);
+let _shownPromptSig = null;
+function _promptSig(msg) {
+  return [msg.type, msg.prompt || msg.player_name || '', msg.min, msg.max,
+          (msg.options || []).length, msg.default || ''].join('|');
+}
+
 function handleMessage(msg) {
+  if (_DIALOG_PROMPTS.has(msg.type)) {
+    const sig = _promptSig(msg);
+    if (sig === _shownPromptSig
+        && document.getElementById('overlay').classList.contains('active')) {
+      return;  // duplicate replay of the open dialog — keep focus + typed value
+    }
+    _shownPromptSig = sig;
+  } else if (msg.type === 'choose_action' || msg.type === 'choose_action_parked') {
+    _shownPromptSig = null;  // left the dialog context; next dialog is fresh
+  }
   switch(msg.type) {
     case 'room_update':
       if (currentRoom && msg.room) {
@@ -3059,9 +3957,28 @@ function handleMessage(msg) {
       addLog(`🏦 Bought ${msg.shares} share(s) of your island for `
         + `${msg.cost} Dp (${msg.price_per_share} Dp/share).`, 'ok');
       break;
+    case 'capital_order_ack':
+      let financeNote = '';
+      if (msg.financed) {
+        financeNote = `, financed via Bank loan (repay ${msg.loan_repayment} Dp)`;
+      } else if (msg.financing) {
+        financeNote = ', financing unavailable — paid from treasury';
+      }
+      addLog(`📦 Ordered ${msg.name} for ${msg.upfront} Dp`
+        + (msg.spares_kits ? ` (+${msg.spares_kits} spares kit(s))` : '')
+        + financeNote + '.', 'ok');
+      showToast(`Order placed: ${msg.name}`);
+      break;
+    case 'capital_negotiation':
+      onCapitalNegotiationPush(msg);
+      break;
+    case 'capital_negotiation_ack':
+      onCapitalNegotiationAck(msg);
+      break;
     case 'game_state':
       gameState = msg;
       syncServerLog(msg);
+      syncSeasonTimerFromState(msg);
       // Don't auto-jump to the game screen while the user is still on the
       // auction-result overlay or the Investing Phase screen.
       if (!document.getElementById('screen-auction').classList.contains('hidden')) {
@@ -3112,6 +4029,22 @@ function handleMessage(msg) {
     case 'market_buy_bulk':
       showMarketBuyPopup(msg);
       break;
+    case 'training_batch_result':
+      onTrainingBatchResult(msg);
+      break;
+    case 'deal_response':
+      onDealResponsePush(msg);
+      break;
+    case 'deal_propose_ack':
+      mergeDealMessage(msg);
+      showToast('Deal proposed.', { type: 'success' });
+      break;
+    case 'deal_response_ack': {
+      mergeDealMessage(msg);
+      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
+      showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
+      break;
+    }
     case 'pre_season_start':
       onPreSeasonStart(msg);
       break;
@@ -3131,7 +4064,10 @@ function handleMessage(msg) {
       addLog(`⏰ Season timer expired — turns auto-ended.`, 'info');
       break;
     case 'season_events':
+      _lastSeasonEvents = msg;           // feed the hero's live disaster FX (phase 3)
       renderConditionsPanel(msg);
+      maybeShowDisasterModal(msg);
+      if (gameState && myPlayerIdx !== null) renderGameState();
       break;
     case 'ready_ack':
       // Server confirmation; nothing to render unless error.
@@ -3165,6 +4101,40 @@ function handleMessage(msg) {
   }
 }
 
+// Net-worth breakdown panel (P7 / #86): decompose the island value into its
+// signed drivers so players can see why the score is what it is.
+const WEALTH_LABELS = {
+  treasury: 'Treasury (cash)',
+  household_cash: 'Household cash',
+  inventory_value: 'Inventory',
+  capital_value: 'Equipment',
+  loans_receivable: 'Loans receivable',
+  bank_debt: 'Bank debt',
+  shareholder_debt: 'Shareholder loans',
+};
+function toggleWealthBreakdown(){
+  const el = document.getElementById('s-wealth-breakdown');
+  if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function renderWealthBreakdown(me){
+  const el = document.getElementById('s-wealth-breakdown');
+  if (!el) return;
+  const wb = me.wealth_breakdown;
+  if (!wb){ el.innerHTML = ''; return; }
+  let rows = '';
+  for (const k of Object.keys(WEALTH_LABELS)){
+    const v = wb[k];
+    if (!v) continue;
+    const cls = v < 0 ? 'wb-neg' : 'wb-pos';
+    const sign = v < 0 ? '−' : '+';
+    rows += `<div class="wb-row"><span>${WEALTH_LABELS[k]}</span>`
+          + `<span class="${cls}">${sign}${Math.abs(v)} Dp</span></div>`;
+  }
+  rows += `<div class="wb-row wb-total"><span>Island value (score)</span>`
+        + `<span>${me.wealth} Dp</span></div>`;
+  el.innerHTML = rows;
+}
+
 // ==================== GAME RENDERING ====================
 function renderGameState() {
   if (!gameState) return;
@@ -3191,6 +4161,7 @@ function renderGameState() {
   buildIslandTabs(gameState.players);
 
   const roles = playerRoles(me);
+  applyRoleTileDefaults(roles);
   const tabRole = activeTabRole || roles[0] || null;
   const isConsolidated = tabRole === 'ALL';
 
@@ -3201,12 +4172,16 @@ function renderGameState() {
 
   document.getElementById('tab-island-name').textContent = islandLabel;
   updateMainIslandArt(tabRole, roles, gameState.season);
+  const heroRole = (tabRole === 'ALL') ? (roles[0] || null) : tabRole;
+  const heroRoleLabel = isConsolidated ? displayRoles(roles) : heroRole;
+  updateIslandHero(islandLabel, heroRoleLabel, gameState.season, me, heroRole);
   document.getElementById('s-role').textContent = isConsolidated
     ? displayRoles(roles)
     : (roleDisplayName(tabRole) || '—');
   document.getElementById('s-dollops').textContent = (me.treasury ?? me.dollops) + ' Dp';
   document.getElementById('s-loans').textContent = (me.loans_outstanding || 0) + ' Dp';
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
+  renderWealthBreakdown(me);
   // --- Equity (Phase 2b) sidebar fields ---
   if (me.net_worth !== undefined)
     document.getElementById('s-networth').textContent = me.net_worth + ' Dp';
@@ -3217,9 +4192,9 @@ function renderGameState() {
   }
   const ownEl = document.getElementById('s-ownership');
   if (ownEl && me.owns_pct != null)
-    ownEl.textContent = `You ${me.owns_pct}% · Public ${me.public_float_pct ?? 0}%`;
-  // Phase 3: offer "Buy shares" when you control the island and a public float
-  // remains.  Stash the live figures for the prompt.
+    ownEl.textContent = `You ${me.owns_pct}% · Unissued ${me.unissued_pct ?? 0}%`;
+  // Phase 3: offer "Buy shares" when you control the island and unissued
+  // authorized shares remain. Stash the live figures for the prompt.
   // Lend / repay row — shown when you're in-game and have cash or a loan
   const lendRow = document.getElementById('s-lend-row');
   if (lendRow && gameState) {
@@ -3234,7 +4209,7 @@ function renderGameState() {
   }
   const bfRow = document.getElementById('s-buyfloat-row');
   if (bfRow) {
-    const floatShares = me.public_float_shares || 0;
+    const floatShares = me.unissued_shares || 0;
     const canBuy = (me.owns_pct || 0) >= 60 && floatShares > 0;
     bfRow.style.display = canBuy ? '' : 'none';
     _buyFloatState = canBuy
@@ -3379,6 +4354,7 @@ function renderGameState() {
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+  renderBuildDevelop(me);
   renderDecisionHints(me, tabRole);
   renderFundingRates();
 
@@ -3408,10 +4384,217 @@ function renderGameState() {
     document.getElementById('market-panel').innerHTML =
       renderMarketTable(gameState.market, true) + renderBarterMarket(true);
   }
+
+  renderDealsPanel();
+  renderTradeFinder();
+}
+
+// ==================== TRADE FINDER (UI v2 phase 1, #114) ====================
+// Searches every island's inventory (the payload is public information,
+// including AI seats) so players can locate goods and pick a counterparty.
+// Negotiation actions (chat / structured deals) arrive with phase 3.
+let _tfMode = 'have';
+
+function setTradeFinderMode(mode) {
+  _tfMode = mode;
+  renderTradeFinder();
+}
+
+function renderTradeFinder() {
+  if (!gameState) return;
+  const searchEl = document.getElementById('tf-search');
+  const out = document.getElementById('tf-results');
+  if (!searchEl || !out) return;
+
+  // Searchable resource set: market commodities + anything any island holds.
+  const resSet = new Set(Object.keys(gameState.market || {}));
+  gameState.players.forEach(p =>
+    Object.keys(p.inventory || {}).forEach(r => resSet.add(r)));
+  document.getElementById('tf-resources').innerHTML =
+    [...resSet].sort().map(r => `<option value="${esc(r)}">`).join('');
+
+  document.getElementById('tf-mode-have')?.classList.toggle('tf-active', _tfMode === 'have');
+  document.getElementById('tf-mode-need')?.classList.toggle('tf-active', _tfMode === 'need');
+
+  const me = myPlayerIdx !== null ? gameState.players[myPlayerIdx] : null;
+  const aiBadge = p => p.is_ai ? '<span class="tf-ai-badge">🤖 AI</span>' : '';
+
+  if (_tfMode === 'need') {
+    // Reverse view: standing needs (from the barter board) that overlap
+    // with what I currently hold — my best sales leads.
+    const myInv = (me && me.inventory) || {};
+    const needs = (gameState.barter_market?.needs || [])
+      .filter(n => !me || n.player !== me.name);
+    if (!needs.length) {
+      out.innerHTML = '<span style="color:var(--dim)">No island has posted needs right now.</span>';
+      return;
+    }
+    const rows = needs.map(n => {
+      const matched = (n.needs || []).map(txt => {
+        const hit = Object.keys(myInv).find(r => txt.includes(r));
+        return hit
+          ? `<span class="tf-needs">▶ ${esc(txt)} — you hold ${myInv[hit]} ${esc(hit)}</span>`
+          : `<span style="color:var(--dim)">${esc(txt)}</span>`;
+      }).join('<br>');
+      const pd = gameState.players.find(p => p.name === n.player) || {};
+      const rolesTxt = Array.isArray(n.roles) ? n.roles.join(', ') : String(n.roles || '');
+      return `<tr><td><b>${esc(n.player)}</b>${aiBadge(pd)}</td>
+        <td style="color:var(--dim)">${esc(rolesTxt)}</td>
+        <td>${matched}</td></tr>`;
+    }).join('');
+    out.innerHTML = `<table class="comp-table">
+      <thead><tr><th>Player</th><th>Role</th><th>Needs (▶ = you can supply)</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+    return;
+  }
+
+  const q = (searchEl.value || '').trim().toLowerCase();
+  if (!q) {
+    out.innerHTML = '<span style="color:var(--dim)">Type a resource to find who holds it.</span>';
+    return;
+  }
+  const matches = [...resSet].filter(r => r.toLowerCase().includes(q));
+  if (!matches.length) {
+    out.innerHTML = `<span style="color:var(--dim)">No resource matches “${esc(searchEl.value)}”.</span>`;
+    return;
+  }
+  const res = matches.find(r => r.toLowerCase() === q) || matches[0];
+  const mkt = (gameState.market || {})[res] || {};
+  const priceRef = [
+    mkt.bid_price != null ? `bid ${Number(mkt.bid_price).toFixed(2)}` : null,
+    mkt.ask_price != null ? `ask ${Number(mkt.ask_price).toFixed(2)}` : null,
+    mkt.price != null ? `ref ${Number(mkt.price).toFixed(2)}` : null,
+  ].filter(Boolean).join(' · ');
+
+  // Standing needs index — flag holders who ALSO need this resource (they
+  // may be stockpiling) and non-holders who want it (competition for it).
+  const needsRes = new Set(
+    (gameState.barter_market?.needs || [])
+      .filter(n => (n.needs || []).some(t => t.includes(res)))
+      .map(n => n.player));
+
+  const holders = gameState.players
+    .map((p, i) => ({ p, i, qty: (p.inventory || {})[res] || 0 }))
+    .filter(h => h.qty > 0 && h.i !== myPlayerIdx)
+    .sort((a, b) => b.qty - a.qty);
+  const myQty = (me && me.inventory && me.inventory[res]) || 0;
+
+  let html = `<div style="margin-bottom:.35rem">
+    <strong style="color:var(--heading)">${esc(res)}</strong>
+    <span style="color:var(--dim)"> — market: ${priceRef || 'no quotes'} · you hold ${myQty}</span></div>`;
+  if (!holders.length) {
+    html += `<span style="color:var(--dim)">No other island holds ${esc(res)} right now.</span>`;
+  } else {
+    html += `<table class="comp-table">
+      <thead><tr><th>Player</th><th>Role</th><th style="text-align:right">Holds</th><th></th></tr></thead>
+      <tbody>${holders.map(({ p, qty }) => `
+        <tr><td><b>${esc(p.name)}</b>${aiBadge(p)}</td>
+          <td style="color:var(--dim)">${esc(displayRoles(playerRoles(p), true))}</td>
+          <td style="text-align:right;color:var(--gold)">${qty}</td>
+          <td>${needsRes.has(p.name) ? '<span class="tf-needs" title="This island has posted a need for this resource — it may not want to sell">also needs it</span>' : ''}</td>
+        </tr>`).join('')}</tbody></table>`;
+  }
+  out.innerHTML = html;
 }
 
 function artTimeOfDay(season) {
   return (season === 'Autumn' || season === 'Winter') ? 'night' : 'day';
+}
+
+// UI v3 phase 3: live overlay state + helpers.
+// Last season_events message, so the hero can show a disaster FX layer.
+let _lastSeasonEvents = null;
+
+// Approximate pin anchor positions (x%, y%) over each role's render, keyed by
+// capital item_id.  Pins only appear for capital the island actually owns and
+// that has an anchor here; positions are eyeballed per render and can be
+// fine-tuned later without touching logic.
+const ROLE_PIN_ANCHORS = {
+  Miner: {'miner.excavator':{x:30,y:48,label:'Excavator'},'miner.crusher':{x:47,y:42,label:'Crusher'},
+    'miner.oil_rig':{x:70,y:55,label:'Oil Rig'},'miner.refinery':{x:81,y:44,label:'Refinery'},
+    'miner.enhanced_crusher_smelter':{x:57,y:62,label:'Smelter'}},
+  Farmer: {'farmer.tractor':{x:50,y:52,label:'Tractor'},'farmer.fishing_boat':{x:24,y:67,label:'Fishing Boat'},
+    'farmer.harvester':{x:64,y:46,label:'Harvester'},'farmer.livestock_barn':{x:38,y:40,label:'Barn'},
+    'farmer.storage_building':{x:72,y:38,label:'Storage'},'farmer.industrial_kitchen':{x:56,y:60,label:'Kitchen'},
+    'common.kitchen':{x:56,y:60,label:'Kitchen'},'common.industrial_kitchen':{x:56,y:60,label:'Kitchen'}},
+  Transporter: {'transporter.cargo_ship':{x:50,y:63,label:'Cargo Ship'},'transporter.cargo_plane':{x:30,y:34,label:'Cargo Plane'},
+    'transporter.passenger_liner':{x:68,y:58,label:'Liner'},'transporter.passenger_plane':{x:42,y:30,label:'Passenger Plane'}},
+  Educator: {'educator.lecture_hall':{x:42,y:46,label:'Lecture Hall'},'educator.library':{x:60,y:42,label:'Library'},
+    'educator.research_lab':{x:73,y:52,label:'Research Lab'},'educator.computer_cluster':{x:30,y:52,label:'Computers'},
+    'educator.technical_workshop':{x:52,y:61,label:'Workshop'}},
+  Banker: {'banker.vault':{x:44,y:48,label:'Vault'},'banker.trading_floor':{x:60,y:42,label:'Trading Floor'},
+    'banker.underwriting_desk':{x:30,y:52,label:'Underwriting'},'banker.reinsurance_treaty':{x:73,y:50,label:'Reinsurance'}},
+  Manufacturer: {'manufacturer.assembly_line':{x:46,y:50,label:'Assembly Line'},'manufacturer.foundry':{x:30,y:44,label:'Foundry'},
+    'manufacturer.precision_workshop':{x:64,y:46,label:'Precision Shop'},'manufacturer.shipyard':{x:73,y:61,label:'Shipyard'}},
+  Doctor: {'doctor.hospital_ward':{x:46,y:46,label:'Hospital Ward'},'doctor.operating_theatre':{x:60,y:42,label:'Operating Theatre'},
+    'doctor.vaccine_lab':{x:73,y:52,label:'Vaccine Lab'},'doctor.reagent_lab':{x:30,y:52,label:'Reagent Lab'},
+    'doctor.cold_chain_storage':{x:52,y:62,label:'Cold Chain'}},
+};
+
+function renderHeroPins(role, me) {
+  const wrap = document.getElementById('hero-pins');
+  if (!wrap) return;
+  const anchors = (role && ROLE_PIN_ANCHORS[role]) || {};
+  const owned = (me && me.capacity && me.capacity.capital_owned) || [];
+  wrap.innerHTML = owned.map(it => {
+    const a = anchors[it.item_id];
+    if (!a) return '';
+    const failed = (it.failed || 0) > 0;
+    const lab = a.label + (it.count > 1 ? ` ×${it.count}` : '') + (failed ? ' — failed' : '');
+    return `<div class="pin${failed ? ' failed' : ''}" style="left:${a.x}%;top:${a.y}%" title="${esc(lab)}">`
+      + `<div class="pdot"></div><div class="plab">${esc(lab)}</div></div>`;
+  }).join('');
+}
+
+function applyHeroDisruption(heroEl, me) {
+  const chip = document.getElementById('hero-fxchip');
+  let disrupted = false, text = '';
+  const events = _lastSeasonEvents && _lastSeasonEvents.events;
+  if (events && me) {
+    const ev = Object.values(events).find(e => e.player_name === me.name);
+    if (ev) {
+      if (ev.outage) { disrupted = true; text = '⚡ Outage'; }
+      else if (ev.natural_disaster) { disrupted = true; text = '⛈ Disaster'; }
+      else if (typeof ev.yield_modifier === 'number' && ev.yield_modifier < 0.5) {
+        disrupted = true; text = `⚠ Yield ${Math.round(ev.yield_modifier * 100)}%`;
+      }
+    }
+  }
+  if (heroEl) heroEl.classList.toggle('ih-disrupted', disrupted);
+  if (chip) chip.textContent = disrupted ? text : '';
+}
+
+// UI v3 phase 2: the cinematic island hero banner crowning the left column.
+// Reuses ROLE_ART + day/night; mirrors the live name/role/season + a couple
+// of at-a-glance stats over the render.
+function updateIslandHero(name, roleLabel, season, me, role) {
+  const sec = document.querySelector('.island-hero-sec');
+  if (!sec) return;
+  const art = role && ROLE_ART[role];
+  if (!art) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const mode = artTimeOfDay(season);
+  const url = art[mode] || art.day || art.night;
+  const img = document.getElementById('hero-art');
+  if (img && img.getAttribute('src') !== url) img.src = url;
+  const ROLE_EMOJI = {Farmer:'🌾',Miner:'⛏',Transporter:'🚢',Educator:'🎓',Banker:'🏦',Manufacturer:'🏭',Doctor:'⚕'};
+  document.getElementById('hero-name').textContent = name || '';
+  const emoji = ROLE_EMOJI[roleLabel] ? ROLE_EMOJI[roleLabel] + ' ' : '';
+  document.getElementById('hero-role').textContent = emoji + (roleLabel || '');
+  document.getElementById('hero-tag').innerHTML =
+    `<span>${mode === 'night' ? '🌙 Night' : '☀ Day'}</span>` +
+    (season ? `<span>${esc(season)}</span>` : '');
+  const chips = document.getElementById('hero-chips');
+  if (chips && me) {
+    chips.innerHTML =
+      `<div class="c"><div class="k">Workers</div><div class="v">${me.workforce_active}/${me.workforce_count}</div></div>` +
+      `<div class="c"><div class="k">Capacity</div><div class="v">${me.production_capacity}%</div></div>`;
+  }
+  // phase 3 live overlay: season tint, equipment pins, disaster FX
+  const heroEl = document.getElementById('island-hero');
+  if (heroEl) heroEl.setAttribute('data-season', season || '');
+  renderHeroPins(role, me);
+  applyHeroDisruption(heroEl, me);
 }
 
 function updateMainIslandArt(tabRole, roles, season) {
@@ -3728,6 +4911,260 @@ function renderMarketTable(market, compact = false) {
   </table>`;
 }
 
+// ==================== PEER-TO-PEER DEALS (#167) ====================
+// Consumes the viewer-scoped game_state.deals_awaiting_me / my_deals payload
+// and the deal_propose / deal_respond / deal_response WS contracts. Lets a
+// player propose a deal, get notified when someone responds, and accept /
+// return (counter) / reject deals awaiting their response.
+function _myDealState() {
+  return {
+    awaiting: (gameState && gameState.deals_awaiting_me) || [],
+    mine: (gameState && gameState.my_deals) || [],
+  };
+}
+
+function _myEnginePlayerId() {
+  if (!gameState || myPlayerIdx == null) return null;
+  return gameState.players?.[myPlayerIdx]?.player_id ?? null;
+}
+
+function _withoutDeal(list, dealId) {
+  return (list || []).filter(d => d && d.deal_id !== dealId);
+}
+
+function _upsertDeal(list, deal) {
+  return [deal, ..._withoutDeal(list, deal.deal_id)]
+    .sort((a, b) => (b.deal_id || 0) - (a.deal_id || 0));
+}
+
+function mergeDealMessage(msg) {
+  if (!msg || !msg.deal || !gameState) return;
+  const deal = msg.deal;
+  const me = _myEnginePlayerId();
+  if (me == null || deal.deal_id == null) return;
+
+  gameState.deals_awaiting_me = _withoutDeal(gameState.deals_awaiting_me, deal.deal_id);
+  gameState.my_deals = _withoutDeal(gameState.my_deals, deal.deal_id);
+
+  const active = deal.status === 'pending' || deal.status === 'returned';
+  if (active && deal.awaiting_id === me) {
+    gameState.deals_awaiting_me = _upsertDeal(gameState.deals_awaiting_me, deal);
+  }
+  if (deal.proposer_id === me) {
+    gameState.my_deals = _upsertDeal(gameState.my_deals, deal);
+  }
+  renderDealsPanel();
+}
+
+function _dealSideText(side) {
+  return side ? `${side.qty}× ${side.resource}` : 'nothing';
+}
+
+function _resourceSelect(id, resources, sel) {
+  return `<select id="${id}" style="flex:1">${resources.map(r =>
+    `<option value="${esc(r)}" ${r === sel ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>`;
+}
+
+function _dealResources() {
+  return Object.keys((gameState && gameState.market) || {}).sort();
+}
+
+function renderDealsPanel() {
+  const panel = document.getElementById('deals-panel');
+  const badge = document.getElementById('deals-badge');
+  if (!panel) return;
+  const { awaiting, mine } = _myDealState();
+  if (badge) {
+    if (awaiting.length) {
+      badge.textContent = awaiting.length;
+      badge.style.cssText = 'display:inline-block;background:var(--red);color:#fff;border-radius:999px;font-size:.66rem;font-weight:800;padding:.02rem .42rem;min-width:1.1em;text-align:center';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  const activeMine = mine.filter(d => d.status === 'pending' || d.status === 'returned');
+  if (!awaiting.length && !activeMine.length) {
+    panel.innerHTML = '<span style="color:var(--dim)">No deals awaiting you. Click ＋ Propose to start one.</span>';
+    return;
+  }
+  let html = '';
+  if (awaiting.length) html += `<div style="color:var(--gold);font-weight:700">${awaiting.length} awaiting your response</div>`;
+  if (activeMine.length) html += `<div style="color:var(--dim);margin-top:.2rem">${activeMine.length} of your proposals in play</div>`;
+  html += '<div style="color:var(--accent);margin-top:.25rem;font-size:.76rem">Click to review →</div>';
+  panel.innerHTML = html;
+}
+
+function _dealTermsHtml(d) {
+  const offer = _dealSideText(d.offer);
+  const req = _dealSideText(d.request);
+  const sweet = d.sweetener ? ` + ${d.sweetener} Dp` : '';
+  const msg = d.message ? `<div style="color:var(--dim);font-style:italic;margin-top:.25rem">“${esc(d.message)}”</div>` : '';
+  return `<div style="font-size:.84rem"><strong>${esc(d.proposer_name)}</strong> offers <strong>${esc(offer)}${esc(sweet)}</strong> `
+    + `in exchange for <strong>${esc(req)}</strong> from <strong>${esc(d.target_name)}</strong></div>${msg}`;
+}
+
+function _renderAwaitingDealCard(d) {
+  return `<div style="border:1px solid var(--gold);border-radius:8px;padding:.6rem;margin-bottom:.5rem;background:rgba(231,192,93,.06)">
+    ${_dealTermsHtml(d)}
+    <div style="display:flex;gap:.4rem;margin-top:.55rem">
+      <button class="btn-gold btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'accept')">Accept</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="openReturnDealDialog(${d.deal_id})">Return…</button>
+      <button class="btn-ghost btn-sm" style="flex:1" onclick="_dealRespond(${d.deal_id},'reject')">Reject</button>
+    </div>
+  </div>`;
+}
+
+function _renderMyDealCard(d) {
+  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)' }[d.status] || 'var(--dim)';
+  const awaiting = d.awaiting_name ? ` · awaiting ${esc(d.awaiting_name)}` : '';
+  return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.4rem">
+    ${_dealTermsHtml(d)}
+    <div style="margin-top:.35rem;font-size:.74rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}</div>
+  </div>`;
+}
+
+function openDealsDialog() {
+  const { awaiting, mine } = _myDealState();
+  let body = '<h4 style="margin:.2rem 0 .4rem">Awaiting your response</h4>';
+  body += awaiting.length
+    ? awaiting.map(_renderAwaitingDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem;margin-bottom:.6rem">Nothing right now.</div>';
+  body += '<h4 style="margin:.8rem 0 .4rem">Your proposals</h4>';
+  const mineSorted = mine.slice().sort((a, b) => b.deal_id - a.deal_id);
+  body += mineSorted.length
+    ? mineSorted.map(_renderMyDealCard).join('')
+    : '<div style="color:var(--dim);font-size:.82rem">You have not proposed any deals.</div>';
+  body += `<div style="display:flex;gap:.5rem;margin-top:1rem">
+    <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Close</button>
+    <button class="btn-gold" style="flex:1" onclick="openProposeDealDialog()">＋ Propose new deal</button>
+  </div>`;
+  showDlg('Peer-to-Peer Deals', body);
+}
+
+function _dealRespond(deal_id, action) {
+  sendWsMessage({ type: 'deal_respond', deal_id, action });
+  hideOverlay();
+}
+
+function openReturnDealDialog(deal_id) {
+  const d = _myDealState().awaiting.find(x => x.deal_id === deal_id);
+  if (!d) { showToast('That deal is no longer awaiting you.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const offerRes = d.offer ? d.offer.resource : (resources[0] || '');
+  const reqRes = d.request ? d.request.resource : (resources[0] || '');
+  const body = `
+    <div style="font-size:.8rem;color:var(--dim);margin-bottom:.5rem">Counter-offer back to ${esc(d.proposer_name)}. Terms stay in their offer → your give perspective.</div>
+    <label style="font-size:.74rem;color:var(--dim)">${esc(d.proposer_name)} offers
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-offer-qty" type="number" min="0" value="${d.offer ? d.offer.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-offer-res', resources, offerRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You give
+      <div style="display:flex;gap:.4rem">
+        <input id="rd-req-qty" type="number" min="0" value="${d.request ? d.request.qty : 0}" style="flex:0 0 70px">
+        ${_resourceSelect('rd-req-res', resources, reqRes)}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (${esc(d.proposer_name)} → you)
+      <input id="rd-sweet" type="number" value="${d.sweetener || 0}" style="width:100%">
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Message (optional)
+      <input id="rd-msg" type="text" placeholder="e.g. need a little more oil" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="openDealsDialog()">Back</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealReturnSubmit(${deal_id})">Send counter-offer</button>
+    </div>`;
+  showDlg('Return Deal — Counter-offer', body);
+}
+
+function _dealReturnSubmit(deal_id) {
+  const oq = parseInt(document.getElementById('rd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('rd-req-qty').value, 10) || 0;
+  sendWsMessage({
+    type: 'deal_respond', deal_id, action: 'return',
+    new_offer: oq > 0 ? { resource: document.getElementById('rd-offer-res').value, qty: oq } : null,
+    new_request: rq > 0 ? { resource: document.getElementById('rd-req-res').value, qty: rq } : null,
+    new_sweetener: parseFloat(document.getElementById('rd-sweet').value) || 0,
+    message: (document.getElementById('rd-msg').value || '').trim(),
+  });
+  hideOverlay();
+  showToast('Counter-offer sent…', { type: 'info' });
+}
+
+function openProposeDealDialog() {
+  if (!gameState || myPlayerIdx == null) { showToast('Not in a game.', { type: 'error' }); return; }
+  const others = gameState.players.filter((p, i) => i !== myPlayerIdx);
+  if (!others.length) { showToast('No other players to deal with.', { type: 'error' }); return; }
+  const resources = _dealResources();
+  const targetOpts = others.map(p => `<option value="${p.player_id}">${esc(p.name)}</option>`).join('');
+  const body = `
+    <label style="font-size:.74rem;color:var(--dim)">Propose to
+      <select id="pd-target" style="width:100%;display:block">${targetOpts}</select>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You offer
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-offer-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-offer-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">You request
+      <div style="display:flex;gap:.4rem">
+        <input id="pd-req-qty" type="number" min="0" value="0" style="flex:0 0 70px">
+        ${_resourceSelect('pd-req-res', resources, resources[0] || '')}
+      </div>
+    </label>
+    <label style="font-size:.74rem;color:var(--dim);display:block;margin-top:.5rem">Gold sweetener (you → them)
+      <input id="pd-sweet" type="number" value="0" style="width:100%">
+    </label>
+    <div style="display:flex;gap:.5rem;margin-top:.9rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_dealProposeSubmit()">Send proposal</button>
+    </div>`;
+  showDlg('Propose a Deal', body);
+}
+
+function _dealProposeSubmit() {
+  const oq = parseInt(document.getElementById('pd-offer-qty').value, 10) || 0;
+  const rq = parseInt(document.getElementById('pd-req-qty').value, 10) || 0;
+  const sweet = parseFloat(document.getElementById('pd-sweet').value) || 0;
+  if (oq <= 0 && rq <= 0 && sweet <= 0) {
+    showToast('A deal must offer, request, or pay something.', { type: 'error' });
+    return;
+  }
+  sendWsMessage({
+    type: 'deal_propose',
+    target_player_id: parseInt(document.getElementById('pd-target').value, 10),
+    offer: oq > 0 ? { resource: document.getElementById('pd-offer-res').value, qty: oq } : null,
+    request: rq > 0 ? { resource: document.getElementById('pd-req-res').value, qty: rq } : null,
+    sweetener: sweet,
+  });
+  hideOverlay();
+  showToast('Deal proposal sent…', { type: 'info' });
+}
+
+// Push notification when a counterparty acts on a deal involving you.
+const _DEAL_RESULT_TEXT = {
+  proposed: 'proposed a deal to you',
+  accepted: 'accepted your deal',
+  returned: 'returned a counter-offer',
+  rejected: 'rejected your deal',
+  expired: 'deal expired (stale resources)',
+};
+function onDealResponsePush(msg) {
+  mergeDealMessage(msg);
+  const who = msg.from || 'A player';
+  const verb = _DEAL_RESULT_TEXT[msg.result] || `updated a deal (${msg.result})`;
+  const tone = { accepted: 'success', rejected: 'error', expired: 'error' }[msg.result] || 'info';
+  const needsAction = msg.deal && msg.deal.awaiting_id === _myEnginePlayerId()
+    && (msg.deal.status === 'pending' || msg.deal.status === 'returned');
+  showToast(
+    needsAction ? `${who} ${verb}. Review it in Deals.` : `${who} ${verb}.`,
+    { type: tone, ms: needsAction ? 9000 : 6000 },
+  );
+}
+
 function renderBarterMarket(compact = false) {
   const barter = gameState?.barter_market || {};
   const deals = barter.deals || [];
@@ -3997,7 +5434,17 @@ function onSeasonStart(msg) {
   seasonDoneSet = new Set();
   imReady = false;
   const secs = +msg.timer_seconds || 0;
-  seasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+  // Prefer the server's authoritative end time: translate `timer_end` (server
+  // epoch seconds) into client-clock ms using the server/client offset measured
+  // from `server_now`. This keeps the displayed countdown aligned with the
+  // server's real deadline instead of starting fresh at message-receipt (which
+  // drifted later than the server and made seasons appear to "end early").
+  if (secs > 0 && msg.timer_end && msg.server_now) {
+    const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
+    seasonTimerEnd = msg.timer_end * 1000 + offsetMs;
+  } else {
+    seasonTimerEnd = secs > 0 ? Date.now() + secs * 1000 : 0;
+  }
 
   const box = document.getElementById('season-timer-box');
   const btn = document.getElementById('ready-btn');
@@ -4008,6 +5455,27 @@ function onSeasonStart(msg) {
   document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   if (showForMe && secs > 0) startSeasonTimer();
   addLog(`▶ ${msg.season} (Year ${msg.year}) action phase — ${secs > 0 ? secs + 's timer' : 'Ready-only mode'}.`, 'info');
+}
+
+// Re-sync the action-phase countdown from any game_state snapshot, so a tab
+// that joined/reconnected mid-season — or whose timer was clobbered by a
+// re-render — tracks the same authoritative server deadline as everyone else
+// (not just the one-shot season_start). Idempotent: safe to call every snapshot.
+function syncSeasonTimerFromState(msg) {
+  const end = +msg.season_timer_end || 0;
+  if (msg.season_phase === 'action' && end > 0 && msg.server_now) {
+    seasonPhase = 'action';
+    const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
+    seasonTimerEnd = end * 1000 + offsetMs;
+    const showForMe = seasonActiveHumans.has(myPlayerId);
+    document.getElementById('season-timer-box').classList.toggle('hidden', !showForMe);
+    if (showForMe && !seasonTimerInterval) startSeasonTimer();
+    else updateSeasonTimerUI();
+  } else if (msg.season_phase && msg.season_phase !== 'action') {
+    // Not in the action window (pre-season / resolved) — drop any stale timer.
+    seasonTimerEnd = 0;
+    stopSeasonTimer();
+  }
 }
 
 function onReadyUpdate(msg) {
@@ -4050,6 +5518,51 @@ function _renderPreSeasonDots(active, ready) {
     const name = playerMap[pid] || pid;
     return `<span><span class="psb-dot${isReady ? ' ready' : ''}"></span>${name}</span>`;
   }).join('');
+}
+
+function maybeShowDisasterModal(msg) {
+  if (localStorage.getItem('it_disaster_mute') === '1') return;
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const ev = (msg.events || {})[String(me.player_id)];
+  if (!ev || !ev.disruptive) return;
+
+  document.getElementById('disaster-name').textContent = ev.event_name || 'Event';
+  const isDisaster = ev.natural_disaster;
+  document.getElementById('disaster-title').firstChild.textContent =
+    (isDisaster ? '⛈ ' : (ev.outage ? '✖ ' : '⚠ '));
+  document.getElementById('disaster-sub').textContent =
+    `${msg.season || ''} ${msg.year ? 'Year ' + msg.year : ''} — affecting ${ev.player_name || 'your island'}`.trim();
+
+  // Impact rows: what it does + how long.
+  const rows = [];
+  if (ev.outage) {
+    rows.push(['Production', 'Halted this season (no output)']);
+  } else if (ev.yield_modifier != null && ev.yield_modifier !== 1.0) {
+    rows.push(['Yield', Math.round(ev.yield_modifier * 100) + '% of normal']);
+  }
+  if (ev.price_shock_resource && ev.price_shock_multiplier && ev.price_shock_multiplier !== 1.0) {
+    const dir = ev.price_shock_multiplier > 1 ? '↑' : '↓';
+    rows.push([ev.price_shock_resource + ' price',
+      dir + ' ×' + ev.price_shock_multiplier]);
+  }
+  const dur = ev.damage_seasons || 0;
+  rows.push(['Duration', dur > 0 ? (dur + ' season' + (dur === 1 ? '' : 's'))
+                                 : 'This season only']);
+
+  document.getElementById('disaster-impact').innerHTML = rows.map(([l, v]) =>
+    `<div class="dc-row"><span class="dc-lbl">${esc(l)}</span><span class="dc-val">${esc(v)}</span></div>`
+  ).join('');
+  document.getElementById('disaster-overlay').classList.add('open');
+}
+
+function dismissDisaster() {
+  const mute = document.getElementById('disaster-mute');
+  if (mute && mute.checked) {
+    try { localStorage.setItem('it_disaster_mute', '1'); } catch (e) {}
+  }
+  document.getElementById('disaster-overlay').classList.remove('open');
 }
 
 function renderConditionsPanel(msg) {
@@ -4105,11 +5618,11 @@ function stopSeasonTimer() {
   if (seasonTimerInterval) { clearInterval(seasonTimerInterval); seasonTimerInterval = null; }
 }
 function updateSeasonTimerUI() {
-  const remain = Math.max(0, Math.round((seasonTimerEnd - Date.now()) / 1000));
+  const remain = Math.max(0, Math.round((seasonTimerEnd - effectiveNowMs()) / 1000));
   document.getElementById('season-timer-val').textContent = remain + 's';
   const box = document.getElementById('season-timer-box');
   box.classList.toggle('flash', remain > 0 && remain <= 60);
-  if (remain <= 0) stopSeasonTimer();
+  if (remain <= 0 && !isPaused) stopSeasonTimer();
 }
 
 function startPreSeasonTimer() {
@@ -4121,11 +5634,11 @@ function stopPreSeasonTimer() {
   if (preSeasonTimerInterval) { clearInterval(preSeasonTimerInterval); preSeasonTimerInterval = null; }
 }
 function updatePreSeasonTimerUI() {
-  const remain = Math.max(0, Math.round((preSeasonTimerEnd - Date.now()) / 1000));
+  const remain = Math.max(0, Math.round((preSeasonTimerEnd - effectiveNowMs()) / 1000));
   const el = document.getElementById('psb-timer');
   el.textContent = remain + 's';
   el.classList.toggle('flash', remain > 0 && remain <= 15);
-  if (remain <= 0) stopPreSeasonTimer();
+  if (remain <= 0 && !isPaused) stopPreSeasonTimer();
 }
 
 function toggleReady() {
@@ -4172,6 +5685,7 @@ function togglePause() {
 
 function onGamePaused(msg) {
   isPaused = true;
+  pausedAtMs = Date.now();   // freeze all countdowns at this instant
   if (currentRoom) currentRoom.paused = true;
   const overlay = document.getElementById('pause-overlay');
   overlay.classList.remove('hidden');
@@ -4189,6 +5703,15 @@ function onGamePaused(msg) {
 }
 
 function onGameResumed(msg) {
+  // Push every countdown's end-epoch forward by however long we were paused, so
+  // it continues from where it froze (mirrors the server bumping its timers).
+  if (pausedAtMs) {
+    const delta = Date.now() - pausedAtMs;            // ms paused
+    if (seasonTimerEnd)    seasonTimerEnd    += delta;       // ms epoch
+    if (preSeasonTimerEnd) preSeasonTimerEnd += delta;       // ms epoch
+    if (auctionTimerEnd)   auctionTimerEnd   += delta / 1000; // seconds epoch
+    pausedAtMs = 0;
+  }
   isPaused = false;
   if (currentRoom) currentRoom.paused = false;
   document.getElementById('pause-overlay').classList.add('hidden');
@@ -4237,7 +5760,16 @@ function _renderActionButton(o) {
   const titleAttr = (disabled && o.disabled_reason)
     ? ` title="${esc(o.disabled_reason)}"`
     : '';
-  const onclick = disabled ? '' : ` onclick="sendResponse('${o.value}')"`;
+  // #158: route the training action to the batch Training Desk dialog instead
+  // of the single-request sequential wizard. The desk submits a training_batch
+  // (handled independently of choose_action), so the action menu stays live.
+  // Route the capital-purchase action to the #185/#188 order picker+modal
+  // (term contract / financing) instead of the legacy server-driven item
+  // prompt; the modal sends an independent capital_order so the menu stays live.
+  const handler = o.value === 'request_training' ? 'openTrainingDesk()'
+    : o.value === 'purchase_capital' ? 'openCapitalPicker()'
+    : `sendResponse('${o.value}')`;
+  const onclick = disabled ? '' : ` onclick="${handler}"`;
   return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
 }
 
@@ -4247,10 +5779,11 @@ function _renderActionButton(o) {
 // 2026-05-27 done-trading-undo brief.
 function showParkedBanner(msg) {
   _activePromptType = 'parked';
+  lastActionPromptMsg = null;
   const area = document.getElementById('prompt-area');
   area.classList.remove('hidden');
   document.getElementById('prompt-title').textContent =
-      `${msg.player_name} — Done Trading ✓`;
+      `${msg.player_name || 'You'} — Done Trading ✓`;
   _renderParkedBannerBody();
   document.getElementById('prompt-input').innerHTML = '';
 }
@@ -4293,6 +5826,150 @@ function resumeTradingFromParked() {
     btn.classList.remove('is-ready');
     document.getElementById('ready-btn-label').textContent = 'Done Trading ✓';
   }
+}
+
+// ==================== TRAINING DESK (batch bookings, #158) ====================
+// A single dialog that books training for multiple workers across multiple job
+// types in one go, with an air-ticket option per row. Submits a `training_batch`
+// (handled server-side independently of the sequential wizard, like the Order
+// Desk) and reconciles per-row results. Backed by the read-only
+// `training_options` payload field (capacity + eligible-worker budget).
+let _trainingDeskRows = [];
+let _trainingDeskSeq = 0;
+
+function _myTrainingOptions() {
+  if (!gameState || myPlayerIdx == null) return null;
+  const me = gameState.players[myPlayerIdx];
+  return (me && me.training_options) || null;
+}
+
+function openTrainingDesk() {
+  const opts = _myTrainingOptions();
+  if (!opts || !opts.professions || !opts.professions.length) {
+    const why = (opts && opts.exhausted && opts.exhausted.length)
+      ? 'The university is fully booked this year across all professions.'
+      : 'No training slots are available right now.';
+    showToast(why, { type: 'error' });
+    return;
+  }
+  const first = opts.professions[0];
+  _trainingDeskRows = [{
+    profession: first.value,
+    count: Math.max(1, first.suggested_count || 1),
+    transport: 'air_ticket',
+    tickets: 0,
+    fee: 0,
+  }];
+  showDlg('Training Desk — Book Workers', _renderTrainingDesk());
+}
+
+function _trainingBudgetUsed() {
+  return _trainingDeskRows.reduce((n, r) => n + (parseInt(r.count, 10) || 0), 0);
+}
+
+function _renderTrainingDesk() {
+  const opts = _myTrainingOptions() || { professions: [], exhausted: [], eligible_worker_count: 0 };
+  const profById = Object.fromEntries(opts.professions.map(p => [p.value, p]));
+  const budget = opts.eligible_worker_count || 0;
+  const used = _trainingBudgetUsed();
+  const over = used > budget;
+  const exhaustedOpts = (opts.exhausted || []).map(p =>
+    `<option disabled>${esc(p.label)} — FULL (${p.trained}/${p.annual_cap})</option>`).join('');
+
+  const rowsHtml = _trainingDeskRows.map((row, i) => {
+    const profOpts = opts.professions.map(p =>
+      `<option value="${esc(p.value)}" ${p.value === row.profession ? 'selected' : ''}>${esc(p.label)} — ${p.remaining} slot(s)</option>`
+    ).join('');
+    const rem = (profById[row.profession] || {}).remaining || 0;
+    const air = row.transport === 'air_ticket';
+    return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.5rem">
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <label style="flex:2;min-width:150px;font-size:.74rem;color:var(--dim)">Job type
+          <select onchange="_tdEdit(${i},'profession',this.value)" style="width:100%;display:block">${profOpts}${exhaustedOpts}</select>
+        </label>
+        <label style="flex:0 0 72px;font-size:.74rem;color:var(--dim)">Workers
+          <input type="number" min="1" max="${rem}" value="${row.count}" onchange="_tdEdit(${i},'count',this.value)" style="width:100%;display:block">
+        </label>
+        <label style="flex:1;min-width:120px;font-size:.74rem;color:var(--dim)">Transport
+          <select onchange="_tdEdit(${i},'transport',this.value)" style="width:100%;display:block">
+            <option value="air_ticket" ${air ? 'selected' : ''}>Air ticket (fast)</option>
+            <option value="transporter" ${!air ? 'selected' : ''}>By sea (PassengerSeat)</option>
+          </select>
+        </label>
+        ${air ? `<label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Air tickets
+          <input type="number" min="0" value="${row.tickets}" onchange="_tdEdit(${i},'tickets',this.value)" style="width:100%;display:block">
+        </label>` : ''}
+        <label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Fee (Dp)
+          <input type="number" min="0" value="${row.fee}" onchange="_tdEdit(${i},'fee',this.value)" style="width:100%;display:block">
+        </label>
+        <button class="btn-ghost btn-sm" onclick="_tdRemove(${i})" ${_trainingDeskRows.length <= 1 ? 'disabled' : ''} title="Remove this row">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.5rem">
+      Book training for several job types at once. Eligible workers committed:
+      <strong style="color:${over ? 'var(--red)' : 'var(--heading)'}">${used} / ${budget}</strong>.
+    </div>
+    <div id="td-rows">${rowsHtml}</div>
+    <button class="btn-ghost btn-sm" onclick="_tdAddRow()" style="margin:.1rem 0 .8rem">＋ Add another job type</button>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn-ghost" style="flex:1" onclick="hideOverlay()">Cancel</button>
+      <button class="btn-gold" style="flex:2" onclick="_tdSubmit()" ${(over || used <= 0) ? 'disabled' : ''}>Book ${used} worker(s)</button>
+    </div>`;
+}
+
+function _rerenderTrainingDesk() {
+  const body = document.getElementById('dlg-body');
+  if (body) body.innerHTML = _renderTrainingDesk();
+}
+
+function _tdEdit(i, field, value) {
+  if (!_trainingDeskRows[i]) return;
+  if (field === 'fee') value = parseFloat(value) || 0;
+  else if (field === 'count' || field === 'tickets') value = parseInt(value, 10) || 0;
+  _trainingDeskRows[i][field] = value;
+  _rerenderTrainingDesk();
+}
+
+function _tdAddRow() {
+  const opts = _myTrainingOptions();
+  const first = opts && opts.professions[0];
+  if (!first) return;
+  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0 });
+  _rerenderTrainingDesk();
+}
+
+function _tdRemove(i) {
+  _trainingDeskRows.splice(i, 1);
+  _rerenderTrainingDesk();
+}
+
+function _tdSubmit() {
+  const requests = _trainingDeskRows
+    .filter(r => (parseInt(r.count, 10) || 0) > 0)
+    .map(r => ({
+      profession: r.profession,
+      count: parseInt(r.count, 10) || 0,
+      transport_mode: r.transport,
+      tickets_supplied_by_requester: r.transport === 'air_ticket' ? (parseInt(r.tickets, 10) || 0) : 0,
+      dollops_to_educator: parseFloat(r.fee) || 0,
+    }));
+  if (!requests.length) { showToast('Add at least one worker to book.', { type: 'error' }); return; }
+  _trainingDeskSeq += 1;
+  sendWsMessage({ type: 'training_batch', batch_ref: `td-${Date.now()}-${_trainingDeskSeq}`, requests });
+  hideOverlay();
+  showToast('Training request sent…', { type: 'info' });
+}
+
+function onTrainingBatchResult(msg) {
+  const results = msg.results || [];
+  if (msg.error) { showToast(`Training booking failed: ${msg.error}`, { type: 'error' }); return; }
+  const ok = results.filter(r => r && r.status === 'submitted');
+  const failed = results.filter(r => r && r.status === 'rejected');
+  failed.forEach(r => showToast(`Training row ${(r.index ?? 0) + 1} rejected: ${r.reason || 'unknown'}`, { type: 'error' }));
+  if (ok.length) showToast(`Booked ${ok.length} training request(s).`, { type: 'success' });
+  else if (!failed.length) showToast('No training rows were booked.', { type: 'error' });
 }
 
 function showActionPrompt(msg) {
@@ -4398,12 +6075,25 @@ function showPlayerPicker(msg) {
      <div style="display:flex;margin-top:.6rem">${CANCEL_BTN_HTML}</div>`);
 }
 
+// Input convention (#114): number capture boxes open empty (range/suggestion
+// in the placeholder) — reject an empty or non-numeric submit instead of
+// silently sending a default.
+function submitNumberInput(id) {
+  const el = document.getElementById(id);
+  const v = el ? el.value.trim() : '';
+  if (v === '' || isNaN(Number(v))) {
+    if (el) { el.style.borderColor = 'var(--red)'; el.focus(); }
+    return;
+  }
+  sendResponse(v);
+}
+
 function showQuantityInput(msg) {
   _activePromptType = 'dialog';
   showDlg(msg.prompt, `
-    <input type="number" id="qty-in" min="${msg.min}" max="${msg.max}" value="${msg.min}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}" placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
-      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('qty-in').value)">OK</button>
+      <button class="btn-primary" style="flex:1" onclick="submitNumberInput('qty-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
@@ -4411,15 +6101,15 @@ function showQuantityInput(msg) {
 
 function showDollopInput(msg) {
   _activePromptType = 'dialog';
-  const prefill = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
-  const hint = prefill > 0
-    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Pre-filled with the current best price — adjust if you wish.</div>`
+  const suggest = (typeof msg.prefill === 'number' && msg.prefill > 0) ? msg.prefill : 0;
+  const hint = suggest > 0
+    ? `<div style="font-size:.75rem;color:var(--dim);margin:.2rem 0">Current best price: ${suggest} Dp — type your amount.</div>`
     : '';
   showDlg(msg.prompt, `
     ${hint}
-    <input type="number" id="dp-in" min="0" max="${msg.max}" step="0.01" value="${prefill}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="dp-in" inputmode="decimal" min="0" max="${msg.max}" step="0.01" placeholder="${suggest > 0 ? suggest : `0–${msg.max}`}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
-      <button class="btn-primary" style="flex:1" onclick="sendResponse(document.getElementById('dp-in').value)">OK</button>
+      <button class="btn-primary" style="flex:1" onclick="submitNumberInput('dp-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
@@ -4473,15 +6163,13 @@ function _renderMarketBuyRow(res, d, focusResource) {
   const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
   const bidQty = d.bid_quantity ?? 0;
   const bidPrice = d.bid_price;
-  // Place-Bid price prefills with the FORMULA (fair reference) price,
-  // not the resting ask.  2026-05-27 playtest (Comet #6): "Food showed
-  // 17.18 but the bid was calculated at 40.00/unit" — the old behaviour
-  // prefilled the bid with the ask price, so when a resting ask sat far
-  // above fair value the bid field showed a confusingly-high number
-  // that didn't match the reference price the player saw elsewhere.
-  // "Buy Now" remains the at-ask path (data-price=askPrice on the
-  // mkt-qty-in input); "Place Bid" is a limit order so it should start
-  // from fair value and let the player raise it to clear if they choose.
+  // Place-Bid price suggests the FORMULA (fair reference) price, not the
+  // resting ask.  2026-05-27 playtest (Comet #6): "Food showed 17.18 but
+  // the bid was calculated at 40.00/unit" — suggesting the ask price
+  // confused players when a resting ask sat far above fair value.
+  // Input convention (#114): the suggestion lives in the placeholder, the
+  // box itself opens empty; submitMarketBuy falls back to the placeholder
+  // when a quantity is entered with no explicit price.
   const bidPrefill = (d.formula_price ? Number(d.formula_price).toFixed(2)
                       : (askQty && askPrice ? Number(askPrice).toFixed(2) : 0));
   const focusClass = (focusResource && res === focusResource) ? ' class="mkt-row-focus"' : '';
@@ -4491,8 +6179,8 @@ function _renderMarketBuyRow(res, d, focusResource) {
     <td>${bidQty || '—'}</td>
     <td style="color:var(--gold);border-left:2px solid var(--border)">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
     <td>${askQty || '—'}</td>
-    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" value="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
-    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" class="mkt-bid-qty" data-res="${esc(res)}" min="0" value="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" value="${bidPrefill}" title="Your bid price per unit" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="mkt-qty-in" data-res="${esc(res)}" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp each` : 'No ask available — use Place Bid instead'}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="mkt-bid-qty" data-res="${esc(res)}" min="0" placeholder="0" title="Quantity to bid for" style="width:58px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/><span>@</span><input type="number" inputmode="decimal" class="mkt-bid-price" data-res="${esc(res)}" min="0" step="0.01" placeholder="${bidPrefill}" title="Your bid price per unit — empty uses the fair-value reference shown" style="width:74px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"/></div></td>
   </tr>`;
 }
 
@@ -4624,7 +6312,11 @@ function submitMarketBuy() {
   document.querySelectorAll('.mkt-bid-qty').forEach(inp => {
     const qty = Math.max(0, parseInt(inp.value) || 0);
     const priceInput = document.querySelector(`.mkt-bid-price[data-res="${inp.dataset.res}"]`);
-    const price = priceInput ? Math.max(0, parseFloat(priceInput.value) || 0) : 0;
+    // Empty price box falls back to the fair-value suggestion shown in the
+    // placeholder (input convention, #114).
+    const price = priceInput
+      ? Math.max(0, parseFloat(priceInput.value) || parseFloat(priceInput.placeholder) || 0)
+      : 0;
     if (qty > 0 && price > 0) bids[inp.dataset.res] = { quantity: qty, price };
   });
   if (Object.keys(orders).length === 0 && Object.keys(bids).length === 0) {
@@ -4635,13 +6327,160 @@ function submitMarketBuy() {
   }
 }
 
+// ---- Non-blocking message helpers (replace native alert/confirm/prompt) ----
+// Native alert()/confirm()/prompt() block the JS main thread, so the
+// setInterval-driven season countdown can't tick while one is open (the
+// "timer stops when an alert appears" bug, #138). These never block, and use
+// their own #msg-overlay so they don't disturb an active IO game prompt.
+
+function showToast(message, opts = {}) {
+  const { type = 'info', ms = 4500 } = opts;
+  const stack = document.getElementById('toast-stack');
+  if (!stack) { console.log('[toast]', message); return; }
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const msg = document.createElement('div');
+  msg.className = 'toast-msg';
+  msg.textContent = message;
+  const x = document.createElement('span');
+  x.className = 'toast-x';
+  x.textContent = '×';
+  const dismiss = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 200); };
+  x.onclick = dismiss;
+  el.appendChild(msg);
+  el.appendChild(x);
+  stack.appendChild(el);
+  if (ms > 0) setTimeout(dismiss, ms);
+  return el;
+}
+
+let _msgModalOnCancel = null;
+
+function _closeMsgModal() {
+  const ov = document.getElementById('msg-overlay');
+  if (ov) ov.classList.remove('active');
+  const content = document.getElementById('msg-content');
+  if (content) content.innerHTML = '';
+  _msgModalOnCancel = null;
+}
+
+function _openMsgModal(title, contentHtml, { onCancel = null } = {}) {
+  document.getElementById('msg-title').textContent = title;
+  document.getElementById('msg-content').innerHTML = contentHtml;
+  document.getElementById('msg-overlay').classList.add('active');
+  _msgModalOnCancel = onCancel;
+  focusFirstInput(document.getElementById('msg-dialog'));
+}
+
+function showInfoModal(title, message) {
+  _openMsgModal(title,
+    `<div class="msg-body">${esc(message)}</div>
+     <div class="popup-footer"><button class="btn-primary" id="msg-ok">Close</button></div>`);
+  document.getElementById('msg-ok').onclick = _closeMsgModal;
+}
+
+function showConfirmModal(title, message, opts = {}) {
+  const { onConfirm = null, onCancel = null,
+          confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = false } = opts;
+  _openMsgModal(title,
+    `<div class="msg-body">${esc(message)}</div>
+     <div class="popup-footer">
+       <button class="btn-ghost" id="msg-cancel">${esc(cancelLabel)}</button>
+       <button class="${danger ? 'btn-reject' : 'btn-gold'}" id="msg-confirm">${esc(confirmLabel)}</button>
+     </div>`, { onCancel });
+  document.getElementById('msg-cancel').onclick = () => { _closeMsgModal(); if (onCancel) onCancel(); };
+  document.getElementById('msg-confirm').onclick = () => { _closeMsgModal(); if (onConfirm) onConfirm(); };
+}
+
+function showPromptModal(title, opts = {}) {
+  const { fields = [], onSubmit = null, onCancel = null,
+          submitLabel = 'OK', cancelLabel = 'Cancel', intro = '' } = opts;
+  const fieldHtml = fields.map((f, i) => {
+    const id = `msg-field-${i}`;
+    const ctl = f.type === 'textarea'
+      ? `<textarea id="${id}" rows="2" placeholder="${esc(f.placeholder || '')}">${esc(f.value || '')}</textarea>`
+      : `<input id="${id}" type="${f.type || 'text'}" placeholder="${esc(f.placeholder || '')}" value="${esc(f.value || '')}">`;
+    return `<label for="${id}">${esc(f.label || f.name)}</label>${ctl}`;
+  }).join('');
+  _openMsgModal(title,
+    `${intro ? `<div class="msg-body">${esc(intro)}</div>` : ''}
+     ${fieldHtml}
+     <div class="popup-footer">
+       <button class="btn-ghost" id="msg-cancel">${esc(cancelLabel)}</button>
+       <button class="btn-gold" id="msg-submit">${esc(submitLabel)}</button>
+     </div>`, { onCancel });
+  const submit = () => {
+    const values = {};
+    for (let i = 0; i < fields.length; i++) {
+      const f = fields[i];
+      const raw = (document.getElementById(`msg-field-${i}`).value || '').trim();
+      if (!f.optional && raw === '') { showToast(`${f.label || f.name} is required.`, { type: 'error' }); return; }
+      if (f.validate) { const err = f.validate(raw); if (err) { showToast(err, { type: 'error' }); return; } }
+      values[f.name] = raw;
+    }
+    _closeMsgModal();
+    if (onSubmit) onSubmit(values);
+  };
+  document.getElementById('msg-cancel').onclick = () => { _closeMsgModal(); if (onCancel) onCancel(); };
+  document.getElementById('msg-submit').onclick = submit;
+  document.getElementById('msg-dialog').onkeydown = (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); }
+  };
+}
+
+// Backdrop click + ESC dismiss the message modal (counts as cancel).
+document.getElementById('msg-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'msg-overlay') { const cb = _msgModalOnCancel; _closeMsgModal(); if (cb) cb(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('msg-overlay').classList.contains('active')) {
+    const cb = _msgModalOnCancel; _closeMsgModal(); if (cb) cb();
+  }
+});
+
 function showDlg(title, bodyHtml, className = '') {
   const dialog = document.getElementById('dialog');
   dialog.className = className ? `dialog ${className}` : 'dialog';
   document.getElementById('dlg-title').textContent = title;
   document.getElementById('dlg-body').innerHTML = bodyHtml;
   document.getElementById('overlay').classList.add('active');
+  // Input convention (#114): land in the first capture box, ready to type.
+  // Tab/Shift-Tab then walks the panel's boxes in DOM order.
+  focusFirstInput(dialog);
 }
+
+// Focus the first capture box in a freshly-opened dialog.  A single
+// requestAnimationFrame is NOT enough: when a dialog re-opens immediately
+// after sendResponse()→hideOverlay() (e.g. the Produce flow: pick product →
+// choose_quantity), the overlay is mid visibility-transition at rAF time and
+// .focus() silently no-ops on a not-yet-visible element — leaving the player
+// staring at a placeholder they can't type over (only the spinner worked).
+// Retry until focus actually sticks, covering the ~200ms transition.
+function focusFirstInput(container) {
+  const first = container.querySelector(
+    'input:not([disabled]):not([type=checkbox]):not([type=radio]), textarea:not([disabled])');
+  if (!first) return;
+  let tries = 0;
+  const attempt = () => {
+    first.focus();
+    if (typeof first.select === 'function' && first.value) first.select();
+    if (document.activeElement === first || tries++ >= 8) return;
+    setTimeout(attempt, 40);
+  };
+  // setTimeout, not requestAnimationFrame: rAF is throttled to zero on a
+  // background tab, so an rAF-scheduled focus silently never fires when the
+  // player tabs away mid-prompt.  setTimeout still runs.
+  setTimeout(attempt, 0);
+}
+
+// Enter in any capture box triggers the dialog's primary action (never from
+// a textarea, where Enter inserts a newline).
+document.getElementById('dialog').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  const primary = document.getElementById('dialog').querySelector(
+    '.popup-footer .btn-gold, .popup-footer .btn-primary, #dlg-body .btn-gold, #dlg-body .btn-primary');
+  if (primary) { e.preventDefault(); primary.click(); }
+});
 
 // Standardized info-popup shell (Phase 6 of the UX review).
 // Used by read-only or action-on-confirm popups (Production Constraints,
@@ -4683,6 +6522,41 @@ function _isPlayerRelevant(text) {
   return targets.some(t => text.includes(t));
 }
 
+function _logCategory(text) {
+  if (/\[EVENT\]|\[WORKPLACE\]|Drought|Flood|Disaster|Outage|Collapse|Spill|Pandemic|Storm|⛈/i.test(text))
+    return 'event';
+  if (/\[TRADE\]|\bsold\b|\bbought\b|\boffer\b|\bbid\b|\bdeal\b|accepted|counter-?offer/i.test(text))
+    return 'trade';
+  if (/train|course|graduat|apprentic|university|faculty|tuition|enrol/i.test(text))
+    return 'training';
+  return 'other';
+}
+
+// Log windowing (UI v2 phase 1, #114): the DOM keeps at most LOG_DOM_MAX
+// lines; older nodes are detached into _logEarlier and restored on demand,
+// so a long game can't grow the page without bound.
+const LOG_DOM_MAX = 300;
+const _logEarlier = [];   // detached line nodes, oldest first
+
+function _logEarlierBtn(log) {
+  let btn = document.getElementById('log-earlier-btn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'log-earlier-btn';
+    btn.className = 'lf-btn';
+    btn.style.cssText = 'display:block;margin:.25rem 0';
+    btn.onclick = () => {
+      const anchor = btn.nextSibling;
+      _logEarlier.forEach(n => log.insertBefore(n, anchor));
+      _logEarlier.length = 0;
+      btn.remove();
+    };
+    const bar = document.getElementById('log-filter-bar');
+    log.insertBefore(btn, bar ? bar.nextSibling : log.firstChild);
+  }
+  return btn;
+}
+
 function addLog(text, cls = '') {
   const log = document.getElementById('event-log');
   const div = document.createElement('div');
@@ -4691,13 +6565,300 @@ function addLog(text, cls = '') {
   } else if (/\[EVENT\]|\[WORKPLACE\]/.test(text)) {
     div.className = 'ev';
   }
+  div.classList.add('g-log-line');
+  div.dataset.cat = _logCategory(text);
   // Secondary highlight if the line directly concerns this player.
   if (!cls && _isPlayerRelevant(text)) {
     div.classList.add('log-mine');
   }
   div.textContent = text;
   log.appendChild(div);
+  const lines = log.querySelectorAll('.g-log-line');
+  const excess = lines.length - LOG_DOM_MAX;
+  for (let k = 0; k < excess; k++) {
+    _logEarlier.push(lines[k]);
+    lines[k].remove();
+  }
+  if (excess > 0)
+    _logEarlierBtn(log).textContent = `⟲ Show ${_logEarlier.length} earlier lines`;
   log.scrollTop = log.scrollHeight;
+}
+
+// --- Log filter ---
+function setLogFilter(f) {
+  const log = document.getElementById('event-log');
+  if (log) log.dataset.filter = f;
+  document.querySelectorAll('#log-filter-bar .lf-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.f === f));
+  try { localStorage.setItem('it_log_filter', f); } catch (e) {}
+}
+
+// --- Modular layout: hide/collapse panels + presets ---
+const LAYOUT_PRESETS = {
+  'full':   [],
+  'no-log': ['log'],
+  'trader': ['side'],
+  'focus':  ['side', 'info', 'log'],
+};
+function _grid() { return document.querySelector('.game-grid'); }
+// --- Resizable side panels (#114 follow-up) -------------------------------
+// The left/right columns are mouse-draggable so a cramped panel can be given
+// room instead of wrapping.  Widths persist in localStorage and compose with
+// the hide toggles + the mobile single-column breakpoint.
+const COLW_KEY = 'it_colwidths_v1';
+const COLW_MIN = 180;
+let _colW = { side: 280, info: 360 };
+function _loadColW() {
+  let loaded = false;
+  try {
+    const s = JSON.parse(localStorage.getItem(COLW_KEY));
+    if (s && s.side > 0 && s.info > 0) { _colW = { side: s.side, info: s.info }; loaded = true; }
+  } catch (e) {}
+  if (!loaded) {  // seed from the old responsive defaults for big screens
+    if (window.innerWidth >= 3000) _colW = { side: 380, info: 480 };
+    else if (window.innerWidth >= 2560) _colW = { side: 340, info: 432 };
+  }
+}
+function _saveColW() {
+  try { localStorage.setItem(COLW_KEY, JSON.stringify(_colW)); } catch (e) {}
+}
+function applyGridLayout() {
+  const g = _grid();
+  if (!g) return;
+  const sideH = document.getElementById('rsz-side');
+  const infoH = document.getElementById('rsz-info');
+  // Mobile: defer entirely to the CSS single-column breakpoint.
+  if (window.innerWidth <= 1200) {
+    g.style.gridTemplateColumns = '';
+    if (sideH) sideH.style.display = 'none';
+    if (infoH) infoH.style.display = 'none';
+    return;
+  }
+  const sideHidden = g.classList.contains('hide-side');
+  const infoHidden = g.classList.contains('hide-info');
+  const sw = sideHidden ? 0 : _colW.side;
+  const iw = infoHidden ? 0 : _colW.info;
+  g.style.gridTemplateColumns = `${sw}px 1fr ${iw}px`;
+  if (sideH) { sideH.style.display = sideHidden ? 'none' : 'block'; sideH.style.left = (sw - 3) + 'px'; }
+  if (infoH) { infoH.style.display = infoHidden ? 'none' : 'block'; infoH.style.right = (iw - 3) + 'px'; }
+}
+function initResizers() {
+  const g = _grid();
+  if (!g || document.getElementById('rsz-side')) return;
+  const mk = (id) => { const d = document.createElement('div'); d.id = id; d.className = 'col-resizer'; d.title = 'Drag to resize · double-click to reset'; g.appendChild(d); return d; };
+  const sideH = mk('rsz-side'), infoH = mk('rsz-info');
+  const startDrag = (which) => (e) => {
+    e.preventDefault();
+    const startX = e.clientX, startW = _colW[which];
+    const maxW = g.getBoundingClientRect().width * 0.5;
+    document.body.style.userSelect = 'none';
+    const onMove = (ev) => {
+      const delta = which === 'side' ? (ev.clientX - startX) : (startX - ev.clientX);
+      _colW[which] = Math.round(Math.max(COLW_MIN, Math.min(startW + delta, maxW)));
+      applyGridLayout();
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      _saveColW();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+  sideH.addEventListener('mousedown', startDrag('side'));
+  infoH.addEventListener('mousedown', startDrag('info'));
+  sideH.addEventListener('dblclick', () => { _colW.side = 280; applyGridLayout(); _saveColW(); });
+  infoH.addEventListener('dblclick', () => { _colW.info = 360; applyGridLayout(); _saveColW(); });
+  window.addEventListener('resize', applyGridLayout);
+}
+
+function applyLayoutState(hidden) {
+  const g = _grid();
+  if (!g) return;
+  ['side', 'info', 'log'].forEach(p => {
+    g.classList.toggle('hide-' + p, hidden.includes(p));
+    const cb = document.getElementById('lp-' + p);
+    if (cb) cb.checked = !hidden.includes(p);
+  });
+  applyGridLayout();  // recompute column widths + splitter positions
+  try { localStorage.setItem('it_layout_hidden', JSON.stringify(hidden)); } catch (e) {}
+}
+function _currentHidden() {
+  const g = _grid();
+  if (!g) return [];
+  return ['side', 'info', 'log'].filter(p => g.classList.contains('hide-' + p));
+}
+function togglePanel(p) {
+  const hidden = _currentHidden();
+  const i = hidden.indexOf(p);
+  if (i >= 0) hidden.splice(i, 1); else hidden.push(p);
+  applyLayoutState(hidden);
+}
+function applyLayoutPreset(name) {
+  applyLayoutState((LAYOUT_PRESETS[name] || []).slice());
+  closeLayoutMenu();
+}
+function toggleLayoutMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const pop = document.getElementById('layout-pop');
+  if (pop) pop.classList.toggle('open');
+}
+function closeLayoutMenu() {
+  const pop = document.getElementById('layout-pop');
+  if (pop) pop.classList.remove('open');
+}
+document.addEventListener('click', (e) => {
+  const menu = document.querySelector('.layout-menu');
+  if (menu && !menu.contains(e.target)) closeLayoutMenu();
+});
+function restoreLayoutPrefs() {
+  try {
+    const f = localStorage.getItem('it_log_filter');
+    if (f) setLogFilter(f);
+    const hidden = JSON.parse(localStorage.getItem('it_layout_hidden') || '[]');
+    if (Array.isArray(hidden)) applyLayoutState(hidden);
+    applyReduceEffects(localStorage.getItem('it_reduce_fx') === '1');
+  } catch (e) {}
+}
+
+// Reduce-effects toggle (UI v3 phase 1): drop the prestige blur/glow for
+// long sessions or low-power machines.  Persisted in localStorage.
+function applyReduceEffects(on) {
+  document.body.classList.toggle('fx-off', !!on);
+  const cb = document.getElementById('lp-fx');
+  if (cb) cb.checked = !!on;
+}
+function toggleReduceEffects() {
+  const on = !document.body.classList.contains('fx-off');
+  applyReduceEffects(on);
+  try { localStorage.setItem('it_reduce_fx', on ? '1' : '0'); } catch (e) {}
+}
+
+// --- Tile system (UI v2 phase 1, #114): per-tile collapse / hide / reorder
+// + role-aware defaults.  Persisted under it_tiles_v1; independent of the
+// #99 region-level it_layout_hidden key, which keeps working unchanged.
+const TILE_STORE_KEY = 'it_tiles_v1';
+// Tiles a role rarely consults open collapsed (one click away, never gone).
+// Multi-role players get the INTERSECTION — a tile stays open if any of
+// their roles wants it.
+const ROLE_TILE_DEFAULTS = {
+  Farmer:       ['funding', 'loans'],
+  Miner:        ['funding', 'insurance'],
+  Transporter:  ['funding', 'insurance'],
+  Manufacturer: ['funding', 'insurance'],
+  Educator:     ['insurance'],
+  Banker:       ['capacity', 'hints'],
+  Doctor:       ['funding'],
+};
+
+function _tileStore() {
+  try { return JSON.parse(localStorage.getItem(TILE_STORE_KEY)) || null; }
+  catch (e) { return null; }
+}
+function _tileSaveFromDom() {
+  const s = { order: {}, collapsed: [], hidden: [] };
+  document.querySelectorAll('.g-side, .g-main, .g-info').forEach(col => {
+    const colKey = (col.className.match(/g-(side|main|info)/) || [])[1];
+    if (colKey)
+      s.order[colKey] = [...col.querySelectorAll('[data-tile]')].map(el => el.dataset.tile);
+  });
+  document.querySelectorAll('[data-tile]').forEach(el => {
+    if (el.classList.contains('tile-collapsed')) s.collapsed.push(el.dataset.tile);
+    if (el.classList.contains('tile-hidden')) s.hidden.push(el.dataset.tile);
+  });
+  try { localStorage.setItem(TILE_STORE_KEY, JSON.stringify(s)); } catch (e) {}
+}
+function _tileEl(id) { return document.querySelector(`[data-tile="${id}"]`); }
+function _tileSyncUi(el) {
+  const id = el.dataset.tile;
+  const btn = el.querySelector('.tile-ctl .tc-collapse');
+  if (btn) btn.textContent = el.classList.contains('tile-collapsed') ? '＋' : '—';
+  const cb = document.getElementById('lp-tile-' + id);
+  if (cb) cb.checked = !el.classList.contains('tile-hidden');
+}
+function tileToggleCollapse(id) {
+  const el = _tileEl(id);
+  if (!el) return;
+  el.classList.toggle('tile-collapsed');
+  _tileSyncUi(el);
+  _tileSaveFromDom();
+}
+function tileToggleHidden(id) {
+  const el = _tileEl(id);
+  if (!el) return;
+  el.classList.toggle('tile-hidden');
+  _tileSyncUi(el);
+  _tileSaveFromDom();
+}
+function tileMove(id, dir) {
+  const el = _tileEl(id);
+  if (!el) return;
+  const sibs = [...el.parentElement.querySelectorAll(':scope > [data-tile]')];
+  const i = sibs.indexOf(el);
+  const j = i + dir;
+  if (j < 0 || j >= sibs.length) return;
+  if (dir < 0) el.parentElement.insertBefore(el, sibs[j]);
+  else el.parentElement.insertBefore(sibs[j], el);
+  _tileSaveFromDom();
+}
+function restoreTilePrefs() {
+  const s = _tileStore();
+  if (!s) return;
+  Object.entries(s.order || {}).forEach(([colKey, ids]) => {
+    const col = document.querySelector('.g-' + colKey);
+    if (!col) return;
+    ids.forEach(id => {
+      const el = col.querySelector(`[data-tile="${id}"]`);
+      if (el) col.appendChild(el);  // re-append in saved order
+    });
+  });
+  (s.collapsed || []).forEach(id => _tileEl(id)?.classList.add('tile-collapsed'));
+  (s.hidden || []).forEach(id => _tileEl(id)?.classList.add('tile-hidden'));
+  document.querySelectorAll('[data-tile]').forEach(_tileSyncUi);
+}
+function initTiles() {
+  document.querySelectorAll('[data-tile]').forEach(el => {
+    const h3 = el.querySelector('h3');
+    if (!h3 || h3.querySelector('.tile-ctl')) return;
+    const id = el.dataset.tile;
+    const ctl = document.createElement('span');
+    ctl.className = 'tile-ctl';
+    ctl.innerHTML =
+      `<button title="Move up" onclick="tileMove('${id}',-1)">▲</button>` +
+      `<button title="Move down" onclick="tileMove('${id}',1)">▼</button>` +
+      `<button class="tc-collapse" title="Collapse / expand" onclick="tileToggleCollapse('${id}')">—</button>`;
+    h3.appendChild(ctl);
+  });
+  const list = document.getElementById('lp-tiles');
+  if (list) {
+    list.innerHTML = [...document.querySelectorAll('[data-tile]')].map(el => `
+      <div class="lp-row" onclick="tileToggleHidden('${el.dataset.tile}')">
+        <input type="checkbox" id="lp-tile-${el.dataset.tile}" checked
+               onclick="event.stopPropagation();tileToggleHidden('${el.dataset.tile}')">
+        ${el.dataset.tileLabel || el.dataset.tile}
+      </div>`).join('');
+  }
+  restoreTilePrefs();
+}
+// Role-aware defaults — applied once per page load, and only when the player
+// has never customized tiles (no it_tiles_v1 key).  Not persisted, so a
+// future role change re-derives them.
+let _roleTileDefaultsApplied = false;
+function applyRoleTileDefaults(roles) {
+  if (_roleTileDefaultsApplied || _tileStore() || !roles || !roles.length) return;
+  _roleTileDefaultsApplied = true;
+  let collapsed = null;
+  roles.forEach(r => {
+    const set = new Set(ROLE_TILE_DEFAULTS[r] || []);
+    collapsed = collapsed === null
+      ? set
+      : new Set([...collapsed].filter(t => set.has(t)));
+  });
+  (collapsed ? [...collapsed] : []).forEach(id => {
+    const el = _tileEl(id);
+    if (el) { el.classList.add('tile-collapsed'); _tileSyncUi(el); }
+  });
 }
 
 function syncServerLog(msg) {
@@ -4781,6 +6942,11 @@ function showAboutDialog() {
 // will overwrite it.  If there's no cached prompt at all we still get
 // the server replay path.
 function restoreActionMenu() {
+  if (imReady) {
+    resumeTradingFromParked();
+    requestState();
+    return;
+  }
   if (lastActionPromptMsg) {
     showActionPrompt(lastActionPromptMsg);
   }
@@ -4795,14 +6961,14 @@ function restoreActionMenu() {
 // 2026-05-27 playtest ask for offline debugging.
 async function downloadGameLog() {
   if (!currentRoom || !currentRoom.room_id) {
-    alert("Join a room first — there's no game log to download yet.");
+    showToast("Join a room first — there's no game log to download yet.", { type: 'info' });
     return;
   }
   try {
     const resp = await fetch(`/api/rooms/${currentRoom.room_id}/log`);
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      alert(`Could not download log: ${err.error || resp.statusText}`);
+      showToast(`Could not download log: ${err.error || resp.statusText}`, { type: 'error' });
       return;
     }
     const text = await resp.text();
@@ -4816,7 +6982,7 @@ async function downloadGameLog() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (exc) {
-    alert(`Log download failed: ${exc}`);
+    showToast(`Log download failed: ${exc}`, { type: 'error' });
   }
 }
 

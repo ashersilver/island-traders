@@ -29,6 +29,7 @@ from island_traders.models.deal import DealLedger
 from island_traders.models.loan import LoanLedger, LoanStatus
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.profession import Profession
 from island_traders.models.role import ROLES
 
 
@@ -93,7 +94,8 @@ def test_insurance_sale_routes_confirm_to_buyer_not_seller():
     """The buyer's IO channel must receive the confirm — buyer's
     consent is what makes the policy.  Seller-routed confirm (the
     pre-fix bug) would let the seller accept on the buyer's behalf."""
-    banker = _player(1, "Banker", is_human=True, dollops=0.0)
+    banker = _player(1, "Banker", is_human=True, dollops=10.0)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.ACTUARY.value)
     farmer = _player(2, "Farmer", is_human=True, dollops=200.0)
     io = _PerPlayerConsentIO(confirm_answers={
         farmer.player_id: True,   # buyer accepts
@@ -119,7 +121,8 @@ def test_insurance_sale_refused_when_buyer_declines():
     """When the buyer declines (their channel returns False), no
     policy is created and no Dp moves — even though the seller would
     happily accept."""
-    banker = _player(1, "Banker", is_human=True, dollops=0.0)
+    banker = _player(1, "Banker", is_human=True, dollops=10.0)
+    banker.workforce.add_workers(1, training_level=1, profession=Profession.ACTUARY.value)
     farmer = _player(2, "Farmer", is_human=True, dollops=200.0)
     farmer_dollops_before = farmer.dollops
     io = _PerPlayerConsentIO(confirm_answers={
@@ -135,6 +138,21 @@ def test_insurance_sale_refused_when_buyer_declines():
     assert farmer.player_id in io.confirmed_for
     assert len(farmer.insurance_policies) == 0
     assert farmer.dollops == farmer_dollops_before
+
+
+def test_insurance_sale_requires_actuary():
+    banker = _player(1, "Banker", is_human=True, dollops=200.0)
+    farmer = _player(2, "Farmer", is_human=True, dollops=200.0)
+    io = _PerPlayerConsentIO(confirm_answers={farmer.player_id: True})
+    io.set_active_player(banker.player_id)
+    mgr = _turn_manager([banker, farmer], io=io)
+
+    mgr._action_sell_insurance(
+        banker, TurnResult(banker.player_id, 0, 0), year=0, season_index=0,
+    )
+
+    assert len(farmer.insurance_policies) == 0
+    assert "no Actuary on staff" in "\n".join(io.printed)
 
 
 # ─────────────────────────────────────────────────────────────────────────
