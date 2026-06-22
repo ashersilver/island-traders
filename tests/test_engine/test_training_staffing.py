@@ -92,10 +92,10 @@ def test_technical_capacity_min_of_2x_td_and_instructors_staffing_only():
     educator = _player(1, "Educator")
     _staff(educator, Profession.TECHNICAL_DIRECTOR, 2)
     _staff(educator, Profession.INSTRUCTOR, 3)
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     assert tm._technical_course_capacity(educator) == 3
 
-    educator.capital_inventory.clear()
+    educator.capital_units.clear()
     # Staffing unchanged — workshop check happens separately.
     assert tm._technical_course_capacity(educator) == 3
 
@@ -239,7 +239,7 @@ def test_technical_workshop_caps_trainee_headcount():
     _staff(educator, Profession.INSTRUCTOR, 6)
     _fund_training(educator)
     # 1 workshop = 6 trainee seats.
-    educator.capital_inventory["educator.technical_workshop"] = 1
+    educator.add_capital("educator.technical_workshop", 1)
 
     # First batch of 4 trainees fits (6 - 0 = 6 seats free; uses 4).
     # Bypass propose() to avoid the annual university intake cap — this
@@ -275,7 +275,7 @@ def test_technical_workshop_caps_trainee_headcount():
     assert "4/6 trainee seat(s)" in msg
 
     # With a second workshop the same batch fits (12 - 4 = 8 free; uses 3).
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     ok2, _ = tm._training_capacity_status(educator, req2)
     assert ok2 is True
 

@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-19.2"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -497,20 +497,52 @@ DEFAULT_SERVICE_LIFE_SEASONS: int = 20
 # the item's purchase cost per owned unit per season.  Tunable.
 DEFAULT_MAINTENANCE_FRACTION: float = 0.03
 
-# Equipment warranty + failure model (#130, 2026-06-12).  Warranties are sold
-# by the Manufacturer and charged annually.  Unwarranted equipment rolls an
-# annual age-based failure check; failed units need paid repair parts plus
+# Equipment warranty + failure model (#130, 2026-06-12; #188 failure curve
+# 2026-06-21).  Warranties are sold by the Manufacturer and charged annually.
+# Unwarranted equipment rolls a failure check every season on the #188
+# per-quarter Weibull schedule; failed units need paid repair parts plus
 # Freight spares delivery before they contribute capacity again.
 EQUIPMENT_WARRANTY_ANNUAL_RATE: float = 0.20
-EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR: dict[int, float] = {
-    1: 0.05,
-    2: 0.15,
-    3: 0.40,
+# Per-quarter Weibull failure probability (#188).  Each entry is the chance an
+# uninsured unit fails during that quarter of its life (Q1 = first season
+# owned).  Rolled every season using the unit's current quarter; for ages
+# beyond Q20 the last value is held.  Supersedes the old annual age-bucket
+# table {1: 0.05, 2: 0.15, 3: 0.40}.
+EQUIPMENT_FAILURE_PROB_BY_QUARTER: dict[int, float] = {
+    1: 0.0470,  2: 0.0509,  3: 0.0551,  4: 0.0596,  5: 0.0644,
+    6: 0.0696,  7: 0.0751,  8: 0.0810,  9: 0.0873, 10: 0.0940,
+    11: 0.1012, 12: 0.1088, 13: 0.1169, 14: 0.1256, 15: 0.1348,
+    16: 0.1446, 17: 0.1550, 18: 0.1661, 19: 0.1778, 20: 0.1902,
 }
-EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.50
+# Multiplier applied to the per-quarter failure probability for events such as
+# natural disasters (earthquake, flood) and sabotage during strikes (#188).
+# Default 1.0 (no event); the engine exposes a seam to raise it.
+EQUIPMENT_FAILURE_EVENT_MULTIPLIER: float = 1.0
+# Repair/parts fee on failure as a fraction of the unit's purchase value
+# ($35 per $100 basis, #188; was 0.50 under the old straw-man model).
+EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.35
+# A spares kit on hand cuts a repair bill in half (#185: "each kit reduces
+# repair costs by 50%").  Without a pre-stocked spare the baseline fraction
+# above applies (spares are manufactured at failure time).
+EQUIPMENT_SPARES_REPAIR_DISCOUNT: float = 0.5
+# #188 maintenance / warranty contract cost per $100 of equipment value, by
+# term in years: (baseline, with Predictive Maintenance).  Charged ONCE upfront
+# on a #185 order (not recurring); covers the unit until the term lapses, after
+# which it becomes failure-eligible again.  Replaces the flat recurring premium
+# for contracted units.
+EQUIPMENT_MAINTENANCE_CONTRACT_PER_100: dict[int, tuple[float, float]] = {
+    1: (8.62, 7.11),
+    2: (19.90, 14.82),
+    3: (35.70, 23.94),
+    4: (55.29, 34.88),
+    5: (78.23, 47.91),
+}
 EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
 EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
 EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
+# Referral kickback paid to the Manufacturer (by the Bank) when a capital order
+# is financed — origination incentive for steering the deal through financing.
+MANUFACTURER_FINANCE_REFERRAL_RATE: float = 0.02
 
 
 # ---------------------------------------------------------------------------

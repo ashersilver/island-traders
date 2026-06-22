@@ -5,7 +5,20 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-_Nothing yet — next dev cycle._
+`APP_VERSION`: `0.1.5-dev.2026-06-22.1`.
+
+- **Capital Orders II — financing loan path + 2% manufacturer referral (#185/#188)** —
+  a financed capital order (`financing: true`) now borrows the upfront from the Bank via
+  `TurnManager.issue_capital_finance_loan` (reusing the loan reserve mechanics): the buyer's
+  treasury stays flat and they owe the loan, while the Manufacturer is paid in full plus a 2%
+  referral kickback funded by the Bank. Falls back to cash when no Banker is present or the
+  bank is at its active-loan cap; `capital_order_ack` now reports
+  `financed`/`loan_id`/`loan_repayment`/`referral_fee`. The simulation/engine AI stays on the
+  legacy warranty path (already balanced), so #188 term contracts apply to live play only.
+- **Capital order UI** — the "Purchase Equipment" action and the "＋ Build…" button now open
+  the #185/#188 order modal (via an item picker when more than one item is buildable) instead
+  of the legacy server-driven item prompt, so the term-contract + financing options are
+  reachable from the obvious control.
 
 ## 0.1.5-beta.1 — 2026-06-19 (Beta)
 

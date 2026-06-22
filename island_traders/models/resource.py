@@ -26,6 +26,14 @@ class ResourceType(str, Enum):
     TRANSPORT_EQUIPMENT  = "TransportEquipment"
     PASSENGER_SEATS      = "PassengerSeats"
     PATENTS              = "Patents"
+    SPARES               = "Spares"
+
+
+# Generic spares (#185/#188): manufactured by the Manufacturer, attached to
+# capital equipment and consumed during repair.  They are NOT a market good —
+# they carry no market price / order book and can never be offered, bid, or
+# traded; they only move by being manufactured and transferred with equipment.
+NON_TRADABLE_RESOURCES: frozenset[ResourceType] = frozenset({ResourceType.SPARES})
 
 
 class InsufficientResourceError(Exception):

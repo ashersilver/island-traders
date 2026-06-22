@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from .resource import ResourceType
+from .resource import ResourceType, NON_TRADABLE_RESOURCES
 from .player import Player, InsufficientFundsError
 from .resource import InsufficientResourceError
 from ..constants import (
@@ -126,7 +126,12 @@ class Market:
         return round(base * factor, 2)
 
     def current_prices(self) -> dict[ResourceType, float]:
-        return {r: self.current_price(r) for r in ResourceType}
+        # Non-tradable resources (e.g. Spares) carry no market price.
+        return {
+            r: self.current_price(r)
+            for r in ResourceType
+            if r not in NON_TRADABLE_RESOURCES
+        }
 
     def market_maker_ask(self, rtype: ResourceType) -> float:
         return round(self.current_price(rtype) * (1.0 + MARKET_MAKER_SPREAD), 2)
@@ -244,6 +249,8 @@ class Market:
 
     def post_offer(self, seller: Player, rtype: ResourceType,
                    price_per_unit: float, qty: int) -> MarketOffer:
+        if rtype in NON_TRADABLE_RESOURCES:
+            raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
             raise ValueError("Offer quantity must be positive")
         if price_per_unit <= 0:
@@ -279,6 +286,8 @@ class Market:
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
                  price_per_unit: float, qty: int) -> MarketBid:
+        if rtype in NON_TRADABLE_RESOURCES:
+            raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
             raise ValueError("Bid quantity must be positive")
         if price_per_unit <= 0:
@@ -548,6 +557,8 @@ class Market:
     def market_summary(self) -> dict[str, dict]:
         result = {}
         for rtype in ResourceType:
+            if rtype in NON_TRADABLE_RESOURCES:
+                continue  # Spares are never traded — no order book.
             best_offer = self.best_offer(rtype)
             best_bid = self.best_bid(rtype)
             ask_qty = sum(o.remaining for o in self._offers

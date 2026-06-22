@@ -33,8 +33,10 @@ from ..constants import (
     STARTING_WORKERS_BY_PROFESSION,
     WORKING_LIFE_SEASONS, DEFAULT_WORKING_LIFE_SEASONS, STARTING_WORKER_AGES,
     DEFAULT_MAINTENANCE_FRACTION, STARTING_AGED_CAPITAL,
-    EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR,
+    EQUIPMENT_FAILURE_PROB_BY_QUARTER,
+    EQUIPMENT_FAILURE_EVENT_MULTIPLIER,
     EQUIPMENT_FAILURE_REPAIR_FRACTION,
+    EQUIPMENT_SPARES_REPAIR_DISCOUNT,
     EQUIPMENT_REPAIR_AIR_FREIGHT,
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
@@ -97,6 +99,52 @@ def _migrate_capital_in_transit(raw: list[dict]) -> list[dict]:
             current["item_id"] = _current_capital_item_id(str(current["item_id"]))
         migrated.append(current)
     return migrated
+
+
+def _migrate_capital_units(pd: dict) -> dict[str, list]:
+    """Build per-unit capital records (#185 / #188) from a serialized player.
+
+    New saves carry ``capital_units`` directly; older saves are migrated from
+    the legacy aggregate dicts (counts + acquisition ticks, with warranty /
+    failed flags) so existing games load unchanged.
+    """
+    from ..models.player import CapitalUnit
+
+    raw_units = pd.get("capital_units")
+    if raw_units is not None:
+        out: dict[str, list] = {}
+        for item_id, units in raw_units.items():
+            current_id = _current_capital_item_id(str(item_id))
+            out.setdefault(current_id, []).extend(
+                CapitalUnit.from_dict({**u, "item_id": current_id}) for u in units
+            )
+        return out
+
+    # Legacy migration from the old aggregate dicts.
+    inventory = _migrate_capital_inventory(pd.get("capital_inventory", {}))
+    ticks = _migrate_capital_ticks(pd.get("capital_acquired_ticks", {}))
+    warranties = _migrate_capital_inventory(pd.get("capital_warranties", {}))
+    failed = _migrate_capital_inventory(pd.get("failed_capital", {}))
+    out: dict[str, list] = {}
+    seq = 0
+    for item_id, count in inventory.items():
+        item_ticks = list(ticks.get(item_id, []))
+        if len(item_ticks) < count:
+            item_ticks.extend([0] * (count - len(item_ticks)))
+        n_warranty = warranties.get(item_id, 0)
+        n_failed = failed.get(item_id, 0)
+        units: list = []
+        for i in range(count):
+            seq += 1
+            units.append(CapitalUnit(
+                item_id=item_id,
+                acquired_tick=int(item_ticks[i]),
+                unit_id=seq,
+                warranty=(i < n_warranty),
+                status=("failed" if i >= count - n_failed else "in_service"),
+            ))
+        out[item_id] = units
+    return out
 
 
 @dataclass
@@ -549,8 +597,9 @@ class Game:
                         f"until paid."
                     )
 
-            if season == len(SEASONS) - 1:
-                self._process_equipment_failures(player, current_tick, catalogue)
+            # Failure is rolled every season on the #188 per-quarter schedule
+            # (was once a year under the old annual age-bucket model).
+            self._process_equipment_failures(player, current_tick, catalogue)
 
     def _role_player(self, role_name: str) -> Player | None:
         return next(
@@ -601,26 +650,30 @@ class Game:
         manufacturer = self._role_player("Manufacturer")
         if manufacturer is None or manufacturer.player_id == player.player_id:
             return
-        for item_id, count in list(player.capital_warranties.items()):
+        for item_id, units in list(player.capital_units.items()):
             item = catalogue.get(item_id)
-            owned = player.capital_inventory.get(item_id, 0)
-            covered = min(count, owned)
-            if item is None or covered <= 0:
-                player.capital_warranties.pop(item_id, None)
+            # Units on an upfront #188 term contract (maintenance_term_years > 0)
+            # already paid in full at order time — only legacy recurring
+            # warranties (no term) are billed annually here.
+            warranted_units = [
+                u for u in units if u.warranty and u.maintenance_term_years == 0
+            ]
+            if not warranted_units:
+                continue
+            if item is None:
+                # Item left the catalogue: drop stale coverage.
+                for u in warranted_units:
+                    u.warranty = False
                 continue
             per_unit = round(item.cost * EQUIPMENT_WARRANTY_ANNUAL_RATE, 2)
             paid = 0
-            for _ in range(covered):
+            for u in warranted_units:
                 if player.dollops < per_unit:
-                    break
+                    u.warranty = False   # premium lapses — coverage drops
+                    continue
                 player.spend_dollops(per_unit)
                 manufacturer.receive_dollops(per_unit)
                 paid += 1
-            if paid < count:
-                if paid:
-                    player.capital_warranties[item_id] = paid
-                else:
-                    player.capital_warranties.pop(item_id, None)
             if paid:
                 self.io.print(
                     f"\n[WARRANTY] {player.name}: paid "
@@ -629,12 +682,26 @@ class Game:
                 )
 
     def _failure_probability_for_age(self, age_seasons: int) -> float:
-        age_year = max(1, age_seasons // len(SEASONS) + 1)
-        max_year = max(EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR)
-        return EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR.get(
-            age_year,
-            EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR[max_year],
-        )
+        """Per-quarter Weibull failure probability (#188).
+
+        ``age_seasons`` is the unit's age in seasons (0 in the season it is
+        delivered), so the quarter of life is ``age_seasons + 1``.  Beyond the
+        table's last quarter the final value is held.
+        """
+        quarter = max(1, age_seasons + 1)
+        max_quarter = max(EQUIPMENT_FAILURE_PROB_BY_QUARTER)
+        if quarter > max_quarter:
+            quarter = max_quarter
+        return EQUIPMENT_FAILURE_PROB_BY_QUARTER[quarter]
+
+    def _capital_failure_multiplier(self, player: Player) -> float:
+        """Event multiplier on the per-quarter failure probability (#188 seam).
+
+        Natural disasters (earthquake, flood) and sabotage during strikes
+        raise the base hazard.  Defaults to EQUIPMENT_FAILURE_EVENT_MULTIPLIER
+        (1.0) until those events are wired in.
+        """
+        return EQUIPMENT_FAILURE_EVENT_MULTIPLIER
 
     def _process_equipment_failures(
         self,
@@ -643,31 +710,29 @@ class Game:
         catalogue: dict[str, object],
     ) -> None:
         rng = self._capital_rng()
-        for item_id, count in list(player.capital_inventory.items()):
+        multiplier = self._capital_failure_multiplier(player)
+        for item_id, units in list(player.capital_units.items()):
             item = catalogue.get(item_id)
             if item is None:
                 continue
-            warranted = min(player.capital_warranties.get(item_id, 0), count)
-            failed = min(player.failed_capital.get(item_id, 0), count)
-            in_service_uninsured = max(0, count - warranted - failed)
-            if in_service_uninsured <= 0:
-                continue
-            ticks = list(player.capital_acquired_ticks.get(item_id, []))
-            if len(ticks) < count:
-                ticks.extend([0] * (count - len(ticks)))
-            candidate_ticks = ticks[warranted:warranted + in_service_uninsured]
-            failures = 0
-            for acquired_tick in candidate_ticks:
-                age = max(0, current_tick - acquired_tick)
-                if rng.random() < self._failure_probability_for_age(age):
-                    failures += 1
-            for _ in range(failures):
-                if player.mark_capital_failed(item_id, 1):
+            # Roll each in-service, uninsured unit on its own quarter (#188).
+            for unit in list(units):
+                age = max(0, current_tick - unit.acquired_tick)
+                # An upfront term contract lapses once its term has elapsed,
+                # after which the unit is failure-eligible again.
+                if (unit.warranty and unit.maintenance_term_years > 0
+                        and age >= unit.maintenance_term_years * len(SEASONS)):
+                    unit.warranty = False
+                if unit.warranty or unit.status != "in_service":
+                    continue
+                prob = self._failure_probability_for_age(age) * multiplier
+                if rng.random() < prob:
+                    unit.status = "failed"
                     self.io.print(
                         f"\n[CAPITAL FAILURE] {player.name}: 1 × {item.name} "
                         f"failed and is down until repaired."
                     )
-                    self._attempt_capital_repair(player, item, current_tick)
+                    self._attempt_capital_repair(player, item, current_tick, unit=unit)
 
     def _attempt_pending_capital_repairs(
         self,
@@ -675,15 +740,20 @@ class Game:
         current_tick: int,
         catalogue: dict[str, object],
     ) -> None:
-        for item_id, failed in list(player.failed_capital.items()):
-            unresolved = failed - self._repair_in_progress_count(player, item_id)
-            if unresolved <= 0:
-                continue
+        for item_id in list(player.capital_units.keys()):
             item = catalogue.get(item_id)
             if item is None:
                 continue
-            for _ in range(unresolved):
-                if not self._attempt_capital_repair(player, item, current_tick):
+            in_progress = self._repair_in_progress_count(player, item_id)
+            failed_units = [
+                u for u in player.capital_units.get(item_id, [])
+                if u.status == "failed"
+            ]
+            # Skip units already covered by a queued ship repair; retry the rest.
+            for unit in failed_units[in_progress:]:
+                if not self._attempt_capital_repair(
+                    player, item, current_tick, unit=unit
+                ):
                     break
 
     def _has_air_repair_capacity(self) -> bool:
@@ -709,9 +779,25 @@ class Game:
         player: Player,
         item,
         current_tick: int,
+        unit=None,
     ) -> bool:
         manufacturer = self._role_player("Manufacturer")
-        repair_fee = round(item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2)
+        # Repair fee is 35% of the unit's purchase value (falling back to the
+        # catalogue cost when an order didn't record one).  A spare on hand —
+        # attached to the unit or held generically — halves it (#185); without
+        # one, spares are manufactured at failure for the baseline fee.
+        base_value = (
+            unit.purchase_value if (unit is not None and unit.purchase_value)
+            else item.cost
+        )
+        has_attached = unit is not None and unit.spares_attached > 0
+        has_generic = player.inventory.get(ResourceType.SPARES) > 0
+        use_spare = has_attached or has_generic
+        repair_fee = round(
+            base_value * EQUIPMENT_FAILURE_REPAIR_FRACTION
+            * (EQUIPMENT_SPARES_REPAIR_DISCOUNT if use_spare else 1.0),
+            2,
+        )
         air = self._has_air_repair_capacity()
         freight_qty = (
             EQUIPMENT_REPAIR_AIR_FREIGHT if air else EQUIPMENT_REPAIR_SHIP_FREIGHT
@@ -721,6 +807,12 @@ class Game:
         if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
             return False
 
+        # Consume a spare — the unit's own first, otherwise a generic one.
+        if has_attached:
+            unit.spares_attached -= 1
+        elif has_generic:
+            player.give_resources(ResourceType.SPARES, 1)
+
         player.spend_dollops(repair_fee)
         if manufacturer is not None:
             manufacturer.receive_dollops(repair_fee)
@@ -728,7 +820,11 @@ class Game:
         self._credit_freight_to_transporter(freight_qty)
 
         if air:
-            player.complete_capital_repair(item.item_id, 1)
+            if unit is not None:
+                unit.status = "in_service"
+                unit.repair_completes_at_tick = None
+            else:
+                player.complete_capital_repair(item.item_id, 1)
             self.io.print(
                 f"[CAPITAL REPAIR] {player.name}: repaired 1 × {item.name} "
                 f"same-season by air for {CURRENCY_SYMBOL}{repair_fee:.2f} "
@@ -941,6 +1037,12 @@ class Game:
             "population": p.population,
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
             "wealth_history": p.wealth_history,
+            "capital_units": {
+                item_id: [u.to_dict() for u in units]
+                for item_id, units in p.capital_units.items()
+            },
+            # Legacy aggregate views kept for back-compat readers; derived from
+            # capital_units above and re-migrated into units on load.
             "capital_inventory": dict(p.capital_inventory),
             "capital_acquired_ticks": {
                 item_id: list(ticks) for item_id, ticks in p.capital_acquired_ticks.items()
@@ -1145,20 +1247,9 @@ class Game:
                 wealth_history=pd.get("wealth_history", []),
                 production_capacity=pd.get("production_capacity", 0.5),
                 population=pd.get("population", STARTING_POPULATION),
-                capital_inventory=_migrate_capital_inventory(
-                    pd.get("capital_inventory", {})
-                ),
-                capital_acquired_ticks=_migrate_capital_ticks(
-                    pd.get("capital_acquired_ticks", {})
-                ),
+                capital_units=_migrate_capital_units(pd),
                 capital_in_transit=_migrate_capital_in_transit(
                     pd.get("capital_in_transit", [])
-                ),
-                capital_warranties=_migrate_capital_inventory(
-                    pd.get("capital_warranties", {})
-                ),
-                failed_capital=_migrate_capital_inventory(
-                    pd.get("failed_capital", {})
                 ),
                 capital_repair_in_progress=_migrate_capital_in_transit(
                     pd.get("capital_repair_in_progress", [])

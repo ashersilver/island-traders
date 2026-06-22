@@ -46,6 +46,13 @@ def banker_quote_rate(
     return round(cost + 0.02 + borrower_risk_premium(borrower, loan_ledger, principal), 4)
 
 
+class CapitalFinanceError(Exception):
+    """Raised when a capital order cannot be financed via the Bank.
+
+    Carries a buyer-facing message; callers should fall back to cash settlement.
+    """
+
+
 class LoanStatus(Enum):
     ACTIVE = "active"
     REPAID = "repaid"

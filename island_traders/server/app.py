@@ -28,7 +28,7 @@ from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..engine.revenue import revenue_opportunities
 from ..engine.trading import InvalidDealError, StaleResourceError
 from ..models.profession import Profession, PROFESSION_LABEL
-from ..models.resource import ResourceType
+from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.role import ROLES
 from ..models.training import (
     TrainingCapacityError,
@@ -42,7 +42,7 @@ from ..models.equity import (
     AUCTIONED_SHARES, UNISSUED_HOLDER,
 )
 from ..models import shareholder_loans as sh_loans
-from ..models.loan import LoanStatus, posted_funding_rates
+from ..models.loan import CapitalFinanceError, LoanStatus, posted_funding_rates
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
@@ -2117,6 +2117,22 @@ class GameManager:
             item = find_item(CAPITAL_CATALOGUE, item_id)
             if not item:
                 continue
+            # Per-unit detail (#185/#188): each unit's age-quarter, status and
+            # the order conditions it was bought with.
+            units = []
+            for u in p.capital_units.get(item_id, []):
+                age = max(0, (current_tick or 0) - u.acquired_tick)
+                units.append({
+                    "unit_id":                u.unit_id,
+                    "status":                 u.status,
+                    "quarter":                min(20, age + 1),
+                    "warranty":               u.warranty,
+                    "spares_attached":        u.spares_attached,
+                    "maintenance_term_years": u.maintenance_term_years,
+                    "predictive_maintenance": u.predictive_maintenance,
+                    "expedited_eligible":     u.expedited_eligible,
+                    "purchase_value":         u.purchase_value,
+                })
             capital_owned.append({
                 "item_id":     item_id,
                 "name":        item.name,
@@ -2125,6 +2141,7 @@ class GameManager:
                 "warrantied":  p.capital_warranties.get(item_id, 0),
                 "failed":      p.failed_capital.get(item_id, 0),
                 "description": item.description,
+                "units":       units,
             })
         # Items still arriving
         in_transit = []
@@ -3264,6 +3281,151 @@ class GameManager:
         if state:
             await websocket.send_text(json.dumps(state))
 
+    async def _handle_capital_order(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Place a Capital Equipment Order (#185) from the buyer-facing form.
+
+        Charges the equipment list price + spares upfront, records the chosen
+        order conditions on the delivered unit (via ``place_capital_order``),
+        and consumes one manufactured-equipment unit from the Manufacturer.
+        Message: {item_id, maintenance_term_years, predictive_maintenance,
+        spares_kits, expedited_eligible, financing}.
+        """
+        from ..models.capacity import find_item
+
+        async def _err(message: str) -> None:
+            await websocket.send_text(json.dumps({"type": "error", "message": message}))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await _err("Room not found"); return
+        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        if engine_pid is None:
+            await _err("Player not in game"); return
+        game = room.game
+        buyer = next((p for p in game.players if p.player_id == engine_pid), None)
+        if buyer is None:
+            await _err("Player not found"); return
+        item = find_item(CAPITAL_CATALOGUE, str(msg.get("item_id", "")))
+        if item is None:
+            await _err("Unknown capital item"); return
+
+        # Parse order conditions defensively.
+        try:
+            term = max(0, min(5, int(msg.get("maintenance_term_years", 0))))
+            spares_kits = max(0, int(msg.get("spares_kits", 0)))
+        except (TypeError, ValueError):
+            term, spares_kits = 0, 0
+        predictive = bool(msg.get("predictive_maintenance", False))
+        expedited = bool(msg.get("expedited_eligible", False))
+        financing = bool(msg.get("financing", False))
+
+        cash_only = bool(item.effects.get("cash_only", False))
+        manufacturer = None
+        manufactured_resource = None
+        if not cash_only:
+            manufacturer = next(
+                (p for p in game.players if any(r.name == "Manufacturer" for r in p.roles)),
+                None,
+            )
+            if manufacturer is None:
+                await _err("No Manufacturing island is available to build capital equipment."); return
+            manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
+            if manufacturer.inventory.get(manufactured_resource) <= 0:
+                await _err(
+                    f"{manufacturer.name} has no {manufactured_resource.value} to build {item.name}."
+                ); return
+
+        from ..models.player import maintenance_contract_cost
+        from ..constants import MANUFACTURER_FINANCE_REFERRAL_RATE
+        contract_cost = maintenance_contract_cost(item.cost, term, predictive)
+        spares_cost = round(0.15 * item.cost * spares_kits, 2)
+        upfront = round(item.cost + contract_cost + spares_cost, 2)
+        pays = cash_only or (manufacturer is not None and manufacturer.player_id != buyer.player_id)
+
+        cyi = getattr(room, "current_year_index", 0)
+        csi = getattr(room, "current_season_index", 0)
+        current_tick = cyi * len(SEASONS) + csi
+
+        # Resolve settlement BEFORE mutating any state.  Financing borrows the
+        # upfront from the Bank (manufacturer still paid in full); a cash order
+        # settles straight from the buyer's treasury.  issue_capital_finance_loan
+        # raises before mutating, so a failed loan leaves us free to fall back to
+        # cash (or surface the reason if the buyer can't pay cash either).
+        loan = None
+        financed = False
+        referral_fee = 0.0
+        if pays:
+            want_finance = financing and game.turn_manager._find_banker() is not None
+            if want_finance:
+                loan_term = min(3, max(1, term)) if term else 2
+                try:
+                    loan = game.turn_manager.issue_capital_finance_loan(
+                        buyer, upfront, loan_term, cyi, csi
+                    )
+                    financed = True
+                except CapitalFinanceError as exc:
+                    if buyer.dollops < upfront:
+                        await _err(str(exc)); return
+            if not financed and buyer.dollops < upfront:
+                await _err(
+                    f"Need {upfront:.1f} Dp for this order; you have {buyer.dollops:.1f} Dp."
+                ); return
+
+        # Execute: consume one manufactured unit, settle cash.  When financed,
+        # the loan principal was credited to the buyer above, so spending it here
+        # leaves the buyer's treasury flat (they now owe the loan instead).
+        if not cash_only:
+            manufacturer.give_resources(manufactured_resource, 1)
+        if pays:
+            buyer.spend_dollops(upfront)
+            if manufacturer is not None and manufacturer.player_id != buyer.player_id:
+                manufacturer.receive_dollops(upfront)
+            if financed and manufacturer is not None:
+                banker = game.turn_manager._find_banker()
+                fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * upfront, 2)
+                if (banker is not None
+                        and banker.player_id != manufacturer.player_id
+                        and banker.dollops >= fee):
+                    banker.spend_dollops(fee)
+                    manufacturer.receive_dollops(fee)
+                    referral_fee = fee
+
+        order = {
+            "maintenance_term_years": term,
+            "predictive_maintenance": predictive,
+            "guarantee_seasons":      1,           # resolved #185 decision
+            "warranty":               term > 0,
+            "spares_kits":            spares_kits,  # manufactured & shipped with the unit
+            "expedited_eligible":     expedited,
+            "financing":              financing,
+            "purchase_value":         item.cost,
+        }
+        arrives_at = buyer.place_capital_order(
+            item.item_id, order, current_tick, item.delivery_seasons
+        )
+
+        await websocket.send_text(json.dumps({
+            "type": "capital_order_ack",
+            "item_id": item.item_id, "name": item.name,
+            "upfront": upfront, "contract_cost": contract_cost,
+            "spares_kits": spares_kits,
+            "financing": financing,
+            "financed": financed,
+            "loan_id": loan.loan_id if loan is not None else None,
+            "loan_repayment": loan.repayment_amount if loan is not None else None,
+            "referral_fee": referral_fee,
+            "arrives_at_tick": arrives_at,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
     def _leases_detail_for_player(
         self,
         game: Game,
@@ -3646,7 +3808,8 @@ class GameManager:
         for r in ResourceType:
             # Phase D1 Banker service model: Finance is no longer a tradable
             # market commodity, but the enum remains for saved-game/back-compat.
-            if r == ResourceType.FINANCE:
+            # Spares (#185/#188) are likewise non-tradable — never market goods.
+            if r == ResourceType.FINANCE or r in NON_TRADABLE_RESOURCES:
                 continue
             info = mkt_summary.get(r.value, {})
             formula_price = round(game.market.current_price(r), 2)
@@ -5098,6 +5261,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "buy_out_float":
                     await manager._handle_buy_out_float(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_order":
+                    await manager._handle_capital_order(
                         room_id, player_id, msg, websocket
                     )
 
