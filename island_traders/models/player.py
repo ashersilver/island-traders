@@ -413,6 +413,19 @@ class Player:
                 result[item_id] = n
         return result
 
+    def spares_capacity(self) -> int:
+        """Total generic-spares storage from maintained warehouse capital."""
+        from ..constants_capacity import CAPITAL_CATALOGUE
+        from .capacity import find_item
+
+        capacity = 0
+        for item_id, count in self.effective_capital_inventory().items():
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            if not item:
+                continue
+            capacity += int(item.effects.get("spares_storage", 0)) * count
+        return capacity
+
     def add_capital(
         self,
         item_id: str,
@@ -546,12 +559,19 @@ class Player:
 
         Spares are produced by the Manufacturer (generic, not tradable) and
         held until transferred with delivered equipment or consumed in a
-        repair.  Returns the number manufactured.
+        repair.  Returns the number actually manufactured after warehouse
+        capacity is applied.
         """
         if count <= 0:
             return 0
-        self.receive_resources(ResourceType.SPARES, count)
-        return count
+        room_left = max(
+            0,
+            self.spares_capacity() - self.inventory.get(ResourceType.SPARES),
+        )
+        produced = min(count, room_left)
+        if produced > 0:
+            self.receive_resources(ResourceType.SPARES, produced)
+        return produced
 
     # ------------------------------------------------------------------ Patents
 

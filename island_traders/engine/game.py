@@ -578,6 +578,8 @@ class Game:
                 item = catalogue.get(item_id)
                 if not item:
                     continue
+                if item.effects.get("maintenance_free", False):
+                    continue
                 per_unit = (
                     item.maintenance_per_season
                     if item.maintenance_per_season > 0

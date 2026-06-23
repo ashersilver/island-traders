@@ -383,3 +383,38 @@ def test_capital_order_self_build_settles_immediately_without_negotiation():
     assert mgr.rooms[room.room_id].game.capital_negotiations.awaiting(
         manufacturer.player_id
     ) == []
+
+
+def test_capital_order_self_build_warehouse_settles_immediately():
+    mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
+    manufacturer, _other = players
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+        "item_id": "manufacturer.warehouse",
+    }, ws))
+
+    ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
+    assert ack is not None, ws.sent
+    assert ack["item_id"] == "manufacturer.warehouse"
+    assert manufacturer.capital_inventory.get("manufacturer.warehouse") == 1
+    assert manufacturer.spares_capacity() == 22
+    assert not any(
+        m.get("type") == "capital_negotiation_ack" and m.get("result") == "proposed"
+        for m in ws.sent
+    ), ws.sent
+
+
+def test_game_state_exposes_spares_held_and_capacity():
+    mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
+    manufacturer, _other = players
+    manufacturer.manufacture_spares(7)
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    manufacturer_state = next(
+        p for p in state["players"] if p["player_id"] == manufacturer.player_id
+    )
+
+    assert manufacturer_state["spares_held"] == 7
+    assert manufacturer_state["spares_capacity"] == 10

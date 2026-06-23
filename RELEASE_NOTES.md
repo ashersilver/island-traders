@@ -5,7 +5,14 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.3`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.4`.
+
+- **Manufacturer spares warehouse storage (#185/#188)** — Manufacturing now has
+  Small Spares Warehouse (+10 spares) and Spares Warehouse (+12 spares) capital
+  items, and starts with one small warehouse so it can stock generic spares from
+  turn one. `Player.manufacture_spares()` clamps production to maintained
+  warehouse capacity, while `game_state` exposes `spares_held` and
+  `spares_capacity` for UI display.
 
 - **Capital negotiation fixes + log search (#185)** — a Manufacturer ordering its *own*
   equipment (or any cash-only item) now settles immediately as a self-build instead of
