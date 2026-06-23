@@ -2,14 +2,19 @@
 
 **Suggested owner:** Codex (training engine + tests).
 **Relates to:** training-staffing-2026-05 (per-concurrent-course staffing), training-shared-classrooms.
-**Base off:** `origin/pre-release` (currently `94bf44c`). `git fetch` first; cut
-`codex/education-self-training-deadlock-2026-06-22` off it.
+**Base off:** `origin/pre-release` at **`9e07b41`** (the commit that added these briefs) or
+later. This is the exact, canonical version — `git fetch origin` and confirm
+`git rev-parse origin/pre-release` resolves to `9e07b41` (or a newer pre-release tip).
 
 ## Rules of engagement (Codex — read every time)
 
-- **Worktrees / no shared trees.** Work in the **primary checkout**
-  (`/Users/ashleysilver/Documents/projects/island-traders`). Claude works in a separate
-  `claude/*` worktree — do not edit it or run `git reset/checkout/stash` against it.
+- **Worktrees / no shared trees — do NOT use the primary checkout.** The primary checkout
+  (`/Users/ashleysilver/Documents/projects/island-traders`) currently holds **unrelated
+  uncommitted Claude work** (in-progress room-rejoin edits to `server/app.py` +
+  `tests/test_server/test_join_rejoin.py` on branch `claude/integrate-qol-pollution-48-45`).
+  Ignore it and leave it untouched. Create your **own dedicated worktree** off the base and
+  work there — this is exactly how PR #192 was done:
+  `git fetch origin && git worktree add -b codex/education-self-training-deadlock-2026-06-22 ../it-codex-education origin/pre-release`
 - **Branch.** Cut a fresh branch off the base above; never commit onto `pre-release`/`master`.
 - **PRs only.** Reach `pre-release` through a PR Claude merges. Update `RELEASE_NOTES.md` and
   bump `APP_VERSION` `.N` in `constants.py`.
@@ -82,7 +87,7 @@ Candidate mechanisms (Codex chooses, justify in PR):
   state, faculty fully committed) and proving the new behaviour lets the Educator train its
   own faculty and subsequently accept an external trainee.
 - Self-training does not permanently starve external requests.
-- Full `pytest` suite green (baseline: **799 passing** on `94bf44c`).
+- Full `pytest` suite green (baseline: **799 passing** on `9e07b41`).
 
 ## Coordinate
 

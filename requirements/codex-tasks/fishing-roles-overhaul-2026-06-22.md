@@ -2,14 +2,19 @@
 
 **Suggested owner:** Codex (profession model + production engine + constants + tests).
 **Relates to:** engineer-specialisation, balance-calibration, the Farmer specialist model.
-**Base off:** `origin/pre-release` (currently `94bf44c`). `git fetch` first; cut
-`codex/fishing-roles-overhaul-2026-06-22` off it.
+**Base off:** `origin/pre-release` at **`9e07b41`** (the commit that added these briefs) or
+later. This is the exact, canonical version — `git fetch origin` and confirm
+`git rev-parse origin/pre-release` resolves to `9e07b41` (or a newer pre-release tip).
 
 ## Rules of engagement (Codex — read every time)
 
-- **Worktrees / no shared trees.** Work in the **primary checkout**
-  (`/Users/ashleysilver/Documents/projects/island-traders`). Claude works in a separate
-  `claude/*` worktree — do not edit it or run `git reset/checkout/stash` against it.
+- **Worktrees / no shared trees — do NOT use the primary checkout.** The primary checkout
+  (`/Users/ashleysilver/Documents/projects/island-traders`) currently holds **unrelated
+  uncommitted Claude work** (in-progress room-rejoin edits to `server/app.py` +
+  `tests/test_server/test_join_rejoin.py` on branch `claude/integrate-qol-pollution-48-45`).
+  Ignore it and leave it untouched. Create your **own dedicated worktree** off the base and
+  work there — this is exactly how PR #192 was done:
+  `git fetch origin && git worktree add -b codex/fishing-roles-overhaul-2026-06-22 ../it-codex-fishing origin/pre-release`
 - **Branch.** Cut a fresh branch off the base above; never commit onto `pre-release`/`master`.
 - **PRs only.** Reach `pre-release` through a PR Claude merges. Update `RELEASE_NOTES.md` and
   bump `APP_VERSION` `.N` in `constants.py`.
@@ -68,9 +73,9 @@ Add to `Profession` enum + all the tables that every other profession appears in
   require 2 Fish Processing Technicians each** (4 total). Confirm capacity stacks linearly
   with boat count via `effective_capital_inventory()`.
 
-> **Open question — confirm with the user.** The brief text says "Two fishing boats … will
-> require an additional Fish Processing Technician." Literally "2 per boat" ⇒ 2 boats need
-> 4. Implement **2 per boat** (so 2 boats ⇒ 4) and flag this in the PR for confirmation.
+> **Confirmed (user, 2026-06-22):** **2 Fish Processing Technicians per boat** — so 2 boats
+> require 4 technicians. Implement exactly this; ignore the "one additional per 2nd boat"
+> phrasing.
 
 ### 3. Farming specialist model — penalty → optional bonus
 
@@ -92,10 +97,11 @@ in `constants.py` so balance can tune them.
 - 1 Marine Biologist
 - 2 Fish Processing Technicians
 
-Decide with balance whether the existing 1 Horticulturalist + 1 Veterinarian seed stays
-(they are now optional bonuses). Default: **keep them** so the starting island isn't
-weaker than today. Update `STARTING_TOTAL_WORKERS["Farmer"]` / band splits accordingly so
-totals stay consistent.
+**Keep** the existing 1 Horticulturalist + 1 Veterinarian seed (confirmed by user — they
+are now optional bonuses but the starting island should not be weaker than today). So the
+Farmer seed becomes: 1 Farmer, 1 Horticulturalist, 1 Veterinarian, **1 Marine Biologist,
+2 Fish Processing Technicians**. Update `STARTING_TOTAL_WORKERS["Farmer"]` / band splits
+accordingly so totals stay consistent.
 
 ### 5. Demand framing
 
@@ -120,13 +126,11 @@ rather than piling onto generic Farmers.
 - Training pipeline can train the two new professions (they appear in the trainable sets).
 - Balance tests (`tests/test_models/test_economy_balance.py`) still within tolerance — tune
   bonus magnitudes / costs if a role drifts out of band.
-- Full `pytest` suite green (baseline: **799 passing** on `94bf44c`).
+- Full `pytest` suite green (baseline: **799 passing** on `9e07b41`).
 
-## Open questions for the user (note in PR if unresolved)
+## Resolved (user, 2026-06-22)
 
-1. Fish Processing Technicians per boat: **2 per boat** assumed (2 boats ⇒ 4). Confirm vs
-   "one additional per second boat."
-2. Keep the starting Horticulturalist + Veterinarian now that they're optional bonuses?
-   (Default: keep.)
-3. Marine Biologist as a hard *requirement* for any Fish at all vs the **50% penalty**
-   chosen here. (Default: 50% penalty, per the brief wording.)
+1. **Fish Processing Technicians per boat: 2 per boat** (2 boats ⇒ 4). Ignore the "one extra
+   per 2nd boat" phrasing.
+2. **Keep** the starting Horticulturalist + Veterinarian (now optional bonuses).
+3. **50% fish-yield penalty** when no Marine Biologist is active (not a hard requirement).

@@ -2,14 +2,19 @@
 
 **Suggested owner:** Codex (engine model + capital catalogue + tests).
 **Relates to:** #185/#188 (capital orders, spares kits), Capital Orders III.
-**Base off:** `origin/pre-release` (currently `94bf44c`). `git fetch` first; cut
-`codex/spares-warehouse-storage-2026-06-22` off it.
+**Base off:** `origin/pre-release` at **`9e07b41`** (the commit that added these briefs) or
+later. This is the exact, canonical version — `git fetch origin` and confirm
+`git rev-parse origin/pre-release` resolves to `9e07b41` (or a newer pre-release tip).
 
 ## Rules of engagement (Codex — read every time)
 
-- **Worktrees / no shared trees.** Work in the **primary checkout**
-  (`/Users/ashleysilver/Documents/projects/island-traders`). Claude works in a separate
-  `claude/*` worktree — do not edit it or run `git reset/checkout/stash` against it.
+- **Worktrees / no shared trees — do NOT use the primary checkout.** The primary checkout
+  (`/Users/ashleysilver/Documents/projects/island-traders`) currently holds **unrelated
+  uncommitted Claude work** (in-progress room-rejoin edits to `server/app.py` +
+  `tests/test_server/test_join_rejoin.py` on branch `claude/integrate-qol-pollution-48-45`).
+  Ignore it and leave it untouched. Create your **own dedicated worktree** off the base and
+  work there — this is exactly how PR #192 was done:
+  `git fetch origin && git worktree add -b codex/spares-warehouse-storage-2026-06-22 ../it-codex-spares origin/pre-release`
 - **Branch.** Cut a fresh branch off the base above; never commit onto
   `pre-release`/`master`.
 - **PRs only.** Reach `pre-release` through a PR that Claude (integrator) merges. Link
@@ -42,34 +47,47 @@ warehouse capacity, spares production is capped at what fits.
 
 ## Spec
 
-### 1. New capital item — `manufacturer.warehouse`
+### 1. Two warehouse sizes (capital items)
 
-Add to `CAPITAL_CATALOGUE` (`constants_capacity.py`) under `role="Manufacturer"`:
+Each warehouse declares a `spares_storage` effect; total capacity is the **sum** across
+owned, maintained warehouse units. Add to `CAPITAL_CATALOGUE` (`constants_capacity.py`)
+under `role="Manufacturer"`:
 
-- `item_id="manufacturer.warehouse"`, sensible name ("Spares Warehouse"), cost in line with
-  other Manufacturer infra (suggest ~50 Dp — Codex tune against balance tests),
-  `delivery_seasons` consistent with siblings.
-- `effects={"spares_storage": 12}` — a **new effect key** meaning "+12 spares storage
-  capacity". Choose the key name to match existing `effects` conventions (`capacity`,
-  `labour_relief`, …); `spares_storage` is suggested.
-- Not `cash_only` (it is manufactured like other Manufacturer equipment), unless that
-  conflicts with the self-build settlement — confirm against the current
+- `manufacturer.small_warehouse` — **"Small Spares Warehouse"**, `effects={"spares_storage": 10}`.
+  This is the **starting warehouse** every Manufacturer island begins with (see §1a). Cheap;
+  cost/`delivery_seasons` in line with light infra.
+- `manufacturer.warehouse` — **"Spares Warehouse"**, `effects={"spares_storage": 12}`. The
+  standard orderable upgrade; cost in line with other Manufacturer infra (suggest ~50 Dp —
+  Codex tune against balance tests), `delivery_seasons` consistent with siblings.
+- Neither is `cash_only` (both are manufactured like other Manufacturer equipment) unless
+  that conflicts with self-build settlement — confirm against the current
   `_handle_capital_order` self-build path (a Manufacturer building its own warehouse must
   settle cleanly; self-build now settles immediately, see commit `94bf44c`).
 
+`spares_storage` is a **new effect key**; match existing `effects` conventions (`capacity`,
+`labour_relief`, …).
+
+### 1a. Starting warehouse
+
+Every Manufacturer island **starts with one `manufacturer.small_warehouse`** already built
+(10-spares capacity) so it can hold spares from turn one. Seed it where starting capital
+units are configured (game setup / starting-capital seeding — find how other starting
+capital is placed; if the Manufacturer has no starting capital today, add this unit).
+
 ### 2. Storage cap derivation
 
-Add a helper on `Player` (or alongside `effective_capital_inventory`) that returns the
-spares storage cap:
+Add a helper on `Player` (or alongside `effective_capital_inventory`) returning the total
+spares capacity as the **sum of `spares_storage` effects across owned, maintained warehouse
+units**:
 
 ```
-spares_capacity = 12 * (count of owned, maintained manufacturer.warehouse units)
+spares_capacity = Σ spares_storage(item) for each owned+maintained warehouse unit
+                = 10 (starting small warehouse) + 12 * (standard warehouses) + 10 * (extra small)
 ```
 
 Use `effective_capital_inventory()` so an unmaintained warehouse does not count that season
-(mirrors `_has_enhanced_metal_equipment`). A Manufacturer with **0 warehouses has 0 spares
-capacity** — decide with the user whether a small free baseline (e.g. 0 or a token) is
-desired; default to **0** (warehouse strictly required to hold spares).
+(mirrors `_has_enhanced_metal_equipment`). A new Manufacturer therefore starts at **10**
+capacity (one small warehouse); ordering one standard warehouse takes it to 22.
 
 ### 3. Enforce the cap in production
 
@@ -102,14 +120,16 @@ the handoff, don't silently change scope.)
 
 ## Tests
 
-- New warehouse item is in the catalogue and orderable; a Manufacturer self-build of a
+- Both warehouse items are in the catalogue and orderable; a Manufacturer self-build of a
   warehouse settles immediately (no negotiation deadlock).
-- `manufacture_spares` clamps to `12 * warehouses` and returns the clamped count.
-- 0 warehouses ⇒ 0 spares can be produced/held.
-- Adding a 2nd warehouse raises the cap to 24.
+- A new Manufacturer **starts with one small warehouse ⇒ capacity 10**.
+- `manufacture_spares` clamps to total warehouse capacity and returns the clamped count
+  (e.g. starting island can hold 10; the 11th spare is refused with a clear message).
+- Ordering one standard warehouse raises the cap to **22** (10 + 12).
 - An unmaintained warehouse does not count toward capacity.
-- Full `pytest` suite green (baseline: **799 passing** on `94bf44c`).
+- Full `pytest` suite green (baseline: **799 passing** on `9e07b41`).
 
-## Open question for the user (note in PR if unresolved)
+## Resolved (user, 2026-06-22)
 
-- Free baseline spares storage with 0 warehouses: **0** (assumed) vs a small token.
+- **Starting storage:** the island starts with **one small warehouse holding 10 spares**
+  (not 0). Additional standard warehouses add +12 each.
