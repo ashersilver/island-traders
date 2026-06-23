@@ -540,6 +540,9 @@ class GameManager:
         room = self.rooms.get(room_id)
         if not room or room.status != "waiting":
             return None
+        rejoin = self.rejoin_room_by_name(room_id, player_name)
+        if rejoin:
+            return rejoin
         human_count = sum(1 for p in room.players if p.is_human)
         if human_count >= room.max_players:
             return None

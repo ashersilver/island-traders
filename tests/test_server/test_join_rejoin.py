@@ -46,3 +46,17 @@ def test_rejoin_is_case_insensitive_and_rejects_unknown_name():
 
     # A name nobody used -> no reconnect (endpoint would 400).
     assert mgr.rejoin_room_by_name(room.room_id, "Ghost") is None
+
+
+def test_waiting_room_join_with_existing_name_reuses_seat():
+    mgr = GameManager()
+    room = mgr.create_room("Trading Hole", creator_name="Agricola")
+    creator_id = room.creator_id
+
+    result = mgr.join_room(room.room_id, "Agricola")
+
+    assert result is not None
+    _, lp = result
+    assert lp.player_id == creator_id
+    assert room.creator_id == creator_id
+    assert [p.name for p in room.players] == ["Agricola"]
