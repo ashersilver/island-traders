@@ -5,7 +5,13 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.4`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.5`.
+
+- **Waiting-room join idempotent by name** — re-joining a waiting room with a name
+  already seated now reuses that seat instead of creating a duplicate
+  (`GameManager.join_room` tries `rejoin_room_by_name` first). Fixes the duplicate-seat
+  root cause behind the AI-lockout bug from the server side; extends the existing
+  reconnect-by-name design to the waiting-room path.
 
 - **Manufacturer spares warehouse storage (#185/#188)** — Manufacturing now has
   Small Spares Warehouse (+10 spares) and Spares Warehouse (+12 spares) capital
