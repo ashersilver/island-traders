@@ -5,7 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.6`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.7`.
+
+- **Fishing roles overhaul** — Agriculture now has Marine Biologist
+  (Manager) and Fish Processing Technician (Technician) professions. Fish
+  output takes a 50% penalty without an active Marine Biologist, fishing boats
+  need 2 Fish Processing Technicians each and scale yield linearly when
+  staffed, and the Farmer starting workforce includes 1 Marine Biologist + 2
+  Fish Processing Technicians while keeping its starting Horticulturalist and
+  Veterinarian. Horticulturalists now provide an optional +35% Grain/Produce
+  bonus year-round, and Veterinarians provide an optional +50% Meat bonus
+  year-round; the old Autumn/Winter missing-specialist penalties are gone.
 
 - **Education self-training deadlock fix** — diagnosis: Educator faculty
   self-training was blocked by the same `_training_capacity_status` staffing

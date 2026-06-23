@@ -22,11 +22,13 @@ def test_band_classifications():
     assert band_of(Profession.BANKER)    == WorkerBand.MANAGER
     assert band_of(Profession.PROFESSOR) == WorkerBand.MANAGER
     assert band_of(Profession.FARMER)    == WorkerBand.MANAGER
+    assert band_of(Profession.MARINE_BIOLOGIST) == WorkerBand.MANAGER
     assert band_of(Profession.MINER)     == WorkerBand.MANAGER
 
     # Technicians: apprenticeship-trained
     assert band_of(Profession.MECHANIC)            == WorkerBand.TECHNICIAN
     assert band_of(Profession.FARMING_TECHNICIAN)  == WorkerBand.TECHNICIAN
+    assert band_of(Profession.FISH_PROCESSING_TECHNICIAN) == WorkerBand.TECHNICIAN
     assert band_of(Profession.MINING_TECHNICIAN)   == WorkerBand.TECHNICIAN
     assert band_of(Profession.VETERINARIAN)        == WorkerBand.TECHNICIAN
     assert band_of(Profession.ASSEMBLY_WORKER)     == WorkerBand.TECHNICIAN
@@ -167,6 +169,35 @@ def test_every_profession_has_a_label():
     from island_traders.models.profession import PROFESSION_LABEL
     for p in Profession:
         assert p in PROFESSION_LABEL, f"{p} missing from PROFESSION_LABEL"
+
+
+def test_every_role_profession_has_band_label_and_training_capacity():
+    from island_traders.constants import UNIVERSITY_CAPACITY
+    from island_traders.models.profession import PROFESSION_LABEL, ROLE_PROFESSIONS
+
+    for role, professions in ROLE_PROFESSIONS.items():
+        assert professions, f"{role} has no role professions"
+        for profession in professions:
+            assert profession in PROFESSION_BAND, f"{role}: {profession} missing band"
+            assert profession in PROFESSION_LABEL, f"{role}: {profession} missing label"
+            if profession != Profession.CHEF:
+                assert profession.value in UNIVERSITY_CAPACITY, (
+                    f"{role}: {profession.value} missing university capacity"
+                )
+
+
+def test_farmer_fishing_professions_are_trainable_and_seeded():
+    from island_traders.constants import STARTING_WORKERS_BY_PROFESSION
+    from island_traders.models.profession import ROLE_PROFESSIONS
+
+    assert Profession.MARINE_BIOLOGIST in ROLE_PROFESSIONS["Farmer"]
+    assert Profession.FISH_PROCESSING_TECHNICIAN in ROLE_PROFESSIONS["Farmer"]
+
+    farmer_seed = dict(STARTING_WORKERS_BY_PROFESSION["Farmer"])
+    assert farmer_seed["Marine Biologist"] == 1
+    assert farmer_seed["Fish Processing Technician"] == 2
+    assert farmer_seed["Horticulturalist"] == 1
+    assert farmer_seed["Veterinarian"] == 1
 
 
 def test_playtest_phantom_titles_are_resolved():

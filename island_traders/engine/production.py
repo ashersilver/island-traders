@@ -12,6 +12,10 @@ from ..constants import (
     KITCHEN_SPECS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
     EXPERTISE_DEGRADATION_ENABLED, UNIQUE_SPECIALIST_PROFESSION,
+    FARMER_HORTICULTURALIST_BONUS_MULTIPLIER,
+    FARMER_VETERINARIAN_BONUS_MULTIPLIER,
+    FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER,
+    FISH_PROCESSING_TECHNICIANS_PER_BOAT,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, find_item, recipe_for
@@ -55,27 +59,39 @@ class ProductionEngine:
     def _has_active_profession(self, player: Player, profession: str) -> bool:
         return any(w.profession == profession for w in player.workforce.active_workers)
 
-    def _farmer_specialist_multiplier(
-        self, player: Player, output: ResourceType, season_name: str
-    ) -> float:
-        """Late-season Farmer penalties when specialist depth is missing.
-
-        After the first two seasons, Produce needs a Horticulturalist and Meat
-        needs a Veterinarian to avoid a 25% productivity drop.
-        """
-        if season_name not in {"Autumn", "Winter"}:
+    def _farmer_output_multiplier(self, player: Player, output: ResourceType) -> float:
+        """Farmer specialist bonuses and fishing-line staffing modifiers."""
+        if output in (ResourceType.GRAIN, ResourceType.PRODUCE):
+            if self._has_active_profession(player, Profession.HORTICULTURALIST.value):
+                return FARMER_HORTICULTURALIST_BONUS_MULTIPLIER
             return 1.0
-        if (
-            output == ResourceType.PRODUCE
-            and not self._has_active_profession(player, "Horticulturalist")
-        ):
-            return 0.75
-        if (
-            output == ResourceType.MEAT
-            and not self._has_active_profession(player, "Veterinarian")
-        ):
-            return 0.75
+        if output == ResourceType.MEAT:
+            if self._has_active_profession(player, Profession.VETERINARIAN.value):
+                return FARMER_VETERINARIAN_BONUS_MULTIPLIER
+            return 1.0
+        if output == ResourceType.FISH:
+            return self._farmer_fish_multiplier(player)
         return 1.0
+
+    def _farmer_fish_multiplier(self, player: Player) -> float:
+        multiplier = 1.0
+        if not self._has_active_profession(player, Profession.MARINE_BIOLOGIST.value):
+            multiplier *= FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER
+
+        boats = player.effective_capital_inventory().get("farmer.fishing_boat", 0)
+        if boats <= 0:
+            return multiplier
+
+        technicians_needed = boats * FISH_PROCESSING_TECHNICIANS_PER_BOAT
+        technicians = player.workforce.count_profession(
+            Profession.FISH_PROCESSING_TECHNICIAN.value
+        )
+        multiplier *= min(1.0, technicians / technicians_needed)
+
+        # The first boat preserves the old base yield; additional boats scale
+        # the fishing line linearly while capacity still caps impossible output.
+        multiplier *= boats
+        return multiplier
     def _has_enhanced_metal_equipment(self, player: Player) -> bool:
         # Effective inventory: unmaintained units don't count this season.
         return player.effective_capital_inventory().get(
@@ -489,7 +505,7 @@ class ProductionEngine:
                     continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
-                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
+                    qty = int(qty * self._farmer_output_multiplier(player, r))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     # Deduct freight surcharge for Manufacturer shipment
@@ -564,7 +580,7 @@ class ProductionEngine:
                     continue
                 qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
                 if role.name == "Farmer":
-                    qty = int(qty * self._farmer_specialist_multiplier(player, r, season_name))
+                    qty = int(qty * self._farmer_output_multiplier(player, r))
                 qty += event_result.productivity_bonus
                 if qty > 0:
                     outputs[r] = outputs.get(r, 0) + qty
@@ -702,16 +718,14 @@ class ProductionEngine:
                     })
             if role.name == "Farmer":
                 # Meat is a deliberate livestock line: 4 Grain feedstock per
-                # Meat, with Veterinarian depth protecting late-season output.
+                # Meat, with Veterinarian depth boosting output.
                 meat_capacity = self._capacity_limit(
                     player, role.name, ResourceType.MEAT, season_name
                 )
                 if meat_capacity and meat_capacity > 0:
                     meat_max = int(
                         meat_capacity
-                        * self._farmer_specialist_multiplier(
-                            player, ResourceType.MEAT, season_name
-                        )
+                        * self._farmer_output_multiplier(player, ResourceType.MEAT)
                     )
                     if meat_max > 0:
                         options.append({

@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.6"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.7"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -234,6 +234,11 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     },
 }
 
+FARMER_HORTICULTURALIST_BONUS_MULTIPLIER: float = 1.35
+FARMER_VETERINARIAN_BONUS_MULTIPLIER: float = 1.50
+FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER: float = 0.50
+FISH_PROCESSING_TECHNICIANS_PER_BOAT: int = 2
+
 # ForgeHaven (Manufacturer) produces one of four specialised product lines each season.
 # The player (or AI) chooses which line to run at the start of production.
 # Keys match ResourceType values for the output resource.
@@ -419,7 +424,13 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # (6 total) — matches the Doctor block below, STARTING_TRAINED_FRACTION = 1.00,
 # and RULES.md. Revisit if the Apprenticeship pipeline reshapes the medical tiers.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 1), ("Horticulturalist", 1), ("Veterinarian", 1)],
+    "Farmer":        [
+        ("Farmer", 1),
+        ("Horticulturalist", 1),
+        ("Veterinarian", 1),
+        ("Marine Biologist", 1),
+        ("Fish Processing Technician", 2),
+    ],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
     "Transporter":   [
         ("LogisticsManager", 1),     # Manager
@@ -599,7 +610,10 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
+    "Farmer":       [
+        "Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian",
+        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef",
+    ],
     "Miner":        [
         "Miner", "MiningTechnician", "MiningForeman",
         "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
@@ -726,7 +740,9 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Mechanic":             4,    # multi-island Technician (Apprenticeship pipeline)
     # Agriculture
     "Farmer":               2,
+    "Marine Biologist":     2,
     "FarmingTechnician":    4,
+    "Fish Processing Technician": 8,
     "Horticulturalist":      2,
     "Veterinarian":         1,
     # Manufacturing
