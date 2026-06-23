@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.5`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.6`.
+
+- **Education self-training deadlock fix** — diagnosis: Educator faculty
+  self-training was blocked by the same `_training_capacity_status` staffing
+  gate used for external courses; once Professor/Lecturer or
+  TechnicalDirector/Instructor course capacity was fully committed,
+  self-training could not start and the island could not grow the staff needed
+  to clear the jam. Faculty self-training now has one reserved Manager lane
+  and one reserved Technician lane beyond ordinary staffing, while still
+  consuming Courses, Expertise/Reagents, and workshop seats. The turn log marks
+  when a cohort starts via the reserved lane and defers additional self-training
+  while that lane is occupied.
 
 - **Waiting-room join idempotent by name** — re-joining a waiting room with a name
   already seated now reuses that seat instead of creating a duplicate

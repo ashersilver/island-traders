@@ -95,6 +95,14 @@ class TurnAction(Enum):
     END_TURN           = "end_turn"
 
 
+EDUCATOR_SELF_TRAINING_FACULTY: frozenset[str] = frozenset({
+    Profession.PROFESSOR.value,
+    Profession.LECTURER.value,
+    Profession.TECHNICAL_DIRECTOR.value,
+    Profession.INSTRUCTOR.value,
+})
+
+
 @dataclass
 class TurnResult:
     player_id: int
@@ -1394,6 +1402,9 @@ class TurnManager:
                         f"once that capacity frees up."
                     )
                     continue
+                lane_note = self._self_training_reserved_lane_note(
+                    player, req, year, season_index
+                )
                 used_desc = self._consume_training_capacity(player, req, year, season_index)
                 self.training.educator_approve(req.batch_id)
                 self.training.dispatch(req.batch_id, year, season_index)
@@ -1408,7 +1419,8 @@ class TurnManager:
                 self.io.print(
                     f"  {len(req.worker_ids)} worker(s) entered on-island "
                     f"training as {self._profession_label(req.target_profession)} "
-                    f"({used_desc}); return: {self._format_training_return(req)}."
+                    f"({used_desc}{lane_note}); return: "
+                    f"{self._format_training_return(req)}."
                 )
             return
 
@@ -1920,11 +1932,19 @@ class TurnManager:
                 educator.player_id, year, season
             )
             if max_concurrent - in_flight < need_courses:
-                return False, (
-                    f"Manager-course staffing full: {in_flight}/{max_concurrent} "
-                    f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
-                    f"have {prof} Professor(s), {lect} Lecturer(s))."
+                lane_blocker = self._self_training_reserved_lane_blocker(
+                    req, WorkerBand.MANAGER
                 )
+                if lane_blocker:
+                    return False, lane_blocker
+                if not self._self_training_reserved_lane_available(
+                    req, WorkerBand.MANAGER
+                ):
+                    return False, (
+                        f"Manager-course staffing full: {in_flight}/{max_concurrent} "
+                        f"concurrent courses (need 0.5 Professor + 1 Lecturer per course; "
+                        f"have {prof} Professor(s), {lect} Lecturer(s))."
+                    )
             expertise_needed = self._training_expertise_needed(req, need_courses)
             if educator.inventory.get(ResourceType.EXPERTISE) < expertise_needed:
                 return False, f"needs {expertise_needed} Expertise for this course."
@@ -1950,11 +1970,20 @@ class TurnManager:
                 educator.player_id, year, season
             )
             if max_concurrent - courses_in_flight < need_courses:
-                return False, (
-                    f"Technical-course staffing full: {courses_in_flight}/{max_concurrent} "
-                    f"concurrent courses (need 0.5 Technical Director + 1 Instructor per course; "
-                    f"have {td} Technical Director(s), {inst} Instructor(s))."
+                lane_blocker = self._self_training_reserved_lane_blocker(
+                    req, WorkerBand.TECHNICIAN
                 )
+                if lane_blocker:
+                    return False, lane_blocker
+                if not self._self_training_reserved_lane_available(
+                    req, WorkerBand.TECHNICIAN
+                ):
+                    return False, (
+                        f"Technical-course staffing full: "
+                        f"{courses_in_flight}/{max_concurrent} concurrent courses "
+                        f"(need 0.5 Technical Director + 1 Instructor per course; "
+                        f"have {td} Technical Director(s), {inst} Instructor(s))."
+                    )
             # Workshop gate — per-trainee (each workshop holds 6 trainees
             # at once; sum trainee headcount across all in-flight batches).
             if workshop_seats > 0:
@@ -1979,6 +2008,72 @@ class TurnManager:
                 )
             return True, ""
         return True, ""
+
+    def _is_educator_faculty_self_training(self, req, band: WorkerBand) -> bool:
+        return (
+            req.transport_mode == "self_training"
+            and req.requester_id == req.educator_id
+            and req.target_profession in EDUCATOR_SELF_TRAINING_FACULTY
+            and band_of(req.target_profession) == band
+        )
+
+    def _active_faculty_self_training_lanes(
+        self, educator_id: int, band: WorkerBand
+    ) -> int:
+        return sum(
+            1
+            for request in self.training.all_requests()
+            if self._is_educator_faculty_self_training(request, band)
+            and request.educator_id == educator_id
+            and request.status in (
+                TrainingStatus.AWAITING_TRANSPORT,
+                TrainingStatus.DISPATCHED,
+            )
+        )
+
+    def _self_training_reserved_lane_available(self, req, band: WorkerBand) -> bool:
+        return (
+            self._is_educator_faculty_self_training(req, band)
+            and self._active_faculty_self_training_lanes(req.educator_id, band) == 0
+        )
+
+    def _self_training_reserved_lane_blocker(self, req, band: WorkerBand) -> str:
+        if not self._is_educator_faculty_self_training(req, band):
+            return ""
+        active = self._active_faculty_self_training_lanes(req.educator_id, band)
+        if active <= 0:
+            return ""
+        return (
+            f"faculty self-training reserved lane full: {active}/1 active "
+            f"{band.value} self-training cohort(s)."
+        )
+
+    def _self_training_reserved_lane_note(
+        self,
+        educator: Player,
+        req,
+        year: int | None = None,
+        season: int | None = None,
+    ) -> str:
+        band = band_of(req.target_profession)
+        if not self._is_educator_faculty_self_training(req, band):
+            return ""
+        need_courses = self._incremental_courses_for_request(req, year, season)
+        if band == WorkerBand.MANAGER:
+            capacity = self._manager_course_capacity(educator)
+            in_flight = self.training.manager_courses_in_flight(
+                educator.player_id, year, season
+            )
+        elif band == WorkerBand.TECHNICIAN:
+            capacity = self._technical_course_capacity(educator)
+            in_flight = self.training.technical_courses_in_flight(
+                educator.player_id, year, season
+            )
+        else:
+            return ""
+        if capacity - in_flight >= need_courses:
+            return ""
+        return "; admitted via the reserved faculty self-training lane"
 
     @staticmethod
     def _training_reagents_needed(req, need_courses: int) -> int:
