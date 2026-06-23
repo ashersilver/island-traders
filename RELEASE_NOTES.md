@@ -5,7 +5,14 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.7`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.8`.
+
+- **Capital negotiation accept box no longer sticks (#185)** — when a Manufacturer accepts a
+  capital order, the settlement returns a `capital_order_ack`-shaped payload; the frontend
+  now clears the settled negotiation from the awaiting list **and** the push buffer on that
+  ack, so the review box disappears and a following `game_state` can't re-inject it.
+  Previously the box stayed and re-clicking returned "Capital negotiation #N is not awaiting
+  your response".
 
 - **Fishing roles overhaul** — Agriculture now has Marine Biologist
   (Manager) and Fish Processing Technician (Technician) professions. Fish

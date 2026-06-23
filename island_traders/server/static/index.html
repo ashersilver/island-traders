@@ -3018,6 +3018,19 @@ function _applyCapNegToState(n, me) {
   }
 }
 
+// Forget a negotiation entirely (settled/declined) — drop it from the push
+// buffer and both local lists. Used when only the id is known (e.g. a
+// capital_order_ack-shaped settlement that carries negotiation_id but no payload).
+function _clearCapNeg(nid) {
+  if (nid == null) return;
+  _capNegBuffer.delete(nid);
+  if (!gameState) return;
+  gameState.capital_negotiations_awaiting_me =
+    (gameState.capital_negotiations_awaiting_me || []).filter(x => x.negotiation_id !== nid);
+  gameState.my_capital_negotiations =
+    (gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid);
+}
+
 function _reapplyCapNegBuffer() {
   const me = _myEnginePlayerId();
   if (me == null || !_capNegBuffer.size) return;
@@ -4154,6 +4167,13 @@ function handleMessage(msg) {
         + (msg.spares_kits ? ` (+${msg.spares_kits} spares kit(s))` : '')
         + financeNote + '.', 'ok');
       showToast(`Order placed: ${msg.name}`);
+      // A manufacturer-accept settles via this capital_order_ack-shaped payload
+      // (the settlement's type overwrites the negotiation ack). Clear the now-
+      // settled negotiation from the awaiting list + push buffer so its review
+      // box disappears and a stale game_state can't re-inject it.
+      if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+      else if (msg.negotiation_id != null) _clearCapNeg(msg.negotiation_id);
+      renderCapitalNegotiationAlerts();
       break;
     case 'capital_negotiation':
       onCapitalNegotiationPush(msg);
