@@ -30,6 +30,8 @@ class Profession(str, Enum):
     FARMING_TECHNICIAN   = "FarmingTechnician"
     HORTICULTURALIST     = "Horticulturalist"
     VETERINARIAN         = "Veterinarian"
+    MARINE_BIOLOGIST     = "Marine Biologist"
+    FISH_PROCESSING_TECHNICIAN = "Fish Processing Technician"
     ASSEMBLY_WORKER      = "AssemblyWorker"
     FACTORY_FOREMAN      = "FactoryForeman"
     MINER                = "Miner"
@@ -92,6 +94,8 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.FARMING_TECHNICIAN:  WorkerBand.TECHNICIAN,
     Profession.HORTICULTURALIST:    WorkerBand.TECHNICIAN,
     Profession.VETERINARIAN:        WorkerBand.TECHNICIAN,
+    Profession.MARINE_BIOLOGIST:    WorkerBand.MANAGER,
+    Profession.FISH_PROCESSING_TECHNICIAN: WorkerBand.TECHNICIAN,
     Profession.ASSEMBLY_WORKER:     WorkerBand.TECHNICIAN,
     Profession.FACTORY_FOREMAN:      WorkerBand.TECHNICIAN,
     Profession.MINER:               WorkerBand.MANAGER,    # mining engineer / geologist
@@ -141,8 +145,11 @@ def band_of(profession: Profession | str) -> WorkerBand:
 # The first title in each list is the "primary" label used when summarising counts.
 BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     "Farmer": {
-        WorkerBand.MANAGER:    ["Farmer"],
-        WorkerBand.TECHNICIAN: ["Farming Technician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
+        WorkerBand.MANAGER:    ["Farmer", "Marine Biologist"],
+        WorkerBand.TECHNICIAN: [
+            "Farming Technician", "Fish Processing Technician",
+            "Horticulturalist", "Veterinarian", "Mechanic", "Chef",
+        ],
         WorkerBand.WORKER:     ["Farmhand"],
     },
     "Miner": {
@@ -194,6 +201,7 @@ EDUCATION_SEASONS: dict[Profession, int] = {
     Profession.NURSE:             1,
     Profession.ENGINEER:          3,
     Profession.FARMER:             2,
+    Profession.MARINE_BIOLOGIST:   2,
     Profession.MINER:              2,
     Profession.BANKER:             2,
     Profession.MEDICAL_RESEARCHER: 2,
@@ -211,6 +219,7 @@ EDUCATION_SEASONS: dict[Profession, int] = {
 # settling_seasons_on_return.
 APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.FARMING_TECHNICIAN:  1,
+    Profession.FISH_PROCESSING_TECHNICIAN: 1,
     Profession.HORTICULTURALIST:    1,
     Profession.VETERINARIAN:        1,
     Profession.ASSEMBLY_WORKER:     1,
@@ -248,7 +257,16 @@ APPRENTICESHIP_SETTLING_EFFICIENCY: float = 0.50
 # Which professions are primarily associated with each island role.
 # Used to filter available training options for each player.
 ROLE_PROFESSIONS: dict[str, list[Profession]] = {
-    "Farmer":        [Profession.FARMER, Profession.FARMING_TECHNICIAN, Profession.HORTICULTURALIST, Profession.VETERINARIAN, Profession.MECHANIC, Profession.CHEF],
+    "Farmer":        [
+        Profession.FARMER,
+        Profession.FARMING_TECHNICIAN,
+        Profession.HORTICULTURALIST,
+        Profession.VETERINARIAN,
+        Profession.MARINE_BIOLOGIST,
+        Profession.FISH_PROCESSING_TECHNICIAN,
+        Profession.MECHANIC,
+        Profession.CHEF,
+    ],
     "Miner":         [
         Profession.MINER,
         Profession.MINING_TECHNICIAN,
@@ -293,6 +311,7 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
 # Training that uses lab Reagents in addition to normal Expertise/Course slots.
 SCIENCE_TRAINING_PROFESSIONS: set[Profession] = {
     Profession.FARMER,
+    Profession.MARINE_BIOLOGIST,
     Profession.HORTICULTURALIST,
     Profession.VETERINARIAN,
     Profession.MINER,
@@ -315,6 +334,8 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.FARMING_TECHNICIAN:  "Farming Technician",
     Profession.HORTICULTURALIST:    "Horticulturalist",
     Profession.VETERINARIAN:        "Veterinarian",
+    Profession.MARINE_BIOLOGIST:    "Marine Biologist",
+    Profession.FISH_PROCESSING_TECHNICIAN: "Fish Processing Technician",
     Profession.ASSEMBLY_WORKER:     "Assembly Tech",
     Profession.FACTORY_FOREMAN:     "Factory Foreman",
     Profession.MINER:               "Miner (specialist)",

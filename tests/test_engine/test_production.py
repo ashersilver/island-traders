@@ -224,6 +224,10 @@ def test_production_options_show_per_product_current_max(normal_event):
     farmer.add_capital("farmer.tractor")
     farmer.add_capital("farmer.fishing_boat")
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value)
+    farmer.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
     farmer.receive_resources(ResourceType.OIL, 10)
@@ -234,6 +238,74 @@ def test_production_options_show_per_product_current_max(normal_event):
 
     assert by_output[ResourceType.GRAIN]["max_qty"] == 24
     assert by_output[ResourceType.FISH]["max_qty"] == 24
+
+
+def test_fish_yield_halves_without_marine_biologist(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    staffed = Player(201, "Biology Boat", [ROLES["Farmer"]], 100.0, is_human=True)
+    staffed.add_capital("farmer.fishing_boat")
+    staffed.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    staffed.workforce.add_workers(1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value)
+    staffed.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
+    staffed.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    staffed.receive_resources(ResourceType.OIL, 10)
+
+    no_biologist = Player(202, "Guesswork Boat", [ROLES["Farmer"]], 100.0, is_human=True)
+    no_biologist.add_capital("farmer.fishing_boat")
+    no_biologist.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    no_biologist.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
+    no_biologist.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    no_biologist.receive_resources(ResourceType.OIL, 10)
+
+    engine = ProductionEngine()
+    staffed_fish = next(
+        option for option in engine.production_options(staffed, normal_event, "Spring")
+        if option["output"] == ResourceType.FISH
+    )
+    no_biologist_fish = next(
+        option for option in engine.production_options(no_biologist, normal_event, "Spring")
+        if option["output"] == ResourceType.FISH
+    )
+
+    assert staffed_fish["max_qty"] == 24
+    assert no_biologist_fish["max_qty"] == 12
+
+
+def test_fish_processing_technicians_staff_two_per_boat(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    engine = ProductionEngine()
+
+    def fish_option(boats: int, techs: int) -> int:
+        farmer = Player(203 + boats + techs, "Fleet", [ROLES["Farmer"]], 100.0, is_human=True)
+        farmer.add_capital("farmer.fishing_boat", boats)
+        farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+        farmer.workforce.add_workers(
+            1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value
+        )
+        farmer.workforce.add_workers(
+            techs,
+            training_level=1,
+            profession=Profession.FISH_PROCESSING_TECHNICIAN.value,
+        )
+        farmer.workforce.add_workers(12, profession=Profession.UNSKILLED.value)
+        farmer.receive_resources(ResourceType.OIL, 10)
+        return next(
+            option for option in engine.production_options(farmer, normal_event, "Spring")
+            if option["output"] == ResourceType.FISH
+        )["max_qty"]
+
+    assert fish_option(1, 1) == 12
+    assert fish_option(1, 2) == 24
+    assert fish_option(2, 2) == 24
+    assert fish_option(2, 4) == 48
 
 
 def test_produce_product_makes_chosen_product_and_quantity_only(normal_event):
@@ -315,7 +387,7 @@ def test_meat_line_consumes_four_grain_per_unit(normal_event):
     assert farmer.inventory.get(ResourceType.GRAIN) == 0
 
 
-def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
+def test_farmer_specialists_are_year_round_optional_bonuses(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
@@ -327,7 +399,7 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
     bare.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     bare.workforce.add_workers(2, training_level=1, profession=Profession.MECHANIC.value)
     bare.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
-    bare.receive_resources(ResourceType.GRAIN, 40)
+    bare.receive_resources(ResourceType.GRAIN, 240)
 
     staffed = Player(214, "Staffed Farm", [ROLES["Farmer"]], 100.0, is_human=True)
     staffed.receive_resources(ResourceType.FARM_MACHINERY, 1)
@@ -338,23 +410,26 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
     staffed.workforce.add_workers(1, training_level=1, profession=Profession.HORTICULTURALIST.value)
     staffed.workforce.add_workers(1, training_level=1, profession=Profession.VETERINARIAN.value)
     staffed.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
-    staffed.receive_resources(ResourceType.GRAIN, 40)
+    staffed.receive_resources(ResourceType.GRAIN, 240)
 
     engine = ProductionEngine()
-    bare_preview = engine.production_preview(bare, normal_event, "Autumn")
-    staffed_preview = engine.production_preview(staffed, normal_event, "Autumn")
+    bare_preview = engine.production_preview(bare, normal_event, "Spring")
+    staffed_preview = engine.production_preview(staffed, normal_event, "Spring")
     bare_meat = next(
-        option for option in engine.production_options(bare, normal_event, "Autumn")
+        option for option in engine.production_options(bare, normal_event, "Spring")
         if option["output"] == ResourceType.MEAT
     )
     staffed_meat = next(
-        option for option in engine.production_options(staffed, normal_event, "Autumn")
+        option for option in engine.production_options(staffed, normal_event, "Spring")
         if option["output"] == ResourceType.MEAT
     )
 
-    assert bare_preview["outputs"][ResourceType.PRODUCE] == 54
-    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 72
-    assert bare_meat["max_qty"] == int(staffed_meat["max_qty"] * 0.75)
+    assert bare_preview["outputs"][ResourceType.GRAIN] == 24
+    assert bare_preview["outputs"][ResourceType.PRODUCE] == 24
+    assert staffed_preview["outputs"][ResourceType.GRAIN] == 32
+    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 32
+    assert bare_meat["max_qty"] == 40
+    assert staffed_meat["max_qty"] == 60
 
 
 def test_enhanced_crusher_smelter_increases_metal_capacity_and_reduces_oil(normal_event):
