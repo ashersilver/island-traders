@@ -4027,6 +4027,8 @@ class GameManager:
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
                 "banker_active_loans": loan_book["active"],
                 "banker_active_loan_cap": loan_book["cap"],
+                "spares_held": p.inventory.get(ResourceType.SPARES),
+                "spares_capacity": p.spares_capacity(),
                 # Structured per-loan detail (Issue #6 — Loan rollover UI).
                 # Includes both borrower-side and lender-side active loans
                 # so the dashboard can show roles consistently.

@@ -40,6 +40,21 @@ def test_combine_harvester_has_8_season_life():
     assert combine.name == "Combine Harvester"
 
 
+def test_manufacturer_spares_warehouses_are_catalogue_items():
+    small = find_item(CAPITAL_CATALOGUE, "manufacturer.small_warehouse")
+    standard = find_item(CAPITAL_CATALOGUE, "manufacturer.warehouse")
+
+    assert small is not None
+    assert small.role == "Manufacturer"
+    assert small.effects["spares_storage"] == 10
+    assert not small.effects.get("cash_only", False)
+
+    assert standard is not None
+    assert standard.role == "Manufacturer"
+    assert standard.effects["spares_storage"] == 12
+    assert not standard.effects.get("cash_only", False)
+
+
 def test_default_maintenance_fraction_is_three_percent():
     assert DEFAULT_MAINTENANCE_FRACTION == 0.03
 
@@ -119,6 +134,15 @@ def test_setup_seeds_farmer_with_aged_combine_harvester():
     assert p.capital_inventory.get("farmer.harvester", 0) == 1
     # Seeded acquired_tick = -age = -4 so age at start (tick 0) = 4.
     assert p.capital_acquired_ticks["farmer.harvester"] == [-4]
+
+
+def test_setup_seeds_manufacturer_with_small_spares_warehouse():
+    game = _service_game()
+    manufacturer = game.players[1]
+
+    assert manufacturer.capital_inventory.get("manufacturer.small_warehouse") == 1
+    assert manufacturer.capital_acquired_ticks["manufacturer.small_warehouse"] == [0]
+    assert manufacturer.spares_capacity() == 10
 
 
 def test_maintenance_charges_three_percent_of_cost_per_season():
@@ -498,13 +522,42 @@ def test_spares_resource_is_non_tradable():
         market.post_bid(buyer, ResourceType.SPARES, 5.0, 1)
 
 
-def test_manufacture_spares_adds_inventory_and_carries_no_price():
+def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_no_price():
     game = _service_game()
-    p = game.players[0]
-    assert p.manufacture_spares(2) == 2
-    assert p.inventory.get(ResourceType.SPARES) == 2
+    p = game.players[1]  # Manufacturer starts with one small warehouse (+10).
+
+    assert p.manufacture_spares(11) == 10
+    assert p.inventory.get(ResourceType.SPARES) == 10
+    assert p.manufacture_spares(1) == 0
+
+    p.add_capital("manufacturer.warehouse")
+    assert p.spares_capacity() == 22
+    assert p.manufacture_spares(20) == 12
+    assert p.inventory.get(ResourceType.SPARES) == 22
+
     # Held spares contribute nothing to tradable wealth (no price).
     assert game.market.current_prices().get(ResourceType.SPARES, 0.0) == 0.0
+
+
+def test_manufacture_spares_without_warehouse_produces_none():
+    game = _service_game()
+    owner = game.players[0]
+
+    assert owner.spares_capacity() == 0
+    assert owner.manufacture_spares(2) == 0
+    assert owner.inventory.get(ResourceType.SPARES) == 0
+
+
+def test_unmaintained_warehouse_does_not_count_toward_spares_capacity():
+    game = _service_game()
+    manufacturer = game.players[1]
+    manufacturer.add_capital("manufacturer.warehouse")
+
+    assert manufacturer.spares_capacity() == 22
+
+    manufacturer.unmaintained_capital = {"manufacturer.warehouse": 1}
+
+    assert manufacturer.spares_capacity() == 10
 
 
 def test_repair_with_attached_spare_halves_fee_and_consumes_it():
@@ -536,7 +589,7 @@ def test_repair_with_generic_spare_halves_fee_and_consumes_it():
     item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
     owner.add_capital(item.item_id, 1, acquired_tick=-8)   # no attached spare
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
-    owner.manufacture_spares(1)                            # generic spare on hand
+    owner.receive_resources(ResourceType.SPARES, 1)        # generic spare on hand
     manufacturer_start = manufacturer.dollops
 
     game._process_capital_maintenance(year=0, season=3)

@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.3"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -571,6 +571,12 @@ STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
         # old at start → expires end of Year 1 (aligns with the seeded
         # Farmer's retirement to create a real double squeeze).
         ("farmer.harvester", 1, 4),
+    ],
+    "Manufacturer": [
+        # Starting spares storage (2026-06-22): lets Forge hold 10 generic
+        # spares from turn one without making the opening-invest screen pay
+        # for baseline warehouse infrastructure.
+        ("manufacturer.small_warehouse", 1, 0),
     ],
 }
 
