@@ -5,7 +5,12 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.11`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.12`.
+
+- **Production schedule** — the Production Capacity panel now reads as a per-output schedule:
+  each line shows how much can be produced this season ("Produce up to N") and, when capped,
+  the limiting factor in plain English plus what to buy/train/build to lift it (e.g. "limited
+  by inputs — buy 4 Oil"). Helps the Manufacturer see what each product line can yield.
 
 - **Manufacturer producible lines (Goods + TransportEquipment)** — added a `Goods`
   production recipe and assembly-line capacity, and put `manufacturer.shipyard` in the

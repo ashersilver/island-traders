@@ -497,6 +497,12 @@ button:active{transform:scale(.97)}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
 .mkt-row .res{color:var(--text)}
+/* Production schedule rows (per-output capacity + limiting factor) */
+.prod-sched-row{padding:.18rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.prod-sched-row:last-child{border-bottom:none}
+.prod-sched-row .psr-top{display:flex;justify-content:space-between;align-items:center;font-size:.79rem}
+.prod-sched-row .psr-top .res{color:var(--text);font-weight:600}
+.prod-sched-row .psr-note{font-size:.68rem;color:var(--dim);margin-top:.05rem;line-height:1.25}
 .mkt-row .price{color:var(--gold);font-weight:600}
 .mkt-row .supply{color:var(--dim);font-size:.72rem}
 .market-mini{width:100%;border-collapse:collapse;font-size:.72rem;table-layout:fixed}
@@ -3251,17 +3257,36 @@ function renderCapacityPanel(capacity) {
     outEl.innerHTML = '';
     return;
   }
+  // Production schedule: per output, how much can be produced this season and —
+  // when something caps it — the limiting factor + what to buy/train to lift it.
+  const _shortText = (m) => Object.entries(m || {})
+    .map(([k, v]) => `${fmtQty(v)} ${k}`).join(', ');
   outEl.innerHTML = outputs.map(o => {
-    const max = (o.max_producible === null || o.max_producible === undefined)
-                  ? '∞' : o.max_producible;
-    const prefix = o.is_service_output ? 'underwrite up to ' : 'max ';
-    const colour = o.binding === 'inputs'    ? '#ff8a8a'
+    const unlimited = o.max_producible === null || o.max_producible === undefined;
+    const max = unlimited ? '∞' : fmtQty(o.max_producible);
+    const verb = o.is_service_output ? 'Underwrite up to' : 'Produce up to';
+    const blocked = !unlimited && Number(o.max_producible) <= 0;
+    const colour = blocked ? '#ff8a8a'
+                 : o.binding === 'inputs'    ? '#ff8a8a'
                  : o.binding === 'workforce' ? '#ffcc66'
                  : o.binding === 'equipment' ? '#88aaff'
-                 : 'var(--dim)';
-    return `<div class="mkt-row" title="Binding constraint: ${o.binding}">
-              <span class="res">${esc(o.output)}</span>
-              <span class="price" style="color:${colour}">${prefix}${max}</span>
+                 : 'var(--green)';
+    let note = '';
+    if (o.binding === 'inputs' && Object.keys(o.inputs_short || {}).length) {
+      note = `limited by inputs — buy ${_shortText(o.inputs_short)}`;
+    } else if (o.binding === 'workforce' && Object.keys(o.workforce_short || {}).length) {
+      note = `limited by staffing — need ${_shortText(o.workforce_short)}`;
+    } else if (o.binding === 'equipment' && Object.keys(o.equipment_short || {}).length) {
+      note = `limited by equipment — build ${_shortText(o.equipment_short)}`;
+    } else if (o.binding && o.binding !== 'none') {
+      note = `limited by ${o.binding}`;
+    }
+    return `<div class="prod-sched-row" title="Binding constraint: ${o.binding}">
+              <div class="psr-top">
+                <span class="res">${esc(o.output)}</span>
+                <span class="price" style="color:${colour}">${verb} ${max}</span>
+              </div>
+              ${note ? `<div class="psr-note">${esc(note)}</div>` : ''}
             </div>`;
   }).join('');
 }
