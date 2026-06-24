@@ -5,7 +5,13 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.8`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.9`.
+
+- **Build & Develop picker shows full status** — the capital build picker (`openCapitalPicker`)
+  now lists every island capital item with status instead of only the not-yet-owned subset:
+  buildable items and **failed units (⚠ rebuild)** are orderable, and an "Already built"
+  section shows owned/healthy ones. Fixes the playtest report where a Doctor's failed Vaccine
+  Lab was hidden and only 3 of 5 items appeared.
 
 - **Capital negotiation accept box no longer sticks (#185)** — when a Manufacturer accepts a
   capital order, the settlement returns a `capital_order_ack`-shaped payload; the frontend

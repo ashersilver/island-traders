@@ -2891,20 +2891,38 @@ function toggleCapOrderInfo(key) {
 function openCapitalPicker() {
   const me = gameState && gameState.players[myPlayerIdx];
   const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
-  const avail = cat.filter(c => c.owned <= 0);
-  if (!avail.length) {
-    showToast('No buildable equipment available for this island.');
+  if (!cat.length) {
+    showToast('No capital equipment is defined for this island.');
     return;
   }
-  if (avail.length === 1) { openCapitalOrder(avail[0].item_id); return; }
-  const el = document.getElementById('cap-pick-list');
-  el.innerHTML = avail.map(c => {
-    const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
-    const req = c.cash_only ? 'cash-only' : 'requires equipment';
-    return `<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
-      + `${esc(c.name)} — ${c.cost} Dp · ${req} · ${arrival}`
-      + (c.mandatory ? ' · Required' : '') + `</button>`;
-  }).join('');
+  // Show the FULL list with status so the player sees both what they can build
+  // and what they already own / what failed (and can rebuild) — not just the
+  // not-yet-owned subset.  Orderable = not-owned OR failed (rebuild a failure).
+  const orderable = cat.filter(c => (c.owned || 0) <= 0 || (c.failed || 0) > 0);
+  const builtHealthy = cat.filter(c => (c.owned || 0) > 0 && (c.failed || 0) <= 0);
+  if (orderable.length === 1 && !builtHealthy.length) {
+    openCapitalOrder(orderable[0].item_id); return;
+  }
+  const arrivalOf = c => c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+  const reqOf = c => c.cash_only ? 'cash-only' : 'requires equipment';
+  const rows = [];
+  for (const c of orderable) {
+    const failed = (c.failed || 0) > 0;
+    const tag = failed
+      ? `<span style="color:var(--red)">⚠ ${c.failed} failed — rebuild</span>`
+      : (c.mandatory ? '<span style="color:var(--gold)">Required</span>' : 'Build');
+    rows.push(`<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
+      + `${esc(c.name)} — ${c.cost} Dp · ${reqOf(c)} · ${arrivalOf(c)} · ${tag}</button>`);
+  }
+  if (builtHealthy.length) {
+    rows.push('<div style="margin:.35rem 0 .15rem;font-size:.72rem;color:var(--dim);'
+      + 'text-transform:uppercase;letter-spacing:.05em">Already built</div>');
+    for (const c of builtHealthy) {
+      rows.push(`<div style="text-align:left;opacity:.7;padding:.3rem .4rem;font-size:.8rem">`
+        + `✓ ${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''} — built</div>`);
+    }
+  }
+  document.getElementById('cap-pick-list').innerHTML = rows.join('');
   document.getElementById('capital-pick-overlay').classList.add('active');
 }
 function closeCapitalPicker() {
