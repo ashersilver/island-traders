@@ -5,7 +5,11 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.9`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.10`.
+
+- **Server errors now surface as a toast** — the client's `error` handler previously only wrote
+  the message to the activity log, so a failed action (e.g. a capital order the Manufacturer
+  can't fulfil) appeared to fail silently. Errors now also pop a toast.
 
 - **Build & Develop picker shows full status** — the capital build picker (`openCapitalPicker`)
   now lists every island capital item with status instead of only the not-yet-owned subset:

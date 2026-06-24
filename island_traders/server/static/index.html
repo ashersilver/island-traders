@@ -4324,7 +4324,11 @@ function handleMessage(msg) {
       addLog(`[${msg.from}] ${msg.text}`, 'info');
       break;
     case 'error':
+      // Surface server errors as a toast, not just a buried log line — a failed
+      // action (e.g. a capital order the Manufacturer can't fulfil) was
+      // previously silent because it only went to the activity log.
       addLog(msg.message, 'err');
+      showToast(msg.message, { type: 'error', ms: 8000 });
       break;
   }
 }
