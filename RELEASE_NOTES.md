@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.10`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.11`.
+
+- **Manufacturer producible lines (Goods + TransportEquipment)** — added a `Goods`
+  production recipe and assembly-line capacity, and put `manufacturer.shipyard` in the
+  Manufacturer's mandatory opening investment so TransportEquipment is buildable from setup.
+  Guards ensure every `MANUFACTURER_PRODUCT_LINES` output has both a recipe and a capital path.
+- **Local training needs no transport** — same-island / server-batch faculty training is
+  normalized to `self_training` with **0 PassengerSeats and 0 Educator fee**; cross-island
+  faculty training still requires PassengerSeats.
+- **App-level WebSocket heartbeat** — the server now answers `{"type":"ping"}` /
+  `{"type":"heartbeat"}` with a `pong` (echoing client timing fields), so clients/agents that
+  can't use protocol-level pings have an app-level keepalive + RTT path.
 
 - **Server errors now surface as a toast** — the client's `error` handler previously only wrote
   the message to the activity log, so a failed action (e.g. a capital order the Manufacturer

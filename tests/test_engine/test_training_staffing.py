@@ -382,6 +382,13 @@ def test_technical_workshop_is_mandatory_minimum_for_educator():
     assert "educator.technical_workshop" in MANDATORY_MINIMUM_INVESTMENT["Educator"]
 
 
+def test_shipyard_is_mandatory_minimum_for_manufacturer():
+    """TransportEquipment is a live manufacturer product line, so opening
+    setup needs a capital path that makes it buildable."""
+    from island_traders.constants_capacity import MANDATORY_MINIMUM_INVESTMENT
+    assert "manufacturer.shipyard" in MANDATORY_MINIMUM_INVESTMENT["Manufacturer"]
+
+
 def test_legacy_apprenticeship_slot_callers_updated():
     """All legacy slot-pool names from before the technical-workshop
     redesign — and the earlier per-course `technical_workshop_slots`

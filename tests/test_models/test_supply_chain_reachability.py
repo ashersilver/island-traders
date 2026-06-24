@@ -22,7 +22,7 @@ from island_traders.constants import (
     MANUFACTURER_PRODUCT_LINES,
     KITCHEN_SPECS,
 )
-from island_traders.constants_capacity import PRODUCTION_RECIPES
+from island_traders.constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 
 # "Protein" is a meta-ingredient in kitchen recipes: satisfied by Fish OR Meat.
 PROTEIN_SOURCES = {"Fish", "Meat"}
@@ -116,6 +116,48 @@ def test_every_capacity_recipe_output_is_actually_produced():
     assert not missing, (
         "These outputs have a capacity recipe but are never produced by the "
         f"active model (BASE_PRODUCTION/Farmer/Manufacturer/kitchen): {missing}"
+    )
+
+
+def test_every_manufacturer_product_line_has_capacity_recipe():
+    """Decision Hints read from PRODUCTION_RECIPES, so every live
+    Manufacturer product line needs a matching capacity recipe."""
+    recipe_outputs = {
+        recipe.output
+        for recipe in PRODUCTION_RECIPES
+        if recipe.role == "Manufacturer"
+    }
+    missing = sorted(
+        line["output"]
+        for line in MANUFACTURER_PRODUCT_LINES.values()
+        if line["output"] not in recipe_outputs
+    )
+    assert not missing, (
+        "Manufacturer product lines missing capacity recipes: "
+        f"{missing}"
+    )
+
+
+def test_every_manufacturer_product_line_has_capital_path():
+    """A manufacturer line with a recipe but no capital capacity still shows
+    up as blocked forever in Decision Hints."""
+    missing = []
+    for line in MANUFACTURER_PRODUCT_LINES.values():
+        output = line["output"]
+        has_path = any(
+            item.role == "Manufacturer"
+            and (
+                item.effects.get("capacity", {}).get(output, 0) > 0
+                or output in item.effects.get("unlocks_lines", [])
+            )
+            for item in CAPITAL_CATALOGUE
+        )
+        if not has_path:
+            missing.append(output)
+
+    assert not missing, (
+        "Manufacturer product lines missing capital capacity/unlock path: "
+        f"{sorted(missing)}"
     )
 
 

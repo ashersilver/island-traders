@@ -3147,6 +3147,9 @@ class GameManager:
                 transport_mode = "self_training"
             tickets = int(row.get("tickets_supplied_by_requester", 0) or 0)
             fee = float(row.get("dollops_to_educator", row.get("fee", 0.0)) or 0.0)
+            if transport_mode == "self_training":
+                tickets = 0
+                fee = 0.0
             specialty = str(row.get("specialty", row.get("engineer_specialty", "")) or "")
             duration = room.game.turn_manager._training_duration_for_selection(
                 profession,
@@ -4434,6 +4437,23 @@ class GameManager:
         except Exception:
             pass
 
+    @staticmethod
+    def heartbeat_ack(msg: dict) -> dict:
+        """Build an app-level WebSocket heartbeat acknowledgement.
+
+        Browser clients and agent adapters cannot rely on protocol-level ping
+        frames, so the Island Traders WS protocol accepts lightweight
+        ``{"type": "ping"}`` / ``{"type": "heartbeat"}`` messages and replies
+        with ``pong``. Echoing optional fields lets clients measure round-trip
+        time without the server needing to understand their clock format.
+        """
+        ack = {"type": "pong"}
+        for key in ("client_time", "sent_at", "nonce"):
+            if key in msg:
+                ack[key] = msg[key]
+        ack["server_time"] = time.time()
+        return ack
+
     def register_ws(self, room_id: str, lobby_player_id: str, ws) -> None:
         with self._ws_lock:
             if room_id not in self._ws_connections:
@@ -5550,7 +5570,9 @@ def create_app() -> FastAPI:
                     continue
 
                 msg_type = msg.get("type", "")
-                if msg_type == "response":
+                if msg_type in ("ping", "heartbeat"):
+                    await websocket.send_text(json.dumps(manager.heartbeat_ack(msg)))
+                elif msg_type == "response":
                     manager.handle_player_response(room_id, player_id, msg.get("value"))
                 elif msg_type == "get_state":
                     state = manager.get_game_state(room_id, player_id)

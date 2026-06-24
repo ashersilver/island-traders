@@ -216,6 +216,28 @@ def test_manufacturer_freight_surcharge_uses_board_scale_quantity():
     )
 
 
+def test_manufacturer_goods_and_transport_equipment_are_production_options(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.add_capital("manufacturer.shipyard")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 20)
+    manufacturer.receive_resources(ResourceType.OIL, 20)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 20)
+
+    options = ProductionEngine().production_options(
+        manufacturer,
+        normal_event,
+        season_name="Spring",
+    )
+    by_line = {option["product_line"]: option for option in options}
+
+    assert by_line["Goods"]["output"] == ResourceType.GOODS
+    assert by_line["Goods"]["max_qty"] > 0
+    assert by_line["TransportEquipment"]["output"] == ResourceType.TRANSPORT_EQUIPMENT
+    assert by_line["TransportEquipment"]["max_qty"] > 0
+
+
 def test_production_options_show_per_product_current_max(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES

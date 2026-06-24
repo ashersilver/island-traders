@@ -319,6 +319,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             "line_throughput_bonus": 1,
             "capacity": {
                 "FarmMachinery": 1,
+                "Goods": 5,
                 "MiningEquipment": 1,
                 "MedicalDevices": 1,
                 "TransportEquipment": 1,
@@ -519,12 +520,17 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
 
     # ----- Manufacturer ----------------------------------------------------
     # Manufacturer recipes are role-driven via MANUFACTURER_PRODUCT_LINES, but
-    # we also expose canonical recipes for the four lines so the capacity
+    # we also expose canonical recipes for the product lines so the capacity
     # model can reason about them uniformly.
     ProductionRecipe(
         role="Manufacturer", output="FarmMachinery",
         inputs={"Metal": 2.0, "Oil": 1.0, "Freight": 2.0},
         manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
+    ),
+    ProductionRecipe(
+        role="Manufacturer", output="Goods",
+        inputs={"Metal": 1.0, "Oil": 1.0, "Freight": 1.0},
+        manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.0,
     ),
     ProductionRecipe(
         role="Manufacturer", output="MiningEquipment",
@@ -573,7 +579,7 @@ MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Transporter":  ["transporter.cargo_ship", "transporter.passenger_liner"],
     "Educator":     ["educator.lecture_hall", "educator.library", "educator.technical_workshop"],
     "Banker":       ["banker.vault", "banker.underwriting_desk"],
-    "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line"],
+    "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line", "manufacturer.shipyard"],
     "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
 }
 

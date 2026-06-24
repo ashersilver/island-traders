@@ -205,6 +205,60 @@ def test_training_pipeline_shape():
     assert batch["counter_message"] is None
 
 
+def test_server_local_faculty_training_skips_passenger_seats_and_fee():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    educator = players[0]
+
+    result = mgr._submit_training_batch_row(
+        room,
+        educator,
+        {
+            "profession": Profession.LECTURER.value,
+            "count": 1,
+            "campus_player_id": "p0",
+            "transport_mode": "air_ticket",
+            "tickets_supplied_by_requester": 1,
+            "dollops_to_educator": 50,
+        },
+        index=0,
+        year=0,
+        season=0,
+    )
+
+    assert result["status"] == "submitted"
+    req = room.game.training.request_by_id(result["batch_id"])
+    assert req.transport_mode == "self_training"
+    assert req.tickets_supplied_by_requester == 0
+    assert req.dollops_to_educator == 0.0
+
+
+def test_server_cross_island_faculty_training_keeps_passenger_seats():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    farmer = players[1]
+
+    result = mgr._submit_training_batch_row(
+        room,
+        farmer,
+        {
+            "profession": Profession.LECTURER.value,
+            "count": 1,
+            "campus_player_id": "p0",
+            "transport_mode": "air_ticket",
+            "tickets_supplied_by_requester": 1,
+            "dollops_to_educator": 50,
+        },
+        index=0,
+        year=0,
+        season=0,
+    )
+
+    assert result["status"] == "submitted"
+    req = room.game.training.request_by_id(result["batch_id"])
+    assert req.transport_mode == "air_ticket"
+    assert req.tickets_supplied_by_requester == 1
+    assert req.dollops_to_educator == 50.0
+
+
 def test_personnel_training_counts_group_by_target_profession():
     mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
     educator, farmer = players
