@@ -247,6 +247,108 @@ class Market:
                 bid.remaining = 0
                 self.demand[rtype] = max(0, self.demand.get(rtype, 0) - qty)
 
+    def cancel_offer(self, seller: Player, offer_id: int) -> MarketOffer:
+        """Cancel one live ask and refund its unsold resources to the seller."""
+        for offer in self._offers:
+            if offer.offer_id != offer_id:
+                continue
+            if offer.seller_id != seller.player_id:
+                raise PermissionError("Cannot cancel another player's offer")
+            if offer.remaining <= 0:
+                raise ValueError("Offer is not active")
+            qty = offer.remaining
+            if offer._seller is not None:
+                offer._seller.receive_resources(
+                    offer.resource, qty, acquired_tick=self._current_tick()
+                )
+            else:
+                seller.receive_resources(
+                    offer.resource, qty, acquired_tick=self._current_tick()
+                )
+            offer.remaining = 0
+            self.supply[offer.resource] = max(
+                0, self.supply.get(offer.resource, 0) - qty
+            )
+            return offer
+        raise ValueError("Offer not found")
+
+    def reduce_offer(
+        self, seller: Player, offer_id: int, new_remaining: int
+    ) -> MarketOffer:
+        """Reduce a live ask to ``new_remaining`` units, refunding the delta."""
+        if new_remaining < 0:
+            raise ValueError("Offer quantity cannot be negative")
+        for offer in self._offers:
+            if offer.offer_id != offer_id:
+                continue
+            if offer.seller_id != seller.player_id:
+                raise PermissionError("Cannot reduce another player's offer")
+            if offer.remaining <= 0:
+                raise ValueError("Offer is not active")
+            if new_remaining > offer.remaining:
+                raise ValueError("Offer quantity can only be reduced")
+            if new_remaining == 0:
+                return self.cancel_offer(seller, offer_id)
+            refund = offer.remaining - new_remaining
+            if refund > 0:
+                if offer._seller is not None:
+                    offer._seller.receive_resources(
+                        offer.resource, refund, acquired_tick=self._current_tick()
+                    )
+                else:
+                    seller.receive_resources(
+                        offer.resource, refund, acquired_tick=self._current_tick()
+                    )
+                offer.remaining = new_remaining
+                self.supply[offer.resource] = max(
+                    0, self.supply.get(offer.resource, 0) - refund
+                )
+            return offer
+        raise ValueError("Offer not found")
+
+    def cancel_bid(self, buyer: Player, bid_id: int) -> MarketBid:
+        """Cancel one live bid."""
+        for bid in self._bids:
+            if bid.bid_id != bid_id:
+                continue
+            if bid.buyer_id != buyer.player_id:
+                raise PermissionError("Cannot cancel another player's bid")
+            if bid.remaining <= 0:
+                raise ValueError("Bid is not active")
+            qty = bid.remaining
+            bid.remaining = 0
+            self.demand[bid.resource] = max(
+                0, self.demand.get(bid.resource, 0) - qty
+            )
+            return bid
+        raise ValueError("Bid not found")
+
+    def reduce_bid(
+        self, buyer: Player, bid_id: int, new_remaining: int
+    ) -> MarketBid:
+        """Reduce a live bid to ``new_remaining`` units."""
+        if new_remaining < 0:
+            raise ValueError("Bid quantity cannot be negative")
+        for bid in self._bids:
+            if bid.bid_id != bid_id:
+                continue
+            if bid.buyer_id != buyer.player_id:
+                raise PermissionError("Cannot reduce another player's bid")
+            if bid.remaining <= 0:
+                raise ValueError("Bid is not active")
+            if new_remaining > bid.remaining:
+                raise ValueError("Bid quantity can only be reduced")
+            if new_remaining == 0:
+                return self.cancel_bid(buyer, bid_id)
+            reduction = bid.remaining - new_remaining
+            if reduction > 0:
+                bid.remaining = new_remaining
+                self.demand[bid.resource] = max(
+                    0, self.demand.get(bid.resource, 0) - reduction
+                )
+            return bid
+        raise ValueError("Bid not found")
+
     def post_offer(self, seller: Player, rtype: ResourceType,
                    price_per_unit: float, qty: int) -> MarketOffer:
         if rtype in NON_TRADABLE_RESOURCES:
@@ -476,6 +578,34 @@ class Market:
     def best_bid(self, rtype: ResourceType) -> MarketBid | None:
         bids = self.available_bids(rtype)
         return bids[0] if bids else None
+
+    def player_orders(self, player_id: int) -> dict[str, list[dict]]:
+        """Live orders owned by one player, shaped for API/UI payloads."""
+        offers = [
+            {
+                "offer_id": offer.offer_id,
+                "resource": offer.resource.value,
+                "price_per_unit": offer.price_per_unit,
+                "quantity": offer.quantity,
+                "remaining": offer.remaining,
+                "season_key": list(offer.season_key),
+            }
+            for offer in self._offers
+            if offer.seller_id == player_id and offer.remaining > 0
+        ]
+        bids = [
+            {
+                "bid_id": bid.bid_id,
+                "resource": bid.resource.value,
+                "price_per_unit": bid.price_per_unit,
+                "quantity": bid.quantity,
+                "remaining": bid.remaining,
+                "season_key": list(bid.season_key),
+            }
+            for bid in self._bids
+            if bid.buyer_id == player_id and bid.remaining > 0
+        ]
+        return {"offers": offers, "bids": bids}
 
     def buy_from_offers(self, buyer: Player, rtype: ResourceType,
                         qty: int) -> tuple[float, int]:

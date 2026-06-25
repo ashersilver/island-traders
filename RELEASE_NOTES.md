@@ -5,7 +5,16 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.13`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.14`.
+
+- **Market order cancel / reduce** — `Market.cancel_offer/reduce_offer/cancel_bid/reduce_bid`
+  let an owner cancel or reduce a resting ask/bid, refunding the escrowed units straight to
+  inventory (no buy-back, no cash). `game_state.my_market_orders` lists your live orders; a
+  "Your open orders" section with Cancel/Reduce controls appears in the Market modal
+  (`market_order_update` WS action).
+- **Capital equipment repair** — `capital_repair` WS action wires the existing repair logic
+  (`Game._attempt_capital_repair`) to a player-facing Repair button on failed capital in the
+  Build & Develop panel and capital portfolio (hidden once a repair is queued).
 
 - **Player chat (multi-channel)** — a real chat room replaces the old log-only broadcast.
   There's an always-present room-wide channel plus **private group "conspiracy" channels**

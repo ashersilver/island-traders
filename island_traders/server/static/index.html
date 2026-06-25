@@ -3234,6 +3234,10 @@ function onCapitalNegotiationPush(msg) {
   addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
 }
 
+function repairCapitalItem(itemId) {
+  sendWsMessage({ type: 'capital_repair', item_id: itemId });
+}
+
 // UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
 // the island can still build (from capacity.capital_catalogue). The header
 // "＋ Build…" button launches the existing Purchase Equipment action; an
@@ -3252,12 +3256,15 @@ function renderBuildDevelop(me) {
   if (owned.length) {
     html += '<div class="bd-head">Built</div>' + owned.map(c => {
       const failed = c.failed > 0;
+      const repairable = (c.repairable_failed ?? c.failed ?? 0) > 0;
       const sub = failed ? `${c.failed} failed — needs repair`
         : (c.cash_only ? 'cash-only' : esc(c.role));
       return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
         <div class="bx">${failed ? '⚠' : '✓'}</div>
         <div class="bd-body"><div class="bd-name">${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''}</div>
-          <div class="bd-sub">${sub}</div></div></div>`;
+          <div class="bd-sub">${sub}</div></div>
+        ${repairable ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(c.item_id)}')" title="Attempt repair of one failed unit">Repair</button>` : ''}
+      </div>`;
     }).join('');
   }
   if (avail.length) {
@@ -3291,6 +3298,7 @@ function renderCapacityPanel(capacity) {
         `<div class="mkt-row" title="${esc(it.description || '')}">
            <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}</span>
            <span class="price" style="color:var(--dim);font-size:.7rem">${esc(it.role)}</span>
+           ${(it.repairable_failed ?? it.failed ?? 0) > 0 ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(it.item_id)}')" title="Attempt repair of one failed unit">Repair</button>` : ''}
          </div>`
       ).join('');
     }
@@ -4505,6 +4513,19 @@ function handleMessage(msg) {
       break;
     case 'capital_negotiation_ack':
       onCapitalNegotiationAck(msg);
+      break;
+    case 'capital_repair_ack':
+      addLog(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), msg.ok ? 'ok' : 'err');
+      showToast(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), { type: msg.ok ? 'success' : 'error' });
+      break;
+    case 'market_order_update_ack':
+      if (msg.ok) {
+        showToast(msg.action === 'cancel' ? 'Order cancelled.' : 'Order reduced.', { type: 'success' });
+        if (document.getElementById('overlay').classList.contains('active')) hideOverlay();
+      } else {
+        addLog('Market order error: ' + (msg.error || 'Unknown error'), 'err');
+        showToast(msg.error || 'Market order update failed.', { type: 'error' });
+      }
       break;
     case 'game_state':
       gameState = msg;
@@ -6771,6 +6792,64 @@ function _marketBuyHeaderRow() {
     + '</tr></thead>';
 }
 
+function _renderMyMarketOrders() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const offers = orders.offers || [];
+  const bids = orders.bids || [];
+  if (!offers.length && !bids.length) return '';
+  const row = (side, o) => {
+    const id = side === 'ask' ? o.offer_id : o.bid_id;
+    const tone = side === 'ask' ? 'var(--gold)' : 'var(--green)';
+    return `<div class="mkt-row" style="gap:.45rem">
+      <span class="res">${side === 'ask' ? 'Ask' : 'Bid'} · ${esc(o.resource)}</span>
+      <span class="price" style="color:${tone};font-size:.76rem">${o.remaining} @ ${Number(o.price_per_unit).toFixed(2)} Dp</span>
+      <button class="btn-ghost btn-sm" onclick="marketOrderCancel('${side}', ${id})" title="Cancel this order">Cancel</button>
+      ${o.remaining > 1 ? `<button class="btn-ghost btn-sm" onclick="marketOrderReduce('${side}', ${id}, ${o.remaining})" title="Reduce this order quantity">Reduce</button>` : ''}
+    </div>`;
+  };
+  return `<div style="margin:.45rem 0 .65rem">
+    <div style="font-size:.74rem;color:var(--dim);font-weight:700;margin-bottom:.25rem">Your open orders</div>
+    ${offers.map(o => row('ask', o)).join('')}
+    ${bids.map(o => row('bid', o)).join('')}
+  </div>`;
+}
+
+function marketOrderCancel(side, orderId) {
+  sendWsMessage({
+    type: 'market_order_update',
+    side,
+    action: 'cancel',
+    order_id: orderId,
+  });
+}
+
+function marketOrderReduce(side, orderId, currentRemaining) {
+  showPromptModal('Reduce Order', {
+    submitLabel: 'Reduce',
+    fields: [{
+      name: 'remaining',
+      label: 'New remaining quantity',
+      type: 'number',
+      placeholder: String(Math.max(0, currentRemaining - 1)),
+      validate: (v) => {
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n) || n < 0) return 'Enter zero or a positive quantity.';
+        if (n >= currentRemaining) return 'Enter a quantity lower than the current remaining amount.';
+        return null;
+      },
+    }],
+    onSubmit: (vals) => {
+      sendWsMessage({
+        type: 'market_order_update',
+        side,
+        action: 'reduce',
+        order_id: orderId,
+        remaining: parseInt(vals.remaining, 10),
+      });
+    },
+  });
+}
+
 function showMarketBuyPopup(msg) {
   // Mark this as an active IO-driven prompt so hint buttons are suppressed
   // while the modal is open.  Without this, _activePromptType stays
@@ -6822,6 +6901,7 @@ function showMarketBuyPopup(msg) {
       Opened from a Decision Hint about <strong>${esc(focusResource)}</strong> — the row is pinned at the top and highlighted.
     </div>`;
   }
+  html += _renderMyMarketOrders();
 
   // Primary table: hint-mentioned + live market rows.
   const primary = tier1.concat(tier2);

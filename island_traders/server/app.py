@@ -51,6 +51,7 @@ from ..models.equity import (
 )
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import CapitalFinanceError, LoanStatus, posted_funding_rates
+from ..models.capacity import find_item
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
@@ -2168,6 +2169,12 @@ class GameManager:
             item = find_item(CAPITAL_CATALOGUE, item_id)
             if not item:
                 continue
+            failed_count = p.failed_capital.get(item_id, 0)
+            queued_repairs = sum(
+                int(entry.get("count", 1))
+                for entry in p.capital_repair_in_progress
+                if entry.get("item_id") == item_id
+            )
             # Per-unit detail (#185/#188): each unit's age-quarter, status and
             # the order conditions it was bought with.
             units = []
@@ -2190,7 +2197,8 @@ class GameManager:
                 "role":        item.role,
                 "count":       count,
                 "warrantied":  p.capital_warranties.get(item_id, 0),
-                "failed":      p.failed_capital.get(item_id, 0),
+                "failed":      failed_count,
+                "repairable_failed": max(0, failed_count - queued_repairs),
                 "description": item.description,
                 "units":       units,
             })
@@ -2250,6 +2258,14 @@ class GameManager:
                     "description":      item.description,
                     "owned":            p.capital_inventory.get(item.item_id, 0),
                     "failed":           p.failed_capital.get(item.item_id, 0),
+                    "repairable_failed": max(
+                        0,
+                        p.failed_capital.get(item.item_id, 0) - sum(
+                            int(entry.get("count", 1))
+                            for entry in p.capital_repair_in_progress
+                            if entry.get("item_id") == item.item_id
+                        ),
+                    ),
                     "mandatory":        item.item_id in mandatory_ids,
                 })
 
@@ -3109,6 +3125,77 @@ class GameManager:
         if state:
             await websocket.send_text(json.dumps(state))
 
+    async def _handle_market_order_update(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await websocket.send_text(json.dumps({
+                "type": "market_order_update_ack",
+                "ok": False,
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "market_order_update_ack",
+                "ok": False,
+                "error": "Player not in game.",
+            }))
+            return
+
+        side = str(msg.get("side", "")).strip().lower()
+        action = str(msg.get("action", "cancel")).strip().lower()
+        try:
+            order_id = int(msg.get("order_id"))
+            new_remaining = int(msg.get("remaining", 0))
+            if side == "ask":
+                if action == "cancel":
+                    order = room.game.market.cancel_offer(player, order_id)
+                elif action == "reduce":
+                    order = room.game.market.reduce_offer(
+                        player, order_id, new_remaining
+                    )
+                else:
+                    raise ValueError("Unknown market order action")
+                remaining = order.remaining
+            elif side == "bid":
+                if action == "cancel":
+                    order = room.game.market.cancel_bid(player, order_id)
+                elif action == "reduce":
+                    order = room.game.market.reduce_bid(
+                        player, order_id, new_remaining
+                    )
+                else:
+                    raise ValueError("Unknown market order action")
+                remaining = order.remaining
+            else:
+                raise ValueError("Order side must be 'ask' or 'bid'")
+        except (TypeError, ValueError, PermissionError) as exc:
+            await websocket.send_text(json.dumps({
+                "type": "market_order_update_ack",
+                "ok": False,
+                "error": str(exc),
+            }))
+            return
+
+        await websocket.send_text(json.dumps({
+            "type": "market_order_update_ack",
+            "ok": True,
+            "side": side,
+            "action": action,
+            "order_id": order_id,
+            "remaining": remaining,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
     async def _handle_training_batch(
         self,
         room_id: str,
@@ -3842,6 +3929,64 @@ class GameManager:
             self.get_game_state(room.room_id, lobby_id) or {},
         )
 
+    async def _handle_capital_repair(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        async def _ack(ok: bool, message: str, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "capital_repair_ack",
+                "ok": ok,
+                "message": message,
+                **extra,
+            }))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await _ack(False, "Game is not running.")
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await _ack(False, "Player not in game.")
+            return
+        game = room.game
+        item_id = str(msg.get("item_id", "")).strip()
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        if item is None:
+            await _ack(False, "Unknown capital item.")
+            return
+
+        queued = game._repair_in_progress_count(player, item_id)
+        failed_units = [
+            u for u in player.capital_units.get(item_id, [])
+            if u.status == "failed"
+        ]
+        unit = failed_units[queued] if queued < len(failed_units) else None
+        if unit is None:
+            await _ack(False, f"No failed {item.name} unit is awaiting repair.")
+            return
+
+        cyi = getattr(room, "current_year_index", 0)
+        csi = getattr(room, "current_season_index", 0)
+        current_tick = cyi * len(SEASONS) + csi
+        repaired = game._attempt_capital_repair(
+            player, item, current_tick, unit=unit
+        )
+        if not repaired:
+            await _ack(
+                False,
+                f"Repair needs enough Dollops and Freight for {item.name}.",
+            )
+            return
+
+        await _ack(True, f"Repair started for {item.name}.", item_id=item_id)
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
     def _leases_detail_for_player(
         self,
         game: Game,
@@ -4391,6 +4536,10 @@ class GameManager:
         capital_negotiations_awaiting_me, my_capital_negotiations = (
             self._capital_negotiation_state_for_viewer(game, viewer_engine_id)
         )
+        my_market_orders = (
+            game.market.player_orders(viewer_engine_id)
+            if viewer_engine_id is not None else {"offers": [], "bids": []}
+        )
 
         return {
             "type": "game_state",
@@ -4429,6 +4578,7 @@ class GameManager:
                 for player_id, alerts in sustenance_alerts_by_player_id.items()
             },
             "market": market_data,
+            "my_market_orders": my_market_orders,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "deals_awaiting_me": deals_awaiting_me,
             "my_deals": my_deals,
@@ -5808,6 +5958,10 @@ def create_app() -> FastAPI:
                     await manager._handle_order_batch(
                         room_id, player_id, msg, websocket
                     )
+                elif msg_type == "market_order_update":
+                    await manager._handle_market_order_update(
+                        room_id, player_id, msg, websocket
+                    )
                 elif msg_type == "training_batch":
                     await manager._handle_training_batch(
                         room_id, player_id, msg, websocket
@@ -5826,6 +5980,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_negotiation_accept":
                     await manager._handle_capital_negotiation_accept(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_repair":
+                    await manager._handle_capital_repair(
                         room_id, player_id, msg, websocket
                     )
 
