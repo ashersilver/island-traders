@@ -503,6 +503,51 @@ button:active{transform:scale(.97)}
 .prod-sched-row .psr-top{display:flex;justify-content:space-between;align-items:center;font-size:.79rem}
 .prod-sched-row .psr-top .res{color:var(--text);font-weight:600}
 .prod-sched-row .psr-note{font-size:.68rem;color:var(--dim);margin-top:.05rem;line-height:1.25}
+/* ---- Chat: topic list + docked windows ---- */
+.chat-topic-row{display:flex;align-items:center;justify-content:space-between;gap:.4rem;
+  padding:.22rem .35rem;border-radius:4px;cursor:pointer;font-size:.8rem}
+.chat-topic-row:hover{background:var(--bg)}
+.chat-topic-row .ctr-name{display:flex;align-items:center;gap:.35rem;min-width:0}
+.chat-topic-row .ctr-name .ctr-topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-unread{background:var(--red);color:#fff;border-radius:999px;font-size:.62rem;font-weight:800;
+  padding:.02rem .4rem;min-width:1.05em;text-align:center}
+#chat-windows{position:fixed;right:.6rem;bottom:.6rem;z-index:7000;display:flex;
+  align-items:flex-end;gap:.5rem;flex-wrap:wrap-reverse;justify-content:flex-end;
+  max-width:calc(100vw - 1.2rem);pointer-events:none}
+.chat-win{pointer-events:auto;display:flex;flex-direction:column;width:300px;height:340px;
+  min-width:220px;min-height:120px;max-width:90vw;max-height:80vh;resize:both;overflow:hidden;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:0 8px 30px rgba(0,0,0,.55)}
+.chat-win.minimized{height:auto!important;resize:none}
+.chat-win.minimized .cw-body,.chat-win.minimized .cw-input{display:none}
+.cw-head{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;cursor:default;
+  background:var(--bg);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0}
+.cw-head .cw-title{flex:1;font-weight:700;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-head button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.85rem;line-height:1;padding:0 .2rem}
+.cw-head button:hover{color:var(--accent)}
+.cw-body{flex:1;overflow-y:auto;padding:.35rem .5rem;font-size:.79rem;line-height:1.35;display:flex;flex-direction:column;gap:.2rem}
+.cw-msg .cw-from{font-weight:700}
+.cw-msg .cw-ts{color:var(--dim);font-size:.64rem;margin-left:.3rem}
+.cw-msg .mention{background:rgba(231,192,93,.22);color:var(--gold);border-radius:3px;padding:0 .15rem}
+.cw-msg.mine .cw-from{color:var(--accent)}
+.cw-input{display:flex;align-items:center;gap:.25rem;padding:.3rem .4rem;border-top:1px solid var(--border);position:relative}
+.cw-input input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-family:inherit;font-size:.78rem;padding:.25rem .4rem;outline:none}
+.cw-input .cw-emoji-btn,.cw-input .cw-send{background:none;border:none;cursor:pointer;font-size:1rem;padding:0 .15rem;color:var(--dim)}
+.cw-input .cw-send{color:var(--accent);font-weight:700;font-size:.82rem}
+.cw-emoji-pop{position:absolute;bottom:110%;right:.4rem;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;padding:.3rem;display:none;grid-template-columns:repeat(6,1fr);gap:.1rem;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.cw-emoji-pop.open{display:grid}
+.cw-emoji-pop span{cursor:pointer;font-size:1.05rem;padding:.1rem;text-align:center;border-radius:4px}
+.cw-emoji-pop span:hover{background:var(--bg)}
+.cw-mentions{position:absolute;bottom:110%;left:.4rem;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;min-width:8rem;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:2}
+.cw-mentions.open{display:block}
+.cw-mentions .cwm-row{padding:.22rem .5rem;cursor:pointer;font-size:.78rem}
+.cw-mentions .cwm-row:hover,.cw-mentions .cwm-row.active{background:var(--accent);color:#04090f}
+/* read-only chat panel (spectator) */
+.chat-ro-msg{font-size:.8rem;line-height:1.35;padding:.12rem 0}
+.chat-ro-msg .cw-from{font-weight:700}
 .mkt-row .price{color:var(--gold);font-weight:600}
 .mkt-row .supply{color:var(--dim);font-size:.72rem}
 .market-mini{width:100%;border-collapse:collapse;font-size:.72rem;table-layout:fixed}
@@ -1537,6 +1582,14 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="deals-panel" onclick="openDealsDialog()" style="cursor:pointer;font-size:.82rem;line-height:1.4">—</div>
       </div>
+      <div class="section" data-tile="chat" data-tile-label="Chat">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>💬 Chat <span id="chat-badge" class="deals-badge" style="display:none"></span></span>
+          <button class="btn-ghost btn-sm" style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openNewChatDialog()" title="Start a private chat with one or more islands">＋ New chat</button>
+        </h3>
+        <div id="chat-topics" style="font-size:.82rem;line-height:1.4">—</div>
+      </div>
     </div>
 
     <div class="g-log" id="event-log" data-filter="all">
@@ -1674,6 +1727,8 @@ body.fx-off .ih-pins .pdot{animation:none}
      IO-prompt overlay above so it never disturbs an active game prompt, and
      never blocks the event loop (the season countdown keeps ticking). -->
 <div id="toast-stack"></div>
+<!-- Docked, non-modal chat windows (resize + minimize, anchored bottom-right). -->
+<div id="chat-windows"></div>
 <div id="msg-overlay">
   <div id="msg-dialog">
     <h3 id="msg-title"></h3>
@@ -3543,6 +3598,233 @@ function sendWsMessage(obj) {
   }
 }
 
+// ==================== CHAT (multi-channel, docked windows) ====================
+const chatChannels = new Map();    // channel_id -> {channel_id, topic, is_room, participants[], messages[], unread}
+const chatOpenWindows = new Set(); // channel_ids with an open window
+const CHAT_EMOJIS = ['😀','😂','😉','😎','👍','👎','🙏','🎉','🔥','💰','📈','📉','🚢','⚓','🛠','🌾','⛏','🐟','🤝','🤔','💡','⚠️','✅','❌','💬','🙌','😤','🤑','🫡','🧐'];
+
+function _chatMyName() {
+  const me = (gameState && myPlayerIdx != null) ? gameState.players[myPlayerIdx] : null;
+  return me ? me.name : null;
+}
+function _chatIdToName() {
+  const map = {};
+  for (const p of ((gameState && gameState.players) || [])) map[p.lobby_player_id] = p.name;
+  return map;
+}
+function _chatUpsert(ch, replaceMessages) {
+  let c = chatChannels.get(ch.channel_id);
+  if (!c) {
+    c = { channel_id: ch.channel_id, topic: ch.topic, is_room: !!ch.is_room,
+          participants: ch.participants || [], messages: [], unread: 0 };
+    chatChannels.set(ch.channel_id, c);
+  } else {
+    if (ch.topic) c.topic = ch.topic;
+    if (ch.participants) c.participants = ch.participants;
+  }
+  if (Array.isArray(ch.messages) && (replaceMessages || !c.messages.length)) {
+    c.messages = ch.messages.slice();
+  }
+  return c;
+}
+function _chatEnsureRoom() {
+  if (!chatChannels.has('room'))
+    chatChannels.set('room', { channel_id:'room', topic:'Room', is_room:true, participants:[], messages:[], unread:0 });
+}
+
+function onChatHistory(msg) {
+  for (const ch of (msg.channels || [])) _chatUpsert(ch, true);
+  renderChatPanel();
+  for (const id of chatOpenWindows) renderChatWindow(id);
+}
+function onChatChannel(msg) {            // a private channel I'm part of was created
+  const c = _chatUpsert(msg.channel, true);
+  renderChatPanel();
+  openChatWindow(c.channel_id);          // auto-open it
+}
+function onChatMessage(msg) {
+  let c = chatChannels.get(msg.channel_id) || _chatUpsert({ channel_id: msg.channel_id, topic: msg.topic, messages: [] });
+  c.messages.push(msg);
+  if (c.messages.length > 100) c.messages = c.messages.slice(-100);
+  if (chatOpenWindows.has(c.channel_id) && !document.getElementById('cw-'+c.channel_id)?.classList.contains('minimized')) {
+    appendChatMessage(c.channel_id, msg);
+  } else {
+    c.unread = (c.unread || 0) + 1;
+    if ((msg.mentions || []).includes(_chatMyName()))
+      showToast(`💬 ${msg.from} mentioned you in ${c.topic}`, { type: 'info' });
+  }
+  renderChatPanel();
+}
+function mergeChatState(state) {         // resync from polled/pushed game_state
+  if (!state || !Array.isArray(state.chat)) return;
+  for (const ch of state.chat) _chatUpsert(ch, !chatOpenWindows.has(ch.channel_id));
+  renderChatPanel();
+}
+
+function renderChatPanel() {
+  const el = document.getElementById('chat-topics');
+  const badge = document.getElementById('chat-badge');
+  if (!el) return;
+  _chatEnsureRoom();
+  const chans = [...chatChannels.values()].sort((a, b) =>
+    (b.is_room ? 1 : 0) - (a.is_room ? 1 : 0) || a.topic.localeCompare(b.topic));
+  el.innerHTML = chans.map(c => {
+    const u = c.unread || 0;
+    return `<div class="chat-topic-row" onclick="openChatWindow('${c.channel_id}')">
+      <span class="ctr-name">${c.is_room ? '🏛' : '🔒'} <span class="ctr-topic">${esc(c.topic)}</span></span>
+      ${u ? `<span class="chat-unread">${u}</span>` : ''}</div>`;
+  }).join('');
+  let tot = 0; for (const c of chatChannels.values()) tot += c.unread || 0;
+  if (badge) { badge.textContent = tot; badge.style.display = tot ? 'inline-block' : 'none'; }
+}
+
+function openChatWindow(channelId) {
+  const c = chatChannels.get(channelId);
+  if (!c) return;
+  c.unread = 0;
+  chatOpenWindows.add(channelId);
+  let win = document.getElementById('cw-' + channelId);
+  if (!win) {
+    win = document.createElement('div');
+    win.className = 'chat-win';
+    win.id = 'cw-' + channelId;
+    win.innerHTML = `
+      <div class="cw-head">
+        <span class="cw-title"></span>
+        <button title="Minimize" onclick="toggleMinimizeChat('${channelId}')">▁</button>
+        <button title="Close" onclick="closeChatWindow('${channelId}')">✕</button>
+      </div>
+      <div class="cw-body" id="cwb-${channelId}"></div>
+      <div class="cw-input">
+        <div class="cw-mentions" id="cwm-${channelId}"></div>
+        <div class="cw-emoji-pop" id="cwe-${channelId}"></div>
+        <input id="cwi-${channelId}" type="text" maxlength="500" placeholder="Message…" autocomplete="off"
+               oninput="onChatInput('${channelId}')" onkeydown="onChatKey(event,'${channelId}')">
+        <button class="cw-emoji-btn" title="Emoji" onclick="toggleEmoji('${channelId}')">🙂</button>
+        <button class="cw-send" onclick="sendChat('${channelId}')">Send</button>
+      </div>`;
+    document.getElementById('chat-windows').appendChild(win);
+    document.getElementById('cwe-' + channelId).innerHTML =
+      CHAT_EMOJIS.map(e => `<span onclick="insertEmoji('${channelId}','${e}')">${e}</span>`).join('');
+  }
+  win.classList.remove('minimized');
+  win.querySelector('.cw-title').textContent = (c.is_room ? '🏛 ' : '🔒 ') + c.topic;
+  renderChatWindow(channelId);
+  const inp = document.getElementById('cwi-' + channelId); if (inp) inp.focus();
+  renderChatPanel();
+}
+function toggleMinimizeChat(id) { document.getElementById('cw-' + id)?.classList.toggle('minimized'); }
+function closeChatWindow(id) { chatOpenWindows.delete(id); document.getElementById('cw-' + id)?.remove(); }
+
+function renderChatWindow(id) {
+  const c = chatChannels.get(id), body = document.getElementById('cwb-' + id);
+  if (!c || !body) return;
+  body.innerHTML = c.messages.map(_chatMsgHtml).join('');
+  body.scrollTop = body.scrollHeight;
+}
+function appendChatMessage(id, m) {
+  const body = document.getElementById('cwb-' + id);
+  if (!body) return;
+  body.insertAdjacentHTML('beforeend', _chatMsgHtml(m));
+  body.scrollTop = body.scrollHeight;
+}
+function _chatMsgHtml(m) {
+  const mine = m.from === _chatMyName();
+  const t = new Date((m.ts || 0) * 1000);
+  const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  return `<div class="cw-msg ${mine ? 'mine' : ''}"><span class="cw-from">${esc(m.from)}</span>` +
+    `<span class="cw-ts">${hhmm}</span><div>${_renderChatText(m.text, m.mentions)}</div></div>`;
+}
+function _renderChatText(text, mentions) {
+  let html = esc(text || '');
+  for (const name of (mentions || [])) {
+    const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp('@' + safe, 'g'), `<span class="mention">@${esc(name)}</span>`);
+  }
+  return html;
+}
+
+function sendChat(id) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+  sendWsMessage({ type: 'chat', channel_id: id, text });
+  inp.value = ''; _closeMentions(id); _closeEmoji(id);
+}
+function onChatKey(e, id) {
+  const pop = document.getElementById('cwm-' + id);
+  if (pop && pop.classList.contains('open')) {
+    if (e.key === 'Enter') { const a = pop.querySelector('.cwm-row.active'); if (a) { e.preventDefault(); _applyMention(id, a.dataset.name); return; } }
+    if (e.key === 'Escape') { _closeMentions(id); return; }
+  }
+  if (e.key === 'Enter') { e.preventDefault(); sendChat(id); }
+}
+
+// emoji
+function toggleEmoji(id) { document.getElementById('cwe-' + id)?.classList.toggle('open'); }
+function _closeEmoji(id) { document.getElementById('cwe-' + id)?.classList.remove('open'); }
+function insertEmoji(id, e) { const inp = document.getElementById('cwi-' + id); if (inp) { inp.value += e; inp.focus(); } _closeEmoji(id); }
+
+// @mention autocomplete
+function _channelMentionNames(id) {
+  const c = chatChannels.get(id);
+  const idToName = _chatIdToName();
+  let names = ((gameState && gameState.players) || []).map(p => p.name).filter(n => n && n !== _chatMyName());
+  if (c && !c.is_room && (c.participants || []).length) {
+    const allowed = new Set(c.participants.map(pid => idToName[pid]).filter(Boolean));
+    names = names.filter(n => allowed.has(n));
+  }
+  return names;
+}
+function onChatInput(id) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  const m = /@([\w'-]*)$/.exec(inp.value.slice(0, inp.selectionStart));
+  const pop = document.getElementById('cwm-' + id);
+  if (!m) { _closeMentions(id); return; }
+  const q = m[1].toLowerCase();
+  const matches = _channelMentionNames(id).filter(n => n.toLowerCase().startsWith(q)).slice(0, 6);
+  if (!matches.length) { _closeMentions(id); return; }
+  pop.innerHTML = matches.map((n, i) =>
+    `<div class="cwm-row ${i === 0 ? 'active' : ''}" data-name="${esc(n)}" onclick="_applyMention('${id}', this.dataset.name)">${esc(n)}</div>`).join('');
+  pop.classList.add('open');
+}
+function _closeMentions(id) { document.getElementById('cwm-' + id)?.classList.remove('open'); }
+function _applyMention(id, name) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  inp.value = inp.value.replace(/@([\w'-]*)$/, '@' + name + ' ');
+  inp.focus(); _closeMentions(id);
+}
+
+// New private chat dialog (topic + participant checkboxes)
+function openNewChatDialog() {
+  const others = ((gameState && gameState.players) || []).filter(p => p.is_human && p.name !== _chatMyName());
+  if (!others.length) { showToast('No other islands to chat with yet.', { type: 'info' }); return; }
+  const rows = others.map((p, i) =>
+    `<label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;font-size:.85rem">
+       <input type="checkbox" class="newchat-part" value="${esc(p.name)}"> ${esc(p.name)}
+       <span style="color:var(--dim);font-size:.75rem">${esc((p.role_names || []).join('/'))}</span></label>`).join('');
+  _openMsgModal('New private chat',
+    `<label for="newchat-topic">Topic</label>
+     <input id="newchat-topic" type="text" placeholder="e.g. Ore cartel" maxlength="80">
+     <div style="margin:.4rem 0 .2rem;color:var(--dim);font-size:.78rem">Invite islands (one or more):</div>
+     ${rows}
+     <div class="popup-footer">
+       <button class="btn-ghost" id="newchat-cancel">Cancel</button>
+       <button class="btn-gold" id="newchat-create">Create</button>
+     </div>`);
+  document.getElementById('newchat-cancel').onclick = () => _closeMsgModal();
+  document.getElementById('newchat-create').onclick = () => {
+    const topic = (document.getElementById('newchat-topic').value || '').trim() || 'Private chat';
+    const parts = [...document.querySelectorAll('.newchat-part:checked')].map(c => c.value);
+    if (!parts.length) { showToast('Pick at least one island.', { type: 'error' }); return; }
+    sendWsMessage({ type: 'chat_create_channel', topic, participants: parts });
+    _closeMsgModal();
+  };
+}
+
 function _renderTrainingStrip(pipeline) {
   const el = document.getElementById('s-training-strip');
   if (!el) return;
@@ -4346,7 +4628,13 @@ function handleMessage(msg) {
       }
       break;
     case 'chat':
-      addLog(`[${msg.from}] ${msg.text}`, 'info');
+      onChatMessage(msg);
+      break;
+    case 'chat_channel':
+      onChatChannel(msg);
+      break;
+    case 'chat_history':
+      onChatHistory(msg);
       break;
     case 'error':
       // Surface server errors as a toast, not just a buried log line — a failed
@@ -4645,6 +4933,7 @@ function renderGameState() {
   renderDealsPanel();
   renderCapitalNegotiationAlerts();
   renderTradeFinder();
+  mergeChatState(gameState);
 }
 
 // ==================== TRADE FINDER (UI v2 phase 1, #114) ====================

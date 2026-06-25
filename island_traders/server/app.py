@@ -16,10 +16,12 @@ import json
 import logging
 import math
 import random
+import re
 import string
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -362,6 +364,34 @@ class LobbyPlayer:
         self.role_names = [value] if value else []
 
 
+# ── Chat ──────────────────────────────────────────────────────────────────────
+CHAT_HISTORY_MAX = 50          # messages retained per channel
+CHAT_TEXT_MAX = 500            # max characters per message
+ROOM_CHANNEL_ID = "room"       # the always-present room-wide channel
+
+
+@dataclass
+class ChatChannel:
+    """A chat conversation. The room channel (`is_room=True`) reaches every
+    human seat; private channels reach only their `participants` (lobby ids)."""
+    channel_id: str
+    topic: str
+    is_room: bool = False
+    participants: set[str] = field(default_factory=set)
+    history: "deque[dict]" = field(
+        default_factory=lambda: deque(maxlen=CHAT_HISTORY_MAX), repr=False
+    )
+
+    def summary(self) -> dict:
+        return {
+            "channel_id": self.channel_id,
+            "topic": self.topic,
+            "is_room": self.is_room,
+            "participants": sorted(self.participants),
+            "messages": list(self.history),
+        }
+
+
 @dataclass
 class GameRoom:
     room_id: str
@@ -431,6 +461,17 @@ class GameRoom:
     # Ring buffer of agent interaction events POSTed by external agent processes.
     # Capped at _AGENT_INTERACTIONS_MAX to avoid unbounded growth.
     agent_interactions: list[dict] = field(default_factory=list)
+
+    # Chat channels (room-wide + private group "conspiracy" chats). Keyed by id.
+    chat_channels: dict[str, ChatChannel] = field(default_factory=dict)
+
+    def room_channel(self) -> ChatChannel:
+        """Return (creating if needed) the always-present room-wide channel."""
+        ch = self.chat_channels.get(ROOM_CHANNEL_ID)
+        if ch is None:
+            ch = ChatChannel(channel_id=ROOM_CHANNEL_ID, topic="Room", is_room=True)
+            self.chat_channels[ROOM_CHANNEL_ID] = ch
+        return ch
 
     def to_dict(self) -> dict:
         d = {
@@ -4393,6 +4434,11 @@ class GameManager:
             "my_deals": my_deals,
             "capital_negotiations_awaiting_me": capital_negotiations_awaiting_me,
             "my_capital_negotiations": my_capital_negotiations,
+            # Chat channels visible to this viewer (room + private ones they're
+            # in). Powers the spectator read-only panel and player resync — a
+            # spectator polls with the watched seat's id, so this surfaces that
+            # seat's channels.
+            "chat": self._chat_visible_channels(room, player_id),
             "price_history": [
                 {"year": s.year, "season": s.season,
                  "prices": {
@@ -4436,6 +4482,107 @@ class GameManager:
             await ws.send_text(json.dumps(msg))
         except Exception:
             pass
+
+    # ── Chat ──────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_mentions(text: str, names: set[str]) -> list[str]:
+        """Return player names @-mentioned in `text` (case-insensitive match)."""
+        if "@" not in text:
+            return []
+        lower = {n.casefold(): n for n in names}
+        found: list[str] = []
+        for token in re.findall(r"@([\w'-]+)", text):
+            real = lower.get(token.casefold())
+            if real and real not in found:
+                found.append(real)
+        return found
+
+    def _chat_payload(self, room: GameRoom, lp: LobbyPlayer,
+                      channel: ChatChannel, text: str) -> dict:
+        names = {p.name for p in room.players}
+        return {
+            "type": "chat",
+            "channel_id": channel.channel_id,
+            "topic": channel.topic,
+            "from": lp.name,
+            "from_id": lp.player_id,
+            "role": lp.role_names[0] if lp.role_names else "",
+            "text": text,
+            "ts": time.time(),
+            "mentions": self._parse_mentions(text, names),
+        }
+
+    def _chat_recipients(self, room: GameRoom, channel: ChatChannel) -> list[str]:
+        """Lobby ids that should receive messages on this channel.
+
+        Room channel → every human seat. Private channel → its human
+        participants. AI seats are intentionally excluded from WS delivery (the
+        agent doesn't read chat yet); spectators receive chat via game_state.
+        """
+        humans = {p.player_id for p in room.players if p.is_human}
+        if channel.is_room:
+            return list(humans)
+        return [pid for pid in channel.participants if pid in humans]
+
+    def _chat_deliver(self, room: GameRoom, channel: ChatChannel, payload: dict) -> None:
+        for lobby_id in self._chat_recipients(room, channel):
+            self._thread_safe_send(room.room_id, lobby_id, payload)
+
+    def _chat_visible_channels(self, room: GameRoom, viewer_lobby_id: str | None) -> list[dict]:
+        """Channel summaries visible to a viewer — the room channel plus any
+        private channel the viewer participates in. A spectator polls with the
+        watched seat's id, so this also surfaces that AI's private channels."""
+        room.room_channel()
+        out: list[dict] = []
+        for ch in room.chat_channels.values():
+            if ch.is_room or (viewer_lobby_id and viewer_lobby_id in ch.participants):
+                out.append(ch.summary())
+        return out
+
+    def handle_chat(self, room_id: str, lobby_id: str, msg: dict) -> None:
+        room = self.rooms.get(room_id)
+        if not room:
+            return
+        lp = next((p for p in room.players if p.player_id == lobby_id), None)
+        if lp is None:
+            return
+        text = str(msg.get("text", "")).strip()[:CHAT_TEXT_MAX]
+        if not text:
+            return
+        room.room_channel()
+        channel = room.chat_channels.get(msg.get("channel_id") or ROOM_CHANNEL_ID)
+        if channel is None:
+            return
+        if not channel.is_room and lobby_id not in channel.participants:
+            return  # not a member of this private channel
+        payload = self._chat_payload(room, lp, channel, text)
+        channel.history.append(payload)
+        self._chat_deliver(room, channel, payload)
+
+    def handle_chat_create_channel(self, room_id: str, lobby_id: str, msg: dict) -> None:
+        room = self.rooms.get(room_id)
+        if not room:
+            return
+        creator = next((p for p in room.players if p.player_id == lobby_id), None)
+        if creator is None:
+            return
+        topic = (str(msg.get("topic", "")).strip()[:80]) or "Private chat"
+        by_name = {p.name.strip().casefold(): p.player_id for p in room.players}
+        participants = {creator.player_id}
+        for n in (msg.get("participants") or []):
+            pid = by_name.get(str(n).strip().casefold())
+            if pid:
+                participants.add(pid)
+        if len(participants) < 2:
+            return  # a private channel needs at least one other member
+        channel = ChatChannel(
+            channel_id=_short_id(), topic=topic, is_room=False, participants=participants,
+        )
+        room.chat_channels[channel.channel_id] = channel
+        info = {"type": "chat_channel", "channel": channel.summary()}
+        for pid in self._chat_recipients(room, channel):
+            self._thread_safe_send(room_id, pid, info)
 
     @staticmethod
     def heartbeat_ack(msg: dict) -> dict:
@@ -5497,6 +5644,13 @@ def create_app() -> FastAPI:
         lp.connected = True
         manager.register_ws(room_id, player_id, websocket)
 
+        # Backfill chat: the channels (room + any private ones) this seat can see,
+        # with recent history, so a (re)connecting client's panel has context.
+        await websocket.send_text(json.dumps({
+            "type": "chat_history",
+            "channels": manager._chat_visible_channels(room, player_id),
+        }))
+
         try:
             # Send current state
             if room.status == "auction" and room.auction:
@@ -5635,11 +5789,9 @@ def create_app() -> FastAPI:
                         "type": "guarantee_ack", **result
                     }))
                 elif msg_type == "chat":
-                    manager._thread_safe_broadcast(room_id, {
-                        "type": "chat",
-                        "from": lp.name,
-                        "text": msg.get("text", ""),
-                    })
+                    manager.handle_chat(room_id, player_id, msg)
+                elif msg_type == "chat_create_channel":
+                    manager.handle_chat_create_channel(room_id, player_id, msg)
                 elif msg_type == "training_counter_response":
                     await manager._handle_training_counter_response(
                         room_id, player_id, msg, websocket

@@ -5,7 +5,16 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.12`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.13`.
+
+- **Player chat (multi-channel)** — a real chat room replaces the old log-only broadcast.
+  There's an always-present room-wide channel plus **private group "conspiracy" channels**
+  (pick a topic + one or more islands). Messages support **emojis** and **@mentions**
+  (autocomplete + highlight). UI is a Chat topic-list panel (unread badges) opening **docked,
+  resizable, minimizable** chat windows; recent history backfills on reconnect. Room delivery
+  reaches human seats only; **spectators** get a read-only panel showing the public room
+  channel plus the channels the watched seat is in (AI remarks render there). The agent-side
+  "AI decides to chat" change is a deferred follow-on.
 
 - **Production schedule** — the Production Capacity panel now reads as a per-output schedule:
   each line shows how much can be produced this season ("Produce up to N") and, when capped,
