@@ -1843,12 +1843,18 @@ class TurnManager:
         return len(req.worker_ids) - requester_share
 
     def _ensure_training_air_tickets(
-        self, educator: Player, req, requester: Player | None = None
+        self,
+        educator: Player,
+        req,
+        requester: Player | None = None,
+        *,
+        consume: bool = True,
     ) -> bool:
         """Consume PassengerSeats for a training batch.
 
         Requester-supplied tickets are spent from the requester; the
-        Educator only covers the remaining seats.
+        Educator only covers the remaining seats. Pass ``consume=False`` for a
+        side-effect-free affordability check.
         """
         requester_share = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
         educator_share = len(req.worker_ids) - requester_share
@@ -1857,6 +1863,8 @@ class TurnManager:
                 return False
         if educator.inventory.get(ResourceType.PASSENGER_SEATS) < educator_share:
             return False
+        if not consume:
+            return True
         if requester is not None and requester_share > 0:
             requester.give_resources(ResourceType.PASSENGER_SEATS, requester_share)
         if educator_share > 0:
@@ -2234,6 +2242,10 @@ class TurnManager:
             ),
             ("Educator fee:", f"{req.dollops_to_educator:.1f} {sym} offered"),
             (
+                "Student Loan:",
+                "requested" if getattr(req, "student_loan_requested", False) else "no",
+            ),
+            (
                 "Transport:",
                 (
                     f"Air ticket — requester supplies {requester_tickets} of "
@@ -2277,6 +2289,9 @@ class TurnManager:
             "tickets_supplied_by_requester": requester_tickets,
             "tickets_supplied_by_educator": educator_tickets,
             "dollops_to_educator": round(req.dollops_to_educator, 1),
+            "student_loan_requested": bool(
+                getattr(req, "student_loan_requested", False)
+            ),
             "suggested_floor": round(suggested_floor, 1),
             "status": req.status.value,
             "fields": fields,
@@ -2311,7 +2326,9 @@ class TurnManager:
                 f"The request stays pending."
             )
             return False
-        if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(educator, req, requester):
+        if req.transport_mode == "air_ticket" and not self._ensure_training_air_tickets(
+            educator, req, requester, consume=False
+        ):
             requester_tickets = max(0, min(req.tickets_supplied_by_requester, len(req.worker_ids)))
             educator_tickets = len(req.worker_ids) - requester_tickets
             educator_short = max(
@@ -2329,10 +2346,14 @@ class TurnManager:
                 f"Education Island must supply {educator_tickets}."
             )
             return False
-        # Tickets secured; now consume Course and Expertise resources.
+        if not self._settle_training_educator_fee(
+            educator, requester, req, year, season_index
+        ):
+            return False
+        if req.transport_mode == "air_ticket":
+            self._ensure_training_air_tickets(educator, req, requester)
+        # Tickets and payment secured; now consume Course and Expertise resources.
         self._consume_training_capacity(educator, req, year, season_index)
-        requester.spend_dollops(req.dollops_to_educator)
-        educator.receive_dollops(req.dollops_to_educator)
         if req.status == TrainingStatus.COUNTERED:
             self.training.requester_accept_counter(req.batch_id)
         else:
@@ -2356,6 +2377,76 @@ class TurnManager:
         else:
             self._auto_arrange_transport(requester, req, season_name, year)
         result.actions_taken.append(f"approved_training:batch#{req.batch_id}")
+        return True
+
+    def _reject_training_finance_failure(
+        self,
+        req,
+        reason: str,
+        year: int,
+        season_index: int,
+    ) -> None:
+        if req.status == TrainingStatus.COUNTERED:
+            self.training.requester_reject_counter(req.batch_id)
+            req.decline_reason = reason
+            req.decline_year = year
+            req.decline_season = season_index
+        elif req.status == TrainingStatus.AWAITING_EDUCATOR:
+            self.training.educator_reject(req.batch_id, reason, year, season_index)
+
+    def _settle_training_educator_fee(
+        self,
+        educator: Player,
+        requester: Player,
+        req,
+        year: int,
+        season_index: int,
+    ) -> bool:
+        fee = round(float(req.dollops_to_educator), 2)
+        if fee <= 0:
+            return True
+
+        financed = False
+        if getattr(req, "student_loan_requested", False):
+            try:
+                self.issue_training_finance_loan(
+                    requester, fee, 2, year, season_index
+                )
+                financed = True
+                self.io.print(
+                    f"  Student Loan approved for {fee:.0f} {CURRENCY_SYMBOL}; "
+                    f"{requester.name}'s treasury stays flat at settlement."
+                )
+            except CapitalFinanceError as exc:
+                if requester.dollops < fee:
+                    reason = str(exc)
+                    self._reject_training_finance_failure(
+                        req, reason, year, season_index
+                    )
+                    self.io.print(
+                        f"  Cannot approve training request #{req.batch_id}: "
+                        f"{reason}"
+                    )
+                    return False
+                self.io.print(
+                    f"  Student Loan unavailable ({exc}); paying cash instead."
+                )
+
+        if requester.dollops < fee:
+            self.io.print(
+                f"  Cannot approve training request #{req.batch_id}: "
+                f"{requester.name} needs {fee:.0f} {CURRENCY_SYMBOL} but has "
+                f"{requester.dollops:.0f}."
+            )
+            return False
+
+        requester.spend_dollops(fee)
+        educator.receive_dollops(fee)
+        if financed:
+            self.io.print(
+                f"  Paid {fee:.0f} {CURRENCY_SYMBOL} to {educator.name} "
+                f"from Student Loan proceeds."
+            )
         return True
 
     def _review_training_counteroffers(
@@ -2436,10 +2527,7 @@ class TurnManager:
                 f"  Campus load: {on_campus} visiting trainee(s) on the Education "
                 f"Island this season → +{food_demand:.1f} Food demand until they return."
             )
-        current_tick = year * len(SEASONS) + SEASONS.index(season_name)
         pending = self.training.sorted_pending_for_educator(player.player_id)
-        # Filter out requests the Educator already skipped this tick.
-        pending = [r for r in pending if r.last_skipped_tick != current_tick]
         if not pending:
             self.io.print("  No training requests awaiting your approval.")
             return
@@ -2459,7 +2547,6 @@ class TurnManager:
                 request_summary=summary,
             )
             if decision == "skip":
-                req.last_skipped_tick = current_tick
                 self.io.print(f"  Skipped — request #{req.batch_id} will appear again on your next Review Training action.")
                 continue
             if decision == "approve":
@@ -2467,7 +2554,7 @@ class TurnManager:
             else:
                 # decision == "counter" (or None / cancelled → treat as skip)
                 if decision is None:
-                    req.last_skipped_tick = current_tick
+                    self.io.print(f"  Skipped — request #{req.batch_id} will appear again on your next Review Training action.")
                     continue
                 counter = self.io.ask_dollop_amount(
                     "Counter price to Educator in Dp? (0 = reject request)",
@@ -3715,29 +3802,21 @@ class TurnManager:
         )
         return external_share
 
-    def issue_capital_finance_loan(
+    def _issue_bank_finance_loan(
         self,
         borrower: Player,
         principal: float,
         term_years: int,
         year: int,
         season_index: int,
+        *,
+        no_banker_message: str,
+        cap_message: str,
+        reserve_message: str,
     ) -> "Loan":
-        """Finance a capital order via the Bank, reusing the Phase D reserve
-        mechanics shared with ``_action_take_loan``.
-
-        Issues a bullet loan from the Banker to ``borrower`` for ``principal``,
-        sources the depositor portion, and credits the borrower with the cash so
-        the caller can settle the equipment purchase.  Repayment is handled at
-        maturity by ``_process_loan_repayments``.
-
-        Raises ``CapitalFinanceError`` (with a buyer-facing message) when no Bank
-        is present, the Bank is at its active-loan cap, or it lacks reserve
-        capital — the caller should then fall back to cash settlement.
-        """
         banker = self._find_banker()
         if banker is None:
-            raise CapitalFinanceError("No Banker island is available to finance this order.")
+            raise CapitalFinanceError(no_banker_message)
         term_years = max(1, min(3, int(term_years)))
         self_lending = banker.player_id == borrower.player_id
         funding_rate = posted_funding_rates(year, season_index)[term_years]
@@ -3750,15 +3829,11 @@ class TurnManager:
             r = self._banker_reserve_ratio(banker)
             can_issue, active, cap = self._banker_can_issue_loan(banker)
             if not can_issue:
-                raise CapitalFinanceError(
-                    f"Bank is at its active-loan cap ({active}/{cap}); pay cash instead."
-                )
+                raise CapitalFinanceError(cap_message.format(active=active, cap=cap))
             own_share = r * principal
             external_share = max(0.0, principal - own_share)
             if banker.dollops < own_share:
-                raise CapitalFinanceError(
-                    "Bank lacks the reserve capital to back this loan; pay cash instead."
-                )
+                raise CapitalFinanceError(reserve_message)
         loan = self.loan_ledger.create_loan(
             borrower_id=borrower.player_id,
             lender_id=banker.player_id,
@@ -3779,6 +3854,46 @@ class TurnManager:
             banker.dollops -= principal
         borrower.dollops += principal
         return loan
+
+    def issue_capital_finance_loan(
+        self,
+        borrower: Player,
+        principal: float,
+        term_years: int,
+        year: int,
+        season_index: int,
+    ) -> "Loan":
+        """Finance a capital order via the Bank, reusing Phase D reserves."""
+        return self._issue_bank_finance_loan(
+            borrower,
+            principal,
+            term_years,
+            year,
+            season_index,
+            no_banker_message="No Banker island is available to finance this order.",
+            cap_message="Bank is at its active-loan cap ({active}/{cap}); pay cash instead.",
+            reserve_message="Bank lacks the reserve capital to back this loan; pay cash instead.",
+        )
+
+    def issue_training_finance_loan(
+        self,
+        borrower: Player,
+        principal: float,
+        term_years: int,
+        year: int,
+        season_index: int,
+    ) -> "Loan":
+        """Finance an Educator training fee through the Bank."""
+        return self._issue_bank_finance_loan(
+            borrower,
+            principal,
+            term_years,
+            year,
+            season_index,
+            no_banker_message="No Banker island is available to finance this training.",
+            cap_message="Bank is at its active-loan cap ({active}/{cap}); pay cash instead.",
+            reserve_message="Bank lacks the reserve capital to back this training loan; pay cash instead.",
+        )
 
     def _action_offer_loan(self, player: Player, result: TurnResult,
                            year: int, season_index: int) -> None:

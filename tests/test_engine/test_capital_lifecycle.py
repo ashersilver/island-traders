@@ -621,6 +621,57 @@ def test_repair_fee_uses_unit_purchase_value_when_set():
     assert manufacturer.dollops == manufacturer_start + expected
 
 
+def test_repair_preview_matches_actual_repair_charge_and_freight():
+    game = _service_game()
+    owner, manufacturer, _ = game.players
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=-4)
+    unit = owner.capital_units[item.item_id][0]
+    unit.status = "failed"
+    owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner_start = owner.dollops
+    freight_start = owner.inventory.get(ResourceType.FREIGHT)
+    manufacturer_start = manufacturer.dollops
+
+    preview = game.capital_repair_preview(owner, item.item_id)
+    assert preview == {
+        "dp": round(item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2),
+        "freight": EQUIPMENT_REPAIR_SHIP_FREIGHT,
+        "repairable": True,
+        "reason": "",
+    }
+
+    assert game._attempt_capital_repair(owner, item, current_tick=0, unit=unit)
+    assert owner.dollops == owner_start - preview["dp"]
+    assert manufacturer.dollops == manufacturer_start + preview["dp"]
+    assert owner.inventory.get(ResourceType.FREIGHT) == freight_start - preview["freight"]
+
+
+def test_repair_preview_is_side_effect_free():
+    game = _service_game()
+    owner = game.players[0]
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    owner.add_capital(item.item_id, 1, acquired_tick=-4)
+    unit = owner.capital_units[item.item_id][0]
+    unit.status = "failed"
+    unit.spares_attached = 1
+    owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    before_dollops = owner.dollops
+    before_freight = owner.inventory.get(ResourceType.FREIGHT)
+
+    preview = game.capital_repair_preview(owner, item.item_id)
+
+    assert preview["dp"] == round(
+        item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+        2,
+    )
+    assert owner.dollops == before_dollops
+    assert owner.inventory.get(ResourceType.FREIGHT) == before_freight
+    assert unit.spares_attached == 1
+
+
 # ---------------------------------------------------------------------------
 # #188 upfront maintenance/warranty term contract — Phase 5 (2026-06-21)
 # ---------------------------------------------------------------------------

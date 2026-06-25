@@ -769,6 +769,91 @@ class Game:
             "transporter.cargo_plane", 0
         ) > 0
 
+    def _repair_unit_for_preview(self, player: Player, item_id: str):
+        queued = self._repair_in_progress_count(player, item_id)
+        failed_units = [
+            u for u in player.capital_units.get(item_id, [])
+            if u.status == "failed"
+        ]
+        return failed_units[queued] if queued < len(failed_units) else None
+
+    def _capital_repair_quote(self, player: Player, item, unit=None) -> dict:
+        base_value = (
+            unit.purchase_value if (unit is not None and unit.purchase_value)
+            else item.cost
+        )
+        has_attached = unit is not None and unit.spares_attached > 0
+        has_generic = player.inventory.get(ResourceType.SPARES) > 0
+        use_spare = has_attached or has_generic
+        repair_fee = round(
+            base_value * EQUIPMENT_FAILURE_REPAIR_FRACTION
+            * (EQUIPMENT_SPARES_REPAIR_DISCOUNT if use_spare else 1.0),
+            2,
+        )
+        freight_qty = (
+            EQUIPMENT_REPAIR_AIR_FREIGHT
+            if self._has_air_repair_capacity()
+            else EQUIPMENT_REPAIR_SHIP_FREIGHT
+        )
+        if player.dollops < repair_fee:
+            return {
+                "dp": repair_fee,
+                "freight": freight_qty,
+                "repairable": False,
+                "reason": (
+                    f"Need {CURRENCY_SYMBOL}{repair_fee:.2f}; "
+                    f"available {CURRENCY_SYMBOL}{player.dollops:.2f}."
+                ),
+                "use_attached_spare": has_attached,
+                "use_generic_spare": (not has_attached and has_generic),
+            }
+        if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
+            return {
+                "dp": repair_fee,
+                "freight": freight_qty,
+                "repairable": False,
+                "reason": (
+                    f"Need {freight_qty} Freight; available "
+                    f"{player.inventory.get(ResourceType.FREIGHT)}."
+                ),
+                "use_attached_spare": has_attached,
+                "use_generic_spare": (not has_attached and has_generic),
+            }
+        return {
+            "dp": repair_fee,
+            "freight": freight_qty,
+            "repairable": True,
+            "reason": "",
+            "use_attached_spare": has_attached,
+            "use_generic_spare": (not has_attached and has_generic),
+        }
+
+    def capital_repair_preview(self, player: Player, item_id: str) -> dict:
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        item = catalogue.get(item_id)
+        if item is None:
+            return {
+                "dp": 0.0,
+                "freight": 0,
+                "repairable": False,
+                "reason": "Unknown capital item.",
+            }
+        unit = self._repair_unit_for_preview(player, item_id)
+        if unit is None:
+            return {
+                "dp": 0.0,
+                "freight": 0,
+                "repairable": False,
+                "reason": "No failed unit is awaiting repair.",
+            }
+        quote = self._capital_repair_quote(player, item, unit)
+        return {
+            "dp": quote["dp"],
+            "freight": quote["freight"],
+            "repairable": quote["repairable"],
+            "reason": quote["reason"],
+        }
+
     def _credit_freight_to_transporter(self, freight_qty: int) -> None:
         transporter = self._role_player("Transporter")
         if transporter is None or freight_qty <= 0:
@@ -787,35 +872,17 @@ class Game:
         unit=None,
     ) -> bool:
         manufacturer = self._role_player("Manufacturer")
-        # Repair fee is 35% of the unit's purchase value (falling back to the
-        # catalogue cost when an order didn't record one).  A spare on hand —
-        # attached to the unit or held generically — halves it (#185); without
-        # one, spares are manufactured at failure for the baseline fee.
-        base_value = (
-            unit.purchase_value if (unit is not None and unit.purchase_value)
-            else item.cost
-        )
-        has_attached = unit is not None and unit.spares_attached > 0
-        has_generic = player.inventory.get(ResourceType.SPARES) > 0
-        use_spare = has_attached or has_generic
-        repair_fee = round(
-            base_value * EQUIPMENT_FAILURE_REPAIR_FRACTION
-            * (EQUIPMENT_SPARES_REPAIR_DISCOUNT if use_spare else 1.0),
-            2,
-        )
+        quote = self._capital_repair_quote(player, item, unit)
+        repair_fee = quote["dp"]
+        freight_qty = quote["freight"]
         air = self._has_air_repair_capacity()
-        freight_qty = (
-            EQUIPMENT_REPAIR_AIR_FREIGHT if air else EQUIPMENT_REPAIR_SHIP_FREIGHT
-        )
-        if player.dollops < repair_fee:
-            return False
-        if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
+        if not quote["repairable"]:
             return False
 
         # Consume a spare — the unit's own first, otherwise a generic one.
-        if has_attached:
+        if quote["use_attached_spare"]:
             unit.spares_attached -= 1
-        elif has_generic:
+        elif quote["use_generic_spare"]:
             player.give_resources(ResourceType.SPARES, 1)
 
         player.spend_dollops(repair_fee)
