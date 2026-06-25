@@ -5,7 +5,13 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.14`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.15`.
+
+- **Chat new-chat fix** — `get_game_state` now exposes `is_human` per player (it only had
+  `is_ai`), so the "New chat" island picker (and roster cards) stop seeing zero human islands.
+  Fixes "No other islands to chat with yet" when others were clearly present.
+- **Cash on the capital order form** — the order quote now shows "Cash available" and flags
+  when the recommended total exceeds it (finance or lower the order).
 
 - **Market order cancel / reduce** — `Market.cancel_offer/reduce_offer/cancel_bid/reduce_bid`
   let an owner cancel or reduce a resting ask/bid, refunding the escrowed units straight to

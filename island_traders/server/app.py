@@ -4353,6 +4353,10 @@ class GameManager:
                 None
             )
             pd["is_ai"] = bool(seat_lp and not seat_lp.is_human)
+            # Expose the human flag too — chat (new-chat island picker), roster
+            # cards, etc. filter on `is_human`, which the in-game payload was
+            # missing (only `is_ai` was set), so they saw no human islands.
+            pd["is_human"] = not pd["is_ai"]
             pd["inventory"] = {
                 r.value: p.inventory.get(r)
                 for r in ResourceType if p.inventory.get(r) > 0

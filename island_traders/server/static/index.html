@@ -3029,7 +3029,11 @@ function updateCapOrderTotal() {
     document.getElementById('cap-order-expedited').checked
       ? `~${moneyDp(expeditedEstimate)} at failure`
       : 'Optional';
+  const _me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  const _cash = (_me && (_me.treasury ?? _me.dollops)) || 0;
+  const _short = total > _cash;
   document.getElementById('cap-order-total').innerHTML = `
+    <div class="cap-quote-row" style="color:${_short ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_short ? ' — short, finance or lower the order' : ''}</div></div>
     <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
     <div class="cap-quote-row"><div class="cap-quote-label">${esc(maintLabel)}</div><div class="cap-quote-value">${moneyDp(contract)}</div></div>
     <div class="cap-quote-row"><div class="cap-quote-label">Manufacturer guarantee</div><div class="cap-quote-value">${moneyDp(0)}</div></div>
