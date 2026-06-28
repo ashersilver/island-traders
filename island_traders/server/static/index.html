@@ -4115,11 +4115,100 @@ function _renderStaffingSection(player) {
   </section>`;
 }
 
+function _renderTransferOffersSection(player) {
+  const offers = player.transfer_offers || [];
+  if (!offers.length) return '';
+  const names = _playerNameLookup();
+  const rows = offers.map(o => {
+    const isSender   = o.from_player === player.player_id;
+    const counterpart = names[isSender ? o.to_player : o.from_player] || `Player ${isSender ? o.to_player : o.from_player}`;
+    const dirLabel   = isSender
+      ? `Send ${o.count} ${esc(o.profession)} → ${esc(counterpart)}`
+      : `Receive ${o.count} ${esc(o.profession)} from ${esc(counterpart)}`;
+    const feeLabel   = `${(o.fee_per_head * o.count).toFixed(1)} Dp (${o.fee_per_head}/head)`;
+    const btns = isSender
+      ? `<span style="font-size:.72rem;color:var(--dim)">Awaiting response</span>`
+      : `<button class="btn-gold btn-sm" onclick="respondTransferOffer('${esc(o.offer_id)}',true)">Accept</button>
+         <button class="btn-ghost btn-sm" onclick="respondTransferOffer('${esc(o.offer_id)}',false)">Decline</button>`;
+    return `<tr><td>${dirLabel}</td><td>${feeLabel}</td><td>${btns}</td></tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Pending Worker Transfers</h4>
+    <table class="popup-table">
+      <thead><tr><th>Transfer</th><th>Fee</th><th>Action</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:.5rem">
+      <button class="btn-ghost btn-sm" onclick="openMakeTransferOfferForm()">+ Offer / Request Workers</button>
+    </div>
+  </section>`;
+}
+
+function respondTransferOffer(offerId, accept) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'worker_transfer_respond', offer_id: offerId, accept }));
+  }
+}
+
+function openMakeTransferOfferForm() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  const names = _playerNameLookup();
+  const otherPlayers = gameState.players.filter(p => p.player_id !== me.player_id);
+  if (!otherPlayers.length) { showToast('No other islands to trade workers with.'); return; }
+
+  const profOptions = Object.keys(me.workforce_professions || {})
+    .map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  const playerOptions = otherPlayers
+    .map(p => `<option value="${p.player_id}">${esc(p.name)}</option>`).join('');
+
+  showPopup('Offer / Request Workers', `
+    <section class="popup-section">
+      <table class="popup-table">
+        <tr><th>Direction</th><td>
+          <select id="tf-direction">
+            <option value="offer">I send workers (offer)</option>
+            <option value="request">I receive workers (request)</option>
+          </select>
+        </td></tr>
+        <tr><th>Other island</th><td><select id="tf-player">${playerOptions}</select></td></tr>
+        <tr><th>Profession</th><td>
+          <select id="tf-profession">
+            <option value="Unskilled">Unskilled</option>${profOptions}
+          </select>
+        </td></tr>
+        <tr><th>Count</th><td><input type="number" id="tf-count" value="1" min="1" style="width:5rem"></td></tr>
+        <tr><th>Fee / head (Dp)</th><td><input type="number" id="tf-fee" value="10" min="0" step="1" style="width:6rem"></td></tr>
+      </table>
+      <div style="margin-top:.7rem;display:flex;gap:.5rem">
+        <button class="btn-gold btn-sm" onclick="submitTransferOffer()">Send Offer</button>
+        <button class="btn-ghost btn-sm" onclick="closePopup()">Cancel</button>
+      </div>
+    </section>`);
+}
+
+function submitTransferOffer() {
+  const direction  = document.getElementById('tf-direction')?.value;
+  const to_player  = parseInt(document.getElementById('tf-player')?.value, 10);
+  const profession = document.getElementById('tf-profession')?.value;
+  const count      = parseInt(document.getElementById('tf-count')?.value, 10);
+  const fee_per_head = parseFloat(document.getElementById('tf-fee')?.value);
+  if (!direction || !to_player || !profession || count < 1 || fee_per_head < 0) {
+    showToast('Please fill in all fields.', { type: 'err' }); return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'worker_transfer_offer', to_player_id: to_player, profession, count, fee_per_head, direction }));
+    closePopup();
+    showToast('Transfer offer sent.');
+  }
+}
+
 function showPersonnelPopup() {
   if (!gameState || myPlayerIdx == null) return;
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
   const body =
+    _renderTransferOffersSection(me) +
     _renderTrainingPipelineSection(me.training_pipeline || []) +
     _renderStaffingContractsSection(me.staffing_contracts || []) +
     _renderStaffingSection(me);
@@ -4554,6 +4643,31 @@ function handleMessage(msg) {
       } else {
         addLog('Market order error: ' + (msg.error || 'Unknown error'), 'err');
         showToast(msg.error || 'Market order update failed.', { type: 'error' });
+      }
+      break;
+    case 'transfer_offer_received': {
+      const o = msg.offer;
+      if (o) {
+        const names = _playerNameLookup();
+        const from = names[o.from_player] || `Player ${o.from_player}`;
+        addLog(`📦 Worker transfer offer from ${from}: ${o.count} ${o.profession} @ ${o.fee_per_head} Dp/head.`, 'info');
+        showToast(`Transfer offer from ${from} — open Personnel to respond.`, { type: 'info', duration: 8000 });
+      }
+      break;
+    }
+    case 'transfer_offer_sent':
+      showToast('Transfer offer sent — waiting for response.', { type: 'success' });
+      break;
+    case 'worker_transfer_result':
+      if (msg.ok && msg.accepted) {
+        const moved = msg.workers_moved;
+        addLog(`✅ Transfer complete: ${moved} ${msg.profession} workers moved. Fee: ${msg.fee_paid?.toFixed(1)} Dp.`, 'ok');
+        showToast(`Transfer complete — ${moved} ${msg.profession} workers moved.`, { type: 'success' });
+      } else if (msg.ok && !msg.accepted) {
+        addLog('Transfer offer declined.', 'info');
+        showToast('Transfer offer declined.', { type: 'info' });
+      } else {
+        showToast(msg.error || 'Transfer failed.', { type: 'error' });
       }
       break;
     case 'game_state':
