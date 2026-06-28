@@ -116,6 +116,7 @@ def test_training_decisions_payload_and_ack():
         "suggested_offer_if_any": 80.0,
         "target_profession": "Mechanic",
         "n_workers": 1,
+        "student_loan_requested": False,
     }]
     manager = _manager([educator, farmer], reg, QueueActionIO(req.batch_id))
     manager._action_ack_training_decision(

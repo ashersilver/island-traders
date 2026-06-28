@@ -155,6 +155,88 @@ def test_review_training_still_lists_request_with_absent_pinned_workers():
     assert "No training requests awaiting your approval." not in output
 
 
+def test_review_training_skip_is_noop_and_re_reviewable_same_season():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(3)
+    training = TrainingRegistry()
+    reqs = [
+        training.propose(
+            requester_id=farmer.player_id,
+            worker_ids=[worker.worker_id],
+            educator_id=educator.player_id,
+            dollops_to_educator=10.0 + idx,
+            target_profession="FarmingTechnician",
+            year=0,
+            season=0,
+            transport_mode="air_ticket",
+        )
+        for idx, worker in enumerate(workers)
+    ]
+
+    manager = _turn_manager(
+        [farmer, educator],
+        training,
+        TrainingReviewIO(confirms=[None, None, None]),
+    )
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    assert [r.status for r in reqs] == [TrainingStatus.AWAITING_EDUCATOR] * 3
+    assert [r.batch_id for r in training.sorted_pending_for_educator(educator.player_id)] == [
+        r.batch_id for r in reqs
+    ]
+
+    io2 = TrainingReviewIO(confirms=[None, None, None])
+    manager.io = io2
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    output = "\n".join(io2.printed)
+    assert output.count("What would you like to do with this request?") == 3
+    assert "No training requests awaiting your approval." not in output
+
+
+def test_reorder_training_queue_preserves_all_pending_statuses():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(3)
+    training = TrainingRegistry()
+    reqs = [
+        training.propose(
+            requester_id=farmer.player_id,
+            worker_ids=[worker.worker_id],
+            educator_id=educator.player_id,
+            dollops_to_educator=10.0 + idx,
+            target_profession="FarmingTechnician",
+            year=0,
+            season=0,
+            transport_mode="air_ticket",
+        )
+        for idx, worker in enumerate(workers)
+    ]
+
+    training.reorder_pending(
+        educator.player_id,
+        [reqs[2].batch_id, reqs[0].batch_id, reqs[1].batch_id],
+    )
+
+    assert [r.status for r in reqs] == [TrainingStatus.AWAITING_EDUCATOR] * 3
+    assert [r.batch_id for r in training.sorted_pending_for_educator(educator.player_id)] == [
+        reqs[2].batch_id,
+        reqs[0].batch_id,
+        reqs[1].batch_id,
+    ]
+
+
 def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     farmer = _player(0, "Farmer", "Farmer")
     educator = _player(1, "Educator", "Educator")
@@ -189,6 +271,137 @@ def test_educator_approval_consumes_air_tickets_and_dispatches_training():
     assert educator.dollops == 154.0
     assert farmer.dollops == 30.0
     assert farmer.workforce.training_count == 2
+
+
+def test_financed_training_approval_uses_student_loan_and_keeps_treasury_flat():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    banker = _player(2, "Banker", "Banker")
+    banker.workforce.add_workers(1, training_level=1, profession="Banker")
+    workers = farmer.workforce.add_workers(1)
+    educator.receive_resources(ResourceType.PASSENGER_SEATS, 1)
+    _manager_training_ready(educator)
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[workers[0].worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=70.0,
+        target_profession="Nurse",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+        student_loan_requested=True,
+    )
+
+    manager = _turn_manager([farmer, educator, banker], training, FakeIOAdapter())
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    assert req.status == TrainingStatus.DISPATCHED
+    assert farmer.dollops == 100.0
+    assert educator.dollops == 162.0  # 100 + 70 fee - 8 student medical cover
+    loans = manager.loan_ledger.active_loans_for(farmer.player_id)
+    assert len(loans) == 1
+    assert loans[0].principal == 70.0
+
+
+def test_financed_training_falls_back_to_cash_without_banker():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(1)
+    educator.receive_resources(ResourceType.PASSENGER_SEATS, 1)
+    _manager_training_ready(educator)
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[workers[0].worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=70.0,
+        target_profession="Nurse",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+        student_loan_requested=True,
+    )
+
+    manager = _turn_manager([farmer, educator], training, FakeIOAdapter())
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    assert req.status == TrainingStatus.DISPATCHED
+    assert farmer.dollops == 30.0
+    assert educator.dollops == 162.0
+    assert manager.loan_ledger.active_loans_for(farmer.player_id) == []
+
+
+def test_financed_training_rejects_when_no_bank_and_requester_cannot_pay():
+    farmer = _player(0, "Farmer", "Farmer")
+    farmer.dollops = 10.0
+    educator = _player(1, "Educator", "Educator")
+    workers = farmer.workforce.add_workers(1)
+    educator.receive_resources(ResourceType.PASSENGER_SEATS, 1)
+    _manager_training_ready(educator)
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[workers[0].worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=70.0,
+        target_profession="Nurse",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+        student_loan_requested=True,
+    )
+
+    manager = _turn_manager([farmer, educator], training, FakeIOAdapter())
+    manager._action_review_training(
+        educator,
+        TurnResult(educator.player_id, season=0, year=0),
+        season_name="Spring",
+        year=0,
+    )
+
+    assert req.status == TrainingStatus.REJECTED
+    assert farmer.dollops == 10.0
+    assert educator.dollops == 100.0
+    assert educator.inventory.get(ResourceType.PASSENGER_SEATS) == 1
+    assert educator.inventory.get(ResourceType.COURSES) == 1
+    assert manager.loan_ledger.active_loans_for(farmer.player_id) == []
+
+
+def test_rejected_financed_training_request_creates_no_loan():
+    farmer = _player(0, "Farmer", "Farmer")
+    educator = _player(1, "Educator", "Educator")
+    banker = _player(2, "Banker", "Banker")
+    workers = farmer.workforce.add_workers(1)
+    training = TrainingRegistry()
+    req = training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[workers[0].worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=70.0,
+        target_profession="Nurse",
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+        student_loan_requested=True,
+    )
+
+    training.educator_reject(req.batch_id, "No seats.", year=0, season=0)
+    manager = _turn_manager([farmer, educator, banker], training, FakeIOAdapter())
+
+    assert req.status == TrainingStatus.REJECTED
+    assert manager.loan_ledger.active_loans_for(farmer.player_id) == []
 
 
 def test_training_approval_does_not_consume_expertise_per_attendee():

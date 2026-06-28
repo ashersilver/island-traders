@@ -1807,7 +1807,11 @@ class GameManager:
         return self._launch_game(room_id)
 
     def _player_capacity(
-        self, p, current_tick: int | None = None, season_name: str = "Spring"
+        self,
+        p,
+        game: Game | None = None,
+        current_tick: int | None = None,
+        season_name: str = "Spring",
     ) -> dict:
         """Compute per-output max-producible + binding constraint for a player.
 
@@ -2191,17 +2195,23 @@ class GameManager:
                     "expedited_eligible":     u.expedited_eligible,
                     "purchase_value":         u.purchase_value,
                 })
-            capital_owned.append({
+            repairable_failed = max(0, failed_count - queued_repairs)
+            owned_payload = {
                 "item_id":     item_id,
                 "name":        item.name,
                 "role":        item.role,
                 "count":       count,
                 "warrantied":  p.capital_warranties.get(item_id, 0),
                 "failed":      failed_count,
-                "repairable_failed": max(0, failed_count - queued_repairs),
+                "repairable_failed": repairable_failed,
                 "description": item.description,
                 "units":       units,
-            })
+            }
+            if game is not None and repairable_failed > 0:
+                owned_payload["repair_cost"] = game.capital_repair_preview(
+                    p, item_id
+                )
+            capital_owned.append(owned_payload)
         # Items still arriving
         in_transit = []
         for entry in p.capital_in_transit:
@@ -2400,6 +2410,9 @@ class GameManager:
                 "transport_mode": req.transport_mode,
                 "tickets_supplied_by_requester": req.tickets_supplied_by_requester,
                 "dollops_to_educator": round(req.dollops_to_educator, 1),
+                "student_loan_requested": bool(
+                    getattr(req, "student_loan_requested", False)
+                ),
                 "return_year": return_year,
                 "return_season": return_season,
                 "seasons_remaining": seasons_remaining,
@@ -2563,6 +2576,9 @@ class GameManager:
                 "target_profession": self._profession_label(req.target_profession),
                 "priority": req.priority,
                 "dollops_offered": round(req.dollops_to_educator, 1),
+                "student_loan_requested": bool(
+                    getattr(req, "student_loan_requested", False)
+                ),
                 "requested_year": req.proposed_year + 1,
                 "requested_season": SEASONS[req.proposed_season]
                     if 0 <= req.proposed_season < len(SEASONS)
@@ -2608,6 +2624,9 @@ class GameManager:
                 ),
                 "target_profession": self._profession_label(req.target_profession),
                 "n_workers": len(req.worker_ids),
+                "student_loan_requested": bool(
+                    getattr(req, "student_loan_requested", False)
+                ),
             })
         return decisions
 
@@ -2762,6 +2781,54 @@ class GameManager:
             if deal.proposer_id == viewer_engine_id
         ]
         return awaiting, mine
+
+    def _pending_actions_for_viewer(
+        self,
+        game: Game,
+        viewer_engine_id: int | None,
+        deals_awaiting_me: list[dict],
+        capital_negotiations_awaiting_me: list[dict],
+    ) -> list[str]:
+        if viewer_engine_id is None:
+            return []
+        player = next(
+            (p for p in game.players if p.player_id == viewer_engine_id),
+            None,
+        )
+        if player is None:
+            return []
+
+        actions: list[str] = []
+        role_names = {role.name for role in player.roles}
+        if (
+            "Educator" in role_names
+            and game.training.pending_for_educator(viewer_engine_id)
+        ):
+            actions.append("review_training")
+        if "Transporter" in role_names and game.training.pending_transport():
+            actions.append("arrange_transport")
+        staffing = getattr(game, "staffing", None)
+        if (
+            "Doctor" in role_names
+            and staffing is not None
+            and staffing.pending_for_provider(viewer_engine_id)
+        ):
+            actions.append("review_staffing_requests")
+        if deals_awaiting_me:
+            actions.append("review_deals")
+        if capital_negotiations_awaiting_me:
+            actions.append("review_capital_order")
+
+        for item_id, failed in player.failed_capital.items():
+            queued = sum(
+                int(entry.get("count", 1))
+                for entry in player.capital_repair_in_progress
+                if entry.get("item_id") == item_id
+            )
+            if failed > queued:
+                actions.append("repair_capital")
+                break
+        return actions
 
     async def _handle_deal_propose(
         self,
@@ -3275,9 +3342,13 @@ class GameManager:
                 transport_mode = "self_training"
             tickets = int(row.get("tickets_supplied_by_requester", 0) or 0)
             fee = float(row.get("dollops_to_educator", row.get("fee", 0.0)) or 0.0)
+            student_loan = bool(
+                row.get("student_loan_requested", row.get("financing", False))
+            )
             if transport_mode == "self_training":
                 tickets = 0
                 fee = 0.0
+                student_loan = False
             specialty = str(row.get("specialty", row.get("engineer_specialty", "")) or "")
             duration = room.game.turn_manager._training_duration_for_selection(
                 profession,
@@ -3303,6 +3374,7 @@ class GameManager:
                 engineer_specialty=specialty,
                 duration_seasons=duration,
                 settling_seasons_on_return=settling,
+                student_loan_requested=student_loan,
             )
             return {
                 "index": index,
@@ -4364,6 +4436,7 @@ class GameManager:
             # Production capacity panel + constraint data
             pd["capacity"] = self._player_capacity(
                 p,
+                game=game,
                 current_tick=current_tick,
                 season_name=getattr(game, "season", SEASONS[current_season_idx]),
             )
@@ -4540,6 +4613,12 @@ class GameManager:
         capital_negotiations_awaiting_me, my_capital_negotiations = (
             self._capital_negotiation_state_for_viewer(game, viewer_engine_id)
         )
+        pending_actions = self._pending_actions_for_viewer(
+            game,
+            viewer_engine_id,
+            deals_awaiting_me,
+            capital_negotiations_awaiting_me,
+        )
         my_market_orders = (
             game.market.player_orders(viewer_engine_id)
             if viewer_engine_id is not None else {"offers": [], "bids": []}
@@ -4588,6 +4667,7 @@ class GameManager:
             "my_deals": my_deals,
             "capital_negotiations_awaiting_me": capital_negotiations_awaiting_me,
             "my_capital_negotiations": my_capital_negotiations,
+            "pending_actions": pending_actions,
             # Chat channels visible to this viewer (room + private ones they're
             # in). Powers the spectator read-only panel and player resync — a
             # spectator polls with the watched seat's id, so this surfaces that

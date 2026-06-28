@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.15`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.16`.
+
+- **Training queue, student loans, repair preview, and pending action flags** —
+  Review Training skip/cancel is now a no-op and same-season re-reviewable, while
+  queue reordering preserves every pending request. Training requests can carry
+  `student_loan_requested` / `financing`; approval draws a Bank loan for the
+  Educator fee only, falling back to cash when possible and creating no debt for
+  rejected requests. Capital repair quotes now come from
+  `Game.capital_repair_preview` and appear as `repair_cost` on failed
+  `capital_owned` entries. `game_state.pending_actions` now surfaces
+  `review_training`, `arrange_transport`, `review_staffing_requests`,
+  `review_deals`, `review_capital_order`, and `repair_capital` for the viewer.
 
 - **Chat new-chat fix** — `get_game_state` now exposes `is_human` per player (it only had
   `is_ai`), so the "New chat" island picker (and roster cards) stop seeing zero human islands.
