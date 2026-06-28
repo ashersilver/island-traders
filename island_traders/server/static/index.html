@@ -3298,13 +3298,27 @@ function renderCapacityPanel(capacity) {
   } else {
     let html = '';
     if (owned.length) {
-      html += owned.map(it =>
-        `<div class="mkt-row" title="${esc(it.description || '')}">
-           <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}</span>
+      html += owned.map(it => {
+        const repFailed = it.repairable_failed ?? it.failed ?? 0;
+        const repairBtn = repFailed > 0
+          ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(it.item_id)}')" title="Attempt repair of one failed unit">Repair</button>`
+          : '';
+        let costLine = '';
+        if (repFailed > 0 && it.repair_cost) {
+          const rc = it.repair_cost;
+          const canRepair = rc.repairable !== false;
+          const costTxt = canRepair
+            ? `${rc.dp} Dp + ${rc.freight} freight`
+            : `${rc.dp} Dp — ${esc(rc.reason || 'insufficient funds')}`;
+          costLine = `<div style="font-size:.67rem;color:${canRepair ? 'var(--dim)' : 'var(--red)'};margin-top:.1rem;width:100%">Next repair: ${costTxt}</div>`;
+        }
+        return `<div class="mkt-row" title="${esc(it.description || '')}" style="flex-wrap:wrap">
+           <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}${repFailed > 0 ? ` <span style="color:var(--red);font-size:.68rem">⚠ ${repFailed} failed</span>` : ''}</span>
            <span class="price" style="color:var(--dim);font-size:.7rem">${esc(it.role)}</span>
-           ${(it.repairable_failed ?? it.failed ?? 0) > 0 ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(it.item_id)}')" title="Attempt repair of one failed unit">Repair</button>` : ''}
-         </div>`
-      ).join('');
+           ${repairBtn}
+           ${costLine}
+         </div>`;
+      }).join('');
     }
     if (inTransit.length) {
       html += '<div style="color:var(--gold);font-size:.72rem;margin-top:.45rem;font-weight:700">On order / arriving:</div>';
@@ -4922,6 +4936,9 @@ function renderGameState() {
     }
   }
 
+  // Pending actions set — used by _renderActionButton to highlight buttons
+  window._pendingActions = new Set(gameState.pending_actions || []);
+
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
   renderBuildDevelop(me);
@@ -6355,7 +6372,8 @@ function _renderActionButton(o) {
   if (o.value === 'produce') classes.push('highlight');
   // Server-set recommended (Codex Phase 1 default = false) OR client-set from
   // a live Decision Hint that triggers this action (Phase 4 hint wiring).
-  if (o.recommended || _currentHintActions.has(o.value)) classes.push('recommended');
+  const pending = window._pendingActions || new Set();
+  if (o.recommended || _currentHintActions.has(o.value) || pending.has(o.value)) classes.push('recommended');
   const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
   const disabled = o.enabled === false;
   const disabledAttr = disabled ? ' disabled' : '';
@@ -6461,6 +6479,7 @@ function openTrainingDesk() {
     transport: 'air_ticket',
     tickets: 0,
     fee: 0,
+    student_loan: false,
   }];
   showDlg('Training Desk — Book Workers', _renderTrainingDesk());
 }
@@ -6504,6 +6523,9 @@ function _renderTrainingDesk() {
         <label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Fee (Dp)
           <input type="number" min="0" value="${row.fee}" onchange="_tdEdit(${i},'fee',this.value)" style="width:100%;display:block">
         </label>
+        <label style="flex:0 0 auto;font-size:.74rem;color:var(--dim);align-self:flex-end;padding-bottom:.2rem" title="Bank finances the educator fee — worker repays over time">
+          <input type="checkbox" ${row.student_loan ? 'checked' : ''} onchange="_tdEdit(${i},'student_loan',this.checked)"> Loan
+        </label>
         <button class="btn-ghost btn-sm" onclick="_tdRemove(${i})" ${_trainingDeskRows.length <= 1 ? 'disabled' : ''} title="Remove this row">✕</button>
       </div>
     </div>`;
@@ -6538,7 +6560,7 @@ function _tdAddRow() {
   const opts = _myTrainingOptions();
   const first = opts && opts.professions[0];
   if (!first) return;
-  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0 });
+  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0, student_loan: false });
   _rerenderTrainingDesk();
 }
 
@@ -6556,6 +6578,7 @@ function _tdSubmit() {
       transport_mode: r.transport,
       tickets_supplied_by_requester: r.transport === 'air_ticket' ? (parseInt(r.tickets, 10) || 0) : 0,
       dollops_to_educator: parseFloat(r.fee) || 0,
+      student_loan_requested: !!r.student_loan,
     }));
   if (!requests.length) { showToast('Add at least one worker to book.', { type: 'error' }); return; }
   _trainingDeskSeq += 1;
