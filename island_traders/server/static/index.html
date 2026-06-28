@@ -188,6 +188,15 @@ button:active{transform:scale(.97)}
 .psb-ready-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--dim)}
 .psb-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--dim)}
 .psb-dot.ready{background:#88ddaa}
+.psb-report-panels{display:flex;gap:.7rem;flex-wrap:wrap;width:100%}
+.psb-panel{flex:1 1 180px;min-width:160px;background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:6px;padding:.5rem .7rem}
+.psb-panel h4{margin:0 0 .35rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
+.psb-panel-row{display:flex;justify-content:space-between;font-size:.75rem;padding:.1rem 0}
+.psb-panel-row .lbl{color:var(--dim)}
+.psb-panel-row .val{font-weight:600;color:var(--text)}
+.psb-panel-row .val.pos{color:#88ddaa}
+.psb-panel-row .val.neg{color:var(--red)}
+.psb-panel-row .val.warn{color:#f5c518}
 
 /* Pause overlay (Issue #1) */
 .pause-overlay{
@@ -1033,6 +1042,8 @@ body.fx-off .ih-pins .pdot{animation:none}
       <span id="psb-ready-label">Ready to Start ✓</span>
     </button>
   </div>
+  <!-- Season report panels (populated by season_report WS message from engine) -->
+  <div id="psb-report" style="display:none;width:100%;margin-top:.6rem;border-top:1px solid var(--border);padding-top:.6rem"></div>
 </div>
 
 <!-- ===================== LANDING ===================== -->
@@ -4622,6 +4633,9 @@ function handleMessage(msg) {
     case 'pre_season_start':
       onPreSeasonStart(msg);
       break;
+    case 'season_report':
+      renderSeasonReport(msg.season_report);
+      break;
     case 'pre_season_end':
       onPreSeasonEnd(msg);
       break;
@@ -6028,7 +6042,76 @@ function onPreSeasonStart(msg) {
     _renderPreSeasonDots(seasonActiveHumans, seasonReadySet);
     if (secs > 0) startPreSeasonTimer();
   }
+  // Clear any stale season report from the previous pre-season
+  const reportEl = document.getElementById('psb-report');
+  if (reportEl) { reportEl.style.display = 'none'; reportEl.innerHTML = ''; }
+
   addLog(`📋 Pre-season review: ${msg.season} Year ${msg.year} (${secs}s).`, 'info');
+}
+
+function renderSeasonReport(report) {
+  const el = document.getElementById('psb-report');
+  if (!el || !report) return;
+
+  const fmt = (v, dp = 1) => (v == null ? '—' : Number(v).toFixed(dp));
+  const valClass = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+  const row = (label, val, cls = '') =>
+    `<div class="psb-panel-row"><span class="lbl">${label}</span><span class="val ${cls}">${val}</span></div>`;
+
+  // P&L panel — last season + 3 prior
+  let plHtml = '';
+  const history = report.pl_history || [];
+  if (history.length) {
+    plHtml = history.slice().reverse().map(s =>
+      `<div style="font-size:.7rem;color:var(--dim);margin-top:.25rem">${esc(s.season)}</div>` +
+      row('Revenue', fmt(s.revenue) + ' Dp', 'pos') +
+      row('Costs',   fmt(s.costs)   + ' Dp', 'neg') +
+      row('Profit',  fmt(s.profit)  + ' Dp', valClass(s.profit))
+    ).join('<hr style="border:none;border-top:1px solid var(--border);margin:.3rem 0">');
+  } else {
+    plHtml = `<div style="font-size:.75rem;color:var(--dim)">No data yet — available after first season.</div>`;
+  }
+
+  // Balance sheet panel
+  const bs = report.balance_sheet || {};
+  const bsHtml = bs.treasury != null ? [
+    row('Treasury',   fmt(bs.treasury)         + ' Dp'),
+    row('Inventory',  fmt(bs.inventory_value)   + ' Dp'),
+    row('Capital',    fmt(bs.capital_value)     + ' Dp'),
+    row('Loans',     '-' + fmt(bs.loans)        + ' Dp', 'neg'),
+    `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`,
+    row('Net Worth',  fmt(bs.net_worth)         + ' Dp', valClass(bs.net_worth)),
+  ].join('') : `<div style="font-size:.75rem;color:var(--dim)">—</div>`;
+
+  // Deficiencies panel
+  const defs = report.deficiencies || [];
+  const defHtml = defs.length
+    ? defs.map(d =>
+        `<div class="psb-panel-row" style="flex-direction:column;align-items:flex-start;padding:.15rem 0">
+           <span style="font-size:.75rem">${esc(d.name)}</span>
+           <span style="font-size:.67rem;color:${d.repairable !== false ? 'var(--red)' : '#888'}">
+             ${d.failed} failed${d.repairable === false ? ' (not repairable)' : ''}
+           </span>
+         </div>`).join('')
+    : `<div style="font-size:.75rem;color:#88ddaa">No issues ✓</div>`;
+
+  // Manpower panel
+  const mp = report.manpower || {};
+  const mpHtml = mp.population != null ? [
+    row('Population',  mp.population),
+    row('Employed',    mp.employed + ' / ' + mp.capacity, mp.vacancies > 0 ? 'warn' : ''),
+    row('Vacancies',   mp.vacancies, mp.vacancies > 0 ? 'warn' : 'pos'),
+    row('In training', mp.training_queue || 0),
+    row('Graduating',  mp.graduating_next || 0, mp.graduating_next > 0 ? 'pos' : ''),
+  ].join('') : `<div style="font-size:.75rem;color:var(--dim)">—</div>`;
+
+  el.innerHTML = `<div class="psb-report-panels">
+    <div class="psb-panel"><h4>P&amp;L — Seasons</h4>${plHtml}</div>
+    <div class="psb-panel"><h4>Balance Sheet</h4>${bsHtml}</div>
+    <div class="psb-panel"><h4>Production Issues</h4>${defHtml}</div>
+    <div class="psb-panel"><h4>Manpower</h4>${mpHtml}</div>
+  </div>`;
+  el.style.display = 'block';
 }
 
 function onPreSeasonEnd(msg) {
