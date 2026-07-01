@@ -1473,6 +1473,9 @@ body.fx-off .ih-pins .pdot{animation:none}
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
+        <div class="stat" id="s-order-book-row" style="display:none;cursor:pointer" onclick="showOrderBookPopup()" title="Click to review and reorder your production queue">
+          <span class="lbl">Order Book</span><span class="val" id="s-order-book-count">—</span>
+        </div>
         <div id="s-training-decisions"></div>
         <div id="s-training-strip"></div>
         <div id="s-staffing-strip"></div>
@@ -3982,6 +3985,9 @@ function _renderTrainingPipelineSection(pipeline) {
         feeCell += `<br><span style="font-size:.67rem;color:var(--dim)">Loan requested — pending</span>`;
       }
     }
+    const cancelCell = b.status === 'awaiting_educator'
+      ? `<button class="btn-ghost btn-sm" onclick="cancelTrainingRequest(${b.batch_id})" title="Withdraw this request before the Educator reviews it">Cancel</button>`
+      : '<span style="color:var(--dim)">—</span>';
     return `
     <tr>
       <td>${b.worker_count}</td>
@@ -3992,6 +3998,7 @@ function _renderTrainingPipelineSection(pipeline) {
       <td>${returnCell}</td>
       <td>${waitCell}</td>
       <td>${blockerCell}</td>
+      <td>${cancelCell}</td>
     </tr>`;
   }).join('');
   const notes = pipeline
@@ -4003,12 +4010,18 @@ function _renderTrainingPipelineSection(pipeline) {
     <table class="popup-table">
       <thead><tr>
         <th>Workers</th><th>Training for</th><th>Status</th><th>Educator</th>
-        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th>
+        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th><th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     ${notes}
   </section>`;
+}
+
+function cancelTrainingRequest(batchId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'cancel_training', training_id: batchId }));
+  }
 }
 
 // ---- Medical staffing strip helpers ----
@@ -4262,6 +4275,83 @@ function showPersonnelPopup() {
     _renderStaffingContractsSection(me.staffing_contracts || []) +
     _renderStaffingSection(me);
   showPopup(`Personnel — ${esc(me.name)}`, body);
+}
+
+// ==================== MANUFACTURER ORDER BOOK (#194) ====================
+function _renderOrderBookRow(o, idx, total) {
+  const promiseLabel = (o.promised_year != null && o.promised_season != null)
+    ? `Year ${o.promised_year}, ${esc(o.promised_season)}`
+    : '<span style="color:var(--dim)">—</span>';
+  const priceLabel = o.status === 'accepted'
+    ? moneyDp(o.counter_total != null ? o.counter_total : o.buyer_offer)
+    : (o.counter_total != null ? `Countered ${moneyDp(o.counter_total)}` : moneyDp(o.buyer_offer));
+  let actionsHtml = '';
+  if (o.status === 'proposed' && o.awaiting_id === _myEnginePlayerId()) {
+    actionsHtml = `<button class="btn-accept btn-sm" onclick="respondCapNeg(${o.negotiation_id},'accept')">Accept</button>
+      <button class="btn-counter btn-sm" onclick="respondCapNeg(${o.negotiation_id},'counter',${o.recommended_total})">Counter…</button>
+      <button class="btn-reject btn-sm" onclick="respondCapNeg(${o.negotiation_id},'decline')">Decline</button>`;
+  } else {
+    actionsHtml = `<span style="color:var(--dim);font-size:.72rem">—</span>`;
+  }
+  const canMoveUp = !o.locked && idx > 0;
+  const canMoveDown = !o.locked && idx < total - 1;
+  const reorderHtml = o.locked
+    ? `<span style="color:var(--dim);font-size:.68rem" title="Already in production — cannot reorder">🔒 locked</span>`
+    : `<button class="btn-ghost btn-sm" ${canMoveUp ? '' : 'disabled'} onclick="reorderOrderBook(${o.negotiation_id},-1)" title="Move up (produce sooner)">▲</button>
+       <button class="btn-ghost btn-sm" ${canMoveDown ? '' : 'disabled'} onclick="reorderOrderBook(${o.negotiation_id},1)" title="Move down (produce later)">▼</button>`;
+  return `<tr>
+    <td>${o.queue_position + 1}</td>
+    <td>${esc(o.name || o.item_id)}</td>
+    <td>${esc(o.buyer_name || `Player ${o.buyer_id}`)}</td>
+    <td style="text-transform:capitalize">${esc(o.status)}</td>
+    <td>${priceLabel}</td>
+    <td>${promiseLabel}</td>
+    <td>${actionsHtml}</td>
+    <td>${reorderHtml}</td>
+  </tr>`;
+}
+
+function _renderOrderBookSection(me) {
+  const orders = (me.order_book || []).slice().sort((a, b) => a.queue_position - b.queue_position);
+  if (!orders.length) {
+    return `<section class="popup-section">
+      <h4>Order Book</h4>
+      <p class="empty-state">No orders currently queued.</p>
+    </section>`;
+  }
+  const rows = orders.map((o, idx) => _renderOrderBookRow(o, idx, orders.length)).join('');
+  return `<section class="popup-section">
+    <h4>Order Book — Production Queue</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>#</th><th>Item</th><th>Buyer</th><th>Status</th><th>Price</th>
+        <th>Promised</th><th>Review</th><th>Reorder</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </section>`;
+}
+
+function showOrderBookPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  showPopup(`Order Book — ${esc(me.name)}`, _renderOrderBookSection(me));
+}
+
+function reorderOrderBook(negotiationId, direction) {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const orders = (me.order_book || []).slice().sort((a, b) => a.queue_position - b.queue_position);
+  const ids = orders.map(o => o.negotiation_id);
+  const idx = ids.indexOf(negotiationId);
+  const swapIdx = idx + direction;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= ids.length) return;
+  // Never allow a swap across a locked entry's fixed slot.
+  if (orders[idx].locked || orders[swapIdx].locked) return;
+  [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+  sendWsMessage({ type: 'manufacturer_reorder_queue', negotiation_ids: ids });
 }
 
 // ==================== INVENTORY / INSURANCE / LOANS POPUPS (Phase 6 §5) ====================
@@ -4780,6 +4870,28 @@ function handleMessage(msg) {
     case 'training_batch_result':
       onTrainingBatchResult(msg);
       break;
+    case 'cancel_training_result':
+      if (msg.ok) {
+        const refundNote = msg.refunded > 0 ? ` ${msg.refunded.toFixed(1)} Dp refunded.` : '';
+        showToast(`Training request cancelled.${refundNote}`, { type: 'success' });
+      } else {
+        showToast(msg.error || 'Could not cancel training request.', { type: 'error' });
+      }
+      break;
+    case 'manufacturer_reorder_ack':
+      if (msg.ok) {
+        showToast('Production queue reordered.', { type: 'success' });
+        // game_state follows right behind with the updated order_book; re-render
+        // the popup in place if it's currently open so the new order is visible.
+        if (document.getElementById('overlay')?.classList.contains('active')
+            && gameState && myPlayerIdx != null) {
+          const me = gameState.players[myPlayerIdx];
+          if (me) document.getElementById('dlg-body').innerHTML = _renderOrderBookSection(me);
+        }
+      } else {
+        showToast(msg.error || 'Could not reorder production queue.', { type: 'error' });
+      }
+      break;
     case 'deal_response':
       onDealResponsePush(msg);
       break;
@@ -5044,6 +5156,18 @@ function renderGameState() {
     if (loadEl) loadEl.textContent = campusLoad + ' visitor' + (campusLoad !== 1 ? 's' : '');
     const hintEl = document.getElementById('s-campus-load-hint');
     if (hintEl) hintEl.textContent = campusLoad > 0 ? `+${campusLoad} Food/season` : '';
+  }
+  // Order Book — only visible for Manufacturers with at least one queued order
+  const orderBookRow = document.getElementById('s-order-book-row');
+  if (orderBookRow) {
+    const isManufacturer = (me.role || '').toLowerCase().includes('manufactur')
+      || (playerRoles(me) || []).some(r => (r || '').toLowerCase().includes('manufactur'));
+    const orderBook = me.order_book || [];
+    orderBookRow.style.display = isManufacturer ? '' : 'none';
+    const countEl = document.getElementById('s-order-book-count');
+    if (countEl) countEl.textContent = orderBook.length
+      ? `${orderBook.length} order${orderBook.length !== 1 ? 's' : ''} queued`
+      : 'No orders queued';
   }
   document.getElementById('hdr-wealth').textContent =
     'Net Worth ' + (me.net_worth ?? me.wealth) + ' Dp';
