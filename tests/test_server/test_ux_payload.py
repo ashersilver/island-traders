@@ -213,6 +213,7 @@ def test_training_pipeline_shape():
         "tickets_supplied_by_requester",
         "dollops_to_educator",
         "student_loan_requested",
+        "loan_financed",
         "return_year",
         "return_season",
         "seasons_remaining",

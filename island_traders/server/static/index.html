@@ -3909,6 +3909,45 @@ function _renderTrainingStrip(pipeline) {
     <div class="training-strip">${rows}</div>`;
 }
 
+// Client-side diff of training_pipeline statuses across game_state snapshots,
+// so the requester gets a toast the moment the Educator approves/declines
+// their batch — the engine only drives this via the sequential wizard and
+// doesn't push a dedicated WS event to the requester.
+let _lastTrainingPipelineStatus = {};
+function _notifyTrainingPipelineChanges(pipeline) {
+  const prev = _lastTrainingPipelineStatus;
+  const next = {};
+  for (const b of pipeline) {
+    next[b.batch_id] = b.status;
+    const prevStatus = prev[b.batch_id];
+    if (prevStatus === undefined || prevStatus === b.status) continue;
+    if (prevStatus === 'awaiting_educator' || prevStatus === 'countered') {
+      if (b.status === 'awaiting_transport' || b.status === 'dispatched') {
+        let loanNote = '';
+        if (b.student_loan_requested) {
+          loanNote = b.loan_financed === true ? ' (Student Loan approved by the Bank)'
+            : b.loan_financed === false ? ' (Student Loan unavailable — paid in cash)'
+            : '';
+        }
+        showToast(
+          `✅ Training approved: ${b.worker_count} → ${b.target_profession}, `
+          + `${(b.dollops_to_educator ?? 0).toFixed(1)} Dp${loanNote}.`,
+          { type: 'success', duration: 7000 }
+        );
+        addLog(`Training batch #${b.batch_id} approved by ${b.educator_name}${loanNote}.`, 'ok');
+      } else if (b.status === 'rejected') {
+        showToast(
+          `❌ Training declined: ${b.worker_count} → ${b.target_profession}`
+          + (b.counter_message ? ` — ${b.counter_message}` : ''),
+          { type: 'error', duration: 8000 }
+        );
+        addLog(`Training batch #${b.batch_id} declined by ${b.educator_name}.`, 'err');
+      }
+    }
+  }
+  _lastTrainingPipelineStatus = next;
+}
+
 function _renderTrainingPipelineSection(pipeline) {
   if (!pipeline || !pipeline.length) {
     return `<section class="popup-section">
@@ -3933,13 +3972,23 @@ function _renderTrainingPipelineSection(pipeline) {
     } else if (b.seasons_blocked > 0) {
       blockerCell = `<span style="color:var(--dim);font-size:.72rem">${b.seasons_blocked} season${b.seasons_blocked !== 1 ? 's' : ''} waiting</span>`;
     }
+    let feeCell = `${(b.dollops_to_educator ?? 0).toFixed(1)} Dp`;
+    if (b.student_loan_requested) {
+      if (b.loan_financed === true) {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--green)">✓ Bank loan approved</span>`;
+      } else if (b.loan_financed === false) {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--gold)">⚠ Loan unavailable — paid cash</span>`;
+      } else {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--dim)">Loan requested — pending</span>`;
+      }
+    }
     return `
     <tr>
       <td>${b.worker_count}</td>
       <td>${esc(b.target_profession || '—')}</td>
       <td style="color:${b.status==='dispatched'?'var(--green)':b.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_formatTrainingStatus(b.status))}</td>
       <td>${esc(b.educator_name || '—')}</td>
-      <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
+      <td>${feeCell}</td>
       <td>${returnCell}</td>
       <td>${waitCell}</td>
       <td>${blockerCell}</td>
@@ -5066,6 +5115,8 @@ function renderGameState() {
 
   // Pending actions set — used by _renderActionButton to highlight buttons
   window._pendingActions = new Set(gameState.pending_actions || []);
+
+  _notifyTrainingPipelineChanges(me.training_pipeline || []);
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));

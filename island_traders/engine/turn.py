@@ -2442,6 +2442,7 @@ class TurnManager:
 
         requester.spend_dollops(fee)
         educator.receive_dollops(fee)
+        req.loan_financed = financed
         if financed:
             self.io.print(
                 f"  Paid {fee:.0f} {CURRENCY_SYMBOL} to {educator.name} "

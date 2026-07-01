@@ -147,6 +147,10 @@ class TrainingRequest:
     # When true, the requester asked the Bank to finance the Educator fee.
     # The loan is attempted only when the request is approved/dispatched.
     student_loan_requested: bool = False
+    # Set once the fee is actually settled: True if a Student Loan was drawn,
+    # False if paid in cash (either not requested, or the loan was
+    # unavailable and cash was used as a fallback). None until settled.
+    loan_financed: bool | None = None
 
     def describe(self, player_names: dict[int, str]) -> str:
         sym = CURRENCY_SYMBOL

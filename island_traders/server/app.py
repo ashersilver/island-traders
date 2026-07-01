@@ -2413,6 +2413,7 @@ class GameManager:
                 "student_loan_requested": bool(
                     getattr(req, "student_loan_requested", False)
                 ),
+                "loan_financed": getattr(req, "loan_financed", None),
                 "return_year": return_year,
                 "return_season": return_season,
                 "seasons_remaining": seasons_remaining,
