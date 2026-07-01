@@ -7,7 +7,13 @@ from ..models.player import Player
 from ..models.equity import CapTable, AUCTIONED_SHARES
 from ..models.market import Market
 from ..models.deal import DealLedger
-from ..models.capital_negotiation import CapitalNegotiationLedger
+from ..models.capital_negotiation import (
+    CapitalNegotiationLedger,
+    CapitalOrderNegotiation,
+    CapitalNegotiationStatus,
+)
+from ..models.order_book import ManufacturerOrderBook, compute_promise_dates
+from ..models.worker_transfer import WorkerTransferOffer
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
 from ..models.resource import ResourceType
@@ -190,6 +196,8 @@ class Game:
         self.market: Market | None = None
         self.ledger: DealLedger | None = None
         self.capital_negotiations: CapitalNegotiationLedger | None = None
+        self.order_book = ManufacturerOrderBook()
+        self.transfer_offers: list[WorkerTransferOffer] = []
         self.loan_ledger: LoanLedger | None = None
         self.lease_ledger: LeaseLedger | None = None
         self.training: TrainingRegistry | None = None
@@ -207,6 +215,8 @@ class Game:
         self.market = Market()
         self.ledger = DealLedger()
         self.capital_negotiations = CapitalNegotiationLedger()
+        self.order_book = ManufacturerOrderBook()
+        self.transfer_offers = []
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
@@ -327,6 +337,214 @@ class Game:
         (sell) or burns (buy) cash."""
         return sum(p.dollops + p.personal_cash + p.household_cash for p in self.players)
 
+    def _get_player(self, player_id: int) -> Player | None:
+        return next((p for p in self.players if p.player_id == player_id), None)
+
+    def create_transfer_offer(
+        self,
+        *,
+        from_player: Player,
+        to_player: Player,
+        profession: str,
+        count: int,
+        fee_per_head: float,
+        direction: str,
+        expires_season: int,
+    ) -> WorkerTransferOffer:
+        if count <= 0:
+            raise ValueError("Transfer count must be positive.")
+        if fee_per_head < 0:
+            raise ValueError("Transfer fee cannot be negative.")
+        offer = WorkerTransferOffer.create(
+            from_player=from_player.player_id,
+            to_player=to_player.player_id,
+            profession=profession,
+            count=count,
+            fee_per_head=fee_per_head,
+            expires_season=expires_season,
+            direction=direction,
+        )
+        self.transfer_offers.append(offer)
+        return offer
+
+    def resolve_transfer_offer(
+        self,
+        responding_player: Player,
+        offer_id: str,
+        accept: bool,
+    ) -> dict:
+        offer = next((o for o in self.transfer_offers if o.offer_id == offer_id), None)
+        if offer is None or offer.status != "pending":
+            return {"ok": False, "error": "Offer not found or already resolved"}
+        expected_responder = (
+            offer.to_player if offer.direction == "offer" else offer.from_player
+        )
+        if responding_player.player_id != expected_responder:
+            return {"ok": False, "error": "Not your offer to respond to"}
+        if not accept:
+            offer.status = "declined"
+            return {"ok": True, "accepted": False, "offer_id": offer_id}
+
+        sender = self._get_player(offer.from_player)
+        receiver = self._get_player(offer.to_player)
+        if sender is None or receiver is None:
+            offer.status = "expired"
+            return {"ok": False, "error": "Transfer party no longer exists"}
+        available = sender.count_workers(offer.profession)
+        if available < offer.count:
+            return {
+                "ok": False,
+                "error": (
+                    f"Sender only has {available} available "
+                    f"{offer.profession} workers"
+                ),
+            }
+        total_fee = round(offer.fee_per_head * offer.count, 2)
+        if receiver.dollops < total_fee:
+            return {"ok": False, "error": "Receiver cannot afford the transfer fee"}
+
+        moved = sender.remove_workers(offer.profession, offer.count)
+        if offer.profession == Profession.UNSKILLED.value:
+            receiver.add_workers(offer.profession, offer.count)
+        else:
+            for worker in moved:
+                worker.worker_id = receiver.workforce._next_id
+                receiver.workforce._next_id += 1
+                worker.in_training = False
+                worker.on_contract = False
+                worker.absent_seasons = 0
+                receiver.workforce.workers.append(worker)
+        receiver.spend_dollops(total_fee)
+        sender.receive_dollops(total_fee)
+        offer.status = "accepted"
+        return {
+            "ok": True,
+            "accepted": True,
+            "offer_id": offer_id,
+            "workers_moved": offer.count,
+            "profession": offer.profession,
+            "fee_paid": total_fee,
+        }
+
+    def expire_transfer_offers(self, current_season_index: int) -> None:
+        for offer in self.transfer_offers:
+            if offer.status == "pending" and current_season_index > offer.expires_season:
+                offer.status = "expired"
+
+    def refresh_order_promises(
+        self,
+        manufacturer_id: int,
+        current_year: int,
+        current_season: int,
+    ) -> None:
+        manufacturer = self._get_player(manufacturer_id)
+        slots = 1
+        if manufacturer is not None:
+            slots = max(1, int(round(max(1.0, manufacturer.production_capacity))))
+        compute_promise_dates(
+            self.order_book,
+            manufacturer_id,
+            slots,
+            current_year,
+            current_season,
+        )
+
+    def enqueue_capital_negotiation(
+        self,
+        negotiation: CapitalOrderNegotiation,
+        current_year: int,
+        current_season: int,
+        *,
+        locked: bool = True,
+    ) -> None:
+        entry = self.order_book.add(
+            negotiation.negotiation_id,
+            negotiation.manufacturer_id,
+        )
+        entry.locked = locked
+        self.refresh_order_promises(
+            negotiation.manufacturer_id,
+            current_year,
+            current_season,
+        )
+
+    def record_season_pl(self, season_name: str) -> None:
+        for player in self.players:
+            revenue = round(getattr(player, "_season_revenue", 0.0), 2)
+            costs = round(getattr(player, "_season_costs", 0.0), 2)
+            history = list(getattr(player, "_pl_history", []))
+            history.append({
+                "season": season_name,
+                "revenue": revenue,
+                "costs": costs,
+                "profit": round(revenue - costs, 2),
+            })
+            player._pl_history = history[-4:]
+
+    def reset_season_pl(self) -> None:
+        for player in self.players:
+            player._season_revenue = 0.0
+            player._season_costs = 0.0
+
+    def island_report_for_player(
+        self,
+        player: Player,
+        prices: dict[ResourceType, float] | None = None,
+        current_tick: int = 0,
+    ) -> dict:
+        prices = prices or (self.market.current_prices() if self.market else {})
+        inventory_value = player.inventory.total_value(prices)
+        capital_value = player.capital_book_value(CAPITAL_CATALOGUE, current_tick)
+        loans = self.loan_ledger.outstanding_debt(player.player_id) if self.loan_ledger else 0.0
+        deficiencies = []
+        catalogue = {item.item_id: item for item in CAPITAL_CATALOGUE}
+        for item_id, failed in player.failed_capital.items():
+            if failed <= 0:
+                continue
+            item = catalogue.get(item_id)
+            deficiencies.append({
+                "item_id": item_id,
+                "name": item.name if item else item_id,
+                "failed": failed,
+                "repairable": True,
+            })
+        training_active = (
+            len(self.training.active_for_player(player.player_id))
+            if self.training else 0
+        )
+        graduating_next = 0
+        if self.training:
+            for req in self.training.active_for_player(player.player_id):
+                if req.return_year < 0 or req.return_season < 0:
+                    continue
+                ret_tick = req.return_year * len(SEASONS) + req.return_season
+                if 0 <= ret_tick - current_tick <= 1:
+                    graduating_next += len(req.worker_ids)
+        capacity = player.workforce.count
+        employed = player.workforce.active_count
+        return {
+            "pl_history": list(getattr(player, "_pl_history", [])),
+            "balance_sheet": {
+                "treasury": round(player.dollops, 2),
+                "inventory_value": round(inventory_value, 2),
+                "capital_value": round(capital_value, 2),
+                "loans": round(loans, 2),
+                "net_worth": round(
+                    player.dollops + inventory_value + capital_value - loans,
+                    2,
+                ),
+            },
+            "deficiencies": deficiencies,
+            "manpower": {
+                "population": player.population,
+                "employed": employed,
+                "capacity": capacity,
+                "vacancies": max(0, capacity - employed),
+                "training_queue": training_active,
+                "graduating_next": graduating_next,
+            },
+        }
+
     def _seasonal_payroll_due(self, player: Player) -> float:
         return round(
             sum(
@@ -398,6 +616,7 @@ class Game:
             self._reset_annual_qol_accumulators()
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
+                self.expire_transfer_offers(season_index)
                 self._process_training_returns(year, season_index)
                 self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
@@ -422,6 +641,7 @@ class Game:
                     except Exception:
                         pass
                 self.turn_manager.run_season(year, season_index, event_results)
+                self.record_season_pl(SEASONS[season_index])
                 self._advance_temporary_absences()
                 cb = getattr(self, "after_season", None)
                 if cb:
@@ -430,6 +650,7 @@ class Game:
                     except Exception:
                         pass
                 self._auto_save(year, season_index + 1)
+                self.reset_season_pl()
                 self._money_supply_history.append(
                     round(self._total_money_supply(), 2)
                 )
@@ -1088,6 +1309,9 @@ class Game:
             "players": [self._serialise_player(p) for p in self.players],
             "market": self._serialise_market(),
             "training": self._serialise_training(),
+            "capital_negotiations": self._serialise_capital_negotiations(),
+            "order_book": self.order_book.to_dict(),
+            "transfer_offers": [offer.to_dict() for offer in self.transfer_offers],
             "staffing": self._serialise_staffing(),
             "loan_ledger": self._serialise_loans(),
             "lease_ledger": self._serialise_leases(),
@@ -1128,6 +1352,9 @@ class Game:
             "holdings": dict(p.holdings),
             "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
             "shareholder_loans": dict(p.shareholder_loans),
+            "season_revenue": round(getattr(p, "_season_revenue", 0.0), 2),
+            "season_costs": round(getattr(p, "_season_costs", 0.0), 2),
+            "pl_history": list(getattr(p, "_pl_history", [])),
             "workforce": {
                 "next_id": p.workforce._next_id,
                 "workers": [
@@ -1164,6 +1391,32 @@ class Game:
             ],
         }
 
+    def _serialise_capital_negotiations(self) -> dict:
+        ledger = self.capital_negotiations or CapitalNegotiationLedger()
+        return {
+            "next_id": ledger._next_id,
+            "negotiations": [
+                {
+                    "negotiation_id": n.negotiation_id,
+                    "buyer_id": n.buyer_id,
+                    "manufacturer_id": n.manufacturer_id,
+                    "item_id": n.item_id,
+                    "maintenance_term_years": n.maintenance_term_years,
+                    "predictive_maintenance": n.predictive_maintenance,
+                    "spares_kits": n.spares_kits,
+                    "expedited_eligible": n.expedited_eligible,
+                    "financing": n.financing,
+                    "list_price": n.list_price,
+                    "recommended_total": n.recommended_total,
+                    "buyer_offer": n.buyer_offer,
+                    "counter_total": n.counter_total,
+                    "status": n.status.value,
+                    "awaiting_id": n.awaiting_id,
+                }
+                for n in ledger.negotiations
+            ],
+        }
+
     def _serialise_training(self) -> dict:
         return {
             "next_id": self.training._next_id,
@@ -1196,6 +1449,8 @@ class Game:
                     "decline_season": r.decline_season,
                     "original_dollops_to_educator": r.original_dollops_to_educator,
                     "decision_acknowledged": r.decision_acknowledged,
+                    "student_loan_requested": r.student_loan_requested,
+                    "loan_financed": r.loan_financed,
                 }
                 for r in self.training.all_requests()
             ],
@@ -1340,6 +1595,9 @@ class Game:
                 # renamed to "Reagents" (2026-06-02); fold legacy keys forward.
                 r_str = LEGACY_RESOURCE_IDS.get(r_str, r_str)
                 p.receive_resources(ResourceType(r_str), qty)
+            p._season_revenue = float(pd.get("season_revenue", 0.0))
+            p._season_costs = float(pd.get("season_costs", 0.0))
+            p._pl_history = list(pd.get("pl_history", []))[-4:]
             wf_data = pd.get("workforce", {})
             p.workforce._next_id = wf_data.get("next_id", 0)
             p.workforce.workers = [
@@ -1479,8 +1737,39 @@ class Game:
                     rd.get("dollops_to_educator", 0),
                 ),
                 decision_acknowledged=rd.get("decision_acknowledged", False),
+                student_loan_requested=bool(rd.get("student_loan_requested", False)),
+                loan_financed=rd.get("loan_financed"),
             )
             game.training._requests.append(req)
+
+        game.capital_negotiations = CapitalNegotiationLedger()
+        cnd = data.get("capital_negotiations", {})
+        game.capital_negotiations._next_id = cnd.get("next_id", 0)
+        for nd in cnd.get("negotiations", []):
+            game.capital_negotiations.negotiations.append(CapitalOrderNegotiation(
+                negotiation_id=nd["negotiation_id"],
+                buyer_id=nd["buyer_id"],
+                manufacturer_id=nd["manufacturer_id"],
+                item_id=nd["item_id"],
+                maintenance_term_years=nd.get("maintenance_term_years", 0),
+                predictive_maintenance=bool(nd.get("predictive_maintenance", False)),
+                spares_kits=nd.get("spares_kits", 0),
+                expedited_eligible=bool(nd.get("expedited_eligible", False)),
+                financing=bool(nd.get("financing", False)),
+                list_price=nd.get("list_price", 0.0),
+                recommended_total=nd.get("recommended_total", 0.0),
+                buyer_offer=nd.get("buyer_offer", 0.0),
+                counter_total=nd.get("counter_total"),
+                status=CapitalNegotiationStatus(nd.get(
+                    "status", CapitalNegotiationStatus.PROPOSED.value
+                )),
+                awaiting_id=nd.get("awaiting_id"),
+            ))
+        game.order_book = ManufacturerOrderBook.from_dict(data.get("order_book"))
+        game.transfer_offers = [
+            WorkerTransferOffer.from_dict(raw)
+            for raw in data.get("transfer_offers", [])
+        ]
 
         game._resume_year = data.get("resume_year", 0)
         game._resume_season = data.get("resume_season", 0)

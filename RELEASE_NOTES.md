@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.16`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.17`.
+
+- **Island reports, worker transfers, manufacturer order book, and Done Trading
+  active-human hardening** — adds private season-report payloads with P&L
+  history, balance sheet, deficiencies, and manpower forecast; requester-side
+  training cancellation and cross-island worker transfer offers; a Manufacturer
+  order-book queue with promise dates and reorder support; and a server-side
+  active-human computation that falls back to authoritative engine roles when
+  lobby role metadata is stale. QoL/pollution remains on the calibrated
+  `0.50/0.25/0.20/0.05` weights already covered by tests. A 1000-game
+  calibration run (`--seed 42`) produced win rates from 9.7% to 20.3%
+  (target 14.3%, spread within the requested ±6pp band).
 
 - **Training queue, student loans, repair preview, and pending action flags** —
   Review Training skip/cancel is now a no-op and same-season re-reviewable, while
