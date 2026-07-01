@@ -291,6 +291,9 @@ class Player:
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        self._season_revenue = 0.0
+        self._season_costs = 0.0
+        self._pl_history = []
         self._oil_consumed_this_year = 0
         self._food_demanded_this_year = 0
         self._food_bought_this_year = 0
@@ -900,9 +903,57 @@ class Player:
                 f"{self.name} has {self.dollops:.2f} {CURRENCY_SYMBOL} but needs {amount:.2f}"
             )
         self.dollops -= amount
+        self._season_costs = round(getattr(self, "_season_costs", 0.0) + amount, 2)
 
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
+        self._season_revenue = round(getattr(self, "_season_revenue", 0.0) + amount, 2)
+
+    def count_workers(self, profession: str) -> int:
+        if profession == Profession.UNSKILLED.value:
+            return max(0, self.population - self.workforce.count)
+        return len([
+            worker for worker in self.workforce.active_workers
+            if worker.profession == profession
+        ])
+
+    def remove_workers(self, profession: str, count: int) -> list:
+        if count <= 0:
+            return []
+        if profession == Profession.UNSKILLED.value:
+            available = self.count_workers(profession)
+            if available < count:
+                raise ValueError(
+                    f"{self.name} only has {available} available {profession} workers"
+                )
+            self.population -= count
+            return []
+        selected = [
+            worker for worker in self.workforce.active_workers
+            if worker.profession == profession
+        ][:count]
+        if len(selected) < count:
+            raise ValueError(
+                f"{self.name} only has {len(selected)} available {profession} workers"
+            )
+        selected_ids = {worker.worker_id for worker in selected}
+        self.workforce.workers = [
+            worker for worker in self.workforce.workers
+            if worker.worker_id not in selected_ids
+        ]
+        return selected
+
+    def add_workers(self, profession: str, count: int, training_level: int = 1) -> list:
+        if count <= 0:
+            return []
+        if profession == Profession.UNSKILLED.value:
+            self.population += count
+            return []
+        return self.workforce.add_workers(
+            count,
+            training_level=training_level,
+            profession=profession,
+        )
 
     def wealth_breakdown(self, prices: dict[ResourceType, float],
                          loan_ledger=None, capital_catalogue=None,

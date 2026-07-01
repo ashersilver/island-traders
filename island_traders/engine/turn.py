@@ -2608,6 +2608,34 @@ class TurnManager:
             for req in self.training.sorted_pending_for_educator(educator.player_id)
         ]
 
+    def cancel_training_request(self, player: Player, training_id: str | int) -> dict:
+        if self.training is None:
+            return {"ok": False, "error": "Training registry unavailable"}
+        try:
+            batch_id = int(training_id)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Invalid training_id"}
+        req = self.training.request_by_id(batch_id)
+        if req is None or req.requester_id != player.player_id:
+            return {"ok": False, "error": "Training request not found"}
+        if req.status != TrainingStatus.AWAITING_EDUCATOR:
+            return {
+                "ok": False,
+                "error": "Training request not found or already started",
+            }
+        refunded = 0.0
+        if (
+            not getattr(req, "student_loan_requested", False)
+            and getattr(req, "loan_financed", None) is False
+        ):
+            refunded = round(float(req.dollops_to_educator), 2)
+            if refunded > 0:
+                player.receive_dollops(refunded)
+        req.status = TrainingStatus.REJECTED
+        req.decline_reason = "Cancelled by requester"
+        req.decision_acknowledged = True
+        return {"ok": True, "training_id": batch_id, "refunded": refunded}
+
     def _pick_pending_training_request(self, educator: Player, prompt: str):
         pending = self.training.sorted_pending_for_educator(educator.player_id)
         if not pending:

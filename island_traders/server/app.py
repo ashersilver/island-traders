@@ -2819,6 +2819,15 @@ class GameManager:
             actions.append("review_deals")
         if capital_negotiations_awaiting_me:
             actions.append("review_capital_order")
+        if any(
+            offer.status == "pending"
+            and (
+                (offer.direction == "offer" and offer.to_player == viewer_engine_id)
+                or (offer.direction == "request" and offer.from_player == viewer_engine_id)
+            )
+            for offer in getattr(game, "transfer_offers", [])
+        ):
+            actions.append("review_transfer_offers")
 
         for item_id, failed in player.failed_capital.items():
             queued = sum(
@@ -3893,6 +3902,12 @@ class GameManager:
         )
         negotiation.status = CapitalNegotiationStatus.ACCEPTED
         negotiation.awaiting_id = None
+        game.enqueue_capital_negotiation(
+            negotiation,
+            cyi,
+            csi,
+            locked=True,
+        )
         return {
             "type": "capital_order_ack",
             "item_id": item.item_id,
@@ -3968,6 +3983,72 @@ class GameManager:
         ]
         return awaiting, mine
 
+    def _order_book_state_for_player(
+        self,
+        game: Game,
+        player: Player,
+    ) -> list[dict]:
+        if not any(role.name == "Manufacturer" for role in player.roles):
+            return []
+        ledger = getattr(game, "capital_negotiations", None)
+        if ledger is None:
+            return []
+        rows = []
+        for entry in game.order_book.for_manufacturer(player.player_id):
+            negotiation = ledger.get(entry.negotiation_id)
+            if negotiation is None:
+                continue
+            rows.append({
+                **self._capital_negotiation_payload(
+                    negotiation, game, player.player_id
+                ),
+                "queue_position": entry.queue_position,
+                "locked": entry.locked,
+                "promised_year": (
+                    entry.promised_year + 1
+                    if entry.promised_year is not None else None
+                ),
+                "promised_season": (
+                    SEASONS[entry.promised_season]
+                    if entry.promised_season is not None
+                    and 0 <= entry.promised_season < len(SEASONS)
+                    else entry.promised_season
+                ),
+            })
+        return rows
+
+    def _transfer_offers_for_player(self, game: Game, player_id: int) -> list[dict]:
+        player_names = {p.player_id: p.name for p in game.players}
+        offers = []
+        for offer in getattr(game, "transfer_offers", []):
+            if offer.status != "pending":
+                continue
+            if offer.from_player != player_id and offer.to_player != player_id:
+                continue
+            payload = offer.to_dict()
+            payload["from_name"] = player_names.get(offer.from_player)
+            payload["to_name"] = player_names.get(offer.to_player)
+            offers.append(payload)
+        return offers
+
+    def _active_human_lobby_ids(self, room) -> set[str]:
+        humans: set[str] = set()
+        engine_by_lobby = room.lobby_to_engine_id or {}
+        engine_players = {
+            p.player_id: p
+            for p in (room.game.players if room.game else [])
+        }
+        for lp in room.players:
+            if not lp.is_human:
+                continue
+            engine_player = engine_players.get(engine_by_lobby.get(lp.player_id))
+            has_role = bool(lp.role_names) or bool(
+                engine_player and engine_player.roles
+            )
+            if has_role:
+                humans.add(lp.player_id)
+        return humans
+
     def _send_capital_negotiation_push(
         self,
         room,
@@ -4001,6 +4082,210 @@ class GameManager:
             lobby_id,
             self.get_game_state(room.room_id, lobby_id) or {},
         )
+
+    async def _handle_cancel_training(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game or not room.game.turn_manager:
+            await websocket.send_text(json.dumps({
+                "type": "cancel_training_result",
+                "ok": False,
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "cancel_training_result",
+                "ok": False,
+                "error": "Player not in game.",
+            }))
+            return
+        result = room.game.turn_manager.cancel_training_request(
+            player,
+            msg.get("training_id", msg.get("batch_id")),
+        )
+        await websocket.send_text(json.dumps({
+            "type": "cancel_training_result",
+            **result,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_worker_transfer_offer(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({
+                "type": "transfer_offer_sent",
+                "ok": False,
+                "error": "Game is not running.",
+            }))
+            return
+        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        if actor is None:
+            await websocket.send_text(json.dumps({
+                "type": "transfer_offer_sent",
+                "ok": False,
+                "error": "Player not in game.",
+            }))
+            return
+        try:
+            target_id = int(msg.get("to_player_id"))
+            count = int(msg.get("count", 0))
+            fee = float(msg.get("fee_per_head", 0.0))
+        except (TypeError, ValueError):
+            await websocket.send_text(json.dumps({
+                "type": "transfer_offer_sent",
+                "ok": False,
+                "error": "Invalid transfer offer.",
+            }))
+            return
+        target = next((p for p in room.game.players if p.player_id == target_id), None)
+        if target is None or target.player_id == actor.player_id:
+            await websocket.send_text(json.dumps({
+                "type": "transfer_offer_sent",
+                "ok": False,
+                "error": "Invalid transfer counterparty.",
+            }))
+            return
+        direction = str(msg.get("direction", "offer"))
+        if direction not in ("offer", "request"):
+            direction = "offer"
+        sender = actor if direction == "offer" else target
+        receiver = target if direction == "offer" else actor
+        expires = getattr(room, "current_season_index", 0) + 2
+        try:
+            offer = room.game.create_transfer_offer(
+                from_player=sender,
+                to_player=receiver,
+                profession=str(msg.get("profession", Profession.UNSKILLED.value)),
+                count=count,
+                fee_per_head=fee,
+                direction=direction,
+                expires_season=expires,
+            )
+        except ValueError as exc:
+            await websocket.send_text(json.dumps({
+                "type": "transfer_offer_sent",
+                "ok": False,
+                "error": str(exc),
+            }))
+            return
+        await websocket.send_text(json.dumps({
+            "type": "transfer_offer_sent",
+            "ok": True,
+            "offer_id": offer.offer_id,
+            "offer": offer.to_dict(),
+        }))
+        responder_engine_id = offer.to_player if direction == "offer" else offer.from_player
+        responder_lobby_id = self._deal_lobby_id_for_engine_id(room, responder_engine_id)
+        if responder_lobby_id:
+            self._thread_safe_send(room_id, responder_lobby_id, {
+                "type": "transfer_offer_received",
+                "offer": offer.to_dict(),
+            })
+            self._thread_safe_send(
+                room_id,
+                responder_lobby_id,
+                self.get_game_state(room_id, responder_lobby_id) or {},
+            )
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_worker_transfer_respond(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({
+                "type": "worker_transfer_result",
+                "ok": False,
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "worker_transfer_result",
+                "ok": False,
+                "error": "Player not in game.",
+            }))
+            return
+        result = room.game.resolve_transfer_offer(
+            player,
+            str(msg.get("offer_id", "")),
+            bool(msg.get("accept", False)),
+        )
+        await websocket.send_text(json.dumps({
+            "type": "worker_transfer_result",
+            **result,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_manufacturer_reorder_queue(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({
+                "type": "manufacturer_reorder_ack",
+                "ok": False,
+                "error": "Game is not running.",
+            }))
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await websocket.send_text(json.dumps({
+                "type": "manufacturer_reorder_ack",
+                "ok": False,
+                "error": "Player not in game.",
+            }))
+            return
+        try:
+            ids = [int(value) for value in msg.get("negotiation_ids", [])]
+            room.game.order_book.reorder(player.player_id, ids)
+            room.game.refresh_order_promises(
+                player.player_id,
+                getattr(room, "current_year_index", 0),
+                getattr(room, "current_season_index", 0),
+            )
+        except (TypeError, ValueError) as exc:
+            await websocket.send_text(json.dumps({
+                "type": "manufacturer_reorder_ack",
+                "ok": False,
+                "error": str(exc),
+            }))
+            return
+        await websocket.send_text(json.dumps({
+            "type": "manufacturer_reorder_ack",
+            "ok": True,
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
 
     async def _handle_capital_repair(
         self,
@@ -4361,6 +4646,10 @@ class GameManager:
                 "staffing_contracts": self._staffing_contracts_for_player(
                     game, p.player_id, player_names, current_year_idx, current_season_idx,
                 ),
+                "transfer_offers": self._transfer_offers_for_player(
+                    game, p.player_id
+                ),
+                "order_book": self._order_book_state_for_player(game, p),
                 "workforce_efficiency": round(p.workforce.average_efficiency * 100),
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
@@ -5062,10 +5351,7 @@ class GameManager:
                     room.io_adapter.print(
                         f"  {player.name}'s ordered capital arrived: {names}"
                     )
-        humans = {
-            lp.player_id for lp in room.players
-            if lp.is_human and lp.role_names
-        }
+        humans = self._active_human_lobby_ids(room)
 
         # ── Pre-season review window ──────────────────────────────────────────
         pre_secs = max(0, int(room.pre_season_timer_seconds))
@@ -5084,6 +5370,24 @@ class GameManager:
                 "timer_seconds": pre_secs,
                 "active_humans": list(humans),
             })
+            if room.game:
+                prices = room.game.market.current_prices()
+                for lobby_id in humans:
+                    engine_id = (room.lobby_to_engine_id or {}).get(lobby_id)
+                    player = next(
+                        (p for p in room.game.players if p.player_id == engine_id),
+                        None,
+                    )
+                    if player is None:
+                        continue
+                    self._thread_safe_send(room_id, lobby_id, {
+                        "type": "season_report",
+                        "season_report": room.game.island_report_for_player(
+                            player,
+                            prices,
+                            current_tick,
+                        ),
+                    })
 
             # Block the game thread until everyone is Ready OR the timer
             # naturally expires.  Polled in 0.5s slices so the loop can
@@ -5105,6 +5409,7 @@ class GameManager:
         # ── Action phase ──────────────────────────────────────────────────────
         room.io_adapter.begin_season()
         room.season_phase = "action"
+        humans = self._active_human_lobby_ids(room)
         room.season_active_humans = humans
         room.season_ready_set = set()
         room.season_human_done = set()
@@ -6051,6 +6356,18 @@ def create_app() -> FastAPI:
                     await manager._handle_training_batch(
                         room_id, player_id, msg, websocket
                     )
+                elif msg_type == "cancel_training":
+                    await manager._handle_cancel_training(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "worker_transfer_offer":
+                    await manager._handle_worker_transfer_offer(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "worker_transfer_respond":
+                    await manager._handle_worker_transfer_respond(
+                        room_id, player_id, msg, websocket
+                    )
                 elif msg_type == "buy_out_float":
                     await manager._handle_buy_out_float(
                         room_id, player_id, msg, websocket
@@ -6069,6 +6386,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_repair":
                     await manager._handle_capital_repair(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "manufacturer_reorder_queue":
+                    await manager._handle_manufacturer_reorder_queue(
                         room_id, player_id, msg, websocket
                     )
 
