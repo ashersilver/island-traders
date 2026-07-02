@@ -660,6 +660,16 @@ STARTING_POPULATION: int = 50
 # workforce can't outgrow the populace.
 MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 
+# Fraction of the population the starting workforce represents (2026-07-01
+# playtest ask: "workers should no longer include the whole population").
+# Applied as Game.setup's `workforce_scale`, which uniformly scales both
+# STARTING_WORKFORCE totals and each named profession's seed count in
+# STARTING_WORKERS_BY_PROFESSION — so the calibrated manager/technician/worker
+# *ratios* for each role (e.g. Educator's Professor/Lecturer bootstrap mix)
+# are preserved, only the absolute headcount shrinks. Previously this was a
+# hardcoded workforce_scale = 1.0 (100% — the whole population was workforce).
+WORKFORCE_PARTICIPATION_RATE: float = 0.50
+
 # ---------------------------------------------------------------------------
 # Graceful degradation (GitHub #47 + 2026-05-27 playtest)
 # ---------------------------------------------------------------------------

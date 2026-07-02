@@ -382,8 +382,15 @@ button:active{transform:scale(.97)}
 }
 /* On narrow single-column layouts the element-level display:none still hides. */
 .layout-menu{position:relative}
+/* position:fixed + appended to <body> at open time (see toggleLayoutMenu) —
+   .g-hdr has backdrop-filter, which creates a containing block that traps
+   descendant fixed/absolute elements inside its own stacking context. Left
+   nested inside .layout-menu, this popup painted underneath .g-main (later
+   sibling, its own stacking context) despite z-index, showing only its
+   background color with no visible rows. Portaling to <body> sidesteps the
+   whole ancestor-stacking-context problem instead of trying to out-z-index it. */
 .layout-pop{
-  position:absolute;right:0;top:110%;z-index:60;min-width:170px;
+  position:fixed;z-index:9999;min-width:170px;
   background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
   padding:.4rem;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none
 }
@@ -3839,17 +3846,21 @@ function _applyMention(id, name) {
 }
 
 // New private chat dialog (topic + participant checkboxes)
+// Includes AI seats (2026-07-01) — a private channel naming an AI player is
+// how a human delivers a coaching hint to it; the server folds any message
+// sent on that channel into the AI's next few decisions.
 function openNewChatDialog() {
-  const others = ((gameState && gameState.players) || []).filter(p => p.is_human && p.name !== _chatMyName());
+  const others = ((gameState && gameState.players) || []).filter(p => p.name !== _chatMyName());
   if (!others.length) { showToast('No other islands to chat with yet.', { type: 'info' }); return; }
   const rows = others.map((p, i) =>
     `<label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;font-size:.85rem">
        <input type="checkbox" class="newchat-part" value="${esc(p.name)}"> ${esc(p.name)}
+       ${p.is_human ? '' : '<span style="color:var(--gold);font-size:.7rem" title="AI player — chat here becomes a coaching hint">🤖 AI</span>'}
        <span style="color:var(--dim);font-size:.75rem">${esc((p.role_names || []).join('/'))}</span></label>`).join('');
   _openMsgModal('New private chat',
     `<label for="newchat-topic">Topic</label>
      <input id="newchat-topic" type="text" placeholder="e.g. Ore cartel" maxlength="80">
-     <div style="margin:.4rem 0 .2rem;color:var(--dim);font-size:.78rem">Invite islands (one or more):</div>
+     <div style="margin:.4rem 0 .2rem;color:var(--dim);font-size:.78rem">Invite islands (one or more). Messages to an 🤖 AI island become coaching hints it factors into its next few decisions.</div>
      ${rows}
      <div class="popup-footer">
        <button class="btn-ghost" id="newchat-cancel">Cancel</button>
@@ -5543,6 +5554,7 @@ const _HINT_OPEN_LABEL = {
   offer_loan:        'Offer Loan',
   manage_insurance:  'Manage Insurance',
   produce:           'Produce',
+  review_training:   'Review Training',
 };
 let _currentHintActions = new Set();
 // Resources currently mentioned by hints (Phase 5: drives Market Buy row
@@ -5630,6 +5642,39 @@ function renderDecisionHints(player, role) {
   const roleLabel = role === 'ALL' ? 'these islands' : (roleDisplayName(role) || 'this island');
   const hints = [];
   const sustenanceAlerts = gameState.sustenance_alerts?.[String(player.player_id)] || [];
+
+  // Repair hints — one card per broken-and-repairable capital item in the
+  // active tab. Repair is a direct capital_repair WS message (not a
+  // TurnAction), so these carry a custom_button instead of triggers_action.
+  for (const item of (cap.capital_owned || [])) {
+    const repairable = item.repairable_failed ?? item.failed ?? 0;
+    if (repairable <= 0) continue;
+    const rc = item.repair_cost;
+    const costTxt = rc
+      ? (rc.repairable !== false
+          ? `${rc.dp} Dp + ${rc.freight} freight`
+          : `${rc.dp} Dp — ${rc.reason || 'insufficient funds/freight'}`)
+      : 'cost unknown until you can afford it';
+    hints.push({
+      tone: 'warn',
+      title: `Repair ${item.name}`,
+      why: `${repairable} unit(s) down. Next repair: ${costTxt}.`,
+      custom_button: `<button class="btn-gold btn-sm hint-open" onclick="repairCapitalItem('${esc(item.item_id)}')">Repair now →</button>`,
+    });
+  }
+
+  // Training hint — Educators see a nudge to review their pending training
+  // queue ahead of next season. Reuses the same pending_actions signal that
+  // already highlights the action-menu button (review_training is a native
+  // TurnAction, so the existing _actOnHint/sendResponse path just works).
+  if ((window._pendingActions || new Set()).has('review_training')) {
+    hints.push({
+      tone: 'watch',
+      title: 'Review training requests',
+      why: 'Workers are waiting on your approval to start training for next season.',
+      triggers_action: 'review_training',
+    });
+  }
 
   for (const alert of sustenanceAlerts) {
     // 2026-05-27 (Codex Player #6): tailor the advice to the actual
@@ -5771,11 +5816,14 @@ function renderDecisionHints(player, role) {
 
   el.innerHTML = visible.map(h => {
     const payload = h.target_resource ? { resource: h.target_resource } : {};
+    const button = h.custom_button
+      ? `<div class="hint-actions">${h.custom_button}</div>`
+      : _renderHintOpenButton(h.triggers_action, payload);
     return `
     <div class="decision-card ${h.tone}">
       <strong>${esc(h.title)}</strong>
       <div class="why">${esc(h.why)}</div>
-      ${_renderHintOpenButton(h.triggers_action, payload)}
+      ${button}
     </div>`;
   }).join('');
 }
@@ -7788,10 +7836,25 @@ function applyLayoutPreset(name) {
   applyLayoutState((LAYOUT_PRESETS[name] || []).slice());
   closeLayoutMenu();
 }
+// The popup is portaled to <body> the first time it opens (see below) so it
+// escapes the containing-block trap created by .g-hdr's backdrop-filter,
+// which was making it paint underneath .g-main despite z-index (colour box
+// visible, rows never shown). Once portaled it stays a child of <body> and
+// is repositioned against the button's live position on every open.
 function toggleLayoutMenu(ev) {
   if (ev) ev.stopPropagation();
   const pop = document.getElementById('layout-pop');
-  if (pop) pop.classList.toggle('open');
+  const btn = document.getElementById('layout-btn');
+  if (!pop || !btn) return;
+  if (pop.parentElement !== document.body) document.body.appendChild(pop);
+  const opening = !pop.classList.contains('open');
+  pop.classList.toggle('open');
+  if (opening) {
+    const r = btn.getBoundingClientRect();
+    pop.style.top = `${r.bottom + 4}px`;
+    pop.style.left = 'auto';
+    pop.style.right = `${window.innerWidth - r.right}px`;
+  }
 }
 function closeLayoutMenu() {
   const pop = document.getElementById('layout-pop');
@@ -7799,7 +7862,10 @@ function closeLayoutMenu() {
 }
 document.addEventListener('click', (e) => {
   const menu = document.querySelector('.layout-menu');
-  if (menu && !menu.contains(e.target)) closeLayoutMenu();
+  const pop = document.getElementById('layout-pop');
+  const insideMenu = menu && menu.contains(e.target);
+  const insidePop = pop && pop.contains(e.target);
+  if (!insideMenu && !insidePop) closeLayoutMenu();
 });
 function restoreLayoutPrefs() {
   try {

@@ -5040,14 +5040,19 @@ class GameManager:
     def _chat_recipients(self, room: GameRoom, channel: ChatChannel) -> list[str]:
         """Lobby ids that should receive messages on this channel.
 
-        Room channel → every human seat. Private channel → its human
-        participants. AI seats are intentionally excluded from WS delivery (the
-        agent doesn't read chat yet); spectators receive chat via game_state.
+        Room channel → every human seat (AI agents don't parse general
+        room chit-chat, and broadcasting it to them would be noise).
+        Private channel → all participants, human or AI. This is the
+        delivery path for a human coaching an AI player: create a private
+        channel naming the AI (`chat_create_channel`), and any `chat`
+        message on it reaches the AI's WS connection, where the agent folds
+        it into its next decision as a human-readable hint (2026-07-01).
+        Spectators still receive chat via game_state regardless.
         """
         humans = {p.player_id for p in room.players if p.is_human}
         if channel.is_room:
             return list(humans)
-        return [pid for pid in channel.participants if pid in humans]
+        return list(channel.participants)
 
     def _chat_deliver(self, room: GameRoom, channel: ChatChannel, payload: dict) -> None:
         for lobby_id in self._chat_recipients(room, channel):

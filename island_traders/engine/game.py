@@ -52,6 +52,7 @@ from ..constants import (
     QOL_EMIGRATION_THRESHOLD, QOL_EMIGRATION_RATE,
     STARTING_PRODUCTION_CAPACITY,
     STARTING_POPULATION,
+    WORKFORCE_PARTICIPATION_RATE,
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
@@ -234,7 +235,12 @@ class Game:
         # player count — "each island starts with 50 workers" (2026-06-02).
         # Previously scaled by 7/num_players, which (with a fixed 50-resident
         # population) would inflate small-game islands past their populace.
-        workforce_scale = 1.0
+        # 2026-07-01: workforce_scale now also carries WORKFORCE_PARTICIPATION_RATE
+        # (0.50) so the starting workforce is half the population, not all of
+        # it — this scales STARTING_WORKFORCE totals and each named profession's
+        # seed count uniformly, preserving the calibrated manager/technician/
+        # worker ratios within each role.
+        workforce_scale = WORKFORCE_PARTICIPATION_RATE
 
         for idx, spec in enumerate(self.config.player_specs):
             roles = []
