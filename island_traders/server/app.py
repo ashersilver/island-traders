@@ -5055,8 +5055,22 @@ class GameManager:
         return list(channel.participants)
 
     def _chat_deliver(self, room: GameRoom, channel: ChatChannel, payload: dict) -> None:
-        for lobby_id in self._chat_recipients(room, channel):
+        recipients = set(self._chat_recipients(room, channel))
+        for lobby_id in recipients:
             self._thread_safe_send(room.room_id, lobby_id, payload)
+        # @-mentioning a player by name also delivers to their seat even if
+        # the channel wouldn't normally reach them — this is how a human
+        # coaches an AI from the ROOM channel ("@Digger: sell your oil").
+        # The agent treats an addressed chat as a decision hint (2026-07-02).
+        # No-op for players already in the recipient set.
+        for name in payload.get("mentions") or []:
+            lp = next(
+                (p for p in room.players
+                 if p.name.strip().casefold() == str(name).strip().casefold()),
+                None,
+            )
+            if lp and lp.player_id not in recipients:
+                self._thread_safe_send(room.room_id, lp.player_id, payload)
 
     def _chat_visible_channels(self, room: GameRoom, viewer_lobby_id: str | None) -> list[dict]:
         """Channel summaries visible to a viewer — the room channel plus any
@@ -6435,7 +6449,15 @@ def main():
         raise SystemExit(1)
 
     app = create_app()
-    uvicorn.run(app, host=args.host, port=args.port, ws="wsproto")
+    # Generous WS keepalive: local-model inference (ollama on a 16GB M1)
+    # stalls the whole machine for 30-90s per generation, and the default
+    # 20s/20s ping window made the SERVER close agent sockets with 1011
+    # "keepalive ping timeout" mid-action-wizard. A dead peer on localhost
+    # surfaces via TCP promptly regardless, so the wide window costs nothing.
+    uvicorn.run(
+        app, host=args.host, port=args.port, ws="wsproto",
+        ws_ping_interval=60.0, ws_ping_timeout=240.0,
+    )
 
 
 if __name__ == "__main__":
