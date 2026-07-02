@@ -1709,9 +1709,20 @@ class GameManager:
                         )
 
         def _broadcast_state():
-            state = self.get_game_state(room_id)
-            if state:
-                self._thread_safe_broadcast(room_id, state)
+            # Per-viewer snapshots, not one viewer-less broadcast. The
+            # viewer-scoped fields (deals_awaiting_me, my_deals,
+            # capital_negotiations_awaiting_me, pending_actions,
+            # my_market_orders) are only meaningful per seat — the old
+            # viewer-less broadcast blanked them for every client, so a deal
+            # proposed through the engine wizard (e.g. by an AI player) never
+            # surfaced on the target's Deals badge until that client happened
+            # to re-request its own state (a manual refresh). 2026-07-02.
+            with self._ws_lock:
+                connected = list(self._ws_connections.get(room_id, {}).keys())
+            for lobby_id in connected:
+                state = self.get_game_state(room_id, lobby_id)
+                if state:
+                    self._thread_safe_send(room_id, lobby_id, state)
             # Push discrete market events (Issue #4) so clients (dashboards and AI
             # agents) can react to new bids/asks/fills between full-state snapshots.
             room = self.rooms.get(room_id)
