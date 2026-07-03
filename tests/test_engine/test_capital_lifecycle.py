@@ -504,29 +504,30 @@ def test_capital_order_in_transit_survives_save_load_and_delivers(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Generic non-tradable spares — Phase 4 (2026-06-21)
+# Generic tradable spares — Phase 4 (2026-06-21), economy opened 2026-07-02
 # ---------------------------------------------------------------------------
 
-def test_spares_resource_is_non_tradable():
+def test_spares_resource_is_tradable():
     game = _service_game()
     market = game.market
-    # No market price and no order-book entry.
-    assert ResourceType.SPARES not in market.current_prices()
-    assert "Spares" not in market.market_summary()
-    # Cannot be offered or bid.
-    seller, buyer = game.players[0], game.players[1]
-    seller.manufacture_spares(3)
-    with pytest.raises(ValueError):
-        market.post_offer(seller, ResourceType.SPARES, 5.0, 1)
-    with pytest.raises(ValueError):
-        market.post_bid(buyer, ResourceType.SPARES, 5.0, 1)
+    assert ResourceType.SPARES in market.current_prices()
+    assert "Spares" in market.market_summary()
+
+    seller, buyer = game.players[1], game.players[0]
+    seller.receive_resources(ResourceType.SPARES, 3)
+    offer = market.post_offer(seller, ResourceType.SPARES, 5.0, 1)
+    bid = market.post_bid(buyer, ResourceType.SPARES, 4.0, 1)
+
+    assert offer.resource == ResourceType.SPARES
+    assert bid.resource == ResourceType.SPARES
 
 
-def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_no_price():
+def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_price():
     game = _service_game()
     p = game.players[1]  # Manufacturer starts with one small warehouse (+10).
 
-    assert p.manufacture_spares(11) == 10
+    assert p.inventory.get(ResourceType.SPARES) == 4
+    assert p.manufacture_spares(11) == 6
     assert p.inventory.get(ResourceType.SPARES) == 10
     assert p.manufacture_spares(1) == 0
 
@@ -535,8 +536,8 @@ def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_no_price():
     assert p.manufacture_spares(20) == 12
     assert p.inventory.get(ResourceType.SPARES) == 22
 
-    # Held spares contribute nothing to tradable wealth (no price).
-    assert game.market.current_prices().get(ResourceType.SPARES, 0.0) == 0.0
+    # Held spares now contribute tradable wealth through their market price.
+    assert game.market.current_prices()[ResourceType.SPARES] > 0.0
 
 
 def test_manufacture_spares_without_warehouse_produces_none():

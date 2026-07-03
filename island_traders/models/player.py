@@ -560,9 +560,9 @@ class Player:
     def manufacture_spares(self, count: int = 1) -> int:
         """Manufacture generic spares into this island's inventory (#185/#188).
 
-        Spares are produced by the Manufacturer (generic, not tradable) and
-        held until transferred with delivered equipment or consumed in a
-        repair.  Returns the number actually manufactured after warehouse
+        Spares are produced by the Manufacturer as tradable repair kits and
+        held until transferred with delivered equipment, sold, or consumed in
+        a repair.  Returns the number actually manufactured after warehouse
         capacity is applied.
         """
         if count <= 0:

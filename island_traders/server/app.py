@@ -4749,7 +4749,6 @@ class GameManager:
         for r in ResourceType:
             # Phase D1 Banker service model: Finance is no longer a tradable
             # market commodity, but the enum remains for saved-game/back-compat.
-            # Spares (#185/#188) are likewise non-tradable — never market goods.
             if r == ResourceType.FINANCE or r in NON_TRADABLE_RESOURCES:
                 continue
             info = mkt_summary.get(r.value, {})

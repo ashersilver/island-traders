@@ -126,7 +126,7 @@ class Market:
         return round(base * factor, 2)
 
     def current_prices(self) -> dict[ResourceType, float]:
-        # Non-tradable resources (e.g. Spares) carry no market price.
+        # Non-tradable resources carry no market price.
         return {
             r: self.current_price(r)
             for r in ResourceType
@@ -688,7 +688,7 @@ class Market:
         result = {}
         for rtype in ResourceType:
             if rtype in NON_TRADABLE_RESOURCES:
-                continue  # Spares are never traded — no order book.
+                continue  # no order book for non-tradable resources.
             best_offer = self.best_offer(rtype)
             best_bid = self.best_bid(rtype)
             ask_qty = sum(o.remaining for o in self._offers

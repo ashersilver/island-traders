@@ -323,6 +323,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
                 "MiningEquipment": 1,
                 "MedicalDevices": 1,
                 "TransportEquipment": 1,
+                "Spares": 4,
             },
         },
         description="+1 unit/season on any line",
@@ -546,6 +547,11 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         role="Manufacturer", output="TransportEquipment",
         inputs={"Metal": 2.0, "Oil": 2.0},
         manager_per_unit=0.1, technician_per_unit=1.0, worker_per_unit=1.5,
+    ),
+    ProductionRecipe(
+        role="Manufacturer", output="Spares",
+        inputs={"Metal": 2.0, "Oil": 1.0},
+        manager_per_unit=0.1, technician_per_unit=0.5, worker_per_unit=0.5,
     ),
 
     # ----- Doctor (Medical Sciences) --------------------------------------

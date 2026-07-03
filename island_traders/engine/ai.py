@@ -63,6 +63,8 @@ AI_INSURANCE_MIN_FATALITY_RATE = 0.005
 AI_VACCINE_CASH_RESERVE = 50.0
 AI_HEALTH_QOL_COVERAGE_THRESHOLD = 0.5
 AI_HEALTH_QOL_CASH_RESERVE = 50.0
+AI_SPARES_TARGET_STOCK = 2
+AI_MANUFACTURER_SPARES_MIN_STOCK = 4
 
 
 class AIStrategy:
@@ -736,6 +738,13 @@ class AIStrategy:
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
+        if (
+            "Spares" in feasible
+            and self._manufacturer_should_make_spares(player, market)
+        ):
+            player.ai_product_line = "Spares"
+            player.ai_product_line_human_demand = has_human_demand
+            return "Spares"
         if not feasible:
             chosen = max(scores, key=lambda line_key: scores[line_key])
             player.ai_product_line = chosen
@@ -848,6 +857,18 @@ class AIStrategy:
                     return True
         return False
 
+    def _manufacturer_should_make_spares(self, player: Player, market: Market) -> bool:
+        on_hand_or_listed = player.inventory.get(ResourceType.SPARES) + sum(
+            offer.remaining for offer in market.available_offers(ResourceType.SPARES)
+        )
+        bid = market.best_bid(ResourceType.SPARES)
+        if bid is not None and bid.remaining > 0:
+            return True
+        return (
+            player.spares_capacity() > 0
+            and on_hand_or_listed < AI_MANUFACTURER_SPARES_MIN_STOCK
+        )
+
     def _manufacturer_demand_score(
         self, player: Player, market: Market, line_key: str
     ) -> float:
@@ -931,6 +952,14 @@ class AIStrategy:
             inputs[ResourceType.FREIGHT] = max(
                 inputs.get(ResourceType.FREIGHT, 0),
                 unresolved_repairs * EQUIPMENT_REPAIR_SHIP_FREIGHT,
+            )
+        if (
+            not any(role.name == "Manufacturer" for role in player.roles)
+            and player.inventory.get(ResourceType.SPARES) <= 0
+            and any(count > 0 for count in player.capital_inventory.values())
+        ):
+            inputs[ResourceType.SPARES] = max(
+                inputs.get(ResourceType.SPARES, 0), AI_SPARES_TARGET_STOCK
             )
         return inputs
 
@@ -1290,7 +1319,7 @@ class AIStrategy:
                 continue
             target_runs = (
                 1
-                if rtype in EQUIPMENT_RESOURCE_CAPITAL
+                if rtype in EQUIPMENT_RESOURCE_CAPITAL or rtype == ResourceType.SPARES
                 else AI_EQUIPMENT_INPUT_RUNS
                 if rtype in AI_EQUIPMENT_INPUTS else self.target_production_runs
             )
@@ -1395,6 +1424,8 @@ class AIStrategy:
 
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
+        if is_manufacturer:
+            listable_resources.add(ResourceType.SPARES)
         for rtype in listable_resources:
             if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
