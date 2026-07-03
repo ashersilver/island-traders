@@ -81,10 +81,16 @@ def test_deal_can_offer_and_request_spares():
     assert proposer.inventory.get(ResourceType.FOOD) == 3
 
 
-def test_ai_manufacturer_switches_to_spares_when_stock_is_low():
+def test_ai_manufacturer_makes_spares_in_repair_emergency():
+    # The override fires ONLY when own capital sits failed with zero kits on
+    # hand — otherwise Spares competes in the normal product-line scoring
+    # (the always-on version of this override tanked the Manufacturer's sim
+    # win rate from 10.4% to 3.3% by chronically displacing better lines).
     market = Market()
     manufacturer = _player(1, "Manufacturer")
-    manufacturer.add_capital("manufacturer.small_warehouse")
+    manufacturer.add_capital("manufacturer.small_warehouse")  # spares storage
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.capital_units["manufacturer.assembly_line"][0].status = "failed"
     manufacturer.receive_resources(ResourceType.METAL, 2)
     manufacturer.receive_resources(ResourceType.OIL, 1)
     strategy = AIStrategy()
@@ -92,6 +98,20 @@ def test_ai_manufacturer_switches_to_spares_when_stock_is_low():
     chosen = strategy._choose_product_line(manufacturer, market, [])
 
     assert chosen == "Spares"
+
+
+def test_ai_manufacturer_low_stock_alone_does_not_hijack_the_line_choice():
+    market = Market()
+    manufacturer = _player(1, "Manufacturer")
+    manufacturer.add_capital("manufacturer.small_warehouse")
+    # Inputs for several lines; nothing failed, no Spares bid on the market.
+    manufacturer.receive_resources(ResourceType.METAL, 6)
+    manufacturer.receive_resources(ResourceType.OIL, 4)
+    strategy = AIStrategy()
+
+    chosen = strategy._choose_product_line(manufacturer, market, [])
+
+    assert chosen != "Spares"
 
 
 def test_ai_with_capital_and_no_spares_buys_small_buffer():
