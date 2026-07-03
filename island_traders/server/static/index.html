@@ -6501,12 +6501,29 @@ function onSeasonStart(msg) {
 // re-render — tracks the same authoritative server deadline as everyone else
 // (not just the one-shot season_start). Idempotent: safe to call every snapshot.
 function syncSeasonTimerFromState(msg) {
+  // Resync the Done Trading button + ready state from the authoritative
+  // per-snapshot fields, not just the one-shot season_start/ready_update
+  // broadcasts. Those broadcasts only reach a tab connected at the exact
+  // instant they fire — a tab that reconnects, was backgrounded, or joined
+  // mid-season never gets another chance in Ready-only mode (no timer to
+  // force a resend), so the button could stay stuck hidden indefinitely.
+  // game_state arrives constantly (every action, every poll), so anchoring
+  // visibility here makes it self-healing. (2026-07-03: button was visible
+  // on only 1 of 6 human tabs after ~10h of play — this is that fix.)
+  if (Array.isArray(msg.season_active_humans)) {
+    seasonActiveHumans = new Set(msg.season_active_humans);
+  }
+  if (Array.isArray(msg.season_ready_set)) {
+    seasonReadySet = new Set(msg.season_ready_set);
+    imReady = seasonReadySet.has(myPlayerId);
+  }
+  const showForMe = seasonActiveHumans.has(myPlayerId);
+
   const end = +msg.season_timer_end || 0;
   if (msg.season_phase === 'action' && end > 0 && msg.server_now) {
     seasonPhase = 'action';
     const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
     seasonTimerEnd = end * 1000 + offsetMs;
-    const showForMe = seasonActiveHumans.has(myPlayerId);
     document.getElementById('season-timer-box').classList.toggle('hidden', !showForMe);
     if (showForMe && !seasonTimerInterval) startSeasonTimer();
     else updateSeasonTimerUI();
@@ -6514,6 +6531,16 @@ function syncSeasonTimerFromState(msg) {
     // Not in the action window (pre-season / resolved) — drop any stale timer.
     seasonTimerEnd = 0;
     stopSeasonTimer();
+  }
+
+  if (msg.season_phase === 'action') {
+    const btn = document.getElementById('ready-btn');
+    if (btn) {
+      btn.classList.toggle('hidden', !showForMe);
+      btn.classList.toggle('is-ready', imReady);
+      const label = document.getElementById('ready-btn-label');
+      if (label) label.textContent = imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
+    }
   }
 }
 

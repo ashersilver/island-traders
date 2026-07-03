@@ -4945,6 +4945,17 @@ class GameManager:
                 if (room.season_phase == "action" and room.season_timer_end > 0)
                 else 0
             ),
+            # Same set the one-shot season_start/pre_season_start/ready_update
+            # broadcasts carry, repeated on every snapshot. Those broadcasts
+            # only reach a tab that's connected at the exact instant they
+            # fire — a tab that reconnects, was backgrounded, or joined
+            # mid-season never gets another chance at them in Ready-only
+            # mode (no season timer to force a resend). Without this, the
+            # Done Trading button could stay stuck hidden indefinitely on
+            # any tab that missed that one message (2026-07-03 playtest:
+            # button visible on only 1 of 6 human tabs after ~10h of play).
+            "season_active_humans": sorted(room.season_active_humans),
+            "season_ready_set": sorted(room.season_ready_set),
             "funding_rates": {
                 str(term): round(rate * 100, 2)
                 for term, rate in posted_funding_rates(
