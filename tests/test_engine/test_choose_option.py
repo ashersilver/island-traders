@@ -137,7 +137,7 @@ def test_action_produce_uses_choose_option_with_named_labels():
             captured["prompt"] = prompt
             captured["options"] = options
             return options[0]["value"]
-        def choose_quantity(self, prompt, min_qty, max_qty):
+        def choose_quantity(self, prompt, min_qty, max_qty, default=None):
             return min_qty
         def confirm(self, prompt):
             return False  # don't actually produce; we only care about the picker

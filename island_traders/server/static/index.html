@@ -608,10 +608,27 @@ button:active{transform:scale(.97)}
 .action-btns button.recommended{border-color:var(--gold);box-shadow:0 0 0 1px rgba(246,185,59,.45)}
 .action-btns button:hover:not([disabled]){border-color:var(--accent)}
 .action-btns button[disabled]{opacity:.45;cursor:not-allowed}
-/* Grouped action layout (Phase 2 of the UX review) */
-.action-groups{display:flex;flex-direction:column;gap:.45rem}
-.action-group{border:1px solid var(--border);border-radius:6px;padding:.45rem .55rem;background:rgba(0,0,0,.15)}
-.action-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:.3rem;font-weight:700}
+/* Grouped action accordion (Phase 3 of the UX review) */
+.action-groups{display:flex;flex-direction:column;gap:.4rem;width:100%}
+.action-group{border:1px solid var(--border);border-radius:6px;background:rgba(0,0,0,.15);overflow:hidden}
+.action-group.pinned{border-color:var(--gold)}
+.action-group-head{display:flex;align-items:center;gap:.45rem;padding:.4rem .55rem;cursor:pointer;user-select:none}
+.action-group-head:hover{background:rgba(255,255,255,.04)}
+.action-group .ag-chev{font-size:.6rem;color:var(--dim);transition:transform .15s;transform:rotate(90deg)}
+.action-group.collapsed .ag-chev{transform:rotate(0deg)}
+.action-group.collapsed .action-btns{display:none}
+.action-group .ag-ico{font-size:.9rem;line-height:1}
+.action-group .ag-label{font-size:.78rem;font-weight:700;color:var(--text)}
+.action-group .ag-summary{font-size:.66rem;color:var(--dim)}
+.action-group .ag-pin{margin-left:auto;background:transparent;border:none;color:var(--text);padding:.1rem .3rem;font-size:.8rem;line-height:1;cursor:pointer;opacity:.3;filter:grayscale(1)}
+.action-group-head:hover .ag-pin{opacity:.65}
+.action-group .ag-pin:hover{opacity:1}
+.action-group.pinned .ag-pin{opacity:1;filter:none}
+.action-group .action-btns{flex-direction:column;flex-wrap:nowrap;gap:.3rem;padding:.1rem .5rem .5rem}
+.action-group .action-btns button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:.4rem .6rem;border-radius:5px}
+.action-group .action-btns button .act-main{display:flex;align-items:center;gap:.4rem;width:100%;font-weight:600}
+.action-group .action-btns button .act-sub{font-size:.7rem;color:var(--dim);line-height:1.35;font-weight:400}
+.action-group .action-btns button.highlight .act-sub{color:rgba(0,0,0,.72)}
 
 /* island map */
 .island-map-container{width:100%;margin-bottom:.5rem}
@@ -6814,13 +6831,41 @@ function buildIslandMap() {
 // see ws_adapter.action_option_payload + ACTION_GROUPS.
 const ACTION_GROUP_ORDER = ['Production', 'Trade', 'People', 'Capital', 'Finance', 'Info'];
 
+// Per-group display chrome for the accordion (Phase 3 of the UX review).
+// Keys match the server-supplied option.group values; unknown groups fall back
+// to a neutral bullet + the raw group name.
+const ACTION_GROUP_META = {
+  Production: {ico: '\u{1F528}', label: 'Make'},        // hammer
+  Trade:      {ico: '⇄',    label: 'Trade'},        // left-right arrows
+  People:     {ico: '\u{1F465}', label: 'People'},       // busts
+  Capital:    {ico: '\u{1F3D7}', label: 'Grow'},         // construction
+  Finance:    {ico: '\u{1FA99}', label: 'Money'},        // coin
+  Info:       {ico: 'ℹ',    label: 'Info'},          // information source
+};
+
+// Accordion open/pin state, persisted across re-renders so batch flows
+// (Training Desk, Capital Picker) and the "Menu" recovery button don't reset
+// the player's expanded sections mid-turn.  `_actionExpanded` starts null and
+// is initialised on the first render; `_actionPinned` locks a section open.
+let _actionExpanded = null;
+const _actionPinned = new Set();
+
+// Per-product Produce buttons carry a "produce::<key>" value; collapse them
+// back to the base "produce" action so recommended/hint matching (which keys
+// off the bare action value) still lights the right button and auto-opens the
+// Make section.
+function _baseActionValue(v) {
+  return (typeof v === 'string' && v.startsWith('produce::')) ? 'produce' : v;
+}
+
 function _renderActionButton(o) {
   const classes = [];
   if (o.value === 'produce') classes.push('highlight');
   // Server-set recommended (Codex Phase 1 default = false) OR client-set from
   // a live Decision Hint that triggers this action (Phase 4 hint wiring).
   const pending = window._pendingActions || new Set();
-  if (o.recommended || _currentHintActions.has(o.value) || pending.has(o.value)) classes.push('recommended');
+  const baseVal = _baseActionValue(o.value);
+  if (o.recommended || _currentHintActions.has(baseVal) || pending.has(baseVal)) classes.push('recommended');
   const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
   const disabled = o.enabled === false;
   const disabledAttr = disabled ? ' disabled' : '';
@@ -6837,7 +6882,13 @@ function _renderActionButton(o) {
     : o.value === 'purchase_capital' ? 'openCapitalPicker()'
     : `sendResponse('${o.value}')`;
   const onclick = disabled ? '' : ` onclick="${handler}"`;
-  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
+  // Informative sub-line: prefer a server-supplied context string (forward-
+  // compatible — the payload may start carrying `context` later), otherwise
+  // surface a disabled action's reason inline instead of only as a tooltip.
+  const sub = o.context || (disabled ? o.disabled_reason : '');
+  const subHtml = sub ? `<span class="act-sub">${esc(sub)}</span>` : '';
+  const inner = `<span class="act-main">${esc(o.label)}</span>${subHtml}`;
+  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${inner}</button>`;
 }
 
 // Show the "you're done — click Undo to resume" banner in place of the
@@ -7081,16 +7132,89 @@ function showActionPrompt(msg) {
   const unknownGroups = Object.keys(buckets).filter(g => !ACTION_GROUP_ORDER.includes(g));
   const groups = knownGroups.concat(unknownGroups);
 
+  // A group is "recommended" when it holds any recommended / hinted / pending
+  // action — mirror the per-button logic in _renderActionButton so the panel
+  // auto-opens the section the player is being nudged toward.
+  const pending = window._pendingActions || new Set();
+  const isRec = o => { const b = _baseActionValue(o.value); return o.recommended || _currentHintActions.has(b) || pending.has(b); };
+  const recGroups = groups.filter(g => buckets[g].some(isRec));
+
+  // First render: default-open the recommended group(s), else just the first.
+  // Later renders keep whatever the player has toggled (persisted state).
+  if (_actionExpanded === null) {
+    _actionExpanded = new Set(recGroups.length ? recGroups : (groups.length ? [groups[0]] : []));
+  }
+  // Pinned sections and any section with a live recommendation stay open.
+  recGroups.forEach(g => _actionExpanded.add(g));
+  _actionPinned.forEach(g => _actionExpanded.add(g));
+
   const groupsHtml = groups.map(g => {
+    const meta = ACTION_GROUP_META[g] || {ico: '•', label: g};
     const buttons = buckets[g].map(_renderActionButton).join('');
-    return `<div class="action-group">
-      <div class="action-group-label">${esc(g)}</div>
+    const open = _actionExpanded.has(g);
+    const pinned = _actionPinned.has(g);
+    const n = buckets[g].length;
+    return `<div class="action-group${open ? '' : ' collapsed'}${pinned ? ' pinned' : ''}" data-group="${esc(g)}">
+      <div class="action-group-head" data-group="${esc(g)}">
+        <span class="ag-chev" aria-hidden="true">▶</span>
+        <span class="ag-ico" aria-hidden="true">${meta.ico}</span>
+        <span class="ag-label">${esc(meta.label)}</span>
+        <span class="ag-summary">${n} action${n === 1 ? '' : 's'}</span>
+        <button class="ag-pin" type="button" data-group="${esc(g)}"
+                title="${pinned ? 'Unpin — allow collapsing' : 'Pin this section open'}"
+                aria-label="${pinned ? 'Unpin section' : 'Pin section open'}"
+                aria-pressed="${pinned}">📌</button>
+      </div>
       <div class="action-btns">${buttons}</div>
     </div>`;
   }).join('');
 
   document.getElementById('prompt-btns').innerHTML = `<div class="action-groups">${groupsHtml}</div>`;
   document.getElementById('prompt-input').innerHTML = '';
+  _wireActionAccordion();
+}
+
+// Attach expand/collapse + pin handlers after the accordion markup lands.
+// Header click toggles the section (unless it's pinned open); the pin button
+// locks a section open across re-renders.  All state lives in the module-level
+// _actionExpanded / _actionPinned sets so it survives menu re-renders.
+function _wireActionAccordion() {
+  const root = document.getElementById('prompt-btns');
+  if (!root) return;
+  root.querySelectorAll('.action-group-head').forEach(head => {
+    head.addEventListener('click', e => {
+      if (e.target.closest('.ag-pin')) return;   // pin has its own handler
+      const g = head.dataset.group;
+      if (_actionPinned.has(g)) return;           // pinned = locked open
+      const sec = head.closest('.action-group');
+      const nowCollapsed = !sec.classList.contains('collapsed');
+      sec.classList.toggle('collapsed', nowCollapsed);
+      if (nowCollapsed) _actionExpanded.delete(g);
+      else _actionExpanded.add(g);
+    });
+  });
+  root.querySelectorAll('.ag-pin').forEach(pin => {
+    pin.addEventListener('click', e => {
+      e.stopPropagation();
+      const g = pin.dataset.group;
+      const sec = pin.closest('.action-group');
+      if (_actionPinned.has(g)) {
+        _actionPinned.delete(g);
+        sec.classList.remove('pinned');
+        pin.setAttribute('aria-pressed', 'false');
+        pin.title = 'Pin this section open';
+        pin.setAttribute('aria-label', 'Pin section open');
+      } else {
+        _actionPinned.add(g);
+        _actionExpanded.add(g);
+        sec.classList.add('pinned');
+        sec.classList.remove('collapsed');
+        pin.setAttribute('aria-pressed', 'true');
+        pin.title = 'Unpin — allow collapsing';
+        pin.setAttribute('aria-label', 'Unpin section');
+      }
+    });
+  });
 }
 
 // Standard cancel button for any modal — sends the CANCEL_SENTINEL to the
@@ -7162,13 +7286,19 @@ function submitNumberInput(id) {
 
 function showQuantityInput(msg) {
   _activePromptType = 'dialog';
+  const prefill = (typeof msg.prefill === 'number') ? ` value="${msg.prefill}"` : '';
   showDlg(msg.prompt, `
-    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}" placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}"${prefill} placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" style="flex:1" onclick="submitNumberInput('qty-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
+  // Pre-select the prefilled value so the player can overtype it immediately.
+  if (prefill) {
+    const el = document.getElementById('qty-in');
+    if (el) { el.focus(); el.select(); }
+  }
 }
 
 function showDollopInput(msg) {

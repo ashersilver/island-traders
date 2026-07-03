@@ -32,7 +32,7 @@ class _SilentIO:
         return TurnAction.END_TURN
     def choose_resource(self, _, available):
         return available[0] if available else None
-    def choose_quantity(self, _, min_qty, max_qty): return min_qty
+    def choose_quantity(self, _, min_qty, max_qty, default=None): return min_qty
     def choose_player(self, _, players): return players[0]
     def confirm(self, _): return True
     def ask_dollop_amount(self, _, max_dollops): return 0.0

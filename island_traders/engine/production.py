@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from dataclasses import replace
 from math import ceil, floor
 from ..models.player import Player
@@ -765,6 +766,75 @@ class ProductionEngine:
                         ),
                     })
         return [opt for opt in options if opt["max_qty"] > 0]
+
+    @staticmethod
+    def produce_option_key(option: dict) -> str:
+        """Stable identity for a production option across menu build + dispatch.
+
+        Encodes (role, output, product_line) so the dashboard's per-product
+        Produce button can round-trip back to the exact option in
+        ``production_options`` when the player picks it, without relying on a
+        fragile list index.
+        """
+        return f"{option['role']}|{option['output'].value}|{option['product_line'] or ''}"
+
+    def produce_menu_options(
+        self,
+        player: Player,
+        event_result: EventResult,
+        season_name: str = "Spring",
+        prices: dict | None = None,
+    ) -> list[dict]:
+        """Menu-ready produce choices: one entry per producible product.
+
+        Turns ``production_options`` into ``[{key, label, max_qty, context}]`` so
+        the action menu can render a distinct "Produce <product>" button per
+        output (e.g. "Produce Equipment Spares Kits") instead of a single generic
+        Produce action that opens a follow-up picker.  ``context`` is a compact
+        sub-line for the button, e.g. "2 Metal + 1 Oil → 4 Spares · 9 runs from
+        stock · 12 Dp each".  Pass ``prices`` (market current_prices) to include
+        the unit price.
+        """
+        prices = prices or {}
+        out: list[dict] = []
+        for option in self.production_options(player, event_result, season_name):
+            product_line = option["product_line"]
+            output = option["output"]
+            if product_line and product_line in MANUFACTURER_PRODUCT_LINES:
+                spec = MANUFACTURER_PRODUCT_LINES[product_line]
+                name = spec["desc"]
+                context = self._recipe_context(player, spec, output)
+            else:
+                name = output.value
+                context = f"up to {option['max_qty']} now"
+            price = prices.get(output)
+            if price:
+                context += f" · {round(price)} Dp each"
+            out.append({
+                "key": self.produce_option_key(option),
+                "label": f"Produce {name}",
+                "max_qty": option["max_qty"],
+                "context": context,
+            })
+        return out
+
+    @staticmethod
+    def _recipe_context(player: Player, spec: dict, output: ResourceType) -> str:
+        """Recipe + affordable-runs sub-line for a Manufacturer product line."""
+        recipe_inputs = spec.get("inputs") or {}
+        inputs_str = " + ".join(f"{need} {res}" for res, need in recipe_inputs.items())
+        # Space out camelCase resource values (FarmMachinery → Farm Machinery).
+        unit = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", output.value)
+        context = f"{inputs_str} → {spec['qty']} {unit}" if inputs_str \
+            else f"→ {spec['qty']} {unit}"
+        affordable = [
+            int(player.inventory.get(ResourceType(res)) // need)
+            for res, need in recipe_inputs.items() if need > 0
+        ]
+        if affordable:
+            runs = max(0, min(affordable))
+            context += f" · {runs} run{'' if runs == 1 else 's'} from stock"
+        return context
 
     def _inputs_for_selected_output(
         self,
