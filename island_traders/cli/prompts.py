@@ -56,6 +56,23 @@ class IOAdapter:
                     return available[idx]
             self.print("  Invalid choice, try again.")
 
+    def set_produce_options(self, player_id, options: list[dict]) -> None:
+        """Hook: dashboard adapters cache per-product Produce buttons.
+
+        No-op for the terminal adapter, which keeps the single Produce action
+        plus a follow-up product picker (see TurnManager._action_produce).
+        """
+        return None
+
+    def take_produce_choice(self, player_id):
+        """Hook: return (and clear) a pre-selected produce option key, or None.
+
+        The dashboard adapter records which "Produce <product>" button the
+        player clicked so _action_produce can skip the product picker.  Base
+        adapter always returns None → the picker path runs.
+        """
+        return None
+
     def choose_resource(self, prompt: str, available: list[ResourceType]) -> ResourceType:
         self.print(f"\n  {prompt}")
         for i, r in enumerate(available, 1):
@@ -68,10 +85,17 @@ class IOAdapter:
                     return available[idx]
             self.print("  Invalid choice.")
 
-    def choose_quantity(self, prompt: str, min_qty: int, max_qty: int) -> int:
-        self.print(f"\n  {prompt} [{min_qty}–{max_qty}]")
+    def choose_quantity(
+        self, prompt: str, min_qty: int, max_qty: int, default: int | None = None
+    ) -> int:
+        hint = f"[{min_qty}–{max_qty}]"
+        if default is not None:
+            hint += f" (Enter for {default})"
+        self.print(f"\n  {prompt} {hint}")
         while True:
             raw = self.input("  > ").strip()
+            if not raw and default is not None:
+                return max(min_qty, min(default, max_qty))
             if raw.isdigit():
                 qty = int(raw)
                 if min_qty <= qty <= max_qty:
@@ -192,7 +216,7 @@ class FakeIOAdapter(IOAdapter):
     def choose_resource(self, prompt, available):
         return available[0] if available else None
 
-    def choose_quantity(self, prompt, min_qty, max_qty):
+    def choose_quantity(self, prompt, min_qty, max_qty, default=None):
         return min_qty
 
     def choose_player(self, prompt, players):

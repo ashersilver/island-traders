@@ -588,6 +588,16 @@ class TurnManager:
         self._review_pending_deals(player, result)
         self._review_training_counteroffers(player, result, season_name, year)
         while True:
+            # Refresh the per-product Produce buttons before every prompt —
+            # producibility changes as the player buys inputs / uses capacity.
+            # Dashboard adapters render one "Produce <product>" button each;
+            # the terminal adapter ignores this and keeps the picker path.
+            self.io.set_produce_options(
+                player.player_id,
+                self.production.produce_menu_options(
+                    player, event_result, season_name, self.market.current_prices()
+                ),
+            )
             action = self.io.choose_action(player, list(TurnAction))
             if action == TurnAction.END_TURN:
                 break
@@ -1049,32 +1059,47 @@ class TurnManager:
             self.io.print("  Cannot produce anything right now — production is blocked by equipment, workforce, or inputs.")
             return
 
-        # Present the production choices as named options (Issue #21) — the
-        # player picks "Farm Machinery", not an index number.
-        picker_options = []
-        for idx, option in enumerate(options):
-            output = option["output"].value
-            line = ""
-            if option["product_line"]:
-                line_info = MANUFACTURER_PRODUCT_LINES[option["product_line"]]
-                line = f" — {line_info['desc']}"
-            cap = option["capacity_limit"]
-            cap_note = "" if cap is None else f" (capacity cap {cap})"
-            label = (
-                f"{option['role']}: {output}{line} "
-                f"— up to {option['max_qty']} now{cap_note}"
+        # If the player clicked a per-product "Produce <product>" button on the
+        # dashboard, the adapter has stashed that option's key — use it directly
+        # and skip the picker.  Otherwise fall back to the named-option picker
+        # (terminal client, or a plain Produce action from an older flow).
+        preselected_key = self.io.take_produce_choice(player.player_id)
+        option = None
+        if preselected_key:
+            option = next(
+                (o for o in options
+                 if self.production.produce_option_key(o) == preselected_key),
+                None,
             )
-            picker_options.append({"value": idx, "label": label})
 
-        chosen = self.io.choose_option("Choose product to produce", picker_options)
-        try:
-            option = options[int(chosen)]
-        except (TypeError, ValueError, IndexError):
-            option = options[0]
+        if option is None:
+            # Present the production choices as named options (Issue #21) — the
+            # player picks "Farm Machinery", not an index number.
+            picker_options = []
+            for idx, opt in enumerate(options):
+                output = opt["output"].value
+                line = ""
+                if opt["product_line"]:
+                    line_info = MANUFACTURER_PRODUCT_LINES[opt["product_line"]]
+                    line = f" — {line_info['desc']}"
+                cap = opt["capacity_limit"]
+                cap_note = "" if cap is None else f" (capacity cap {cap})"
+                label = (
+                    f"{opt['role']}: {output}{line} "
+                    f"— up to {opt['max_qty']} now{cap_note}"
+                )
+                picker_options.append({"value": idx, "label": label})
+
+            chosen = self.io.choose_option("Choose product to produce", picker_options)
+            try:
+                option = options[int(chosen)]
+            except (TypeError, ValueError, IndexError):
+                option = options[0]
         qty = self.io.choose_quantity(
             f"How many {option['output'].value}? (max {option['max_qty']})",
             1,
             option["max_qty"],
+            default=option["max_qty"],
         )
         inputs = self.production._inputs_for_selected_output(
             player=player,
