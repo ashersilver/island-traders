@@ -5,7 +5,21 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.17`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.18`.
+
+- **Spares economy opened** — `Spares` is now a tradable, priced (12 Dp)
+  market resource with a Manufacturer product line (Metal 2 + Oil 1 → 4
+  kits, in both the product-line and capacity-recipe models), 4 starting
+  kits for the Manufacturer, and AI behaviour: capital-owning islands buy a
+  2-kit repair buffer; the Manufacturer produces kits when its own capital
+  fails with none on hand (emergency) or when the line wins the normal
+  demand/profit scoring. Spares bids are excluded from the product-line
+  ROUTING gates so the ubiquitous small buffer bids can't crowd out
+  higher-value lines — the first cut did exactly that and cratered the
+  Manufacturer's 1000-game win rate from 10.4% to 3.3%; with the gate fix
+  it lands at 10.9% (seed 42), slightly above the pre-Spares baseline,
+  with 3.6 kits/game trading. Banker over-performance (28%) predates this
+  change and is tracked by the workforce-participation rebalance brief.
 
 - **Island reports, worker transfers, manufacturer order book, and Done Trading
   active-human hardening** — adds private season-report payloads with P&L

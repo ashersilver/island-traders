@@ -63,6 +63,7 @@ AI_INSURANCE_MIN_FATALITY_RATE = 0.005
 AI_VACCINE_CASH_RESERVE = 50.0
 AI_HEALTH_QOL_COVERAGE_THRESHOLD = 0.5
 AI_HEALTH_QOL_CASH_RESERVE = 50.0
+AI_SPARES_TARGET_STOCK = 2
 
 
 class AIStrategy:
@@ -700,9 +701,15 @@ class AIStrategy:
             has_human_demand = self._has_human_equipment_demand(
                 demand_players, training_registry=training_registry
             )
+        # Spares bids are excluded from the routing gate: every capital-owning
+        # AI now posts a small standing Spares bid (2 kits), so counting them
+        # made has_visible_bid ~always true and re-routed every sim game into
+        # the profit chooser. Spares still competes on score inside whichever
+        # path runs — it just doesn't get to steer the routing.
         has_visible_bid = any(
             market.best_bid(ResourceType(line["output"])) is not None
-            for line in MANUFACTURER_PRODUCT_LINES.values()
+            for line_key, line in MANUFACTURER_PRODUCT_LINES.items()
+            if line_key != "Spares"
         )
 
         current_line = getattr(
@@ -732,10 +739,33 @@ class AIStrategy:
                 line_key: self._manufacturer_demand_score(player, market, line_key)
                 for line_key in MANUFACTURER_PRODUCT_LINES
             }
+        else:
+            # The structural revenue_opportunities model doesn't cover every
+            # line (Spares in particular) — backfill missing lines with the
+            # demand score so max()/comparisons below never KeyError and a
+            # bid-pulled line can still win on merit.
+            for line_key in MANUFACTURER_PRODUCT_LINES:
+                scores.setdefault(
+                    line_key,
+                    self._manufacturer_demand_score(player, market, line_key),
+                )
         feasible = [
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
+        # Spares competes in the normal scoring like any other line (repair
+        # bids from other islands pull its score up via bid_pull). The ONLY
+        # hard override is a genuine emergency: own capital sits failed with
+        # no kit on hand, so a repair is blocked/premium-priced right now.
+        # The first cut of this override fired on ANY standing bid or
+        # whenever stock dipped below 4 (== the starting seed), chronically
+        # diverting the Manufacturer from lines worth several times more —
+        # 1000-game sim: 10.4% -> 3.3% win rate. Score-competition + narrow
+        # emergency restores the opportunity-cost tradeoff.
+        if "Spares" in feasible and self._spares_emergency(player):
+            player.ai_product_line = "Spares"
+            player.ai_product_line_human_demand = has_human_demand
+            return "Spares"
         if not feasible:
             chosen = max(scores, key=lambda line_key: scores[line_key])
             player.ai_product_line = chosen
@@ -758,9 +788,16 @@ class AIStrategy:
         """Legacy profit/bid chooser used when there is no human demand signal."""
         best_line = next(iter(MANUFACTURER_PRODUCT_LINES))
         best_score = float("-inf")
+        # A standing bid narrows the candidate set (real demand signal) —
+        # except Spares: the ubiquitous 2-kit buffer bids from other AIs
+        # would otherwise make Spares the ONLY candidate whenever equipment
+        # bids are absent, crowding out lines worth 4-5x more (this tanked
+        # the Manufacturer's sim win rate 10.4% -> 3.3%). Spares still
+        # competes on score whenever the candidate set includes it.
         bid_lines = [
             line_key for line_key, line in MANUFACTURER_PRODUCT_LINES.items()
-            if market.best_bid(ResourceType(line["output"])) is not None
+            if line_key != "Spares"
+            and market.best_bid(ResourceType(line["output"])) is not None
         ]
         candidates = bid_lines or list(MANUFACTURER_PRODUCT_LINES)
         for line_key, line in MANUFACTURER_PRODUCT_LINES.items():
@@ -848,6 +885,20 @@ class AIStrategy:
                     return True
         return False
 
+    def _spares_emergency(self, player: Player) -> bool:
+        """Own capital failed with zero kits on hand — repair is blocked or
+        premium-priced until a Spares run happens. This is the only condition
+        that overrides normal product-line scoring."""
+        if player.inventory.get(ResourceType.SPARES) > 0:
+            return False
+        if player.spares_capacity() <= 0:
+            return False
+        return any(
+            unit.status == "failed"
+            for units in player.capital_units.values()
+            for unit in units
+        )
+
     def _manufacturer_demand_score(
         self, player: Player, market: Market, line_key: str
     ) -> float:
@@ -931,6 +982,14 @@ class AIStrategy:
             inputs[ResourceType.FREIGHT] = max(
                 inputs.get(ResourceType.FREIGHT, 0),
                 unresolved_repairs * EQUIPMENT_REPAIR_SHIP_FREIGHT,
+            )
+        if (
+            not any(role.name == "Manufacturer" for role in player.roles)
+            and player.inventory.get(ResourceType.SPARES) <= 0
+            and any(count > 0 for count in player.capital_inventory.values())
+        ):
+            inputs[ResourceType.SPARES] = max(
+                inputs.get(ResourceType.SPARES, 0), AI_SPARES_TARGET_STOCK
             )
         return inputs
 
@@ -1290,7 +1349,7 @@ class AIStrategy:
                 continue
             target_runs = (
                 1
-                if rtype in EQUIPMENT_RESOURCE_CAPITAL
+                if rtype in EQUIPMENT_RESOURCE_CAPITAL or rtype == ResourceType.SPARES
                 else AI_EQUIPMENT_INPUT_RUNS
                 if rtype in AI_EQUIPMENT_INPUTS else self.target_production_runs
             )
@@ -1395,6 +1454,8 @@ class AIStrategy:
 
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
+        if is_manufacturer:
+            listable_resources.add(ResourceType.SPARES)
         for rtype in listable_resources:
             if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue

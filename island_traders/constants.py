@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.17"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.18"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -97,8 +97,9 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     # loan interest spread and insurance premiums — see island-ledger.md §3
     # for the full institutional-cash-pool model (future implementation).
     "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
-    # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
-    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4,                 # to sell
+    # Manufacturer: FarmMachinery (default opening line) + Spares to sell,
+    # plus 2 seasons of inputs.
+    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4, "Spares": 4,   # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
@@ -123,6 +124,7 @@ BASE_PRICES: dict[str, float] = {
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
     "Goods":               40.0,
+    "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
     "HealthServices":      25.0,
     "Vaccine":             33.5,
     "Finance":             22.0,
@@ -301,6 +303,15 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
         "desc":             "Transportation Equipment",
+    },
+    "Spares": {
+        "inputs":           {"Metal": 2, "Oil": 1},
+        "output":           "Spares",
+        "qty":              4,
+        "skilled":          1,   # Mechanic/AssemblyWorker
+        "unskilled":        2,
+        "freight_per_unit": 0,   # small parts; repair freight handles delivery
+        "desc":             "Equipment Spares Kits",
     },
 }
 

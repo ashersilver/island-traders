@@ -29,11 +29,10 @@ class ResourceType(str, Enum):
     SPARES               = "Spares"
 
 
-# Generic spares (#185/#188): manufactured by the Manufacturer, attached to
-# capital equipment and consumed during repair.  They are NOT a market good —
-# they carry no market price / order book and can never be offered, bid, or
-# traded; they only move by being manufactured and transferred with equipment.
-NON_TRADABLE_RESOURCES: frozenset[ResourceType] = frozenset({ResourceType.SPARES})
+# Generic spares (#185/#188): manufactured by the Manufacturer and consumed
+# during repair. Spares are tradable so islands can stock repair kits before
+# equipment fails.
+NON_TRADABLE_RESOURCES: frozenset[ResourceType] = frozenset()
 
 
 class InsufficientResourceError(Exception):

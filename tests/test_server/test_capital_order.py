@@ -416,5 +416,5 @@ def test_game_state_exposes_spares_held_and_capacity():
         p for p in state["players"] if p["player_id"] == manufacturer.player_id
     )
 
-    assert manufacturer_state["spares_held"] == 7
+    assert manufacturer_state["spares_held"] == 10
     assert manufacturer_state["spares_capacity"] == 10
