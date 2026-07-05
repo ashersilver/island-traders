@@ -45,13 +45,13 @@ def test_unfilled_household_demand_posts_price_signal():
     result = buy_household_goods_from_offers(
         buyer,
         market,
-        {ResourceType.HEALTH_SERVICES: 1},
+        {ResourceType.MEDICAL_SUPPLIES: 1},
     )
 
     assert result.bought == {}
-    assert result.unmet == {ResourceType.HEALTH_SERVICES: 1}
+    assert result.unmet == {ResourceType.MEDICAL_SUPPLIES: 1}
     assert buyer.household_cash == 20.0
-    assert market.demand[ResourceType.HEALTH_SERVICES] == 1
+    assert market.demand[ResourceType.MEDICAL_SUPPLIES] == 1
 
 
 def test_consumer_demand_plan_scales_goods_and_seasonal_health_vaccine():
@@ -65,7 +65,7 @@ def test_consumer_demand_plan_scales_goods_and_seasonal_health_vaccine():
     assert spring[ResourceType.COURSES] == 2
     assert summer[ResourceType.FOOD] == 2
     assert summer[ResourceType.GOODS] == 3
-    assert summer[ResourceType.HEALTH_SERVICES] == 4
+    assert summer[ResourceType.MEDICAL_SUPPLIES] == 4
     assert autumn[ResourceType.VACCINE] == 2
 
 
@@ -102,9 +102,9 @@ def test_turn_manager_processes_household_demand_after_ai_listings():
     seller = Player(2, "Clinic", [ROLES["Doctor"]], 10.0, is_human=False)
     transporter = Player(3, "Cargo", [ROLES["Transporter"]], 5.0, is_human=False)
     buyer.household_cash = 18.0
-    seller.receive_resources(ResourceType.HEALTH_SERVICES, 1)
+    seller.receive_resources(ResourceType.MEDICAL_SUPPLIES, 1)
     market = Market()
-    market.post_offer(seller, ResourceType.HEALTH_SERVICES, 18.0, 1)
+    market.post_offer(seller, ResourceType.MEDICAL_SUPPLIES, 18.0, 1)
     tm = TurnManager(
         [buyer, seller, transporter],
         ProductionEngine(),

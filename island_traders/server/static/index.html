@@ -1932,10 +1932,10 @@ const ISLAND_BRIEFINGS = {
   },
   Doctor: {
     title: 'Healthcare and Health Research Island',
-    summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    summary: 'Sell resilience. Produce MedicalSupplies and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
     complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
-    full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
+    full: `You produce MedicalSupplies and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
   },
 };
 let investSelected = new Set(); // currently checked item_ids
@@ -5111,18 +5111,28 @@ function renderIslandWellbeing(me) {
   const tile = document.getElementById('wellbeing-tile');
   const body = document.getElementById('s-wellbeing');
   if (!tile || !body || !me) return;
-  const qol = me.quality_of_life;   // {score, components:{nutrition,medical,goods,stability}}
+  // QoL: the medical/QoL engine currently emits a 0..1 scalar `qol_score`; a
+  // richer {score, components:{nutrition,medical,goods,stability}} object may
+  // arrive later — read either.
+  const qolObj = me.quality_of_life;
+  let qolPct = null, comps = null;
+  if (qolObj && typeof qolObj.score === 'number') {
+    qolPct = qolObj.score <= 1 ? qolObj.score * 100 : qolObj.score;
+    comps = qolObj.components || null;
+  } else if (typeof me.qol_score === 'number') {
+    qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
+  }
   const ce = me.continuing_education; // {factor, covered, managers} (0..1 factor)
-  if (!qol && !ce) { tile.classList.add('hidden'); return; }
+  if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
   const parts = [];
-  if (qol && typeof qol.score === 'number') {
-    const c = qol.components || {};
-    const comp = ['nutrition', 'medical', 'goods', 'stability']
-      .filter(k => typeof c[k] === 'number')
-      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(c[k])}`)
-      .join(' · ');
+  if (qolPct != null) {
+    const comp = comps ? ['nutrition', 'medical', 'goods', 'stability']
+      .filter(k => typeof comps[k] === 'number')
+      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(comps[k])}`)
+      .join(' · ') : '';
+    const col = qolPct >= 100 ? 'var(--green)' : (qolPct >= 85 ? 'var(--text)' : 'var(--gold)');
     parts.push(`<div class="mkt-row"><span class="res">Quality of Life</span>`
-      + `<span class="price">${Math.round(qol.score)}/100</span></div>`
+      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
       + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
   }
   if (ce && typeof ce.factor === 'number') {

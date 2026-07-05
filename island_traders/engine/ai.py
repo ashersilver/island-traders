@@ -1256,7 +1256,7 @@ class AIStrategy:
                     pass
         return actions
 
-    def _ai_buy_health_services_for_qol(
+    def _ai_buy_medical_supplies_for_qol(
         self,
         player: Player,
         market: Market,
@@ -1265,17 +1265,19 @@ class AIStrategy:
     ) -> list[str]:
         if player.is_human:
             return []
-        if getattr(player, "_qol_observed_years", 0) <= 0:
+        stockpile_target = ceil(max(0, player.population) / 10)
+        nurse_target = player.workforce.count_profession("Nurse")
+        target_qty = max(1, stockpile_target + nurse_target)
+        have = player.inventory.get(ResourceType.MEDICAL_SUPPLIES)
+        if have >= target_qty:
             return []
-        if getattr(player, "_health_coverage", 1.0) >= AI_HEALTH_QOL_COVERAGE_THRESHOLD:
-            return []
-        target_qty = ceil(max(0, player.population) / 100)
+        target_qty -= have
         if target_qty <= 0:
             return []
-        base_price = BASE_PRICES.get(ResourceType.HEALTH_SERVICES.value, 0.0)
+        base_price = BASE_PRICES.get(ResourceType.MEDICAL_SUPPLIES.value, 0.0)
         max_price = base_price * 2
         offers = [
-            offer for offer in market.available_offers(ResourceType.HEALTH_SERVICES)
+            offer for offer in market.available_offers(ResourceType.MEDICAL_SUPPLIES)
             if offer.seller_id != player.player_id and offer.price_per_unit <= max_price
         ]
         if not offers:
@@ -1286,7 +1288,7 @@ class AIStrategy:
             return []
         try:
             bid = market.post_bid(
-                player, ResourceType.HEALTH_SERVICES, bid_price, bid_qty
+                player, ResourceType.MEDICAL_SUPPLIES, bid_price, bid_qty
             )
         except Exception:
             return []
@@ -1295,7 +1297,7 @@ class AIStrategy:
         if bought <= 0:
             return []
         return [
-            f"[AI] {player.name} bought {bought}x HealthServices "
+            f"[AI] {player.name} bought {bought}x MedicalSupplies "
             f"to improve QoL coverage ({cost:.1f} Dp)"
         ]
 
@@ -1366,7 +1368,7 @@ class AIStrategy:
             )
         )
         actions.extend(
-            self._ai_buy_health_services_for_qol(
+            self._ai_buy_medical_supplies_for_qol(
                 player, market, trading_engine, other_players
             )
         )

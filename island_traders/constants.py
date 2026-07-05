@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.22"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.23"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -102,7 +102,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     "Manufacturer":  {"FarmMachinery": 2, "Goods": 4, "Spares": 4,   # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
-    "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
+    "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
                       "Expertise": 2, "Oil": 2, "Ore": 2},  # 2 seasons of inputs (makes own Reagents)
 }
 
@@ -117,7 +117,7 @@ BASE_PRICES: dict[str, float] = {
     "Metal":                8.0,
     "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
-    # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
+    # MedicalSupplies/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
     "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
     "Expertise":           17.1,
@@ -125,7 +125,7 @@ BASE_PRICES: dict[str, float] = {
     "Reagents":            28.0,
     "Goods":               40.0,
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
-    "HealthServices":      25.0,
+    "MedicalSupplies":      25.0,
     "Vaccine":             33.5,
     "Finance":             22.0,
     # ForgeHaven product lines
@@ -171,7 +171,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
-    "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    "Doctor":        {"MedicalSupplies": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Reagents": 6},
 }
@@ -375,6 +375,21 @@ HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
 CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
 FREIGHT_UNITS_PER_TRADE_UNIT: float = 0.1
 FREIGHT_FEE_PER_TRADE_UNIT: float = 1.0
+
+# Medical response + seasonal QoL (2026-07-04 medical brief).
+DOCTOR_TREATMENTS_PER_SEASON: int = 3
+NURSE_TREATMENTS_PER_SEASON: int = 2
+UNTREATED_RECOVERY_SEASONS: int = 2
+TREATED_RECOVERY_SEASONS: int = 1
+MEDEVAC_SEATS: int = 2
+MEDEVAC_FEE: float = 8.0
+NURSE_UPKEEP_SUPPLIES: int = 1
+NURSE_QOL_WORKFORCE_COVERAGE: int = 15
+NURSE_QOL_BONUS_CAP_POINTS: float = 15.0
+NURSE_PRODUCTIVITY_BONUS_CAP: float = 0.20
+MEDICAL_SUPPLIES_STOCKPILE_PEOPLE_PER_UNIT: int = 10
+QOL_PRODUCTIVITY_MIN: float = 0.85
+QOL_PRODUCTIVITY_MAX: float = 1.15
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3

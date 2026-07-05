@@ -307,6 +307,19 @@ class Player:
         self._health_coverage = 0.0
         self._pollution_index = 0.0
         self._qol_observed_years = 0
+        self._qol_index = 50.0
+        self._qol_breakdown = {}
+        self._qol_productivity_multiplier = 1.0
+        self._qol_meals_needed_this_season = 0
+        self._qol_meals_satisfied_this_season = 0
+        self._qol_food_variety_this_season = set()
+        self._qol_goods_demanded_this_season = 0
+        self._qol_goods_bought_this_season = 0
+        self._qol_active_nurses_this_season = 0
+        self._qol_medical_insurance_active = False
+        self._qol_untreated_sidelined_this_season = 0
+        self._qol_treated_this_season = 0
+        self._qol_medevacs_this_season = 0
         # Monotonic id source for CapitalUnit.unit_id (per player); start above
         # any ids already present (e.g. when loaded from a save).
         self._capital_unit_seq = max(

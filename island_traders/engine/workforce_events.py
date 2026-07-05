@@ -4,11 +4,19 @@ import random
 from dataclasses import dataclass, field
 from ..models.player import Player
 from ..constants import (
+    DOCTOR_TREATMENTS_PER_SEASON,
     WORKPLACE_RISK, LIFE_INSURANCE_DEATH_BENEFIT,
     LIFE_INSURANCE_FATALITY_REDUCTION,
     MAX_WORKFORCE_LOSS_PER_TICK_FRACTION,
-    MEDICAL_INSURANCE_INJURY_REDUCTION, SKILLED_PROFESSIONS,
+    MEDEVAC_FEE,
+    MEDEVAC_SEATS,
+    MEDICAL_INSURANCE_INJURY_REDUCTION,
+    NURSE_TREATMENTS_PER_SEASON,
+    TREATED_RECOVERY_SEASONS,
+    UNTREATED_RECOVERY_SEASONS,
+    SKILLED_PROFESSIONS,
 )
+from ..models.resource import ResourceType
 
 
 @dataclass
@@ -26,6 +34,12 @@ class WorkforceEventReport:
     # len(fatality_worker_ids).
     loss_cap_applied: bool = False
     would_have_lost: int = 0
+    treated_worker_ids: list[int] = field(default_factory=list)
+    medevac_worker_ids: list[int] = field(default_factory=list)
+    untreated_worker_ids: list[int] = field(default_factory=list)
+    local_supplies_used: int = 0
+    doctor_supplies_used: int = 0
+    medevac_fees_paid: float = 0.0
 
     @property
     def has_events(self) -> bool:
@@ -50,6 +64,12 @@ class WorkforceEventReport:
             n = len(self.injured_worker_ids)
             reduced = " (reduced by medical insurance)" if self.insurance_reduced_injuries else ""
             parts.append(f"{n} worker(s) injured — absent this season{reduced}")
+        if self.treated_worker_ids:
+            parts.append(f"{len(self.treated_worker_ids)} treated")
+        if self.medevac_worker_ids:
+            parts.append(f"{len(self.medevac_worker_ids)} medevac")
+        if self.untreated_worker_ids:
+            parts.append(f"{len(self.untreated_worker_ids)} untreated")
         return "; ".join(parts) if parts else "no workplace incidents"
 
 
@@ -121,7 +141,7 @@ def apply_workplace_risks(
                 injured_ids.append(worker.worker_id)
 
         if injured_ids:
-            player.workforce.mark_absent(injured_ids)
+            player.workforce.mark_absent(injured_ids, UNTREATED_RECOVERY_SEASONS)
             report.injured_worker_ids = injured_ids
 
         # --- Fatalities ---
@@ -206,6 +226,94 @@ def apply_workplace_risks(
             reports.append(report)
 
     return reports
+
+
+def resolve_medical_care(
+    players: list[Player],
+    reports: list[WorkforceEventReport],
+) -> list[WorkforceEventReport]:
+    """Treat sidelined workers with local supplies, then medevac overflow.
+
+    Treatment shortens an injury absence from the untreated two-season recovery
+    to the treated one-season recovery. Local care uses the patient's island
+    MedicalSupplies. Medevac uses PassengerSeats, pays the Doctor island, and
+    consumes one MedicalSupplies from the Doctor's stock.
+    """
+    by_id = {p.player_id: p for p in players}
+    doctor_island = next(
+        (p for p in players if any(role.name == "Doctor" for role in p.roles)),
+        None,
+    )
+    for player in players:
+        player._qol_treated_this_season = 0
+        player._qol_medevacs_this_season = 0
+        player._qol_untreated_sidelined_this_season = 0
+
+    for report in reports:
+        patient_island = by_id.get(report.player_id)
+        if patient_island is None or not report.injured_worker_ids:
+            continue
+        candidate_ids = _prioritised_patient_ids(patient_island, report.injured_worker_ids)
+
+        local_capacity = (
+            patient_island.workforce.count_profession("Doctor") * DOCTOR_TREATMENTS_PER_SEASON
+            + patient_island.workforce.count_profession("Nurse") * NURSE_TREATMENTS_PER_SEASON
+        )
+        local_supplies = patient_island.inventory.get(ResourceType.MEDICAL_SUPPLIES)
+        local_treat = min(len(candidate_ids), local_capacity, local_supplies)
+        for worker_id in candidate_ids[:local_treat]:
+            _set_recovery(patient_island, worker_id, TREATED_RECOVERY_SEASONS)
+        if local_treat:
+            patient_island.give_resources(ResourceType.MEDICAL_SUPPLIES, local_treat)
+            report.local_supplies_used = local_treat
+            report.treated_worker_ids.extend(candidate_ids[:local_treat])
+
+        remaining = candidate_ids[local_treat:]
+        medevaced: list[int] = []
+        if remaining and doctor_island is not None and doctor_island is not patient_island:
+            available_supplies = doctor_island.inventory.get(ResourceType.MEDICAL_SUPPLIES)
+            seats_available = patient_island.inventory.get(ResourceType.PASSENGER_SEATS) // MEDEVAC_SEATS
+            cash_available = int(patient_island.dollops // MEDEVAC_FEE)
+            count = min(len(remaining), available_supplies, seats_available, cash_available)
+            if count > 0:
+                medevaced = remaining[:count]
+                patient_island.give_resources(ResourceType.PASSENGER_SEATS, count * MEDEVAC_SEATS)
+                doctor_island.give_resources(ResourceType.MEDICAL_SUPPLIES, count)
+                patient_island.spend_dollops(count * MEDEVAC_FEE)
+                doctor_island.receive_dollops(count * MEDEVAC_FEE)
+                for worker_id in medevaced:
+                    _set_recovery(patient_island, worker_id, TREATED_RECOVERY_SEASONS)
+                report.doctor_supplies_used = count
+                report.medevac_fees_paid = round(count * MEDEVAC_FEE, 2)
+                report.treated_worker_ids.extend(medevaced)
+                report.medevac_worker_ids.extend(medevaced)
+                patient_island._qol_medevacs_this_season += count
+
+        untreated = remaining[len(medevaced):]
+        report.untreated_worker_ids = untreated
+        patient_island._qol_treated_this_season += len(report.treated_worker_ids)
+        patient_island._qol_untreated_sidelined_this_season += len(untreated)
+
+    return reports
+
+
+def _prioritised_patient_ids(player: Player, worker_ids: list[int]) -> list[int]:
+    workers = {w.worker_id: w for w in player.workforce.workers}
+    return sorted(
+        worker_ids,
+        key=lambda worker_id: (
+            workers.get(worker_id).training_level if workers.get(worker_id) else 0,
+            workers.get(worker_id).experience_seasons if workers.get(worker_id) else 0,
+        ),
+        reverse=True,
+    )
+
+
+def _set_recovery(player: Player, worker_id: int, seasons: int) -> None:
+    for worker in player.workforce.workers:
+        if worker.worker_id == worker_id:
+            worker.absent_seasons = min(worker.absent_seasons, seasons)
+            return
 
 
 def _combined_risk(player: Player) -> dict[str, float]:

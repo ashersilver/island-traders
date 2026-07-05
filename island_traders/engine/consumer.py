@@ -58,7 +58,7 @@ def consumer_demand_plan(
         health_units *= population_units
         health_units += casualties * CONSUMER_HEALTH_CASUALTY_UNITS
         if health_units > 0:
-            units[ResourceType.HEALTH_SERVICES] = health_units
+            units[ResourceType.MEDICAL_SUPPLIES] = health_units
 
         vaccine_units = CONSUMER_VACCINE_SEASONAL_UNITS.get(season_name, 0)
         vaccine_units *= population_units

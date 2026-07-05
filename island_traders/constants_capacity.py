@@ -54,7 +54,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"cash_only": True, "capacity": {
             "Grain": 2, "Produce": 2, "Food": 2,   # Agriculture
             "Ore": 2,                               # Mining
-            "HealthServices": 2, "Vaccine": 1,      # Medical
+            "MedicalSupplies": 2, "Vaccine": 1,      # Medical
         }},
         description="Soil/sample testing: +2 capacity to Agriculture, Mining & Medical outputs",
         capacity_units=1,
@@ -405,8 +405,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Doctor",
         cost=60.0,
         delivery_seasons=0,
-        effects={"capacity": {"HealthServices": 4}},
-        description="+4 HealthServices capacity",
+        effects={"capacity": {"MedicalSupplies": 4}},
+        description="+4 MedicalSupplies capacity",
         capacity_units=2,
     ),
     CapitalItem(
@@ -415,8 +415,8 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Doctor",
         cost=100.0,
         delivery_seasons=2,
-        effects={"capacity": {"HealthServices": 2, "Vaccine": 1}},
-        description="+2 HealthServices, +1 Vaccine",
+        effects={"capacity": {"MedicalSupplies": 2, "Vaccine": 1}},
+        description="+2 MedicalSupplies, +1 Vaccine",
         capacity_units=3,
     ),
     CapitalItem(
@@ -594,7 +594,7 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
 
     # ----- Doctor (Medical Sciences) --------------------------------------
     # Reagents (formerly the Manufacturer's "LaboratoryEquipment") are now made
-    # here from Oil + Ore — used in-house for HealthServices/Vaccine and sold
+    # here from Oil + Ore — used in-house for MedicalSupplies/Vaccine and sold
     # to the Educator (2026-06-02).
     ProductionRecipe(
         role="Doctor", output="Reagents",
@@ -602,7 +602,7 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         manager_per_unit=0.2, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
     ProductionRecipe(
-        role="Doctor", output="HealthServices",
+        role="Doctor", output="MedicalSupplies",
         inputs={"Expertise": 0.25, "Reagents": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
