@@ -7,6 +7,8 @@ from island_traders.models.market import Market
 from island_traders.models.player import Player
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
+from island_traders.constants_capacity import CAPITAL_CATALOGUE
+from island_traders.models.capacity import find_item
 
 
 def test_purchase_capital_consumes_manufactured_equipment_and_delivers_item():
@@ -34,7 +36,8 @@ def test_purchase_capital_consumes_manufactured_equipment_and_delivers_item():
 def test_purchase_capital_places_delayed_item_in_transit():
     farmer = Player(1, "Farmer", [ROLES["Farmer"]], 200.0, is_human=True)
     manufacturer = Player(2, "ForgeHaven", [ROLES["Manufacturer"]], 50.0, is_human=True)
-    manufacturer.receive_resources(ResourceType.FARM_MACHINERY, 1)
+    harvester = find_item(CAPITAL_CATALOGUE, "farmer.harvester")
+    manufacturer.receive_resources(ResourceType.FARM_MACHINERY, harvester.capacity_units)
     market = Market()
 
     class HarvesterIO(FakeIOAdapter):

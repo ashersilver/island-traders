@@ -1,5 +1,5 @@
 import pytest
-from island_traders.engine.production import ProductionEngine, InsufficientInputsError
+from island_traders.engine.production import InsufficientInputsError, ProductionEngine
 from island_traders.engine.events import EventResult
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
@@ -236,6 +236,71 @@ def test_manufacturer_goods_and_transport_equipment_are_production_options(manuf
     assert by_line["Goods"]["max_qty"] > 0
     assert by_line["TransportEquipment"]["output"] == ResourceType.TRANSPORT_EQUIPMENT
     assert by_line["TransportEquipment"]["max_qty"] > 0
+
+
+def test_manufacturer_durable_output_cap_and_own_capacity_bonus(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.add_capital("manufacturer.precision_workshop")
+    manufacturer.add_capital("manufacturer.shipyard")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(6, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 1000.0
+
+    engine = ProductionEngine()
+    assert engine.manufacturer_durable_allowance(manufacturer) == 10
+    manufacturer.manufacturer_durable_output_used = 8
+
+    options = engine.production_options(manufacturer, normal_event, season_name="Spring")
+    by_line = {option["product_line"]: option for option in options}
+
+    assert by_line["TransportEquipment"]["max_qty"] == 2
+
+
+def test_manufacturer_build_cost_limits_and_debits_output(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 7.0
+
+    engine = ProductionEngine()
+    options = engine.production_options(manufacturer, normal_event, season_name="Spring")
+    farm = next(option for option in options if option["product_line"] == "FarmMachinery")
+    assert farm["max_qty"] == 2
+
+    produced = engine.produce_product(
+        manufacturer,
+        normal_event,
+        "Spring",
+        "Manufacturer",
+        ResourceType.FARM_MACHINERY,
+        qty=2,
+        product_line="FarmMachinery",
+    )
+
+    assert produced == {ResourceType.FARM_MACHINERY: 2}
+    assert manufacturer.dollops == 1.0
+    assert manufacturer.manufacturer_durable_output_used == 2
+
+
+def test_manufacturer_build_cost_hides_line_when_cash_short(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 2.0
+
+    options = ProductionEngine().production_options(
+        manufacturer, normal_event, season_name="Spring"
+    )
+    assert all(option["product_line"] != "FarmMachinery" for option in options)
 
 
 def test_production_options_show_per_product_current_max(normal_event):

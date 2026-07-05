@@ -17,6 +17,10 @@ from ..constants import (
     FARMER_VETERINARIAN_BONUS_MULTIPLIER,
     FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER,
     FISH_PROCESSING_TECHNICIANS_PER_BOAT,
+    MANUFACTURER_DURABLE_CAP_BASE,
+    MANUFACTURER_DURABLE_CAP_BONUS_PER_ITEM,
+    MANUFACTURER_DURABLE_CAP_MAX,
+    MANUFACTURER_DURABLE_OUTPUTS,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE, PRODUCTION_RECIPES
 from ..models.capacity import compute_capacity, find_item, recipe_for
@@ -50,6 +54,17 @@ class InsufficientInputsError(Exception):
         self.missing = missing
         parts = ", ".join(f"{qty}x {r.value}" for r, qty in missing.items())
         super().__init__(f"{role} cannot produce: missing {parts}")
+
+
+class InsufficientOperatingCashError(Exception):
+    def __init__(self, role: str, needed: float, available: float):
+        self.role = role
+        self.needed = needed
+        self.available = available
+        super().__init__(
+            f"{role} cannot produce: needs {needed:.1f} Dp build cash, "
+            f"has {available:.1f} Dp"
+        )
 
 
 class ProductionEngine:
@@ -708,6 +723,16 @@ class ProductionEngine:
                         player, role.name, output, season_name
                     )
                     max_qty = preview_qty if capacity_limit is None else min(preview_qty, capacity_limit)
+                    if role.name == "Manufacturer" and product_line:
+                        max_qty = min(
+                            max_qty,
+                            self._manufacturer_cash_limited_qty(player, product_line),
+                        )
+                        if output.value in MANUFACTURER_DURABLE_OUTPUTS:
+                            max_qty = min(
+                                max_qty,
+                                self.manufacturer_durable_allowance_remaining(player),
+                            )
                     options.append({
                         "role": role.name,
                         "output": output,
@@ -804,6 +829,15 @@ class ProductionEngine:
                 spec = MANUFACTURER_PRODUCT_LINES[product_line]
                 name = spec["desc"]
                 context = self._recipe_context(player, spec, output)
+                build_cost = float(spec.get("build_cost_dollops", 0.0))
+                if build_cost > 0:
+                    context += f" · {build_cost:g} Dp/unit build cost"
+                if output.value in MANUFACTURER_DURABLE_OUTPUTS:
+                    context += (
+                        " · durable allowance "
+                        f"{self.manufacturer_durable_allowance_remaining(player)}/"
+                        f"{self.manufacturer_durable_allowance(player)}"
+                    )
             else:
                 name = output.value
                 context = f"up to {option['max_qty']} now"
@@ -835,6 +869,34 @@ class ProductionEngine:
             runs = max(0, min(affordable))
             context += f" · {runs} run{'' if runs == 1 else 's'} from stock"
         return context
+
+    def manufacturer_durable_allowance(self, player: Player) -> int:
+        owned = player.effective_capital_inventory()
+        bonus_items = (
+            int(owned.get("manufacturer.assembly_line", 0) > 0)
+            + int(owned.get("manufacturer.precision_workshop", 0) > 0)
+        )
+        return min(
+            MANUFACTURER_DURABLE_CAP_MAX,
+            MANUFACTURER_DURABLE_CAP_BASE
+            + bonus_items * MANUFACTURER_DURABLE_CAP_BONUS_PER_ITEM,
+        )
+
+    def manufacturer_durable_allowance_remaining(self, player: Player) -> int:
+        used = int(getattr(player, "manufacturer_durable_output_used", 0))
+        return max(0, self.manufacturer_durable_allowance(player) - used)
+
+    @staticmethod
+    def reset_manufacturer_durable_allowance(player: Player) -> None:
+        player.manufacturer_durable_output_used = 0
+
+    @staticmethod
+    def _manufacturer_cash_limited_qty(player: Player, product_line: str) -> int:
+        spec = MANUFACTURER_PRODUCT_LINES.get(product_line, {})
+        per_unit = float(spec.get("build_cost_dollops", 0.0))
+        if per_unit <= 0:
+            return 10**9
+        return max(0, floor(player.dollops / per_unit))
 
     def _inputs_for_selected_output(
         self,
@@ -931,6 +993,12 @@ class ProductionEngine:
         if option is None:
             raise InsufficientInputsError(role_name, {})
         qty = min(qty, option["max_qty"])
+        build_cost = 0.0
+        if role_name == "Manufacturer" and product_line:
+            line = MANUFACTURER_PRODUCT_LINES.get(product_line, {})
+            build_cost = round(float(line.get("build_cost_dollops", 0.0)) * qty, 2)
+            if build_cost > player.dollops:
+                raise InsufficientOperatingCashError(role_name, build_cost, player.dollops)
         inputs = self._inputs_for_selected_output(
             player=player,
             role_name=role_name,
@@ -955,11 +1023,17 @@ class ProductionEngine:
             player.give_resources(r, amount)
             if self.telemetry is not None:
                 self.telemetry.record_consumed(r, amount)
+        if build_cost > 0:
+            player.spend_dollops(build_cost)
         player._oil_consumed_this_year = (
             getattr(player, "_oil_consumed_this_year", 0)
             + inputs.get(ResourceType.OIL, 0)
         )
         player.receive_resources(output, qty)
+        if role_name == "Manufacturer" and output.value in MANUFACTURER_DURABLE_OUTPUTS:
+            player.manufacturer_durable_output_used = (
+                int(getattr(player, "manufacturer_durable_output_used", 0)) + qty
+            )
         if self.telemetry is not None:
             self.telemetry.record_produced(output, qty)
         player.workforce.apply_season_work()

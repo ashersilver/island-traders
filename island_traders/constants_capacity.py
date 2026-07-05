@@ -29,6 +29,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"kitchen_food_per_season": 10, "cash_only": True},
         description="Chef-staffed kitchen: converts raw ingredients into up to 10 Food/season",
         service_life_seasons=12,
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="common.industrial_kitchen",
@@ -38,6 +39,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=1,
         effects={"kitchen_food_per_season": 20, "cash_only": True},
         description="Industrial kitchen: converts raw ingredients into up to 20 Food/season, no Chef required",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="common.laboratory_equipment",
@@ -55,6 +57,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             "HealthServices": 2, "Vaccine": 1,      # Medical
         }},
         description="Soil/sample testing: +2 capacity to Agriculture, Mining & Medical outputs",
+        capacity_units=1,
     ),
 
     # ----- Farmer ----------------------------------------------------------
@@ -66,6 +69,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Grain": 10, "Produce": 6}},
         description="+10 Grain, +6 Produce capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="farmer.harvester",
@@ -77,6 +81,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         description="+6 Grain, +4 Produce, -1 Technician need (~2-year service life, must be replaced)",
         # Phase C: shorter life than the default 20 — a combine wears out fast.
         service_life_seasons=8,
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="farmer.fishing_boat",
@@ -86,6 +91,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Fish": 4}},
         description="+4 Fish capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="farmer.livestock_barn",
@@ -95,6 +101,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Meat": 4}},
         description="+4 Meat capacity",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="farmer.industrial_kitchen",
@@ -104,6 +111,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Food": 6}},
         description="+6 packaged Food capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="farmer.storage_building",
@@ -113,6 +121,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"inventory_cap": 10},
         description="+10 inventory cap",
+        capacity_units=1,
     ),
 
     # ----- Miner -----------------------------------------------------------
@@ -124,6 +133,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Ore": 4}},
         description="+4 Ore capacity",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="miner.crusher",
@@ -133,6 +143,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Ore": 2, "Metal": 2}, "input_relief": {"Ore": {"Oil": 0.2}}},
         description="+2 Ore, +2 Metal, –0.2 Oil per Ore",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="miner.enhanced_crusher_smelter",
@@ -146,6 +157,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             "metal_oil_multiplier": 0.5,
         },
         description="+200% Metal productivity, -50% Oil per Metal",
+        capacity_units=3,
     ),
     CapitalItem(
         item_id="miner.oil_rig",
@@ -155,6 +167,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Oil": 4}},
         description="+4 Oil capacity",
+        capacity_units=3,
     ),
     CapitalItem(
         item_id="miner.refinery",
@@ -164,6 +177,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Oil": 2}, "enables_profession": "RefinerySpecialist"},
         description="+2 Oil, enables RefinerySpecialist multiplier",
+        capacity_units=3,
     ),
 
     # ----- Transporter -----------------------------------------------------
@@ -175,6 +189,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Freight": 12}},
         description="+12 Freight capacity",
+        capacity_units=3,
     ),
     CapitalItem(
         item_id="transporter.cargo_plane",
@@ -184,6 +199,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Freight": 8}, "fast": True},
         description="+8 Freight (fast)",
+        capacity_units=4,
     ),
     CapitalItem(
         item_id="transporter.passenger_liner",
@@ -193,6 +209,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"PassengerSeats": 5}},
         description="+5 PassengerSeats",
+        capacity_units=3,
     ),
     CapitalItem(
         item_id="transporter.passenger_plane",
@@ -202,6 +219,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"PassengerSeats": 5}, "fast": True},
         description="+5 PassengerSeats (fast)",
+        capacity_units=4,
     ),
 
     # ----- Educator --------------------------------------------------------
@@ -213,6 +231,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Expertise": 4, "Courses": 4}, "education_slots": 2},
         description="+4 Expertise, +4 Courses, +2 Education slots",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="educator.library",
@@ -222,6 +241,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Expertise": 2, "Patents": 1}},
         description="+2 Expertise, +1 Patent",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="educator.research_lab",
@@ -231,6 +251,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Patents": 3}, "research_stock_per_season": 2},
         description="+3 Patent capacity, generates Research stock",
+        capacity_units=4,
     ),
     CapitalItem(
         item_id="educator.computer_cluster",
@@ -240,6 +261,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"Reagents": 0.2}}},
         description="+1 Patent, -0.2 Reagents per Expertise",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="educator.technical_workshop",
@@ -252,6 +274,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         # NOT per-course — the workshop is a physical-plant headcount cap.
         effects={"technical_workshop_trainees": 6},
         description="+6 Technical Workshop trainee seats (prerequisite for technical-tier courses)",
+        capacity_units=1,
         lease_terms={"term_years": 3, "residual_fraction": 0.25, "rate_margin": 0.02},
     ),
 
@@ -267,6 +290,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Loans": 4}},
         description="+4 Loans capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="banker.trading_floor",
@@ -276,6 +300,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"Loans": 3, "InsurancePolicies": 1}},
         description="+3 Loans, +1 InsurancePolicy",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="banker.underwriting_desk",
@@ -285,6 +310,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"InsurancePolicies": 3}},
         description="+3 InsurancePolicies capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="banker.reinsurance_treaty",
@@ -294,6 +320,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"fatality_payout_multiplier": 0.5},
         description="–50% fatality payout cost",
+        capacity_units=2,
     ),
 
     # ----- Manufacturer ----------------------------------------------------
@@ -308,6 +335,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             "capacity": {"FarmMachinery": 3, "MiningEquipment": 2},
         },
         description="enables FarmMachinery + MiningEquipment lines",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="manufacturer.assembly_line",
@@ -327,6 +355,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
             },
         },
         description="+1 unit/season on any line",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="manufacturer.small_warehouse",
@@ -336,6 +365,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"spares_storage": 10, "maintenance_free": True},
         description="+10 Spares storage capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="manufacturer.warehouse",
@@ -345,6 +375,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"spares_storage": 12},
         description="+12 Spares storage capacity",
+        capacity_units=1,
     ),
     CapitalItem(
         item_id="manufacturer.precision_workshop",
@@ -354,6 +385,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"unlocks_lines": ["MedicalDevices"], "capacity": {"MedicalDevices": 3}},
         description="enables MedicalDevices line",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="manufacturer.shipyard",
@@ -363,6 +395,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"unlocks_lines": ["TransportEquipment"], "capacity": {"TransportEquipment": 2}},
         description="enables TransportEquipment line",
+        capacity_units=4,
     ),
 
     # ----- Doctor ----------------------------------------------------------
@@ -374,6 +407,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"capacity": {"HealthServices": 4}},
         description="+4 HealthServices capacity",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="doctor.operating_theatre",
@@ -383,6 +417,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"HealthServices": 2, "Vaccine": 1}},
         description="+2 HealthServices, +1 Vaccine",
+        capacity_units=3,
     ),
     CapitalItem(
         item_id="doctor.vaccine_lab",
@@ -392,6 +427,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=2,
         effects={"capacity": {"Vaccine": 2}},
         description="+2 Vaccine capacity",
+        capacity_units=2,
     ),
     CapitalItem(
         item_id="doctor.cold_chain_storage",
@@ -401,6 +437,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={"vaccine_persistence": True},
         description="Vaccine doesn't expire between seasons",
+        capacity_units=1,
     ),
     # 2026-06-02: Reagents are made on the Medical island from Oil + Ore but
     # had no capital item dedicated to their capacity — players saw a vague
@@ -415,6 +452,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=1,
         effects={"capacity": {"Reagents": 6}},
         description="Chemistry plant: turns Oil+Ore into Reagents (+capacity)",
+        capacity_units=1,
     ),
 ]
 
@@ -618,6 +656,7 @@ def _multiply_capital_capacity(
             description=description,
             service_life_seasons=item.service_life_seasons,
             maintenance_per_season=item.maintenance_per_season,
+            capacity_units=item.capacity_units,
             lease_terms=dict(item.lease_terms) if item.lease_terms else None,
         ))
     return scaled

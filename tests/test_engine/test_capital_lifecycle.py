@@ -31,6 +31,7 @@ def test_capitalitem_lifecycle_field_defaults():
     )
     assert item.service_life_seasons == DEFAULT_SERVICE_LIFE_SEASONS == 20
     assert item.maintenance_per_season == 0.0
+    assert item.capacity_units == 1
 
 
 def test_combine_harvester_has_8_season_life():
@@ -38,6 +39,13 @@ def test_combine_harvester_has_8_season_life():
     assert combine is not None
     assert combine.service_life_seasons == 8       # ~2 years
     assert combine.name == "Combine Harvester"
+    assert combine.capacity_units == 2
+
+
+def test_large_capital_items_have_tuned_capacity_units():
+    assert find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane").capacity_units == 4
+    assert find_item(CAPITAL_CATALOGUE, "manufacturer.shipyard").capacity_units == 4
+    assert find_item(CAPITAL_CATALOGUE, "doctor.operating_theatre").capacity_units == 3
 
 
 def test_manufacturer_spares_warehouses_are_catalogue_items():
@@ -136,6 +144,28 @@ def test_setup_seeds_farmer_with_aged_combine_harvester():
     assert p.capital_acquired_ticks["farmer.harvester"] == [-4]
 
 
+def test_investing_phase_capital_units_can_fail_and_repair_like_ordered_units():
+    game = _farmer_game()
+    p = game.players[0]
+    tractor = find_item(CAPITAL_CATALOGUE, "farmer.tractor")
+    assert tractor is not None
+    p.add_capital(tractor.item_id, 1, acquired_tick=-8)
+    p.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    p.receive_resources(ResourceType.SPARES, tractor.capacity_units)
+    game.turn_manager._rng = _FixedRng([1.0, 0.0])
+
+    game._process_equipment_failures(
+        p, current_tick=8, catalogue={it.item_id: it for it in CAPITAL_CATALOGUE}
+    )
+
+    assert p.failed_capital[tractor.item_id] == 1
+    assert p.capital_repair_in_progress == [{
+        "item_id": tractor.item_id,
+        "count": 1,
+        "completes_at_tick": 9,
+    }]
+
+
 def test_setup_seeds_manufacturer_with_small_spares_warehouse():
     game = _service_game()
     manufacturer = game.players[1]
@@ -216,13 +246,17 @@ def test_uninsured_failure_pays_manufacturer_and_ship_freight_with_downtime():
     assert item is not None
     owner.add_capital(item.item_id, 1, acquired_tick=-8)
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.receive_resources(ResourceType.SPARES, item.capacity_units)
     manufacturer_start = manufacturer.dollops
     transporter_start = transporter.dollops
     freight_credit = game.market.current_price(ResourceType.FREIGHT)
 
     game._process_capital_maintenance(year=0, season=3)
 
-    repair_fee = item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+    repair_fee = round(
+        item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+        2,
+    )
     assert manufacturer.dollops == manufacturer_start + repair_fee
     assert transporter.dollops == transporter_start + freight_credit
     assert owner.inventory.get(ResourceType.FREIGHT) == 0
@@ -266,6 +300,7 @@ def test_cargo_plane_allows_same_season_air_repair():
     assert item is not None
     owner.add_capital(item.item_id, 1, acquired_tick=-8)
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_AIR_FREIGHT)
+    owner.receive_resources(ResourceType.SPARES, item.capacity_units)
     transporter.add_capital("transporter.cargo_plane", 1, acquired_tick=0)
     transporter.add_capital_warranty("transporter.cargo_plane", 1)
     manufacturer_start = manufacturer.dollops
@@ -280,7 +315,10 @@ def test_cargo_plane_allows_same_season_air_repair():
 
     game._process_capital_maintenance(year=0, season=3)
 
-    repair_fee = item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+    repair_fee = round(
+        item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+        2,
+    )
     assert manufacturer.dollops == manufacturer_start + repair_fee
     assert (
         transporter.dollops
@@ -566,7 +604,7 @@ def test_repair_with_attached_spare_halves_fee_and_consumes_it():
     game = _service_game()
     owner, manufacturer, _ = game.players
     game.turn_manager._rng = _FixedRng([0.0])
-    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    item = find_item(CAPITAL_CATALOGUE, "common.laboratory_equipment")
     owner.add_capital(item.item_id, units=[CapitalUnit(
         item_id=item.item_id, acquired_tick=-8,
         purchase_value=item.cost, spares_attached=1,
@@ -587,7 +625,7 @@ def test_repair_with_generic_spare_halves_fee_and_consumes_it():
     game = _service_game()
     owner, manufacturer, _ = game.players
     game.turn_manager._rng = _FixedRng([0.0])
-    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    item = find_item(CAPITAL_CATALOGUE, "common.laboratory_equipment")
     owner.add_capital(item.item_id, 1, acquired_tick=-8)   # no attached spare
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
     owner.receive_resources(ResourceType.SPARES, 1)        # generic spare on hand
@@ -602,6 +640,29 @@ def test_repair_with_generic_spare_halves_fee_and_consumes_it():
     assert owner.inventory.get(ResourceType.SPARES) == 0   # consumed
 
 
+def test_two_unit_repair_with_one_spare_pends_until_stocked():
+    game = _service_game()
+    owner, manufacturer, _ = game.players
+    item = find_item(CAPITAL_CATALOGUE, "farmer.harvester")
+    assert item.capacity_units == 2
+    owner.add_capital(item.item_id, 1, acquired_tick=-8)
+    unit = owner.capital_units[item.item_id][0]
+    unit.status = "failed"
+    owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.receive_resources(ResourceType.SPARES, 1)
+    manufacturer_start = manufacturer.dollops
+
+    preview = game.capital_repair_preview(owner, item.item_id)
+    assert preview["repairable"] is False
+    assert preview["spares"] == 2
+    assert "Need 2 Spares" in preview["reason"]
+    assert not game._attempt_capital_repair(owner, item, current_tick=0, unit=unit)
+
+    assert owner.failed_capital[item.item_id] == 1
+    assert owner.inventory.get(ResourceType.SPARES) == 1
+    assert manufacturer.dollops == manufacturer_start
+
+
 def test_repair_fee_uses_unit_purchase_value_when_set():
     from island_traders.models.player import CapitalUnit
     game = _service_game()
@@ -613,12 +674,15 @@ def test_repair_fee_uses_unit_purchase_value_when_set():
         item_id=item.item_id, acquired_tick=-8, purchase_value=200.0,
     )])
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.receive_resources(ResourceType.SPARES, item.capacity_units)
     manufacturer_start = manufacturer.dollops
 
     game._process_capital_maintenance(year=0, season=3)
 
-    # No spare on hand → baseline 35% of the unit's purchase value (not cost).
-    expected = round(200.0 * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2)
+    expected = round(
+        200.0 * EQUIPMENT_FAILURE_REPAIR_FRACTION * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+        2,
+    )
     assert manufacturer.dollops == manufacturer_start + expected
 
 
@@ -631,14 +695,19 @@ def test_repair_preview_matches_actual_repair_charge_and_freight():
     unit = owner.capital_units[item.item_id][0]
     unit.status = "failed"
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.receive_resources(ResourceType.SPARES, item.capacity_units)
     owner_start = owner.dollops
     freight_start = owner.inventory.get(ResourceType.FREIGHT)
     manufacturer_start = manufacturer.dollops
 
     preview = game.capital_repair_preview(owner, item.item_id)
     assert preview == {
-        "dp": round(item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2),
+        "dp": round(
+            item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+            2,
+        ),
         "freight": EQUIPMENT_REPAIR_SHIP_FREIGHT,
+        "spares": item.capacity_units,
         "repairable": True,
         "reason": "",
     }
@@ -647,6 +716,7 @@ def test_repair_preview_matches_actual_repair_charge_and_freight():
     assert owner.dollops == owner_start - preview["dp"]
     assert manufacturer.dollops == manufacturer_start + preview["dp"]
     assert owner.inventory.get(ResourceType.FREIGHT) == freight_start - preview["freight"]
+    assert owner.inventory.get(ResourceType.SPARES) == 0
 
 
 def test_repair_preview_is_side_effect_free():
@@ -657,7 +727,7 @@ def test_repair_preview_is_side_effect_free():
     owner.add_capital(item.item_id, 1, acquired_tick=-4)
     unit = owner.capital_units[item.item_id][0]
     unit.status = "failed"
-    unit.spares_attached = 1
+    unit.spares_attached = item.capacity_units
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
     before_dollops = owner.dollops
     before_freight = owner.inventory.get(ResourceType.FREIGHT)
@@ -670,7 +740,8 @@ def test_repair_preview_is_side_effect_free():
     )
     assert owner.dollops == before_dollops
     assert owner.inventory.get(ResourceType.FREIGHT) == before_freight
-    assert unit.spares_attached == 1
+    assert preview["spares"] == item.capacity_units
+    assert unit.spares_attached == item.capacity_units
 
 
 # ---------------------------------------------------------------------------

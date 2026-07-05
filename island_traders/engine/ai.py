@@ -30,9 +30,10 @@ from ..constants import (
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
     FLU_SEASON,
+    MANUFACTURER_DURABLE_OUTPUTS,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role
+from ..models.capacity import find_item, items_for_role
 
 AI_TARGET_PRODUCTION_RUNS = 2
 AI_OFFER_MARKUP = 1.0
@@ -889,15 +890,10 @@ class AIStrategy:
         """Own capital failed with zero kits on hand — repair is blocked or
         premium-priced until a Spares run happens. This is the only condition
         that overrides normal product-line scoring."""
-        if player.inventory.get(ResourceType.SPARES) > 0:
-            return False
         if player.spares_capacity() <= 0:
             return False
-        return any(
-            unit.status == "failed"
-            for units in player.capital_units.values()
-            for unit in units
-        )
+        needed = self._max_failed_repair_spares_required(player)
+        return needed > 0 and player.inventory.get(ResourceType.SPARES) < needed
 
     def _manufacturer_demand_score(
         self, player: Player, market: Market, line_key: str
@@ -939,10 +935,17 @@ class AIStrategy:
 
     def _manufacturer_line_feasible(self, player: Player, line_key: str) -> bool:
         line = MANUFACTURER_PRODUCT_LINES[line_key]
-        return all(
+        if not all(
             player.inventory.get(ResourceType(resource)) >= qty
             for resource, qty in line["inputs"].items()
-        )
+        ):
+            return False
+        build_cost = float(line.get("build_cost_dollops", 0.0)) * int(line.get("qty", 0))
+        if build_cost > player.dollops:
+            return False
+        if line.get("output") in MANUFACTURER_DURABLE_OUTPUTS:
+            return ProductionEngine().manufacturer_durable_allowance_remaining(player) > 0
+        return True
 
     def _manufacturer_freight_surcharge(self, product_line: str | None, qty: int) -> int:
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
@@ -985,13 +988,38 @@ class AIStrategy:
             )
         if (
             not any(role.name == "Manufacturer" for role in player.roles)
-            and player.inventory.get(ResourceType.SPARES) <= 0
             and any(count > 0 for count in player.capital_inventory.values())
         ):
-            inputs[ResourceType.SPARES] = max(
-                inputs.get(ResourceType.SPARES, 0), AI_SPARES_TARGET_STOCK
-            )
+            target = self._spares_target_stock(player)
+            missing_spares = max(0, target - player.inventory.get(ResourceType.SPARES))
+            if missing_spares > 0:
+                inputs[ResourceType.SPARES] = max(
+                    inputs.get(ResourceType.SPARES, 0), missing_spares
+                )
         return inputs
+
+    def _capacity_units_for_item(self, item_id: str) -> int:
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        return max(1, int(getattr(item, "capacity_units", 1))) if item else 1
+
+    def _spares_target_stock(self, player: Player) -> int:
+        max_units = max(
+            (self._capacity_units_for_item(item_id)
+             for item_id in player.capital_inventory),
+            default=AI_SPARES_TARGET_STOCK,
+        )
+        return max(AI_SPARES_TARGET_STOCK, 2 * max_units)
+
+    def _max_failed_repair_spares_required(self, player: Player) -> int:
+        failed_item_ids = {
+            item_id
+            for item_id, units in player.capital_units.items()
+            if any(unit.status == "failed" for unit in units)
+        }
+        return max(
+            (self._capacity_units_for_item(item_id) for item_id in failed_item_ids),
+            default=0,
+        )
 
     def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
         return sum(

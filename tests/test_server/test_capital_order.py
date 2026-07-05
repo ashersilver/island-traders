@@ -97,7 +97,7 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     buyer_start = buyer.dollops
     mfr_start = manufacturer.dollops
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -108,7 +108,9 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     })
     assert buyer.dollops == buyer_start
     assert manufacturer.dollops == mfr_start
-    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == (
+        te_before + item.capacity_units
+    )
 
     ws = _respond(mgr, room, "p1", {
         "negotiation_id": negotiation_id,
@@ -121,7 +123,7 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert ack["spares_kits"] == 2
     assert ack["arrives_at_tick"] == item.delivery_seasons
 
-    # Cash settled and one manufactured unit consumed.
+    # Cash settled and proportional manufactured capacity consumed.
     assert buyer.dollops == buyer_start - upfront
     assert manufacturer.dollops == mfr_start + upfront
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before
@@ -143,6 +145,26 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert unit.purchase_value == item.cost
 
 
+def test_capital_order_rejects_when_manufacturer_capacity_units_short():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    assert item.capacity_units == 4
+    buyer.dollops = item.cost * 5
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
+    ws = _WS()
+
+    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+        "item_id": "transporter.cargo_plane",
+    }, ws))
+
+    error = next((m for m in ws.sent if m.get("type") == "error"), None)
+    assert error is not None, ws.sent
+    assert "needs 4 × TransportEquipment" in error["message"]
+    assert "has 3" in error["message"]
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == 3
+
+
 def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     from island_traders.constants import MANUFACTURER_FINANCE_REFERRAL_RATE
 
@@ -155,7 +177,7 @@ def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     buyer_start = buyer.dollops
     mfr_start = manufacturer.dollops
     banker_start = banker.dollops
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -200,7 +222,7 @@ def test_capital_order_financing_falls_back_to_cash_without_banker():
     upfront = round(item.cost, 2)
     buyer.dollops = item.cost * 5
     buyer_start = buyer.dollops
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -224,6 +246,7 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
 
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer", "Banker"])
     buyer, manufacturer, banker = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     tm = room.game.turn_manager
     # Saturate the Bank's active-loan capacity.
     _, _, cap = tm._banker_can_issue_loan(banker)
@@ -237,7 +260,7 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
 
     buyer.dollops = 1.0  # also can't pay cash
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -251,7 +274,9 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
     assert any(m.get("type") == "error" for m in ws.sent)
     assert buyer.capital_in_transit == []
     # Nothing consumed — the saturating loans are the only ones on the ledger.
-    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == (
+        te_before + item.capacity_units
+    )
     assert all(
         l.status == LoanStatus.ACTIVE and l.principal == 10.0
         for l in room.game.loan_ledger.loans
@@ -261,9 +286,10 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
 def test_capital_order_rejects_when_unaffordable():
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
     buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     buyer.dollops = 5.0
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -276,7 +302,9 @@ def test_capital_order_rejects_when_unaffordable():
     assert any(m.get("type") == "error" for m in ws.sent)
     assert buyer.capital_in_transit == []
     # Nothing consumed or charged.
-    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == (
+        te_before + item.capacity_units
+    )
 
 
 def test_capital_order_decline_does_not_charge_or_consume():
@@ -287,7 +315,7 @@ def test_capital_order_decline_does_not_charge_or_consume():
     buyer_start = buyer.dollops
     mfr_start = manufacturer.dollops
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
@@ -301,7 +329,9 @@ def test_capital_order_decline_does_not_charge_or_consume():
     assert ack["result"] == "declined"
     assert buyer.dollops == buyer_start
     assert manufacturer.dollops == mfr_start
-    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before + 1
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == (
+        te_before + item.capacity_units
+    )
     assert buyer.capital_in_transit == []
 
 
@@ -311,7 +341,7 @@ def test_capital_order_ai_manufacturer_auto_accepts_at_recommended_total():
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     buyer.dollops = item.cost * 5
     buyer_start = buyer.dollops
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
     ws = _WS()
 
     asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
@@ -330,7 +360,7 @@ def test_capital_order_double_accept_settles_once():
     buyer, manufacturer = players
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     buyer.dollops = item.cost * 5
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 2)
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
     _, negotiation_id = _propose(mgr, room, "p0", {
         "item_id": "transporter.cargo_plane",
     })
@@ -373,7 +403,7 @@ def test_capital_order_self_build_settles_immediately_without_negotiation():
         for m in ws.sent
     ), ws.sent
 
-    # Self-build: no Dp moves, one manufactured unit consumed, equipment placed
+    # Self-build: no Dp moves, proportional capacity consumed, equipment placed
     # (foundry has 0-season delivery, so it lands directly in capital_units).
     assert manufacturer.dollops == start_dollops
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before - 1
