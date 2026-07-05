@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.19"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.20"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -241,6 +241,16 @@ FARMER_VETERINARIAN_BONUS_MULTIPLIER: float = 1.50
 FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER: float = 0.50
 FISH_PROCESSING_TECHNICIANS_PER_BOAT: int = 2
 
+MANUFACTURER_DURABLE_CAP_BASE: int = 6
+MANUFACTURER_DURABLE_CAP_BONUS_PER_ITEM: int = 2
+MANUFACTURER_DURABLE_CAP_MAX: int = 10
+MANUFACTURER_DURABLE_OUTPUTS: tuple[str, ...] = (
+    "FarmMachinery",
+    "MiningEquipment",
+    "TransportEquipment",
+    "MedicalDevices",
+)
+
 # ForgeHaven (Manufacturer) produces one of four specialised product lines each season.
 # The player (or AI) chooses which line to run at the start of production.
 # Keys match ResourceType values for the output resource.
@@ -263,6 +273,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,   # AssemblyWorkers to weld and fit
         "unskilled":        3,   # general labour for sub-assembly
         "freight_per_unit": 1,   # durable board-scale unit; shipped on flatbeds
+        "build_cost_dollops": 3.0,
         "desc":             "Tractors & Farm Machinery",
     },
     "Goods": {
@@ -272,6 +283,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,
         "unskilled":        2,
         "freight_per_unit": 1,
+        "build_cost_dollops": 0.2,
         "desc":             "Consumer Goods",
     },
     "MiningEquipment": {
@@ -281,6 +293,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          3,   # Engineers to spec heavy drilling rigs
         "unskilled":        2,
         "freight_per_unit": 1,   # durable board-scale unit; specialist transport
+        "build_cost_dollops": 4.0,
         "desc":             "Mining Equipment",
     },
     # Reagents (formerly "LaboratoryEquipment") moved to the Medical Sciences
@@ -293,6 +306,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
         "unskilled":        1,   # minimal general labour
         "freight_per_unit": 1,   # durable board-scale unit; high-value items
+        "build_cost_dollops": 3.0,
         "desc":             "Medical & Dental Devices",
     },
     "TransportEquipment": {
@@ -302,6 +316,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
+        "build_cost_dollops": 4.0,
         "desc":             "Transportation Equipment",
     },
     "Spares": {
@@ -311,6 +326,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          1,   # Mechanic/AssemblyWorker
         "unskilled":        2,
         "freight_per_unit": 0,   # small parts; repair freight handles delivery
+        "build_cost_dollops": 1.0,
         "desc":             "Equipment Spares Kits",
     },
 }

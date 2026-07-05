@@ -285,6 +285,9 @@ class Player:
     # Paid ship repairs that complete on a future tick.  Each entry:
     # {"item_id": str, "count": int, "completes_at_tick": int}.
     capital_repair_in_progress: list[dict] = field(default_factory=list)
+    # Manufacturer durable equipment units produced in the current season.
+    # Reset by Game._process_capital_maintenance at each season boundary.
+    manufacturer_durable_output_used: int = 0
     # Active patents this player has bought, keyed by output resource name.
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.

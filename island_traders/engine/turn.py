@@ -775,7 +775,10 @@ class TurnManager:
             requirement = (
                 "cash-only"
                 if cash_only
-                else f"requires 1x {manufactured_resource.value}"
+                else (
+                    f"requires {max(1, int(getattr(item, 'capacity_units', 1)))}x "
+                    f"{manufactured_resource.value}"
+                )
             )
             options.append({
                 "value": item.item_id,
@@ -805,10 +808,12 @@ class TurnManager:
                 return
             manufacturer = self.io.choose_player("Buy from which Manufacturer?", manufacturers)
             manufactured_resource = self._manufactured_resource_for_capital_item(item)
-            if manufacturer.inventory.get(manufactured_resource) <= 0:
+            required_units = max(1, int(getattr(item, "capacity_units", 1)))
+            on_hand = manufacturer.inventory.get(manufactured_resource)
+            if on_hand < required_units:
                 self.io.print(
-                    f"  {manufacturer.name} has no {manufactured_resource.value} available "
-                    f"to build {item.name}."
+                    f"  {manufacturer.name} needs {required_units}x "
+                    f"{manufactured_resource.value} to build {item.name}, has {on_hand}."
                 )
                 return
         if player.dollops < item.cost and (cash_only or manufacturer.player_id != player.player_id):
@@ -824,7 +829,7 @@ class TurnManager:
             return
 
         if not cash_only:
-            manufacturer.give_resources(manufactured_resource, 1)
+            manufacturer.give_resources(manufactured_resource, required_units)
         if cash_only or manufacturer.player_id != player.player_id:
             player.spend_dollops(item.cost)
         if not cash_only and manufacturer.player_id != player.player_id:
@@ -840,7 +845,11 @@ class TurnManager:
                 "arrives_at_tick": arrives_at,
             })
             arrival = f"arriving Year {arrives_at // len(SEASONS) + 1}, {SEASONS[arrives_at % len(SEASONS)]}"
-        consumed = "cash-only purchase" if cash_only else f"consumed 1x {manufactured_resource.value}"
+        consumed = (
+            "cash-only purchase"
+            if cash_only
+            else f"consumed {required_units}x {manufactured_resource.value}"
+        )
         self.io.print(f"  Purchased {item.name}; {consumed}; {arrival}.")
         counterparty = "cash" if cash_only else manufacturer.name
         result.actions_taken.append(f"purchase_capital:{item.item_id}:{counterparty}")

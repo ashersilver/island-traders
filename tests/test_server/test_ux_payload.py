@@ -11,6 +11,7 @@ from island_traders.engine.turn import TurnAction
 from island_traders.constants import (
     EQUIPMENT_FAILURE_REPAIR_FRACTION,
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_SPARES_REPAIR_DISCOUNT,
 )
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 from island_traders.models.capacity import find_item
@@ -159,6 +160,7 @@ def test_game_state_capital_owned_failed_units_include_repair_cost():
     educator.add_capital(item.item_id, 1, acquired_tick=-4)
     educator.capital_units[item.item_id][0].status = "failed"
     educator.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    educator.receive_resources(ResourceType.SPARES, item.capacity_units)
 
     state = mgr.get_game_state(room.room_id, "p0")
     educator_data = next(p for p in state["players"] if p["player_id"] == educator.player_id)
@@ -169,8 +171,13 @@ def test_game_state_capital_owned_failed_units_include_repair_cost():
 
     assert lab["repairable_failed"] == 1
     assert lab["repair_cost"] == {
-        "dp": round(item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION, 2),
+        "dp": round(
+            item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+            * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+            2,
+        ),
         "freight": EQUIPMENT_REPAIR_SHIP_FREIGHT,
+        "spares": item.capacity_units,
         "repairable": True,
         "reason": "",
     }

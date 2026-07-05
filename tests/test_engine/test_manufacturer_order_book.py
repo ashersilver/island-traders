@@ -8,7 +8,9 @@ import pytest
 pytest.importorskip("fastapi")
 
 from island_traders.cli.prompts import FakeIOAdapter
+from island_traders.constants_capacity import CAPITAL_CATALOGUE
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
+from island_traders.models.capacity import find_item
 from island_traders.models.order_book import ManufacturerOrderBook, compute_promise_dates
 from island_traders.models.resource import ResourceType
 from island_traders.server.app import GameManager, GameRoom, LobbyPlayer
@@ -76,7 +78,8 @@ def _bootstrap():
     game.setup()
     buyer, maker = game.players
     buyer.dollops = 10000.0
-    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
+    cargo_plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, cargo_plane.capacity_units)
     room.game = game
     room.lobby_to_engine_id = {"buyer": buyer.player_id, "maker": maker.player_id}
     return mgr, room, buyer, maker

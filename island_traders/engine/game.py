@@ -777,6 +777,7 @@ class Game:
         for player in self.players:
             # Reset transient unmaintained state at the start of the season.
             player.unmaintained_capital = {}
+            player.manufacturer_durable_output_used = 0
             self._complete_capital_repairs(player, current_tick, catalogue)
             self._attempt_pending_capital_repairs(player, current_tick, catalogue)
             if season == 0:
@@ -1009,12 +1010,14 @@ class Game:
             unit.purchase_value if (unit is not None and unit.purchase_value)
             else item.cost
         )
-        has_attached = unit is not None and unit.spares_attached > 0
-        has_generic = player.inventory.get(ResourceType.SPARES) > 0
-        use_spare = has_attached or has_generic
+        spares_required = max(1, int(getattr(item, "capacity_units", 1)))
+        attached_available = unit.spares_attached if unit is not None else 0
+        attached_to_use = min(attached_available, spares_required)
+        generic_to_use = max(0, spares_required - attached_to_use)
+        generic_available = player.inventory.get(ResourceType.SPARES)
         repair_fee = round(
             base_value * EQUIPMENT_FAILURE_REPAIR_FRACTION
-            * (EQUIPMENT_SPARES_REPAIR_DISCOUNT if use_spare else 1.0),
+            * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
             2,
         )
         freight_qty = (
@@ -1022,6 +1025,25 @@ class Game:
             if self._has_air_repair_capacity()
             else EQUIPMENT_REPAIR_SHIP_FREIGHT
         )
+        common = {
+            "use_attached_spares": attached_to_use,
+            "use_generic_spares": generic_to_use,
+            "spares": spares_required,
+            # Back-compat flags for older UI/tests.
+            "use_attached_spare": attached_to_use > 0,
+            "use_generic_spare": generic_to_use > 0,
+        }
+        if generic_available < generic_to_use:
+            return {
+                "dp": repair_fee,
+                "freight": freight_qty,
+                "repairable": False,
+                "reason": (
+                    f"Need {spares_required} Spares for {item.name}; "
+                    f"available {attached_available + generic_available}."
+                ),
+                **common,
+            }
         if player.dollops < repair_fee:
             return {
                 "dp": repair_fee,
@@ -1031,8 +1053,7 @@ class Game:
                     f"Need {CURRENCY_SYMBOL}{repair_fee:.2f}; "
                     f"available {CURRENCY_SYMBOL}{player.dollops:.2f}."
                 ),
-                "use_attached_spare": has_attached,
-                "use_generic_spare": (not has_attached and has_generic),
+                **common,
             }
         if player.inventory.get(ResourceType.FREIGHT) < freight_qty:
             return {
@@ -1043,16 +1064,14 @@ class Game:
                     f"Need {freight_qty} Freight; available "
                     f"{player.inventory.get(ResourceType.FREIGHT)}."
                 ),
-                "use_attached_spare": has_attached,
-                "use_generic_spare": (not has_attached and has_generic),
+                **common,
             }
         return {
             "dp": repair_fee,
             "freight": freight_qty,
             "repairable": True,
             "reason": "",
-            "use_attached_spare": has_attached,
-            "use_generic_spare": (not has_attached and has_generic),
+            **common,
         }
 
     def capital_repair_preview(self, player: Player, item_id: str) -> dict:
@@ -1077,6 +1096,7 @@ class Game:
         return {
             "dp": quote["dp"],
             "freight": quote["freight"],
+            "spares": quote.get("spares", 0),
             "repairable": quote["repairable"],
             "reason": quote["reason"],
         }
@@ -1106,11 +1126,16 @@ class Game:
         if not quote["repairable"]:
             return False
 
-        # Consume a spare — the unit's own first, otherwise a generic one.
-        if quote["use_attached_spare"]:
-            unit.spares_attached -= 1
-        elif quote["use_generic_spare"]:
-            player.give_resources(ResourceType.SPARES, 1)
+        # Consume proportional spares — attached kits first, then generic stock.
+        attached = int(quote.get("use_attached_spares", 0))
+        generic = int(quote.get("use_generic_spares", 0))
+        if attached and unit is not None:
+            unit.spares_attached -= attached
+        if generic:
+            player.give_resources(ResourceType.SPARES, generic)
+        spares_consumed = attached + generic
+        if spares_consumed > 0 and self.resource_flow is not None:
+            self.resource_flow.record_consumed(ResourceType.SPARES, spares_consumed)
 
         player.spend_dollops(repair_fee)
         if manufacturer is not None:

@@ -5,7 +5,19 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.19`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.20`.
+
+- **Manufacturer capacity scaling and repair parity** — capital orders now
+  consume item-specific Manufacturer capacity units instead of a flat one
+  output token (e.g. cargo planes and shipyards are 4-unit builds), while
+  build-time cash overhead and a seasonal durable-output cap make ForgeHaven
+  invest in its own assembly capacity before flooding the archipelago with
+  equipment. Repairs now require proportional Spares kits, all owned capital
+  units stay on the per-unit failure path, and the server payload exposes
+  capacity units, Manufacturer stock, and durable allowance data for Claude's
+  order-desk UI. Seed-42 1000-game sim: Manufacturer wealth share moved
+  14.6% ± 4.1% → 14.2% ± 3.5%; no other role moved more than 0.2 share points;
+  Spares consumed rose from 0 to 153 kits.
 
 - **Sim baselining metrics (R1/R2/R7)** — the simulation runner now reports
   per-role wealth share with a per-game stddev (and a cross-seed σ table in

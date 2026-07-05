@@ -2212,6 +2212,7 @@ class GameManager:
                 "name":        item.name,
                 "role":        item.role,
                 "count":       count,
+                "capacity_units": max(1, int(getattr(item, "capacity_units", 1))),
                 "warrantied":  p.capital_warranties.get(item_id, 0),
                 "failed":      failed_count,
                 "repairable_failed": repairable_failed,
@@ -2264,16 +2265,41 @@ class GameManager:
             mandatory_ids.update(_MANDATORY.get(role.name, []))
         capital_catalogue = []
         seen_cat: set[str] = set()
+        manufacturer = None
+        if game is not None:
+            manufacturer = next(
+                (candidate for candidate in game.players
+                 if any(r.name == "Manufacturer" for r in candidate.roles)),
+                None,
+            )
         for role in p.roles:
             for item in _items_for_role(CAPITAL_CATALOGUE, role.name):
                 if item.item_id in seen_cat:
                     continue
                 seen_cat.add(item.item_id)
+                manufactured_resource = None
+                manufacturer_stock = None
+                if game is not None and not item.effects.get("cash_only", False):
+                    try:
+                        manufactured_resource = (
+                            game.turn_manager._manufactured_resource_for_capital_item(item)
+                        )
+                        if manufacturer is not None:
+                            manufacturer_stock = manufacturer.inventory.get(
+                                manufactured_resource
+                            )
+                    except Exception:
+                        manufactured_resource = None
                 capital_catalogue.append({
                     "item_id":          item.item_id,
                     "name":             item.name,
                     "role":             item.role,
                     "cost":             round(item.cost),
+                    "capacity_units":   max(1, int(getattr(item, "capacity_units", 1))),
+                    "manufactured_resource": (
+                        manufactured_resource.value if manufactured_resource else None
+                    ),
+                    "manufacturer_stock": manufacturer_stock,
                     "cash_only":        bool(item.effects.get("cash_only", False)),
                     "delivery_seasons": item.delivery_seasons,
                     "description":      item.description,
@@ -2292,6 +2318,16 @@ class GameManager:
 
         return {
             "outputs":         outputs,
+            "manufacturer_durable_allowance": (
+                _ProdEngine().manufacturer_durable_allowance(p)
+                if any(r.name == "Manufacturer" for r in p.roles)
+                else None
+            ),
+            "manufacturer_durable_remaining": (
+                _ProdEngine().manufacturer_durable_allowance_remaining(p)
+                if any(r.name == "Manufacturer" for r in p.roles)
+                else None
+            ),
             "capital_owned":   capital_owned,
             "capital_catalogue": capital_catalogue,
             "capital_in_transit": in_transit,
@@ -3563,9 +3599,12 @@ class GameManager:
             if manufacturer is None:
                 await _err("No Manufacturing island is available to build capital equipment."); return
             manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
-            if manufacturer.inventory.get(manufactured_resource) <= 0:
+            required_units = max(1, int(getattr(item, "capacity_units", 1)))
+            on_hand = manufacturer.inventory.get(manufactured_resource)
+            if on_hand < required_units:
                 await _err(
-                    f"{manufacturer.name} has no {manufactured_resource.value} to build {item.name}."
+                    f"{manufacturer.name} needs {required_units} × "
+                    f"{manufactured_resource.value} to build {item.name}, has {on_hand}."
                 ); return
 
         from ..models.player import maintenance_contract_cost
@@ -3838,9 +3877,12 @@ class GameManager:
         manufactured_resource = None
         if not cash_only:
             manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
-            if manufacturer.inventory.get(manufactured_resource) <= 0:
+            required_units = max(1, int(getattr(item, "capacity_units", 1)))
+            on_hand = manufacturer.inventory.get(manufactured_resource)
+            if on_hand < required_units:
                 raise ValueError(
-                    f"{manufacturer.name} has no {manufactured_resource.value} to build {item.name}."
+                    f"{manufacturer.name} needs {required_units} × "
+                    f"{manufactured_resource.value} to build {item.name}, has {on_hand}."
                 )
         agreed_total = round(float(agreed_total), 2)
         if agreed_total <= 0:
@@ -3878,7 +3920,7 @@ class GameManager:
                 )
 
         if not cash_only:
-            manufacturer.give_resources(manufactured_resource, 1)
+            manufacturer.give_resources(manufactured_resource, required_units)
         if pays:
             buyer.spend_dollops(agreed_total)
             if manufacturer.player_id != buyer.player_id:
