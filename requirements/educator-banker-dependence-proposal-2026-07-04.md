@@ -79,9 +79,18 @@ Educator (±2pts). 1000-game seed-42 before/after in the PR; brownout frequency
 < 5% of island-seasons in sim (AI must learn to stock Oil — buy-buffer like
 the spares one).
 
-## Open questions for Ash
+## Open questions — RESOLVED (Ash 2026-07-05)
 
-1. Energy floor: flat `1 + ceil(units/4)` ok, or scale by island size/pop?
-2. Student meals: 1 Food/student/season right order of magnitude? (University
-   capacity means ~2–6 students/season typically.)
-3. Expertise-upkeep idea: in scope for this brief or parked?
+1. Energy floor: **flat `1 + ceil(units/4)` approved.**
+2. Student meals: **fold students into population, compute sustenance on the
+   inflated population** (not a per-student Food line).
+3. Expertise upkeep: **in scope, and expanded** — every Manager-band worker
+   consumes 1 Expertise/season; deprivation drops that worker's productivity
+   20% per missed season.
+
+Turned into two implementation briefs in `codex-tasks/`:
+- `economic-dependence-inputs-2026-07-05.md` (energy floor, student food,
+  Educator lab inputs, Banker office inputs).
+- `continuing-education-expertise-2026-07-05.md` (the game-wide Manager-band
+  Expertise-upkeep mechanic — split out because it's economically large and
+  needs its own calibration/sim gate).
