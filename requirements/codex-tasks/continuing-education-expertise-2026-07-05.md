@@ -1,91 +1,94 @@
 # Brief — Continuing Education: Manager-Band Expertise Upkeep (2026-07-05)
 
-**Status: APPROVED (Ash 2026-07-05) — implementation-ready.** P2b of the
-economics-vision program. This is a **game-wide economic mechanic** — sim-gate
-carefully and merge on its own. **Suggested owner:** Codex ; Claude (UI:
-continuing-education coverage indicator + deprivation warning). **Base off:**
-current `origin/pre-release`. **Follows:** `_README.md`. Interacts with
-`economic-dependence-inputs-2026-07-05.md` (P2a) and the Educator's Expertise
-output — see the calibration note.
+**Status: APPROVED (Ash 2026-07-05, corrected 2026-07-05) — implementation-ready.**
+P2b of the economics-vision program. Game-wide upkeep mechanic — sim-gate and
+merge on its own. **Suggested owner:** Codex ; Claude (UI: continuing-education
+coverage indicator). **Base off:** current `origin/pre-release`. **Follows:**
+`_README.md`. Interacts with `economic-dependence-inputs-2026-07-05.md` (P2a).
 
-## Goal (Ash 2026-07-05)
+## Goal (Ash 2026-07-05, corrected)
 
-"Banker and Doctor need to consume 1 Expertise per season as continuing
-education. As do all managerial-level employees — else their productivity drops
-by 20% per season that they don't receive expertise." This makes **Expertise a
-universal recurring consumable** and the Educator a *recurring* seller (its
-deepest structural problem: today it trains once and is done with you).
+**1 Expertise per manager per YEAR** as continuing education. A manager who
+hasn't received their annual Expertise loses **5% productivity per season**
+until covered. **Evenly balanced across managers** — no per-manager allocation
+logistics: an island with 7 managers that receives 5 Expertise across the year
+runs at a shortfall of `(7−5)/7`, so the per-season penalty is
+**5% × (7−5)/7**. Purpose: make Expertise a *recurring* consumable and the
+Educator a recurring seller (its deepest structural problem — today it trains
+you once and is done).
 
-## Mechanic
+## Mechanic (even-balanced, rolling-annual, per island)
 
-Auto-consumed at season upkeep (like sustenance/energy — a passive sink, not a
-player action). Per island, each season:
+Auto-applied at season upkeep (a passive sink like sustenance/energy — not a
+player action). **One aggregate state per island, never per-worker** — this is
+the "evenly balanced" simplification.
 
-1. **Demand** = count of **Manager-band** workers (`PROFESSION_BAND[p] ==
-   WorkerBand.MANAGER`) in the island's workforce. Manager band already
-   includes the lead professionals: Farmer, Miner, Engineer, Doctor, Nurse,
-   Banker, Professor, Lecturer, LogisticsManager, MarineBiologist,
-   MedicalResearcher, TechnicalDirector, etc.
-2. **Supply**: consume 1 Expertise from island stock per manager, **highest-
-   efficiency managers first** (protect your best staff when short).
-3. Each manager tracks `seasons_without_ce` (new worker field):
-   - Fed this season → reset to 0.
-   - Not fed → increment.
-4. **Continuing-education factor** per manager =
-   `max(CE_FLOOR, 1 − CE_PENALTY_PER_SEASON × seasons_without_ce)`,
-   with `CE_PENALTY_PER_SEASON = 0.20`, `CE_FLOOR = 0.40` (bottoms at −60%
-   after 3 deprived seasons). Multiplies that worker's effective efficiency in
-   the workforce/production calculation.
-5. **Instant restore**: a manager who receives Expertise resets to 0 → full
-   efficiency next season ("back in continuing education").
+State per island: `ce_ytd` = Expertise consumed for continuing education over
+the **trailing `len(SEASONS)` seasons** (a rolling 4-slot ring, so it updates
+without a hard year boundary); `ce_penalty` = accumulated productivity penalty.
 
-The Educator self-supplies from its own Expertise production before any is sold;
-net external demand is what other islands must buy.
+Each season:
+1. `N` = Manager-band worker count (`PROFESSION_BAND[p] == WorkerBand.MANAGER`
+   — includes Farmer, Miner, Engineer, Doctor, Nurse, Banker, Professor,
+   Lecturer, LogisticsManager, MarineBiologist, MedicalResearcher, etc.).
+2. Annual need = `N × CE_ANNUAL_PER_MANAGER` (=N). Remaining = `max(0, N − ce_ytd)`.
+3. Auto-consume `used = min(Expertise in stock, remaining)` from inventory;
+   roll `used` into this season's ring slot (so `ce_ytd` reflects the trailing year).
+4. Uncovered fraction `f = max(0, (N − ce_ytd) / N)`.
+5. Accrue/recover:
+   - `f > 0` → `ce_penalty = min(CE_MAX, ce_penalty + CE_PENALTY_PER_SEASON × f)`
+   - `f == 0` → `ce_penalty = max(0, ce_penalty − CE_RECOVERY_PER_SEASON)`
+6. **Every Manager-band worker's effective efficiency ×= `(1 − ce_penalty)`** —
+   uniform across the island's managers. Non-manager bands unaffected.
 
-## Calibration note (the crux — read before tuning)
+Constants: `CE_ANNUAL_PER_MANAGER = 1`, `CE_PENALTY_PER_SEASON = 0.05`,
+`CE_RECOVERY_PER_SEASON = 0.05`, `CE_MAX = 0.20` (a wholly-neglected manager
+corps bottoms at −20% — the old single-season figure becomes the annual worst
+case; all tunable).
 
-Starting Manager-band headcount ≈ **1–2 per island** (Doctor ~4, Educator ~7),
-so opening demand ≈ **~16 Expertise/season** vs the Educator's base output
-≈ **12/season** (1.2 × PRODUCER_PRODUCTIVITY_MULTIPLIER). Deliberately scarce —
-that scarcity is the point (Expertise gains real value; the Educator must
-expand output; islands compete). But it must not spiral every island to the
-−60% floor. **The tuning lever is the Educator's Expertise output rate**
-(`BASE_PRODUCTION["Educator"]["Expertise"]`), not the penalty. The sim gate
-below is the arbiter: if managers sit below ~0.85 CE-factor on average across a
-1000-game run, raise Educator Expertise output (and/or lower demand to
-"1 per 2 managers") until the market clears. Quote the swept values in the PR.
+Worked example (Ash's): 7 managers, 5 Expertise across the year → `f = 2/7` →
+each short season adds `5% × 2/7 ≈ 1.4%` to `ce_penalty` (up to `CE_MAX`); a
+season that reaches full 7/7 coverage instead recovers it 5%.
 
-Provide a sim flag `--ce-demand-per-manager {1.0,0.5}` so calibration can A/B
-the per-manager vs per-2-managers reading without a code change.
+## Calibration note (demand is now MODEST — read before tuning)
+
+With the **annual** cadence, opening demand ≈ `N` per island per year ≈
+**~16 Expertise/year total (~4/season)** against the Educator's ~12/season
+(~48/year) output — Expertise is **comfortably in surplus**. This is a gentle
+recurring upkeep, **not** a scarcity crisis (contrast an earlier per-season
+draft that would have starved everyone). So the calibration risk inverts: make
+sure Expertise actually **clears the market** (doesn't pile up as dead surplus)
+and that the Educator's recurring Expertise revenue is material. If managers
+still drift below ~0.90 mean CE-factor, that's a distribution problem (islands
+not buying), not a supply one — the AI Expertise buy-buffer is the lever.
+Provide `--ce-model {cumulative,flat}` to A/B the accrual (cumulative per this
+spec vs a flat `5%×f` per-season drag).
 
 ## Files
 
-models/profession.py (already has bands — no change), models/workforce.py or
-worker model (`seasons_without_ce` field + CE factor), engine/game.py (season
-upkeep: Expertise consumption + counter update, ordered after production so the
-*next* season's productivity reflects this season's coverage), engine/production.py
-or workforce efficiency (apply CE factor), constants.py (CE constants + possibly
-Educator output bump), engine/ai.py (Expertise buy-buffer sized to manager
-count), server UI (Claude), tests.
+models/player.py (island-level `ce_ytd` ring + `ce_penalty`; **no per-worker
+CE state**), engine/game.py (season upkeep: Expertise consume + accrue/recover,
+ordered after production so next season reflects coverage), engine/production.py
+or workforce efficiency (apply the uniform CE multiplier to Manager-band
+contribution), constants.py (CE constants), engine/ai.py (Expertise buy-buffer
+≈ annual manager need), server UI (Claude), tests.
 
 ## Acceptance criteria
 
-1. An island with 3 managers and 3 Expertise in stock consumes 3, all reset to
-   0. With 1 Expertise, only the top-efficiency manager is fed; the other two
-   increment and drop to ×0.80 next season.
-2. A manager deprived 4 seasons sits at `CE_FLOOR` (0.40), not lower; feeding it
-   once restores to 1.0 next season.
-3. Educator self-consumes before selling; its own managers are covered when it
-   produces ≥ its manager count.
+1. 7 managers, 5 Expertise over the trailing year → `f = 2/7`; a short season
+   adds ≈1.4% to `ce_penalty`; a fully-covered season (7/7) recovers it 5%.
+2. A neglected corps (0 Expertise) accrues 5%/season to the `CE_MAX` 0.20 floor
+   and no further; resuming full coverage recovers at 5%/season.
+3. **Even-balanced**: one island-level penalty applies to all Manager-band
+   workers; a test asserts there is no per-worker CE state and that two managers
+   on the same island always share the same CE multiplier.
 4. Full pytest; **1000-game seed-42 sim** (share±σ + fallback telemetry):
-   - Mean manager CE-factor ≥ **0.85** across the run (else tune per the note).
-   - Educator share **+1–3pts** (intended — becomes a recurring seller);
-     no other role moves >2pts beyond P2a's Miner bump.
-   - Expertise produced & consumed both rise sharply; Expertise no longer sits
-     as dead surplus. Quote the CE-factor distribution + Educator output value
-     used in the PR.
+   Educator **+1–3pts** (recurring Expertise sales); no other role >2pts beyond
+   P2a's Miner bump; Expertise **clears** (consumed ≈ produced; surplus shrinks
+   vs baseline); mean manager CE-factor **≥ 0.90**. Quote the CE-factor
+   distribution and Expertise produced/consumed/traded in the PR.
 
 ## Out of scope
 
-Technician-band upkeep (managers only for now), Expertise as a training input
-(unchanged), the Educator's own input costs (P2a §3).
+Technician/Worker-band upkeep (managers only), Expertise as a training input
+(unchanged), the Educator's own lab input costs (P2a §3).
