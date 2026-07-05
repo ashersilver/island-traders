@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.23"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.24"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -390,6 +390,46 @@ NURSE_PRODUCTIVITY_BONUS_CAP: float = 0.20
 MEDICAL_SUPPLIES_STOCKPILE_PEOPLE_PER_UNIT: int = 10
 QOL_PRODUCTIVITY_MIN: float = 0.85
 QOL_PRODUCTIVITY_MAX: float = 1.15
+
+# Business cycle + severity-scaled disasters (2026-07-04 brief).
+PANDEMIC_DURATION_SEASONS: int = 2
+VACCINE_PANDEMIC_SIDELINE_REDUCTION: float = 0.80
+SEVERITY_PROFILES: dict[str, dict[str, float]] = {
+    "Minor": {
+        "yield_penalty": 0.0,
+        "damage_bonus": 0,
+        "workforce_sidelined_fraction": 0.10,
+        "capital_failure_multiplier": 1.5,
+        "pandemic_yield_modifier": 0.50,
+        "pandemic_sidelined_fraction": 0.20,
+        "rebuild_levy_fraction": 0.05,
+    },
+    "Major": {
+        "yield_penalty": 0.25,
+        "damage_bonus": 1,
+        "workforce_sidelined_fraction": 0.20,
+        "capital_failure_multiplier": 2.5,
+        "pandemic_yield_modifier": 0.40,
+        "pandemic_sidelined_fraction": 0.35,
+        "rebuild_levy_fraction": 0.10,
+    },
+    "Catastrophic": {
+        "yield_penalty": 1.0,
+        "damage_bonus": 2,
+        "workforce_sidelined_fraction": 0.35,
+        "capital_failure_multiplier": 4.0,
+        "pandemic_yield_modifier": 0.25,
+        "pandemic_sidelined_fraction": 0.50,
+        "rebuild_levy_fraction": 0.20,
+    },
+}
+REBUILD_LEVY_MIN_DOLLOPS: float = 20.0
+REBUILD_LEVY_INSTALLMENTS: int = 2
+ENERGY_CRISIS_OIL_PRICE_MULTIPLIER: float = 2.0
+ENERGY_CRISIS_DURATION_SEASONS: int = 2
+HARBOUR_BLOCKADE_FREIGHT_PRICE_MULTIPLIER: float = 3.0
+BABY_BOOM_POPULATION_GROWTH_MULTIPLIER: float = 2.0
+BABY_BOOM_QOL_STABILITY_DELTA: int = 5
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3

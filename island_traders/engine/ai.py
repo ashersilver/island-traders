@@ -5,6 +5,7 @@ from ..models.market import Market
 from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.deal import DealProposal, DealStatus
 from ..engine.events import EventResult
+from ..engine.cycle import BusinessCycleSnapshot
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
@@ -197,6 +198,7 @@ class AIStrategy:
         loan_ledger: LoanLedger,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> str | None:
         if borrower.is_human or banker.player_id == borrower.player_id:
             return None
@@ -210,9 +212,10 @@ class AIStrategy:
                 f"reached ({active}/{cap})"
             )
         term_years = 1
-        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        funding_rate = posted_funding_rates(year, season_index, cycle=cycle)[term_years]
         rate = banker_quote_rate(
-            borrower, loan_ledger, principal, term_years, year, season_index
+            borrower, loan_ledger, principal, term_years, year, season_index,
+            cycle=cycle,
         )
         reserve_ratio = self._banker_reserve_ratio(banker)
         own_share = round(reserve_ratio * principal, 2)
@@ -260,6 +263,7 @@ class AIStrategy:
         season_name: str,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if loan_ledger is None:
             return []
@@ -281,7 +285,8 @@ class AIStrategy:
             if principal <= 0:
                 continue
             action = self._ai_issue_loan(
-                banker, borrower, principal, loan_ledger, year, season_index
+                banker, borrower, principal, loan_ledger, year, season_index,
+                cycle=cycle,
             )
             if action:
                 actions.append(action)
@@ -297,6 +302,7 @@ class AIStrategy:
         year: int,
         season_index: int,
         product_line: str | None = None,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if any(role.name == "Banker" for role in player.roles):
             return []
@@ -320,7 +326,8 @@ class AIStrategy:
                     other_players, exclude_player_id=player.player_id
                 ):
                     action = self._ai_issue_loan(
-                        banker, player, principal, loan_ledger, year, season_index
+                        banker, player, principal, loan_ledger, year, season_index,
+                        cycle=cycle,
                     )
                     if action:
                         return [action]
@@ -374,6 +381,7 @@ class AIStrategy:
         loan_ledger: LoanLedger | None,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if loan_ledger is None:
             return []
@@ -388,7 +396,8 @@ class AIStrategy:
             if seasons_to_maturity > 1 or player.dollops >= loan.repayment_amount:
                 continue
             new_rate = banker_quote_rate(
-                player, loan_ledger, loan.repayment_amount, 1, year, season_index
+                player, loan_ledger, loan.repayment_amount, 1, year, season_index,
+                cycle=cycle,
             )
             try:
                 new_loan = loan_ledger.rollover_loan(
@@ -1314,6 +1323,7 @@ class AIStrategy:
         season_index: int = 0,
         loan_ledger: LoanLedger | None = None,
         training_registry=None,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -1339,12 +1349,14 @@ class AIStrategy:
             )
 
         actions.extend(
-            self._ai_rollover_due_loans(player, loan_ledger, year, season_index)
+            self._ai_rollover_due_loans(
+                player, loan_ledger, year, season_index, cycle=cycle
+            )
         )
         actions.extend(
             self._ai_take_loan_if_short(
                 player, market, other_players, loan_ledger, season_name,
-                year, season_index, chosen_line,
+                year, season_index, chosen_line, cycle=cycle,
             )
         )
         actions.extend(
@@ -1478,7 +1490,7 @@ class AIStrategy:
             actions.extend(
                 self._ai_offer_loans(
                     player, other_players, market, loan_ledger,
-                    season_name, year, season_index,
+                    season_name, year, season_index, cycle=cycle,
                 )
             )
 

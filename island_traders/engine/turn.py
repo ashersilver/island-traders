@@ -32,7 +32,11 @@ from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
     WorkerBand, EngineerSpecialty, band_of,
 )
-from ..engine.workforce_events import apply_workplace_risks, resolve_medical_care
+from ..engine.workforce_events import (
+    WorkforceEventReport,
+    apply_workplace_risks,
+    resolve_medical_care,
+)
 from ..engine.qol import seasonal_qol_breakdown
 from ..engine.consumer import consumer_demand_plan, buy_household_goods_from_offers
 from ..engine.flu import vaccine_doses_needed
@@ -55,6 +59,8 @@ from ..constants import (
     REPURPOSE_WORKER_COST,
     FLU_SEASON, FLU_STRAIN_LOSSES, FLU_MAX_PRODUCTIVITY_LOSS,
     VACCINE_INFECTION_REDUCTION,
+    UNTREATED_RECOVERY_SEASONS,
+    VACCINE_PANDEMIC_SIDELINE_REDUCTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
@@ -148,6 +154,7 @@ class TurnManager:
         self._ai = AIStrategy()
         self._damage_counters: dict[int, int] = {}
         self._rng: _random.Random = rng if rng is not None else _random.Random()
+        self.current_cycle = None
         # Simultaneous-play hooks: when set, run_season() spawns one thread
         # per human player instead of running them sequentially. engine_lock
         # is exposed for future hardening of shared-state mutations
@@ -190,6 +197,7 @@ class TurnManager:
         risk_reports = apply_workplace_risks(
             self.players, year, season_index, banker_players, rng=self._rng
         )
+        risk_reports.extend(self._event_sidelining_reports(event_results, year, season_index))
         risk_reports = resolve_medical_care(self.players, risk_reports)
         for report in risk_reports:
             if report.has_events:
@@ -232,20 +240,7 @@ class TurnManager:
         return self._rng.choice(strains)
 
     def _copy_event_result(self, event: EventResult) -> EventResult:
-        return EventResult(
-            event_name=event.event_name,
-            yield_modifier=event.yield_modifier,
-            productivity_bonus=event.productivity_bonus,
-            outage=event.outage,
-            damage_seasons=event.damage_seasons,
-            natural_disaster=event.natural_disaster,
-            price_shock_resource=event.price_shock_resource,
-            price_shock_multiplier=event.price_shock_multiplier,
-            flu_strain_loss=event.flu_strain_loss,
-            flu_doses_needed=event.flu_doses_needed,
-            flu_doses_administered=event.flu_doses_administered,
-            flu_effective_loss=event.flu_effective_loss,
-        )
+        return event.copy()
 
     def _apply_winter_flu(
         self,
@@ -304,6 +299,7 @@ class TurnManager:
                 player,
                 season_name,
                 casualties=casualties_by_player.get(player.player_id, 0),
+                demand_multiplier=self._consumer_demand_multiplier(),
             )
             if not plan.units:
                 continue
@@ -442,6 +438,47 @@ class TurnManager:
             player._qol_treated_this_season = 0
             player._qol_medevacs_this_season = 0
 
+    def _consumer_demand_multiplier(self) -> float:
+        cycle = getattr(self, "current_cycle", None)
+        return getattr(cycle, "consumer_demand_multiplier", 1.0)
+
+    def _event_sidelining_reports(
+        self,
+        event_results: dict[int, EventResult],
+        year: int,
+        season_index: int,
+    ) -> list[WorkforceEventReport]:
+        _ = (year, season_index)
+        reports: list[WorkforceEventReport] = []
+        for player in self.players:
+            event = event_results.get(player.player_id)
+            if event is None or event.workforce_sidelined_fraction <= 0:
+                continue
+            fraction = event.workforce_sidelined_fraction
+            if event.pandemic:
+                needed = vaccine_doses_needed(player.population)
+                available = player.inventory.get(ResourceType.VACCINE)
+                administered = min(needed, available)
+                if administered > 0:
+                    player.give_resources(ResourceType.VACCINE, administered)
+                coverage = administered / needed if needed else 1.0
+                fraction *= (1.0 - coverage * VACCINE_PANDEMIC_SIDELINE_REDUCTION)
+            active = list(player.workforce.active_workers)
+            count = min(len(active), max(0, round(len(active) * fraction)))
+            if fraction > 0 and active and count == 0:
+                count = 1
+            if count <= 0:
+                continue
+            selected = self._rng.sample(active, count) if count < len(active) else active
+            worker_ids = [worker.worker_id for worker in selected]
+            player.workforce.mark_absent(worker_ids, UNTREATED_RECOVERY_SEASONS)
+            reports.append(WorkforceEventReport(
+                player_id=player.player_id,
+                player_name=player.name,
+                injured_worker_ids=worker_ids,
+            ))
+        return reports
+
     def _post_consumer_demand_signals(self, season_name: str, risk_reports: list) -> None:
         casualties_by_player = {
             report.player_id: len(report.injured_worker_ids) + len(report.fatality_worker_ids)
@@ -454,6 +491,7 @@ class TurnManager:
                 player,
                 season_name,
                 casualties=casualties_by_player.get(player.player_id, 0),
+                demand_multiplier=self._consumer_demand_multiplier(),
             )
             for rtype, qty in plan.units.items():
                 if qty > 0:
@@ -471,7 +509,9 @@ class TurnManager:
             self.market.apply_price_shock(
                 event.price_shock_resource,
                 event.price_shock_multiplier,
-                duration_seasons=event.damage_seasons or 1,
+                duration_seasons=event.price_shock_duration_seasons
+                or event.damage_seasons
+                or 1,
             )
 
     def _run_season_sequential(
@@ -572,6 +612,7 @@ class TurnManager:
                 player, self.market, self.players, self.production, self.trading,
                 event_result, season_name, year, season_index, self.loan_ledger,
                 training_registry=self.training,
+                cycle=self.current_cycle,
             )
             result.actions_taken = training_actions + actions
             for a in actions:
@@ -773,6 +814,10 @@ class TurnManager:
             breakdown = seasonal_qol_breakdown(
                 player,
                 pandemic_or_disaster_active=not event.is_normal,
+                business_cycle_stability_delta=(
+                    getattr(self.current_cycle, "stability_delta", 0)
+                    + getattr(event, "qol_stability_delta", 0)
+                ),
             )
             player._qol_breakdown = breakdown
             player._qol_index = breakdown["score"]
@@ -3958,13 +4003,21 @@ class TurnManager:
         funding_rate = (
             funding_rate_override
             if funding_rate_override is not None
-            else posted_funding_rates(year, season_index)[term_years]
+            else posted_funding_rates(
+                year, season_index, cycle=self.current_cycle
+            )[term_years]
         )
         rate = (
             rate_override
             if rate_override is not None
             else banker_quote_rate(
-                borrower, self.loan_ledger, principal, term_years, year, season_index
+                borrower,
+                self.loan_ledger,
+                principal,
+                term_years,
+                year,
+                season_index,
+                cycle=self.current_cycle,
             )
         )
         if self_lending:
@@ -4008,7 +4061,7 @@ class TurnManager:
         season_index: int,
     ) -> "Loan":
         """Finance a capital order via the Bank, reusing Phase D reserves."""
-        posted_3yr = posted_funding_rates(year, season_index)[3]
+        posted_3yr = posted_funding_rates(year, season_index, cycle=self.current_cycle)[3]
         return self._issue_bank_finance_loan(
             borrower,
             principal,
@@ -4018,7 +4071,7 @@ class TurnManager:
             no_banker_message="No Banker island is available to finance this order.",
             cap_message="Bank is at its active-loan cap ({active}/{cap}); pay cash instead.",
             reserve_message="Bank lacks the reserve capital to back this loan; pay cash instead.",
-            rate_override=capital_finance_rate(year, season_index),
+            rate_override=capital_finance_rate(year, season_index, cycle=self.current_cycle),
             funding_rate_override=posted_3yr,
         )
 
@@ -4065,9 +4118,15 @@ class TurnManager:
             self.io.print("  Cancelled — principal must be positive.")
             return
         term_years = self.io.choose_quantity("Loan term in years", 1, 3)
-        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        funding_rate = posted_funding_rates(year, season_index, cycle=self.current_cycle)[term_years]
         rate = banker_quote_rate(
-            target, self.loan_ledger, principal, term_years, year, season_index
+            target,
+            self.loan_ledger,
+            principal,
+            term_years,
+            year,
+            season_index,
+            cycle=self.current_cycle,
         )
         rate_pct = rate * 100
         rate = rate_pct / 100.0
@@ -4305,9 +4364,15 @@ class TurnManager:
             self.io.print("  Cancelled.")
             return
         term_years = self.io.choose_quantity("Loan term in years", 1, 3)
-        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        funding_rate = posted_funding_rates(year, season_index, cycle=self.current_cycle)[term_years]
         opening_rate = banker_quote_rate(
-            player, self.loan_ledger, principal, term_years, year, season_index
+            player,
+            self.loan_ledger,
+            principal,
+            term_years,
+            year,
+            season_index,
+            cycle=self.current_cycle,
         )
         rate = opening_rate
         rate_pct = rate * 100
@@ -4448,12 +4513,15 @@ class TurnManager:
         new_rate = banker_quote_rate(
             player, self.loan_ledger,
             old.repayment_amount, new_term_years, year, season_index,
+            cycle=self.current_cycle,
         )
         rate_pct = new_rate * 100
         new_principal = old.repayment_amount
         new_repay = round(new_principal * (1 + new_rate), 1)
 
-        funding_rate = posted_funding_rates(year, season_index)[new_term_years]
+        funding_rate = posted_funding_rates(
+            year, season_index, cycle=self.current_cycle
+        )[new_term_years]
         self.io.print(
             f"\n  Banker quote for rollover of Loan #{old.loan_id}: "
             f"new principal {new_principal:.1f} {sym} (= old repayment), "
