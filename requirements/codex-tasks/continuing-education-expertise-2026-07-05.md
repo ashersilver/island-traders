@@ -61,8 +61,11 @@ sure Expertise actually **clears the market** (doesn't pile up as dead surplus)
 and that the Educator's recurring Expertise revenue is material. If managers
 still drift below ~0.90 mean CE-factor, that's a distribution problem (islands
 not buying), not a supply one — the AI Expertise buy-buffer is the lever.
-Provide `--ce-model {cumulative,flat}` to A/B the accrual (cumulative per this
-spec vs a flat `5%×f` per-season drag).
+
+**Accrual model: CUMULATIVE (locked, Ash 2026-07-05).** The penalty accumulates
+across short seasons per step 5 above — implement it, not a flat per-season
+drag. (A `--ce-model flat` sim flag is optional/nice-to-have for calibration
+comparison only; the shipped behaviour is cumulative.)
 
 ## Files
 
