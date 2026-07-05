@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import random
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -24,18 +25,71 @@ from ..constants import SEASONS, STARTING_DOLLOPS
 
 
 class _SilentIO:
-    """No-op IO adapter so simulations run without any terminal output."""
+    """No-op IO adapter so simulations run without any terminal output.
+
+    R2 (simulation-baselining review, 2026-07-04): every *decision* method
+    counts its invocations in ``fallback_counts``.  A nonzero count means the
+    sim answered a real game decision with a degenerate default (minimum /
+    first option / yes / zero) instead of a modelled policy — i.e. the sim is
+    defaulting through a mechanic, not exercising it.  The runner aggregates
+    and surfaces these so new prompt flows can't silently skew baselines.
+    """
+    def __init__(self):
+        self.fallback_counts: dict[str, int] = {}
+
+    def _count(self, method: str) -> None:
+        self.fallback_counts[method] = self.fallback_counts.get(method, 0) + 1
+
     def print(self, *_): pass
     def input(self, *_): return ""
     def choose_action(self, *_):
         from ..engine.turn import TurnAction
+        self._count("choose_action")
         return TurnAction.END_TURN
     def choose_resource(self, _, available):
+        self._count("choose_resource")
         return available[0] if available else None
-    def choose_quantity(self, _, min_qty, max_qty, default=None): return min_qty
-    def choose_player(self, _, players): return players[0]
-    def confirm(self, _): return True
-    def ask_dollop_amount(self, _, max_dollops): return 0.0
+    def choose_quantity(self, _, min_qty, max_qty, default=None):
+        self._count("choose_quantity")
+        return min_qty
+    def choose_player(self, _, players):
+        self._count("choose_player")
+        return players[0]
+    def confirm(self, _):
+        self._count("confirm")
+        return True
+    def ask_dollop_amount(self, _, max_dollops):
+        self._count("ask_dollop_amount")
+        return 0.0
+
+
+def gini_coefficient(values: list[float]) -> float:
+    """Gini coefficient of a wealth distribution (0 = equal, →1 = concentrated).
+
+    Negative wealth is clamped to 0 — Gini is undefined for negatives and a
+    bankrupt island counts as "has nothing" for concentration purposes.
+    """
+    vals = sorted(max(0.0, v) for v in values)
+    n = len(vals)
+    total = sum(vals)
+    if n == 0 or total <= 0:
+        return 0.0
+    # Standard rank formula: G = (2·Σ i·x_i)/(n·Σ x) − (n+1)/n, i is 1-based.
+    weighted = sum(i * v for i, v in enumerate(vals, start=1))
+    return round((2.0 * weighted) / (n * total) - (n + 1.0) / n, 4)
+
+
+def hhi(shares: list[float]) -> float:
+    """Herfindahl–Hirschman index over wealth shares (1/n = balanced, 1 = monopoly).
+
+    Shares are normalised over their (0-clamped) sum, so callers may pass raw
+    wealth values.
+    """
+    clamped = [max(0.0, s) for s in shares]
+    total = sum(clamped)
+    if total <= 0:
+        return 0.0
+    return round(sum((s / total) ** 2 for s in clamped), 4)
 
 
 @dataclass
@@ -45,6 +99,9 @@ class RoleStats:
     total_games: int = 0
     total_wealth: float = 0.0
     event_counts: dict[str, int] = field(default_factory=dict)
+    # R1: this role's share of each game's total (0-clamped) wealth, one entry
+    # per game — the balance metric, with enough data for a variance bar.
+    wealth_shares: list[float] = field(default_factory=list)
 
     @property
     def win_rate(self) -> float:
@@ -53,6 +110,17 @@ class RoleStats:
     @property
     def avg_wealth(self) -> float:
         return self.total_wealth / self.total_games if self.total_games else 0.0
+
+    @property
+    def share_mean(self) -> float:
+        return (sum(self.wealth_shares) / len(self.wealth_shares)
+                if self.wealth_shares else 0.0)
+
+    @property
+    def share_stddev(self) -> float:
+        if len(self.wealth_shares) < 2:
+            return 0.0
+        return statistics.stdev(self.wealth_shares)
 
 
 @dataclass
@@ -71,6 +139,11 @@ class SimulationStats:
     flow_consumed: dict[str, float] = field(default_factory=dict)
     flow_traded: dict[str, float] = field(default_factory=dict)
     flow_starvation: dict[str, int] = field(default_factory=dict)
+    # R2: decision prompts answered by _SilentIO defaults, summed across games.
+    fallback_counts: dict[str, int] = field(default_factory=dict)
+    # R7: mean per-game concentration of final wealth.
+    gini_mean: float = 0.0
+    hhi_mean: float = 0.0
 
 
 class SimulationRunner:
@@ -101,6 +174,9 @@ class SimulationRunner:
         flow_consumed: dict[str, float] = {}
         flow_traded: dict[str, float] = {}
         flow_starvation: dict[str, int] = {}
+        fallback_counts: dict[str, int] = {}
+        gini_sum = 0.0
+        hhi_sum = 0.0
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -132,13 +208,27 @@ class SimulationRunner:
             summary = game.run()
 
             # Record stats
+            final_wealths = [wealth for _, wealth in summary.final_rankings]
+            game_total = sum(max(0.0, w) for w in final_wealths)
             for player, wealth in summary.final_rankings:
                 rname = player.roles[0].name
                 stats[rname].total_games += 1
                 stats[rname].total_wealth += wealth
+                # R1: per-game wealth share (0-clamped, matches Gini/HHI basis).
+                stats[rname].wealth_shares.append(
+                    max(0.0, wealth) / game_total if game_total > 0 else 0.0
+                )
 
             winner_role = summary.winner.roles[0].name
             stats[winner_role].wins += 1
+
+            # R7: per-game concentration of final wealth.
+            gini_sum += gini_coefficient(final_wealths)
+            hhi_sum += hhi(final_wealths)
+
+            # R2: decision prompts that fell through to _SilentIO defaults.
+            for method, count in io.fallback_counts.items():
+                fallback_counts[method] = fallback_counts.get(method, 0) + count
 
             # Accumulate money supply (per-game series may be shorter if a game
             # ended early; only fold in the snapshots that exist).
@@ -186,6 +276,9 @@ class SimulationRunner:
             flow_consumed=flow_consumed,
             flow_traded=flow_traded,
             flow_starvation=flow_starvation,
+            fallback_counts=fallback_counts,
+            gini_mean=round(gini_sum / self.num_games, 4) if self.num_games else 0.0,
+            hhi_mean=round(hhi_sum / self.num_games, 4) if self.num_games else 0.0,
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -196,7 +289,10 @@ class SimulationRunner:
         role_csv = p.parent / (p.stem + "_roles.csv")
         with open(role_csv, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["role", "games", "wins", "win_rate_%", "avg_wealth"])
+            writer.writerow([
+                "role", "games", "wins", "win_rate_%", "avg_wealth",
+                "share_mean_%", "share_stddev_%",
+            ])
             for rs in stats.role_stats.values():
                 writer.writerow([
                     rs.role_name,
@@ -204,6 +300,8 @@ class SimulationRunner:
                     rs.wins,
                     f"{rs.win_rate * 100:.1f}",
                     f"{rs.avg_wealth:.1f}",
+                    f"{rs.share_mean * 100:.2f}",
+                    f"{rs.share_stddev * 100:.2f}",
                 ])
 
         # Price history
@@ -264,13 +362,31 @@ def _parse_seeds(raw: str) -> list[int]:
 
 def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> None:
     print(f"\n--- {title} ---")
-    print(f"{'Role':<16} {'Wins':>6} {'Win%':>7} {'AvgWealth':>12}")
-    print("-" * 45)
+    print(f"{'Role':<16} {'Wins':>6} {'Win%':>7} {'AvgWealth':>12} {'Share%':>8} {'±σ':>6}")
+    print("-" * 60)
     for rs in stats.role_stats.values():
         print(
             f"{rs.role_name:<16} {rs.wins:>6} "
             f"{rs.win_rate*100:>6.1f}% {rs.avg_wealth:>12.1f} Dp"
+            f"{rs.share_mean*100:>7.1f}% {rs.share_stddev*100:>5.1f}%"
         )
+    print(
+        f"  Concentration: mean Gini {stats.gini_mean:.3f}, "
+        f"mean HHI {stats.hhi_mean:.3f} (balanced 7-player HHI ≈ 0.143)"
+    )
+
+
+def _print_fallback_telemetry(stats: SimulationStats) -> None:
+    """R2: surface decision prompts the sim answered with degenerate defaults."""
+    if not stats.fallback_counts:
+        return
+    print("\n--- Sim Fallback Telemetry (decisions answered by _SilentIO defaults) ---")
+    top = sorted(stats.fallback_counts.items(), key=lambda kv: -kv[1])[:10]
+    for method, count in top:
+        per_game = count / stats.num_games if stats.num_games else 0.0
+        print(f"  {method:<20} {count:>8,}  ({per_game:.1f}/game)")
+    print("  ⚠ nonzero counts mean the sim defaulted through these mechanics"
+          " (min/first/yes/zero) rather than modelling them.")
 
 
 def _print_money_supply(stats: SimulationStats) -> None:
@@ -332,6 +448,24 @@ def _print_multi_seed_summary(seed_stats: list[tuple[int, SimulationStats]]) -> 
         row += f"{(sum(rates) / len(rates)):>9.1f}%"
         print(row)
 
+    # R1: wealth share across seeds with a cross-seed variance bar.  The
+    # regression rule of thumb: a share change is only a real move if it falls
+    # outside mean ± 2σ of the baseline.
+    print("\n--- Multi-Seed Wealth Share Summary (mean ± cross-seed σ) ---")
+    print(f"{'Role':<16}" + "".join(f"{seed:>10}" for seed, _ in seed_stats)
+          + f"{'Mean':>9}{'σ':>7}")
+    for role_name in role_names:
+        shares = [
+            stats.role_stats[role_name].share_mean * 100
+            for _, stats in seed_stats
+        ]
+        mean = sum(shares) / len(shares)
+        sd = statistics.stdev(shares) if len(shares) > 1 else 0.0
+        row = f"{role_name:<16}" + "".join(f"{s:>9.1f}%" for s in shares)
+        row += f"{mean:>8.1f}%{sd:>6.1f}%"
+        print(row)
+    print("  Regression rule: flag a change only when it exceeds baseline mean ± 2σ.")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Island Traders simulation runner")
@@ -363,6 +497,7 @@ def main() -> None:
             _print_role_balance(stats, title=f"Role Balance — seed {seed}")
             _print_money_supply(stats)
             _print_resource_flows(stats)
+            _print_fallback_telemetry(stats)
             runner.export_csv(stats, f"{args.output}_seed_{seed}")
         _print_multi_seed_summary(seed_stats)
         return
@@ -378,6 +513,7 @@ def main() -> None:
     _print_role_balance(stats)
     _print_money_supply(stats)
     _print_resource_flows(stats)
+    _print_fallback_telemetry(stats)
     runner.export_csv(stats, args.output)
 
 
