@@ -318,6 +318,11 @@ button:active{transform:scale(.97)}
   background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);
   padding:.3rem .9rem;
 }
+.cycle-chip{
+  display:inline-flex;align-items:center;font-size:.72rem;font-weight:600;
+  color:var(--gold);background:var(--bg);border:1px solid var(--border);
+  border-radius:20px;padding:.2rem .6rem;white-space:nowrap;
+}
 .season-badge .season-year{font-size:.85rem;font-weight:700;color:var(--heading)}
 .season-badge .season-name{font-size:.85rem;font-weight:700;color:var(--accent)}
 .game-code-pill{
@@ -1370,6 +1375,10 @@ body.fx-off .ih-pins .pdot{animation:none}
         <span class="season-year" id="hdr-year">Year 1</span>
         <span class="season-name" id="hdr-season">Spring</span>
       </div>
+      <!-- Business-cycle phase chip (business-cycle-severity-events brief).
+           Hidden until the engine ships gameState.business_cycle; then
+           renderBusinessCycleChip lights it up. -->
+      <span class="cycle-chip hidden" id="hdr-cycle-chip"></span>
       <div class="game-code-pill" title="Game code for rejoining">
         <span>Game</span>
         <strong id="hdr-game-code">------</strong>
@@ -1515,6 +1524,13 @@ body.fx-off .ih-pins .pdot{animation:none}
                   onclick="showInventoryPopup()" title="Show full inventory with market values">⊕</button>
         </h3>
         <div id="s-inventory">—</div>
+      </div>
+      <!-- Island wellbeing (medical-response-quality-of-life + continuing-education
+           briefs). Hidden until the engine ships me.quality_of_life /
+           me.continuing_education; renderIslandWellbeing fills it in. -->
+      <div class="section hidden" data-tile="wellbeing" data-tile-label="Island wellbeing" id="wellbeing-tile">
+        <h3>Island Wellbeing</h3>
+        <div id="s-wellbeing"></div>
       </div>
       <div class="section" data-tile="capacity" data-tile-label="Production capacity">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -3004,14 +3020,35 @@ function openCapitalPicker() {
   }
   const arrivalOf = c => c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
   const reqOf = c => c.cash_only ? 'cash-only' : 'requires equipment';
+  // Capacity-scaling display (manufacturer-capacity-scaling brief): each item
+  // now consumes N Manufacturer "capacity units"; surface the unit count and
+  // whether the Manufacturer currently has the stock to build it.
+  const unitNote = c => (c.capacity_units > 1) ? ` · ${c.capacity_units}-unit build` : '';
+  const buildNote = c => {
+    if (c.cash_only || c.manufacturer_stock == null) return '';
+    const units = Math.max(1, c.capacity_units || 1);
+    return (c.manufacturer_stock >= units)
+      ? ' · <span style="color:var(--green)">✓ Forge can build</span>'
+      : ` · <span style="color:var(--gold)">⚠ Forge short (${c.manufacturer_stock}/${units} ${esc(c.manufactured_resource || 'units')})</span>`;
+  };
   const rows = [];
+  // When the viewer is the Manufacturer, show the seasonal durable-output
+  // allowance it has left (rises as it invests in assembly capacity).
+  const capInfo = (me && me.capacity) || {};
+  if (capInfo.manufacturer_durable_allowance != null) {
+    rows.push(`<div style="margin:0 0 .35rem;font-size:.74rem;color:var(--dim)">`
+      + `Durable output this season: `
+      + `<strong style="color:var(--text)">${capInfo.manufacturer_durable_remaining}`
+      + `/${capInfo.manufacturer_durable_allowance}</strong> units left`
+      + ` <span style="color:var(--dim)">· raises with assembly line / precision workshop</span></div>`);
+  }
   for (const c of orderable) {
     const failed = (c.failed || 0) > 0;
     const tag = failed
       ? `<span style="color:var(--red)">⚠ ${c.failed} failed — rebuild</span>`
       : (c.mandatory ? '<span style="color:var(--gold)">Required</span>' : 'Build');
     rows.push(`<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
-      + `${esc(c.name)} — ${c.cost} Dp · ${reqOf(c)} · ${arrivalOf(c)} · ${tag}</button>`);
+      + `${esc(c.name)} — ${c.cost} Dp · ${reqOf(c)}${unitNote(c)} · ${arrivalOf(c)}${buildNote(c)} · ${tag}</button>`);
   }
   if (builtHealthy.length) {
     rows.push('<div style="margin:.35rem 0 .15rem;font-size:.72rem;color:var(--dim);'
@@ -4777,7 +4814,19 @@ function handleMessage(msg) {
     case 'capital_order_ack':
       let financeNote = '';
       if (msg.financed) {
-        financeNote = `, financed via Bank loan (repay ${msg.loan_repayment} Dp)`;
+        // Capital financing is convenience-priced at posted-3yr + 5.0pts
+        // (loan-negotiation brief). Surface the premium + the cheaper
+        // alternative so the +5pt cost is explicit, not hidden.
+        const rateStr = (typeof msg.loan_rate === 'number')
+          ? ` at ${(msg.loan_rate * 100).toFixed(1)}%` : '';
+        let premiumStr = '';
+        if (typeof msg.loan_rate === 'number' && typeof msg.posted_3yr_rate === 'number') {
+          const pts = (msg.loan_rate - msg.posted_3yr_rate) * 100;
+          premiumStr = ` — a ${pts.toFixed(1)}pt convenience premium over the `
+            + `${(msg.posted_3yr_rate * 100).toFixed(1)}% posted 3-yr rate; `
+            + `negotiate a loan at the Bank for a better rate`;
+        }
+        financeNote = `, financed via Bank loan${rateStr} (repay ${msg.loan_repayment} Dp)${premiumStr}`;
       } else if (msg.financing) {
         financeNote = ', financing unavailable — paid from treasury';
       }
@@ -5036,6 +5085,68 @@ function renderWealthBreakdown(me){
   el.innerHTML = rows;
 }
 
+// ==================== PENDING ECONOMY-FEATURE INDICATORS ====================
+// Stubs for the not-yet-merged economics-vision engine features. Each renders
+// only when its data is present in the state payload, so they are invisible
+// no-ops until the matching Codex PR lands, then activate automatically. Field
+// names follow the briefs in requirements/codex-tasks/; reconcile if the
+// engine diverges when the PR merges.
+
+// Business cycle phase chip in the header (business-cycle-severity-events).
+function renderBusinessCycleChip() {
+  const chip = document.getElementById('hdr-cycle-chip');
+  if (!chip) return;
+  const cyc = gameState && gameState.business_cycle;
+  if (!cyc || !cyc.phase) { chip.classList.add('hidden'); return; }
+  const icon = { Expansion: '📈', Boom: '🔥', Contraction: '📉', Trough: '🧊' }[cyc.phase] || '•';
+  const note = cyc.note ? ` — ${esc(cyc.note)}` : '';
+  chip.textContent = `${icon} ${cyc.phase}${note}`;
+  chip.title = cyc.note || `Business cycle: ${cyc.phase}`;
+  chip.classList.remove('hidden');
+}
+
+// Island wellbeing tile: Quality-of-Life index + continuing-education coverage
+// (medical-response-quality-of-life + continuing-education-expertise briefs).
+function renderIslandWellbeing(me) {
+  const tile = document.getElementById('wellbeing-tile');
+  const body = document.getElementById('s-wellbeing');
+  if (!tile || !body || !me) return;
+  // QoL: the medical/QoL engine currently emits a 0..1 scalar `qol_score`; a
+  // richer {score, components:{nutrition,medical,goods,stability}} object may
+  // arrive later — read either.
+  const qolObj = me.quality_of_life;
+  let qolPct = null, comps = null;
+  if (qolObj && typeof qolObj.score === 'number') {
+    qolPct = qolObj.score <= 1 ? qolObj.score * 100 : qolObj.score;
+    comps = qolObj.components || null;
+  } else if (typeof me.qol_score === 'number') {
+    qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
+  }
+  const ce = me.continuing_education; // {factor, covered, managers} (0..1 factor)
+  if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
+  const parts = [];
+  if (qolPct != null) {
+    const comp = comps ? ['nutrition', 'medical', 'goods', 'stability']
+      .filter(k => typeof comps[k] === 'number')
+      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(comps[k])}`)
+      .join(' · ') : '';
+    const col = qolPct >= 100 ? 'var(--green)' : (qolPct >= 85 ? 'var(--text)' : 'var(--gold)');
+    parts.push(`<div class="mkt-row"><span class="res">Quality of Life</span>`
+      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
+      + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
+  }
+  if (ce && typeof ce.factor === 'number') {
+    const pct = Math.round(ce.factor * 100);
+    const col = pct >= 95 ? 'var(--green)' : (pct >= 85 ? 'var(--gold)' : 'var(--red)');
+    const cov = (ce.covered != null && ce.managers != null)
+      ? ` <span style="color:var(--dim)">(${ce.covered}/${ce.managers} managers)</span>` : '';
+    parts.push(`<div class="mkt-row"><span class="res">Continuing Ed.</span>`
+      + `<span class="price" style="color:${col}">${pct}%</span></div>${cov}`);
+  }
+  body.innerHTML = parts.join('');
+  tile.classList.remove('hidden');
+}
+
 // ==================== GAME RENDERING ====================
 function renderGameState() {
   if (!gameState) return;
@@ -5205,6 +5316,12 @@ function renderGameState() {
     .filter(([,q]) => q > 0)
     .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
     .join('') || '<span style="color:var(--dim)">Empty</span>';
+
+  // Pending economics-vision features (business cycle, QoL, continuing
+  // education). These render only when the engine ships the data, so they're
+  // inert until the respective Codex PRs land, then light up automatically.
+  renderBusinessCycleChip();
+  renderIslandWellbeing(me);
 
   // Insurance: prefer structured `policies_detail`; fall back to plain strings.
   const polsDetail = me.policies_detail || [];

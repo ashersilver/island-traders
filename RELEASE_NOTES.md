@@ -5,7 +5,7 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.22`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.23`.
 
 - **Medical response and Quality of Life** — `HealthServices` is now the
   tradable `MedicalSupplies` resource, with old `HealthServices` save/client
@@ -18,6 +18,18 @@ Release notes are required before merging a feature/fix branch into
   Nurse upkeep activates the medical-coverage bonus. Seed-42 1000-game sim:
   Doctor wealth share moved 13.8% ± 3.8% → 14.1% ± 4.0%, no other role moved
   more than 1.6 share points, and MedicalSupplies traded 48.8 units/game.
+
+- **Economics-vision UI (capacity + financing live; QoL/cycle/CE stubbed)** —
+  the capital-order picker now shows each item's capacity-unit cost, whether
+  the Manufacturer has the stock to build it ("✓ Forge can build" / "⚠ Forge
+  short 1/4 …"), and the Manufacturer's remaining seasonal durable allowance.
+  The capital-order confirmation now spells out the +5pt capital-financing
+  premium against the posted 3-year rate ("negotiate at the Bank for better").
+  Render-when-present stubs added for the not-yet-merged features: a
+  business-cycle header chip, and an Island Wellbeing tile (Quality of Life +
+  continuing-education coverage) — invisible until the engine ships the data.
+  With the QoL engine now live, the Island Wellbeing tile's Quality-of-Life
+  score activates.
 
 - **Loan negotiation and capital-finance premium** — standard take-loan
   requests now support one borrower counter round, with AI Bankers accepting
