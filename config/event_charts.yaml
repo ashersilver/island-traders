@@ -45,6 +45,29 @@ Farmer:
     natural_disaster: true
     price_shock_resource: Food
     price_shock_multiplier: 1.8
+    severity: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Miner:
   events:
   - name: Normal Output
@@ -74,6 +97,7 @@ Miner:
     natural_disaster: false
     price_shock_resource: Ore
     price_shock_multiplier: 1.8
+    severity: true
   - name: Oil Spill
     weight: 0.1252
     yield_modifier: 0.2
@@ -83,6 +107,7 @@ Miner:
     natural_disaster: false
     price_shock_resource: Oil
     price_shock_multiplier: 1.6
+    severity: true
   - name: Earthquake
     weight: 0.0442
     yield_modifier: 0.0
@@ -92,6 +117,29 @@ Miner:
     natural_disaster: true
     price_shock_resource: Ore
     price_shock_multiplier: 2.0
+    severity: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Transporter:
   events:
   - name: Normal Operations
@@ -130,6 +178,39 @@ Transporter:
     natural_disaster: true
     price_shock_resource: Freight
     price_shock_multiplier: 1.5
+    severity: true
+  - name: Harbour Blockade
+    weight: 0.02
+    yield_modifier: 0.5
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Freight
+    price_shock_multiplier: 3.0
+    price_shock_duration_seasons: 1
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Educator:
   events:
   - name: Normal Semester
@@ -168,6 +249,30 @@ Educator:
     natural_disaster: true
     price_shock_resource: Expertise
     price_shock_multiplier: 1.4
+    severity: true
+    pandemic: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Banker:
   events:
   - name: Stable Markets
@@ -206,6 +311,29 @@ Banker:
     natural_disaster: true
     price_shock_resource: Finance
     price_shock_multiplier: 2.5
+    severity: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Manufacturer:
   events:
   - name: Normal Production
@@ -235,6 +363,7 @@ Manufacturer:
     natural_disaster: false
     price_shock_resource: Goods
     price_shock_multiplier: 1.9
+    severity: true
   - name: Supply Chain Disruption
     weight: 0.0852
     yield_modifier: 0.2
@@ -253,6 +382,29 @@ Manufacturer:
     natural_disaster: false
     price_shock_resource: null
     price_shock_multiplier: 1.0
+    severity: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5
 Doctor:
   events:
   - name: Normal Practice
@@ -282,6 +434,8 @@ Doctor:
     natural_disaster: true
     price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.2
+    severity: true
+    pandemic: true
   - name: Hospital Strike
     weight: 0.1
     yield_modifier: 0.0
@@ -300,3 +454,27 @@ Doctor:
     natural_disaster: true
     price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.1
+    severity: true
+    pandemic: true
+  - name: Energy Crisis
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: Oil
+    price_shock_multiplier: 2.0
+    price_shock_duration_seasons: 2
+  - name: Baby Boom
+    weight: 0.01
+    yield_modifier: 1.0
+    productivity_bonus: 0
+    outage: false
+    damage_seasons: 0
+    natural_disaster: false
+    price_shock_resource: null
+    price_shock_multiplier: 1.0
+    baby_boom: true
+    population_growth_multiplier: 2.0
+    qol_stability_delta: 5

@@ -5,7 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.23`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.24`.
+
+- **Business cycle and severity-scaled events** — games now own a seeded
+  `BusinessCycle` that advances Expansion -> Boom -> Contraction -> Trough,
+  feeds posted funding rates, consumer demand, QoL stability drift, event-chart
+  weight tilts, and the server `business_cycle` state used by the header chip.
+  Disaster-capable chart entries can roll Minor/Major/Catastrophic severity;
+  severe events sideline workers, multiply capital failure risk, and book a
+  two-installment rebuild levy that blocks repairs until paid. Pandemic events
+  now persist for exactly two seasons, apply severity-specific productivity
+  loss, and reduce sick-worker sidelining by vaccine coverage. Added rare
+  Energy Crisis, Harbour Blockade, and Baby Boom events. The sim runner now
+  exports bankruptcy counts alongside share ±σ. Seed-42 1000-game sim versus
+  the medical/QoL baseline:
+
+  | Role | Before share ±σ | After share ±σ | Δshare | Δσ |
+  |---|---:|---:|---:|---:|
+  | Farmer | 13.21% ± 6.85% | 13.67% ± 6.99% | +0.46 pts | +0.14 pts |
+  | Miner | 12.62% ± 4.25% | 12.78% ± 4.34% | +0.16 pts | +0.09 pts |
+  | Transporter | 13.31% ± 3.83% | 13.17% ± 4.08% | -0.14 pts | +0.25 pts |
+  | Educator | 15.28% ± 3.97% | 15.14% ± 3.87% | -0.14 pts | -0.10 pts |
+  | Banker | 17.01% ± 3.99% | 16.18% ± 4.04% | -0.83 pts | +0.05 pts |
+  | Manufacturer | 14.52% ± 3.35% | 14.12% ± 3.53% | -0.40 pts | +0.18 pts |
+  | Doctor | 14.05% ± 3.95% | 14.95% ± 4.26% | +0.90 pts | +0.31 pts |
+
+  All role wealth-share moves are within the ±2 point gate; after-run
+  bankruptcy rate was 0/7000 island-games (0.00%). Full pytest passed
+  (899 tests) with dev+server extras.
 
 - **Medical response and Quality of Life** — `HealthServices` is now the
   tradable `MedicalSupplies` resource, with old `HealthServices` save/client

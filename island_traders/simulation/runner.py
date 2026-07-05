@@ -113,6 +113,7 @@ class RoleStats:
     wins: int = 0
     total_games: int = 0
     total_wealth: float = 0.0
+    bankruptcies: int = 0
     event_counts: dict[str, int] = field(default_factory=dict)
     # R1: this role's share of each game's total (0-clamped) wealth, one entry
     # per game — the balance metric, with enough data for a variance bar.
@@ -159,6 +160,12 @@ class SimulationStats:
     # R7: mean per-game concentration of final wealth.
     gini_mean: float = 0.0
     hhi_mean: float = 0.0
+    bankrupt_islands: int = 0
+
+    @property
+    def bankruptcy_rate(self) -> float:
+        island_games = self.num_games * max(1, len(self.role_stats))
+        return self.bankrupt_islands / island_games if island_games else 0.0
 
 
 class SimulationRunner:
@@ -194,6 +201,7 @@ class SimulationRunner:
         fallback_counts: dict[str, int] = {}
         gini_sum = 0.0
         hhi_sum = 0.0
+        bankrupt_islands = 0
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -220,6 +228,7 @@ class SimulationRunner:
             game.event_resolver = SeasonEventResolver(
                 game.event_resolver.charts, rng=random.Random(game_seed)
             )
+            game.business_cycle.rng = random.Random(game_seed)
             if game.turn_manager:
                 game.turn_manager._rng = random.Random(game_seed)
             summary = game.run()
@@ -231,6 +240,9 @@ class SimulationRunner:
                 rname = player.roles[0].name
                 stats[rname].total_games += 1
                 stats[rname].total_wealth += wealth
+                if wealth < 0:
+                    stats[rname].bankruptcies += 1
+                    bankrupt_islands += 1
                 # R1: per-game wealth share (0-clamped, matches Gini/HHI basis).
                 stats[rname].wealth_shares.append(
                     max(0.0, wealth) / game_total if game_total > 0 else 0.0
@@ -296,6 +308,7 @@ class SimulationRunner:
             fallback_counts=fallback_counts,
             gini_mean=round(gini_sum / self.num_games, 4) if self.num_games else 0.0,
             hhi_mean=round(hhi_sum / self.num_games, 4) if self.num_games else 0.0,
+            bankrupt_islands=bankrupt_islands,
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -308,7 +321,7 @@ class SimulationRunner:
             writer = csv.writer(f)
             writer.writerow([
                 "role", "games", "wins", "win_rate_%", "avg_wealth",
-                "share_mean_%", "share_stddev_%",
+                "share_mean_%", "share_stddev_%", "bankruptcies",
             ])
             for rs in stats.role_stats.values():
                 writer.writerow([
@@ -319,6 +332,7 @@ class SimulationRunner:
                     f"{rs.avg_wealth:.1f}",
                     f"{rs.share_mean * 100:.2f}",
                     f"{rs.share_stddev * 100:.2f}",
+                    rs.bankruptcies,
                 ])
 
         # Price history
@@ -390,6 +404,10 @@ def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> 
     print(
         f"  Concentration: mean Gini {stats.gini_mean:.3f}, "
         f"mean HHI {stats.hhi_mean:.3f} (balanced 7-player HHI ≈ 0.143)"
+    )
+    print(
+        f"  Bankruptcy: {stats.bankrupt_islands} island-games "
+        f"({stats.bankruptcy_rate * 100:.2f}%)"
     )
 
 

@@ -3980,7 +3980,10 @@ class GameManager:
             "loan_rate": loan.interest_rate if loan is not None else None,
             "loan_repayment": loan.repayment_amount if loan is not None else None,
             "posted_3yr_rate": (
-                posted_funding_rates(cyi, csi)[3] if financed else None
+                posted_funding_rates(
+                    cyi, csi, cycle=getattr(game, "current_cycle", None)
+                )[3]
+                if financed else None
             ),
             "capital_finance_premium_pts": (
                 CAPITAL_FINANCE_PREMIUM_PTS if financed else None
@@ -5014,10 +5017,17 @@ class GameManager:
             # button visible on only 1 of 6 human tabs after ~10h of play).
             "season_active_humans": sorted(room.season_active_humans),
             "season_ready_set": sorted(room.season_ready_set),
+            "business_cycle": (
+                game.current_cycle.to_dict()
+                if getattr(game, "current_cycle", None) is not None
+                else None
+            ),
             "funding_rates": {
                 str(term): round(rate * 100, 2)
                 for term, rate in posted_funding_rates(
-                    current_year_idx, current_season_idx
+                    current_year_idx,
+                    current_season_idx,
+                    cycle=getattr(game, "current_cycle", None),
                 ).items()
             },
             "flu": {

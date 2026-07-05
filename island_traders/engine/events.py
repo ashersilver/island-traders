@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
+from ..constants import PANDEMIC_DURATION_SEASONS, SEVERITY_PROFILES
+from ..engine.cycle import BusinessCycleSnapshot, event_weight_multiplier
 from ..models.resource import ResourceType
 
 
@@ -17,10 +19,20 @@ class EventResult:
     natural_disaster: bool = False
     price_shock_resource: ResourceType | None = None
     price_shock_multiplier: float = 1.0
+    price_shock_duration_seasons: int = 0
     flu_strain_loss: float = 0.0
     flu_doses_needed: int = 0
     flu_doses_administered: int = 0
     flu_effective_loss: float = 0.0
+    severity_enabled: bool = False
+    severity: str = ""
+    workforce_sidelined_fraction: float = 0.0
+    capital_failure_multiplier: float = 1.0
+    rebuild_levy_fraction: float = 0.0
+    pandemic: bool = False
+    baby_boom: bool = False
+    population_growth_multiplier: float = 1.0
+    qol_stability_delta: int = 0
 
     @property
     def is_normal(self) -> bool:
@@ -30,6 +42,9 @@ class EventResult:
             and self.damage_seasons == 0
             and not self.natural_disaster
             and self.flu_effective_loss == 0.0
+            and self.workforce_sidelined_fraction == 0.0
+            and self.rebuild_levy_fraction == 0.0
+            and not self.baby_boom
         )
 
     @property
@@ -48,16 +63,71 @@ class EventResult:
             return f"{self.event_name} — yield at {pct}%"
         return self.event_name
 
+    def copy(self) -> "EventResult":
+        return EventResult(
+            event_name=self.event_name,
+            yield_modifier=self.yield_modifier,
+            productivity_bonus=self.productivity_bonus,
+            outage=self.outage,
+            damage_seasons=self.damage_seasons,
+            natural_disaster=self.natural_disaster,
+            price_shock_resource=self.price_shock_resource,
+            price_shock_multiplier=self.price_shock_multiplier,
+            price_shock_duration_seasons=self.price_shock_duration_seasons,
+            flu_strain_loss=self.flu_strain_loss,
+            flu_doses_needed=self.flu_doses_needed,
+            flu_doses_administered=self.flu_doses_administered,
+            flu_effective_loss=self.flu_effective_loss,
+            severity_enabled=self.severity_enabled,
+            severity=self.severity,
+            workforce_sidelined_fraction=self.workforce_sidelined_fraction,
+            capital_failure_multiplier=self.capital_failure_multiplier,
+            rebuild_levy_fraction=self.rebuild_levy_fraction,
+            pandemic=self.pandemic,
+            baby_boom=self.baby_boom,
+            population_growth_multiplier=self.population_growth_multiplier,
+            qol_stability_delta=self.qol_stability_delta,
+        )
+
 
 @dataclass
 class EventChart:
     role_name: str
     # (cumulative_weight, EventResult) — built once at load time for fast draw
     _buckets: list[tuple[float, EventResult]] = field(default_factory=list)
+    _entries: list[tuple[float, EventResult]] = field(default_factory=list)
 
-    def draw(self, rng: random.Random) -> EventResult:
-        if not self._buckets:
+    def draw(
+        self,
+        rng: random.Random,
+        cycle: BusinessCycleSnapshot | None = None,
+    ) -> EventResult:
+        if not self._entries and not self._buckets:
             return EventResult("Normal Operations")
+        result = self._draw_template(rng, cycle).copy()
+        if result.severity_enabled:
+            result = apply_severity(result, rng)
+        return result
+
+    def _draw_template(
+        self,
+        rng: random.Random,
+        cycle: BusinessCycleSnapshot | None,
+    ) -> EventResult:
+        entries = self._entries
+        if cycle is not None and entries:
+            weighted = [
+                (weight * event_weight_multiplier(result.event_name, cycle.phase), result)
+                for weight, result in entries
+            ]
+            total = sum(weight for weight, _ in weighted)
+            roll = rng.random() * total
+            acc = 0.0
+            for weight, result in weighted:
+                acc += weight
+                if roll <= acc:
+                    return result
+            return weighted[-1][1]
         roll = rng.random()
         for threshold, result in self._buckets:
             if roll <= threshold:
@@ -65,16 +135,19 @@ class EventChart:
         return self._buckets[-1][1]
 
     def draw_avoiding_halt(
-        self, rng: random.Random, max_tries: int = 3
+        self,
+        rng: random.Random,
+        max_tries: int = 3,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> EventResult:
         """Draw, re-rolling up to ``max_tries`` times to avoid a halt
         event.  Falls back to Normal Operations if every roll is a halt.
         Used by the per-year halt cap (2026-05-27 event-frequency-cap
         brief) when a player has already used their halt budget."""
-        result = self.draw(rng)
+        result = self.draw(rng, cycle=cycle)
         tries = 0
         while result.is_halt_event and tries < max_tries:
-            result = self.draw(rng)
+            result = self.draw(rng, cycle=cycle)
             tries += 1
         if result.is_halt_event:
             return EventResult("Normal Operations")
@@ -84,8 +157,11 @@ class EventChart:
     def from_entries(cls, role_name: str, entries: list[dict]) -> EventChart:
         chart = cls(role_name=role_name)
         cumulative = 0.0
-        for entry in entries:
-            cumulative += entry["weight"]
+        raw_weights = [float(entry["weight"]) for entry in entries]
+        total_weight = sum(raw_weights) or 1.0
+        for entry, raw_weight in zip(entries, raw_weights):
+            weight = raw_weight / total_weight
+            cumulative += weight
             shock_r = entry.get("price_shock_resource")
             result = EventResult(
                 event_name=entry["name"],
@@ -96,9 +172,51 @@ class EventChart:
                 natural_disaster=bool(entry.get("natural_disaster", False)),
                 price_shock_resource=ResourceType(shock_r) if shock_r else None,
                 price_shock_multiplier=float(entry.get("price_shock_multiplier", 1.0)),
+                price_shock_duration_seasons=int(entry.get("price_shock_duration_seasons", 0)),
+                severity_enabled=bool(entry.get("severity", False)),
+                pandemic=bool(entry.get("pandemic", False)),
+                baby_boom=bool(entry.get("baby_boom", False)),
+                population_growth_multiplier=float(entry.get("population_growth_multiplier", 1.0)),
+                qol_stability_delta=int(entry.get("qol_stability_delta", 0)),
             )
             chart._buckets.append((round(cumulative, 6), result))
+            chart._entries.append((weight, result))
         return chart
+
+
+def roll_severity(rng: random.Random) -> str:
+    roll = rng.random()
+    if roll < 0.50:
+        return "Minor"
+    if roll < 0.85:
+        return "Major"
+    return "Catastrophic"
+
+
+def apply_severity(result: EventResult, rng: random.Random) -> EventResult:
+    severity = roll_severity(rng)
+    profile = SEVERITY_PROFILES[severity]
+    result.severity = severity
+    result.capital_failure_multiplier = profile["capital_failure_multiplier"]
+    if result.pandemic:
+        result.yield_modifier = profile["pandemic_yield_modifier"]
+        result.workforce_sidelined_fraction = profile["pandemic_sidelined_fraction"]
+        result.damage_seasons = max(0, PANDEMIC_DURATION_SEASONS - 1)
+        result.outage = False
+        return result
+
+    if severity == "Major":
+        result.yield_modifier = max(0.0, result.yield_modifier - profile["yield_penalty"])
+        result.damage_seasons += int(profile["damage_bonus"])
+    elif severity == "Catastrophic":
+        result.yield_modifier = min(result.yield_modifier, 0.2)
+        if result.yield_modifier <= 0.1:
+            result.outage = True
+        result.damage_seasons += int(profile["damage_bonus"])
+    result.workforce_sidelined_fraction = profile["workforce_sidelined_fraction"]
+    if result.natural_disaster or severity == "Catastrophic":
+        result.rebuild_levy_fraction = profile["rebuild_levy_fraction"]
+    return result
 
 
 class EventChartLoader:
@@ -175,7 +293,7 @@ class SeasonEventResolver:
                 results[pid] = EventResult("Normal Operations")
                 continue
 
-            result = chart.draw(self.rng)
+            result = chart.draw(self.rng, cycle=getattr(self, "current_cycle", None))
 
             # Per-year halt cap: if this draw is a halt and the player has
             # already used their yearly halt budget, re-draw avoiding
@@ -187,7 +305,10 @@ class SeasonEventResolver:
                 and self._halt_counts.get(pid, 0) >= HALT_EVENTS_PER_PLAYER_PER_YEAR
             ):
                 suppressed_name = result.event_name
-                result = chart.draw_avoiding_halt(self.rng)
+                result = chart.draw_avoiding_halt(
+                    self.rng,
+                    cycle=getattr(self, "current_cycle", None),
+                )
                 self.last_suppressions.append(
                     f"{player.name}: suppressed halt event "
                     f"'{suppressed_name}' "

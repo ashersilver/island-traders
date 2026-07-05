@@ -28,6 +28,7 @@ from ..models.training import (
 )
 from ..models.staffing import StaffingRegistry, StaffingContract, StaffingStatus
 from ..models.workforce import Workforce, Worker
+from ..engine.cycle import BusinessCycle, PHASES
 from ..engine.events import EventChartLoader, SeasonEventResolver
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
@@ -56,8 +57,12 @@ from ..constants import (
     TOTAL_STARTING_DOLLOPS, TOTAL_STARTING_POPULATION,
     CURRENCY_SYMBOL,
     BASE_PRICES,
+    BABY_BOOM_POPULATION_GROWTH_MULTIPLIER,
+    BABY_BOOM_QOL_STABILITY_DELTA,
     PAYROLL_WAGE_BY_BAND,
     HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA,
+    REBUILD_LEVY_INSTALLMENTS,
+    REBUILD_LEVY_MIN_DOLLOPS,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .qol import (
@@ -212,6 +217,8 @@ class Game:
         # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
         # market + production engine in setup().
         self.resource_flow = ResourceFlowTelemetry()
+        self.business_cycle = BusinessCycle()
+        self.current_cycle = self.business_cycle.snapshot()
 
     def setup(self) -> None:
         self.market = Market()
@@ -335,6 +342,7 @@ class Game:
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
         )
+        self.turn_manager.current_cycle = self.current_cycle
 
     def _total_money_supply(self) -> float:
         """Total liquid Dollops in circulation: every island's operating
@@ -623,6 +631,14 @@ class Game:
             self._reset_annual_qol_accumulators()
             start_season = self._resume_season if year == self._resume_year else 0
             for season_index in range(start_season, len(SEASONS)):
+                self.current_cycle = self.business_cycle.advance_season()
+                self.event_resolver.current_cycle = self.current_cycle
+                self.turn_manager.current_cycle = self.current_cycle
+                if self.business_cycle.last_phase_change:
+                    old, new = self.business_cycle.last_phase_change
+                    self.io.print(
+                        f"[CYCLE] {old} -> {new}: {PHASES[new].note}."
+                    )
                 self.expire_transfer_offers(season_index)
                 self._process_training_returns(year, season_index)
                 self._process_staffing_returns(year, season_index)
@@ -633,6 +649,8 @@ class Game:
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
                 )
+                self._apply_business_cycle_event_effects(event_results)
+                self._process_disaster_capital_impacts(year, season_index, event_results)
                 # Surface any halt-cap suppressions in the game log
                 # (2026-05-27 event-frequency-cap brief).
                 for msg in self.event_resolver.last_suppressions:
@@ -776,6 +794,7 @@ class Game:
         current_tick = year * len(SEASONS) + season
         catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
         for player in self.players:
+            self._process_rebuild_levy_payments(player)
             # Reset transient unmaintained state at the start of the season.
             player.unmaintained_capital = {}
             player.manufacturer_durable_output_used = 0
@@ -846,6 +865,96 @@ class Game:
             return self.turn_manager._rng
         import random
         return random
+
+    def _apply_business_cycle_event_effects(
+        self,
+        event_results: dict[int, object],
+    ) -> None:
+        for player in self.players:
+            player._season_capital_failure_multiplier = 1.0
+            event = event_results.get(player.player_id)
+            if event is None:
+                continue
+            if getattr(event, "baby_boom", False):
+                growth = max(1, round(player.population * 0.02 * BABY_BOOM_POPULATION_GROWTH_MULTIPLIER))
+                player.population += growth
+                event.qol_stability_delta += BABY_BOOM_QOL_STABILITY_DELTA
+                self.io.print(
+                    f"[BABY BOOM] {player.name}: +{growth} people; "
+                    f"population now {player.population}."
+                )
+            player._season_capital_failure_multiplier = max(
+                1.0,
+                getattr(event, "capital_failure_multiplier", 1.0),
+            )
+
+    def _process_disaster_capital_impacts(
+        self,
+        year: int,
+        season: int,
+        event_results: dict[int, object],
+    ) -> None:
+        current_tick = year * len(SEASONS) + season
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        for player in self.players:
+            event = event_results.get(player.player_id)
+            if event is None:
+                continue
+            if getattr(event, "capital_failure_multiplier", 1.0) > 1.0:
+                self._process_equipment_failures(player, current_tick, catalogue)
+            levy_fraction = getattr(event, "rebuild_levy_fraction", 0.0)
+            if levy_fraction > 0:
+                self._apply_rebuild_levy(player, levy_fraction, event.event_name)
+
+    def _capital_replacement_value(self, player: Player) -> float:
+        catalogue = {it.item_id: it for it in CAPITAL_CATALOGUE}
+        total = 0.0
+        for item_id, count in player.capital_inventory.items():
+            item = catalogue.get(item_id)
+            if item is not None:
+                total += item.cost * count
+        return round(total, 2)
+
+    def _apply_rebuild_levy(
+        self,
+        player: Player,
+        levy_fraction: float,
+        event_name: str,
+    ) -> None:
+        value = self._capital_replacement_value(player)
+        if value <= 0:
+            return
+        total = max(REBUILD_LEVY_MIN_DOLLOPS, round(value * levy_fraction, 2))
+        installment = round(total / REBUILD_LEVY_INSTALLMENTS, 2)
+        existing = list(getattr(player, "_rebuild_levy_installments", []))
+        existing.extend([installment] * REBUILD_LEVY_INSTALLMENTS)
+        player._rebuild_levy_installments = existing
+        self.io.print(
+            f"[REBUILD LEVY] {player.name}: {event_name} levy "
+            f"{CURRENCY_SYMBOL}{total:.2f} booked over "
+            f"{REBUILD_LEVY_INSTALLMENTS} seasons."
+        )
+
+    def _process_rebuild_levy_payments(self, player: Player) -> None:
+        installments = list(getattr(player, "_rebuild_levy_installments", []))
+        if not installments:
+            player._rebuild_levy_remaining = 0.0
+            return
+        due = installments.pop(0)
+        paid = min(player.dollops, due)
+        if paid > 0:
+            player.dollops = round(player.dollops - paid, 2)
+        unpaid = round(due - paid, 2)
+        if unpaid > 0:
+            installments.insert(0, unpaid)
+        player._rebuild_levy_installments = installments
+        player._rebuild_levy_remaining = round(sum(installments), 2)
+        if due > 0:
+            self.io.print(
+                f"[REBUILD LEVY] {player.name}: paid "
+                f"{CURRENCY_SYMBOL}{paid:.2f}; remaining "
+                f"{CURRENCY_SYMBOL}{player._rebuild_levy_remaining:.2f}."
+            )
 
     def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
         return sum(
@@ -935,7 +1044,10 @@ class Game:
         raise the base hazard.  Defaults to EQUIPMENT_FAILURE_EVENT_MULTIPLIER
         (1.0) until those events are wired in.
         """
-        return EQUIPMENT_FAILURE_EVENT_MULTIPLIER
+        return max(
+            EQUIPMENT_FAILURE_EVENT_MULTIPLIER,
+            getattr(player, "_season_capital_failure_multiplier", 1.0),
+        )
 
     def _process_equipment_failures(
         self,
@@ -1093,6 +1205,14 @@ class Game:
                 "repairable": False,
                 "reason": "No failed unit is awaiting repair.",
             }
+        if getattr(player, "_rebuild_levy_remaining", 0.0) > 0:
+            return {
+                "dp": 0.0,
+                "freight": 0,
+                "spares": 0,
+                "repairable": False,
+                "reason": "Rebuild levy must be paid before capital repairs resume.",
+            }
         quote = self._capital_repair_quote(player, item, unit)
         return {
             "dp": quote["dp"],
@@ -1120,6 +1240,8 @@ class Game:
         unit=None,
     ) -> bool:
         manufacturer = self._role_player("Manufacturer")
+        if getattr(player, "_rebuild_levy_remaining", 0.0) > 0:
+            return False
         quote = self._capital_repair_quote(player, item, unit)
         repair_fee = quote["dp"]
         freight_qty = quote["freight"]

@@ -69,13 +69,14 @@ class Lease:
         )
 
 
-def lease_quote(item: CapitalItem, year: int, season: int) -> dict:
+def lease_quote(item: CapitalItem, year: int, season: int, cycle=None) -> dict:
     if not item.lease_terms:
         raise ValueError(f"{item.item_id} is not lease-eligible")
     term_years = int(item.lease_terms.get("term_years", 3))
     residual_fraction = float(item.lease_terms.get("residual_fraction", 0.25))
     margin = float(item.lease_terms.get("rate_margin", 0.02))
-    posted_rate = posted_funding_rates(year, season).get(term_years, posted_funding_rates(year, season)[3])
+    posted_rates = posted_funding_rates(year, season, cycle=cycle)
+    posted_rate = posted_rates.get(term_years, posted_rates[3])
     lease_rate = round(posted_rate + margin, 4)
     buyout = round(item.cost * residual_fraction, 1)
     annual = round((item.cost - buyout) / term_years * (1 + lease_rate), 1)
