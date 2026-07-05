@@ -50,7 +50,12 @@ from ..models.equity import (
     AUCTIONED_SHARES, UNISSUED_HOLDER,
 )
 from ..models import shareholder_loans as sh_loans
-from ..models.loan import CapitalFinanceError, LoanStatus, posted_funding_rates
+from ..models.loan import (
+    CAPITAL_FINANCE_PREMIUM_PTS,
+    CapitalFinanceError,
+    LoanStatus,
+    posted_funding_rates,
+)
 from ..models.capacity import find_item
 from ..constants import (
     APP_VERSION,
@@ -3972,7 +3977,14 @@ class GameManager:
             "financing": negotiation.financing,
             "financed": financed,
             "loan_id": loan.loan_id if loan is not None else None,
+            "loan_rate": loan.interest_rate if loan is not None else None,
             "loan_repayment": loan.repayment_amount if loan is not None else None,
+            "posted_3yr_rate": (
+                posted_funding_rates(cyi, csi)[3] if financed else None
+            ),
+            "capital_finance_premium_pts": (
+                CAPITAL_FINANCE_PREMIUM_PTS if financed else None
+            ),
             "referral_fee": referral_fee,
             "arrives_at_tick": arrives_at,
         }

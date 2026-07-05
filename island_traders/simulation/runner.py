@@ -34,8 +34,10 @@ class _SilentIO:
     defaulting through a mechanic, not exercising it.  The runner aggregates
     and surfaces these so new prompt flows can't silently skew baselines.
     """
-    def __init__(self):
+    def __init__(self, negotiate_loans: bool = False):
         self.fallback_counts: dict[str, int] = {}
+        self.negotiate_loans = negotiate_loans
+        self._loan_counter_pct: float | None = None
 
     def _count(self, method: str) -> None:
         self.fallback_counts[method] = self.fallback_counts.get(method, 0) + 1
@@ -55,11 +57,24 @@ class _SilentIO:
     def choose_player(self, _, players):
         self._count("choose_player")
         return players[0]
-    def confirm(self, _):
+    def confirm(self, _, request_summary=None):
         self._count("confirm")
         return True
-    def ask_dollop_amount(self, _, max_dollops):
+    def choose_option(self, prompt, options, request_summary=None):
+        self._count("choose_option")
+        if self.negotiate_loans and prompt == "Loan quote response" and request_summary:
+            fields = dict(request_summary.get("fields", []))
+            posted = fields.get("Posted funding", "0%").rstrip("%")
+            try:
+                self._loan_counter_pct = float(posted) + 1.5
+                return "counter"
+            except ValueError:
+                self._loan_counter_pct = None
+        return options[0]["value"] if options else None
+    def ask_dollop_amount(self, prompt, max_dollops, prefill=0.0):
         self._count("ask_dollop_amount")
+        if self.negotiate_loans and str(prompt).startswith("Counter annual rate"):
+            return self._loan_counter_pct or 0.0
         return 0.0
 
 
@@ -153,11 +168,13 @@ class SimulationRunner:
         num_years: int = 3,
         seed: int = 42,
         event_charts_path: str | None = None,
+        negotiate_loans: bool = False,
     ):
         self.num_games = num_games
         self.num_years = num_years
         self.seed = seed
         self.event_charts_path = event_charts_path
+        self.negotiate_loans = negotiate_loans
         self._rng = random.Random(seed)
 
     def run(self) -> SimulationStats:
@@ -196,7 +213,7 @@ class SimulationRunner:
                 event_charts_path=self.event_charts_path,
             )
             # Override event resolver and turn-manager RNGs for reproducibility
-            io = _SilentIO()
+            io = _SilentIO(negotiate_loans=self.negotiate_loans)
             game = Game(config, io)
             game.setup()
             game_rng = random.Random(game_seed)
@@ -480,6 +497,11 @@ def main() -> None:
     )
     parser.add_argument("--charts", type=str, default=None, help="Path to event_charts.yaml")
     parser.add_argument("--output", type=str, default="simulation_results/run", help="Output CSV prefix")
+    parser.add_argument(
+        "--negotiate-loans",
+        action="store_true",
+        help="Model borrower counter-offers instead of accepting standard loan quotes",
+    )
     args = parser.parse_args()
 
     if args.seeds:
@@ -491,6 +513,7 @@ def main() -> None:
                 num_years=args.years,
                 seed=seed,
                 event_charts_path=args.charts,
+                negotiate_loans=args.negotiate_loans,
             )
             stats = runner.run()
             seed_stats.append((seed, stats))
@@ -508,6 +531,7 @@ def main() -> None:
         num_years=args.years,
         seed=args.seed,
         event_charts_path=args.charts,
+        negotiate_loans=args.negotiate_loans,
     )
     stats = runner.run()
     _print_role_balance(stats)

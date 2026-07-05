@@ -5,7 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.20`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.21`.
+
+- **Loan negotiation and capital-finance premium** — standard take-loan
+  requests now support one borrower counter round, with AI Bankers accepting
+  or countering against explicit spread floors and human Bankers receiving a
+  review prompt. Capital-order financing is now convenience priced at posted
+  three-year funding + 5.0 percentage points, with the ack payload carrying
+  the loan rate, posted 3-year rate, and premium for Claude's order modal.
+  Seed-42 1000-game sim: no role wealth share moved versus the Manufacturer
+  capacity baseline; the `--negotiate-loans` A/B run was also unchanged because
+  current all-AI simulations do not naturally choose borrower loan actions.
 
 - **Manufacturer capacity scaling and repair parity** — capital orders now
   consume item-specific Manufacturer capacity units instead of a flat one
