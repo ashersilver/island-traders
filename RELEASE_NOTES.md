@@ -5,7 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.21`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.22`.
+
+- **Economics-vision UI (capacity + financing live; QoL/cycle/CE stubbed)** —
+  the capital-order picker now shows each item's capacity-unit cost, whether
+  the Manufacturer has the stock to build it ("✓ Forge can build" / "⚠ Forge
+  short 1/4 …"), and the Manufacturer's remaining seasonal durable allowance.
+  The capital-order confirmation now spells out the +5pt capital-financing
+  premium against the posted 3-year rate ("negotiate at the Bank for better").
+  Render-when-present stubs added for the not-yet-merged features: a
+  business-cycle header chip, and an Island Wellbeing tile (Quality of Life +
+  continuing-education coverage) — invisible until the engine ships the data.
 
 - **Loan negotiation and capital-finance premium** — standard take-loan
   requests now support one borrower counter round, with AI Bankers accepting
