@@ -19,7 +19,12 @@ from ..models.loan import (
     Loan,
     LoanLedger,
     LoanStatus,
+    ai_banker_accept_rate,
+    ai_banker_counter_rate,
     banker_quote_rate,
+    borrower_risk_premium,
+    capital_finance_rate,
+    loan_counter_floor_rate,
     posted_funding_rates,
 )
 from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
@@ -3876,15 +3881,25 @@ class TurnManager:
         no_banker_message: str,
         cap_message: str,
         reserve_message: str,
+        rate_override: float | None = None,
+        funding_rate_override: float | None = None,
     ) -> "Loan":
         banker = self._find_banker()
         if banker is None:
             raise CapitalFinanceError(no_banker_message)
         term_years = max(1, min(3, int(term_years)))
         self_lending = banker.player_id == borrower.player_id
-        funding_rate = posted_funding_rates(year, season_index)[term_years]
-        rate = banker_quote_rate(
-            borrower, self.loan_ledger, principal, term_years, year, season_index
+        funding_rate = (
+            funding_rate_override
+            if funding_rate_override is not None
+            else posted_funding_rates(year, season_index)[term_years]
+        )
+        rate = (
+            rate_override
+            if rate_override is not None
+            else banker_quote_rate(
+                borrower, self.loan_ledger, principal, term_years, year, season_index
+            )
         )
         if self_lending:
             r = own_share = external_share = 0.0
@@ -3927,6 +3942,7 @@ class TurnManager:
         season_index: int,
     ) -> "Loan":
         """Finance a capital order via the Bank, reusing Phase D reserves."""
+        posted_3yr = posted_funding_rates(year, season_index)[3]
         return self._issue_bank_finance_loan(
             borrower,
             principal,
@@ -3936,6 +3952,8 @@ class TurnManager:
             no_banker_message="No Banker island is available to finance this order.",
             cap_message="Bank is at its active-loan cap ({active}/{cap}); pay cash instead.",
             reserve_message="Bank lacks the reserve capital to back this loan; pay cash instead.",
+            rate_override=capital_finance_rate(year, season_index),
+            funding_rate_override=posted_3yr,
         )
 
     def issue_training_finance_loan(
@@ -4055,6 +4073,156 @@ class TurnManager:
         else:
             self.io.print(f"  {target.name} declined the loan.")
 
+    def _loan_request_summary(
+        self,
+        *,
+        title: str,
+        principal: float,
+        term_years: int,
+        funding_rate: float,
+        opening_rate: float,
+        floor_rate: float,
+        borrower_counter: float | None = None,
+    ) -> dict:
+        fields = [
+            ("Principal", f"{principal:.1f} {CURRENCY_SYMBOL}"),
+            ("Term", f"{term_years} year(s)"),
+            ("Posted funding", f"{funding_rate * 100:.2f}%"),
+            ("Opening quote", f"{opening_rate * 100:.2f}%"),
+            ("Counter floor", f"{floor_rate * 100:.2f}%"),
+        ]
+        if borrower_counter is not None:
+            fields.append(("Borrower counter", f"{borrower_counter * 100:.2f}%"))
+        return {"title": title, "fields": fields}
+
+    def _ask_counter_rate(
+        self,
+        prompt: str,
+        *,
+        floor_rate: float,
+        ceiling_rate: float,
+    ) -> float | None:
+        counter_pct = self.io.ask_dollop_amount(prompt, 100.0)
+        if counter_pct <= 0:
+            return None
+        counter = round(counter_pct / 100.0, 4)
+        if counter < floor_rate or counter >= ceiling_rate:
+            self.io.print(
+                f"  Counter rejected: must be at least {floor_rate * 100:.2f}% "
+                f"and below {ceiling_rate * 100:.2f}%."
+            )
+            return None
+        return counter
+
+    def _negotiate_standard_loan_rate(
+        self,
+        borrower: Player,
+        banker: Player,
+        principal: float,
+        term_years: int,
+        year: int,
+        season_index: int,
+        opening_rate: float,
+        funding_rate: float,
+    ) -> float | None:
+        floor_rate = loan_counter_floor_rate(funding_rate)
+        summary = self._loan_request_summary(
+            title="Loan quote",
+            principal=principal,
+            term_years=term_years,
+            funding_rate=funding_rate,
+            opening_rate=opening_rate,
+            floor_rate=floor_rate,
+        )
+        decision = self.io.choose_option(
+            "Loan quote response",
+            [
+                {"value": "accept", "label": f"Accept {opening_rate * 100:.2f}%"},
+                {"value": "counter", "label": "Counter once"},
+                {"value": "walk", "label": "Walk away"},
+            ],
+            request_summary=summary,
+        )
+        if decision == "accept":
+            return opening_rate
+        if decision != "counter":
+            self.io.print("  Cancelled.")
+            return None
+        borrower_counter = self._ask_counter_rate(
+            "Counter annual rate (%)",
+            floor_rate=floor_rate,
+            ceiling_rate=opening_rate,
+        )
+        if borrower_counter is None:
+            return None
+
+        risk = borrower_risk_premium(borrower, self.loan_ledger, principal)
+        if not banker.is_human:
+            accept_at = ai_banker_accept_rate(funding_rate, risk)
+            if borrower_counter >= accept_at:
+                self.io.print(
+                    f"  {banker.name} accepts the counter at "
+                    f"{borrower_counter * 100:.2f}%."
+                )
+                return borrower_counter
+            banker_counter = min(
+                opening_rate,
+                ai_banker_counter_rate(borrower_counter, opening_rate, funding_rate),
+            )
+            final = self.io.confirm(
+                f"{banker.name} counters at {banker_counter * 100:.2f}%. Accept?"
+            )
+            return banker_counter if final else None
+
+        previous_active = None
+        if hasattr(self.io, "_active_pid"):
+            previous_active = self.io._active_pid()
+        if hasattr(self.io, "set_active_player"):
+            self.io.set_active_player(banker.player_id)
+        try:
+            banker_summary = self._loan_request_summary(
+                title="Loan counter review",
+                principal=principal,
+                term_years=term_years,
+                funding_rate=funding_rate,
+                opening_rate=opening_rate,
+                floor_rate=floor_rate,
+                borrower_counter=borrower_counter,
+            )
+            banker_decision = self.io.choose_option(
+                "Respond to borrower counter",
+                [
+                    {"value": "accept", "label": f"Accept {borrower_counter * 100:.2f}%"},
+                    {"value": "counter", "label": "Counter once"},
+                    {"value": "decline", "label": "Decline"},
+                ],
+                request_summary=banker_summary,
+            )
+            if banker_decision == "accept":
+                return borrower_counter
+            if banker_decision == "decline":
+                self.io.print("  Banker declined the counter.")
+                return None
+            banker_counter_pct = self.io.ask_dollop_amount(
+                "Banker counter annual rate (%)", 100.0
+            )
+        finally:
+            if previous_active is not None and hasattr(self.io, "set_active_player"):
+                self.io.set_active_player(previous_active)
+
+        banker_counter = round(banker_counter_pct / 100.0, 4)
+        if banker_counter <= borrower_counter or banker_counter > opening_rate:
+            self.io.print(
+                f"  Banker counter rejected: must be above "
+                f"{borrower_counter * 100:.2f}% and no more than "
+                f"{opening_rate * 100:.2f}%."
+            )
+            return None
+        final = self.io.confirm(
+            f"{banker.name} counters at {banker_counter * 100:.2f}%. Accept?"
+        )
+        return banker_counter if final else None
+
     def _action_take_loan(self, player: Player, result: TurnResult,
                           year: int, season_index: int) -> None:
         sym = CURRENCY_SYMBOL
@@ -4072,11 +4240,11 @@ class TurnManager:
             return
         term_years = self.io.choose_quantity("Loan term in years", 1, 3)
         funding_rate = posted_funding_rates(year, season_index)[term_years]
-        rate = banker_quote_rate(
+        opening_rate = banker_quote_rate(
             player, self.loan_ledger, principal, term_years, year, season_index
         )
+        rate = opening_rate
         rate_pct = rate * 100
-        rate = rate_pct / 100.0
         # Phase D reserve check (skip when borrower IS the bank).
         if self_lending:
             r = 0.0
@@ -4109,14 +4277,25 @@ class TurnManager:
                 f"  Reserve {r:.0%}: bank locks {own_share:.1f} {sym} own capital "
                 f"+ {external_share:.1f} {sym} sourced externally."
             )
+        if not self_lending:
+            negotiated = self._negotiate_standard_loan_rate(
+                player, banker, principal, term_years, year, season_index,
+                opening_rate, funding_rate
+            )
+            if negotiated is None:
+                return
+            rate = negotiated
+            rate_pct = rate * 100
+        else:
+            repay = round(principal * (1 + rate), 1)
+            confirm = self.io.confirm(
+                f"Borrow {principal:.1f} {sym} at {rate_pct:.1f}% for {term_years} year(s)? "
+                f"(repay {repay:.1f} {sym})"
+            )
+            if not confirm:
+                self.io.print("  Cancelled.")
+                return
         repay = round(principal * (1 + rate), 1)
-        confirm = self.io.confirm(
-            f"Borrow {principal:.1f} {sym} at {rate_pct:.1f}% for {term_years} year(s)? "
-            f"(repay {repay:.1f} {sym})"
-        )
-        if not confirm:
-            self.io.print("  Cancelled.")
-            return
         loan = self.loan_ledger.create_loan(
             borrower_id=player.player_id,
             lender_id=banker.player_id,

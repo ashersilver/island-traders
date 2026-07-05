@@ -3,6 +3,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from ..constants import CURRENCY_SYMBOL
 
+LOAN_COUNTER_FLOOR_SPREAD: float = 0.005
+AI_BANKER_ACCEPT_SPREAD: float = 0.01
+AI_BANKER_COUNTER_FLOOR: float = 0.0075
+CAPITAL_FINANCE_PREMIUM_PTS: float = 0.05
+
 
 def posted_funding_rates(year: int, season: int) -> dict[int, float]:
     """Bank cost-of-funds curve for 1/2/3-year money.
@@ -44,6 +49,27 @@ def banker_quote_rate(
     rates = posted_funding_rates(year, season)
     cost = rates.get(term_years, rates[1])
     return round(cost + 0.02 + borrower_risk_premium(borrower, loan_ledger, principal), 4)
+
+
+def loan_counter_floor_rate(posted_rate: float) -> float:
+    return round(posted_rate + LOAN_COUNTER_FLOOR_SPREAD, 4)
+
+
+def ai_banker_accept_rate(posted_rate: float, risk_premium: float) -> float:
+    return round(posted_rate + AI_BANKER_ACCEPT_SPREAD + risk_premium, 4)
+
+
+def ai_banker_counter_rate(
+    borrower_counter: float,
+    opening_quote: float,
+    posted_rate: float,
+) -> float:
+    floor = posted_rate + AI_BANKER_COUNTER_FLOOR
+    return round(max(floor, (borrower_counter + opening_quote) / 2), 4)
+
+
+def capital_finance_rate(year: int, season: int) -> float:
+    return round(posted_funding_rates(year, season)[3] + CAPITAL_FINANCE_PREMIUM_PTS, 4)
 
 
 class CapitalFinanceError(Exception):

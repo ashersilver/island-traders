@@ -12,6 +12,7 @@ from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.models.capacity import find_item
+from island_traders.models.loan import CAPITAL_FINANCE_PREMIUM_PTS, posted_funding_rates
 from island_traders.models.player import maintenance_contract_cost
 from island_traders.models.resource import ResourceType
 from island_traders.server.app import GameManager, GameRoom, LobbyPlayer
@@ -201,6 +202,10 @@ def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     assert ack is not None, ws.sent
     assert ack["financed"] is True
     assert ack["loan_id"] is not None
+    expected_rate = posted_funding_rates(0, 0)[3] + CAPITAL_FINANCE_PREMIUM_PTS
+    assert ack["loan_rate"] == expected_rate
+    assert ack["posted_3yr_rate"] == posted_funding_rates(0, 0)[3]
+    assert ack["capital_finance_premium_pts"] == CAPITAL_FINANCE_PREMIUM_PTS
     fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * upfront, 2)
     assert ack["referral_fee"] == fee
 
