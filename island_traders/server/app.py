@@ -103,7 +103,7 @@ ROLE_INFO = {
                      "island": ROLES["Manufacturer"].island, "produces": "Machinery, Lab Equipment",
                      "needs": "Metal, Oil, Freight", "color": "#1abc9c"},
     "Doctor":       {"display_name": ROLES["Doctor"].display_name, "short_name": ROLES["Doctor"].short_name,
-                     "island": ROLES["Doctor"].island, "produces": "Health Services, Vaccine",
+                     "island": ROLES["Doctor"].island, "produces": "Medical Supplies, Vaccine",
                      "needs": "Expertise, Laboratory Equipment", "color": "#e74c3c"},
 }
 
@@ -4719,6 +4719,11 @@ class GameManager:
                 "production_capacity": round(p.production_capacity * 100),
                 "population": p.population,
                 "qol_score": round(getattr(p, "_qol_score", 0.0), 3),
+                "qol_index": round(getattr(p, "_qol_index", 0.0), 2),
+                "qol_productivity_multiplier": round(
+                    getattr(p, "_qol_productivity_multiplier", 1.0), 3
+                ),
+                "qol_breakdown": getattr(p, "_qol_breakdown", {}),
                 "food_coverage": round(getattr(p, "_food_coverage", 0.0), 3),
                 "health_coverage": round(getattr(p, "_health_coverage", 0.0), 3),
                 "pollution_index": round(getattr(p, "_pollution_index", 0.0), 3),

@@ -17,7 +17,10 @@ class ResourceType(str, Enum):
     COURSES           = "Courses"
     REAGENTS = "Reagents"
     GOODS             = "Goods"
-    HEALTH_SERVICES      = "HealthServices"
+    MEDICAL_SUPPLIES     = "MedicalSupplies"
+    # Backward-compatible alias for older saves/API clients that still say
+    # HealthServices. The canonical resource value is MedicalSupplies.
+    HEALTH_SERVICES      = "MedicalSupplies"
     VACCINE              = "Vaccine"
     FINANCE              = "Finance"
     FARM_MACHINERY       = "FarmMachinery"
@@ -27,6 +30,12 @@ class ResourceType(str, Enum):
     PASSENGER_SEATS      = "PassengerSeats"
     PATENTS              = "Patents"
     SPARES               = "Spares"
+
+    @classmethod
+    def _missing_(cls, value):
+        if value == "HealthServices":
+            return cls.MEDICAL_SUPPLIES
+        return None
 
 
 # Generic spares (#185/#188): manufactured by the Manufacturer and consumed

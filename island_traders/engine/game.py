@@ -72,6 +72,7 @@ SAVE_VERSION = 7
 # Renamed resources: old save inventory key -> current key (2026-06-02).
 LEGACY_RESOURCE_IDS: dict[str, str] = {
     "LaboratoryEquipment": "Reagents",
+    "HealthServices": "MedicalSupplies",
 }
 
 LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {

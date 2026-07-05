@@ -503,7 +503,8 @@ class ProductionEngine:
                 self.telemetry.record_consumed(r, qty)
 
         workforce_factor = self._labour_productivity_factor(player, season_name, product_line)
-        effective_factor = max(player.production_capacity, workforce_factor)
+        qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)
+        effective_factor = max(player.production_capacity, workforce_factor) * qol_multiplier
 
         produced: dict[ResourceType, int] = {}
         for role in player.roles:
@@ -569,7 +570,8 @@ class ProductionEngine:
             total_skilled_req, total_unskilled_req, skilled_profs_list
         )
         workforce_factor = min(1.0, workforce_factor + electrical_efficiency_bonus(player))
-        effective_factor = max(player.production_capacity, workforce_factor)
+        qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)
+        effective_factor = max(player.production_capacity, workforce_factor) * qol_multiplier
         fill_pct = round(player.workforce.workforce_fill_rate(
             self._seasonal_workforce_required(player, season_name)
         ) * 100)
@@ -619,6 +621,7 @@ class ProductionEngine:
             "avg_efficiency_pct": eff_pct,
             "workforce_factor": round(workforce_factor, 3),
             "effective_factor": round(effective_factor, 3),
+            "qol_productivity_multiplier": round(qol_multiplier, 3),
             "base_capacity_pct": round(player.production_capacity * 100),
             # Labour split
             "skilled_required": total_skilled_req,

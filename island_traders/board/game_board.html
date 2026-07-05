@@ -609,10 +609,10 @@ const ISLANDS = [
     grad: 'grad-healthcare',
     ring: '#C4603C',
     stats: { 'Health Index': 9, 'Vaccine Output': 6, Research: 7, Population: 8 },
-    produces: ['⚕️ Health Services  4 / season', '💉 Vaccine  1 / season'],
+    produces: ['⚕️ Medical Supplies  4 / season', '💉 Vaccine  1 / season'],
     needs:    ['📚 Expertise  1 / season', '🔬 Laboratory Equipment  1 / season'],
     actions: [
-      { icon: '⚕️', label: 'Provide Health Services', target: 'self', cost: '1 Expertise + 1 Lab Equipment' },
+      { icon: '⚕️', label: 'Provide Medical Supplies', target: 'self', cost: '1 Expertise + 1 Lab Equipment' },
       { icon: '💉', label: 'Distribute Vaccines', target: 'any', cost: '1 Vaccine / island' },
       { icon: '🔬', label: 'Joint Research with Scholara', target: 'education', cost: '—' },
     ]

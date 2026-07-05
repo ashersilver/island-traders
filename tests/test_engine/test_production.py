@@ -94,7 +94,7 @@ def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
     doctor.receive_resources(ResourceType.ORE, 1)
     produced = ProductionEngine().produce(doctor, normal_event)
 
-    assert ResourceType.HEALTH_SERVICES in produced
+    assert ResourceType.MEDICAL_SUPPLIES in produced
     assert ResourceType.REAGENTS in produced   # produced in-house now
 
 

@@ -32,7 +32,8 @@ from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
     WorkerBand, EngineerSpecialty, band_of,
 )
-from ..engine.workforce_events import apply_workplace_risks
+from ..engine.workforce_events import apply_workplace_risks, resolve_medical_care
+from ..engine.qol import seasonal_qol_breakdown
 from ..engine.consumer import consumer_demand_plan, buy_household_goods_from_offers
 from ..engine.flu import vaccine_doses_needed
 from ..constants import (
@@ -50,6 +51,7 @@ from ..constants import (
     CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT,
     CONSUMER_EDUCATION_VOUCHER_PER_UNIT,
     CONSUMER_GOODS_VOUCHER_PER_UNIT,
+    NURSE_UPKEEP_SUPPLIES,
     REPURPOSE_WORKER_COST,
     FLU_SEASON, FLU_STRAIN_LOSSES, FLU_MAX_PRODUCTIVITY_LOSS,
     VACCINE_INFECTION_REDUCTION,
@@ -169,6 +171,7 @@ class TurnManager:
     ) -> list[TurnResult]:
         season_name = SEASONS[season_index]
         self.market.set_season(year, season_index)
+        self._reset_seasonal_qol_inputs()
         self._process_lease_reinstatements(year, season_index)
         self._process_lease_payments(year, season_index)
         self.io.print(f"\n{'='*50}")
@@ -187,12 +190,14 @@ class TurnManager:
         risk_reports = apply_workplace_risks(
             self.players, year, season_index, banker_players, rng=self._rng
         )
+        risk_reports = resolve_medical_care(self.players, risk_reports)
         for report in risk_reports:
             if report.has_events:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         self._consume_and_post_sustenance()
         self._post_consumer_demand_signals(season_name, risk_reports)
+        self._process_seasonal_qol(year, season_index, event_results)
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
@@ -406,7 +411,7 @@ class TurnManager:
         bought: dict[ResourceType, int],
     ) -> None:
         plan_food = demanded.get(ResourceType.FOOD, 0)
-        plan_health = demanded.get(ResourceType.HEALTH_SERVICES, 0)
+        plan_health = demanded.get(ResourceType.MEDICAL_SUPPLIES, 0)
         player._food_demanded_this_year = (
             getattr(player, "_food_demanded_this_year", 0) + plan_food
         )
@@ -419,8 +424,23 @@ class TurnManager:
         )
         player._health_bought_this_year = (
             getattr(player, "_health_bought_this_year", 0)
-            + bought.get(ResourceType.HEALTH_SERVICES, 0)
+            + bought.get(ResourceType.MEDICAL_SUPPLIES, 0)
         )
+        player._qol_goods_demanded_this_season = demanded.get(ResourceType.GOODS, 0)
+        player._qol_goods_bought_this_season = bought.get(ResourceType.GOODS, 0)
+
+    def _reset_seasonal_qol_inputs(self) -> None:
+        for player in self.players:
+            player._qol_meals_needed_this_season = 0
+            player._qol_meals_satisfied_this_season = 0
+            player._qol_food_variety_this_season = set()
+            player._qol_goods_demanded_this_season = 0
+            player._qol_goods_bought_this_season = 0
+            player._qol_active_nurses_this_season = 0
+            player._qol_medical_insurance_active = False
+            player._qol_untreated_sidelined_this_season = 0
+            player._qol_treated_this_season = 0
+            player._qol_medevacs_this_season = 0
 
     def _post_consumer_demand_signals(self, season_name: str, risk_reports: list) -> None:
         casualties_by_player = {
@@ -721,6 +741,11 @@ class TurnManager:
             if meals <= 0:
                 continue
             satisfied, _used, shortfall = player.consume_sustenance(meals)
+            player._qol_meals_needed_this_season = meals
+            player._qol_meals_satisfied_this_season = satisfied
+            player._qol_food_variety_this_season = {
+                resource for resource, qty in _used.items() if qty > 0
+            }
             # Post unmet basket demand so AI sellers see the signal on
             # every component that could fill the gap.  Overcounting in
             # absolute units is intentional — it's signal, price
@@ -732,6 +757,47 @@ class TurnManager:
                     ResourceType.MEAT,
                 ):
                     self.market.post_demand(resource, shortfall)
+
+    def _process_seasonal_qol(
+        self,
+        year: int,
+        season_index: int,
+        event_results: dict[int, EventResult],
+    ) -> None:
+        for player in self.players:
+            self._pay_nurse_upkeep_for_qol(player)
+            player._qol_medical_insurance_active = player.has_active_insurance(
+                "medical", year, season_index
+            )
+            event = event_results.get(player.player_id, EventResult("Normal Operations"))
+            breakdown = seasonal_qol_breakdown(
+                player,
+                pandemic_or_disaster_active=not event.is_normal,
+            )
+            player._qol_breakdown = breakdown
+            player._qol_index = breakdown["score"]
+            player._qol_productivity_multiplier = breakdown["productivity_multiplier"]
+            # Keep legacy annual QoL fields in their 0-1 shape for existing UI
+            # and tests; the new medical index lives in _qol_index.
+            player._qol_score = round(player._qol_index / 100.0, 3)
+            self.io.print(
+                f"  [QoL] {player.name}: {player._qol_index:.0f}/100 "
+                f"(production x{player._qol_productivity_multiplier:.2f})"
+            )
+
+    def _pay_nurse_upkeep_for_qol(self, player: Player) -> None:
+        active_nurses = player.workforce.count_profession("Nurse")
+        if active_nurses <= 0:
+            player._qol_active_nurses_this_season = 0
+            return
+        supplies = player.inventory.get(ResourceType.MEDICAL_SUPPLIES)
+        paid = min(active_nurses, supplies // NURSE_UPKEEP_SUPPLIES)
+        if paid > 0:
+            player.give_resources(
+                ResourceType.MEDICAL_SUPPLIES,
+                paid * NURSE_UPKEEP_SUPPLIES,
+            )
+        player._qol_active_nurses_this_season = paid
 
     def _manufactured_resource_for_capital_item(self, item) -> ResourceType:
         role_map = {

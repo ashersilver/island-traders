@@ -271,7 +271,7 @@ Doctor:
     outage: false
     damage_seasons: 0
     natural_disaster: false
-    price_shock_resource: HealthServices
+    price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.2
   - name: Disease Outbreak
     weight: 0.2
@@ -280,7 +280,7 @@ Doctor:
     outage: false
     damage_seasons: 1
     natural_disaster: true
-    price_shock_resource: HealthServices
+    price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.2
   - name: Hospital Strike
     weight: 0.1
@@ -289,7 +289,7 @@ Doctor:
     outage: true
     damage_seasons: 1
     natural_disaster: false
-    price_shock_resource: HealthServices
+    price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.3
   - name: Pandemic
     weight: 0.05
@@ -298,5 +298,5 @@ Doctor:
     outage: true
     damage_seasons: 2
     natural_disaster: true
-    price_shock_resource: HealthServices
+    price_shock_resource: MedicalSupplies
     price_shock_multiplier: 1.1

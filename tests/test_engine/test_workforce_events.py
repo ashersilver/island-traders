@@ -4,6 +4,7 @@ from island_traders.engine.workforce_events import apply_workplace_risks, _worke
 from island_traders.models.insurance import InsurancePolicy
 from island_traders.constants import (
     LIFE_INSURANCE_DEATH_BENEFIT, INSURANCE_DURATION_SEASONS,
+    UNTREATED_RECOVERY_SEASONS,
 )
 
 
@@ -62,7 +63,7 @@ def test_injuries_use_temporary_absence_not_training_flag(miner):
         if worker.worker_id in injured_ids
     )
     assert all(
-        worker.absent_seasons == 1
+        worker.absent_seasons == UNTREATED_RECOVERY_SEASONS
         for worker in miner.workforce.workers
         if worker.worker_id in injured_ids
     )
@@ -72,7 +73,10 @@ def test_injuries_use_temporary_absence_not_training_flag(miner):
 
     miner.workforce.advance_absences()
 
-    assert all(worker.absent_seasons == 0 for worker in miner.workforce.workers)
+    assert all(
+        worker.absent_seasons == UNTREATED_RECOVERY_SEASONS - 1
+        for worker in miner.workforce.workers
+    )
 
 
 def test_no_injuries_with_never_rng(miner):
