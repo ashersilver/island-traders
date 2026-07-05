@@ -5,7 +5,15 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.18`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.19`.
+
+- **Sim baselining metrics (R1/R2/R7)** — the simulation runner now reports
+  per-role wealth share with a per-game stddev (and a cross-seed σ table in
+  `--seeds` mode, with the mean ± 2σ regression rule), counts any decision
+  prompt answered by `_SilentIO` degenerate defaults (fallback telemetry —
+  zero in the current baseline config), and tracks wealth concentration
+  (mean Gini + HHI) per run. Role CSV gains `share_mean_%`/`share_stddev_%`.
+  Sim-tooling only; no gameplay changes.
 
 - **Spares economy opened** — `Spares` is now a tradable, priced (12 Dp)
   market resource with a Manufacturer product line (Metal 2 + Oil 1 → 4
