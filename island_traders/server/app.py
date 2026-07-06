@@ -4402,10 +4402,17 @@ class GameManager:
             player, item, current_tick, unit=unit
         )
         if not repaired:
-            await _ack(
-                False,
-                f"Repair needs enough Dollops and Freight for {item.name}.",
-            )
+            # Surface the actual blocker (e.g. missing Spares — repairs need
+            # capacity_units worth per the manufacturer-capacity-scaling
+            # brief, not just Dollops/Freight) instead of a generic message
+            # that predates that requirement and can mislead the player into
+            # checking the wrong resource.
+            if getattr(player, "_rebuild_levy_remaining", 0.0) > 0:
+                reason = "Rebuild levy must be paid before capital repairs resume."
+            else:
+                quote = game._capital_repair_quote(player, item, unit)
+                reason = quote.get("reason") or f"Repair blocked for {item.name}."
+            await _ack(False, reason)
             return
 
         await _ack(True, f"Repair started for {item.name}.", item_id=item_id)
