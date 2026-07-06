@@ -5,7 +5,38 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.24`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.25`.
+
+- **Economic dependence inputs (P2a)** — every island now has a flat seasonal
+  building-power Oil floor (`ENERGY_BASE = 1`) plus a surcharge only for owned
+  fixed, energy-intensive plant (`ENERGY_DIVISOR = 4`); mobile fuel-burners,
+  storage, offices, classrooms, kitchens, hospital wards, reagent labs, and
+  generic laboratory equipment do not double-count as grid load. Brownouts are
+  soft and prorated by unmet fraction (`-10%` capacity, `-3` QoL Stability at
+  full shortfall). Educator lab-scale Courses/Expertise consume 1 Reagents + 1
+  Oil per completed 10 output units, in-residence students count as campus
+  population for meals, and active Banker loan/policy books consume 1 Goods per
+  season. AI now reserves next-season Oil and can cover only the current floor
+  shortfall via the formula market before production; production fuel still
+  becomes ordinary bids. Calibration kept `ENERGY_DIVISOR = 4`, set Goods to
+  5 Dp, lifted Farmer/Doctor key output values by 20%, trimmed Banker Finance
+  output to `0.7 x M`, and lifted Miner Oil output to `4.5 x M`. Seed-42
+  1000-game sim versus the business-cycle baseline:
+
+  | Role | Before share +/- sigma | After share +/- sigma | Delta share | Delta sigma |
+  |---|---:|---:|---:|---:|
+  | Farmer | 13.67% +/- 6.99% | 12.30% +/- 6.80% | -1.37 pts | -0.19 pts |
+  | Miner | 12.78% +/- 4.34% | 14.70% +/- 5.10% | +1.92 pts | +0.76 pts |
+  | Transporter | 13.17% +/- 4.08% | 12.50% +/- 4.10% | -0.67 pts | +0.02 pts |
+  | Educator | 15.14% +/- 3.87% | 15.60% +/- 3.70% | +0.46 pts | -0.17 pts |
+  | Banker | 16.18% +/- 4.04% | 15.00% +/- 4.30% | -1.18 pts | +0.26 pts |
+  | Manufacturer | 14.12% +/- 3.53% | 15.10% +/- 3.90% | +0.98 pts | +0.37 pts |
+  | Doctor | 14.95% +/- 4.26% | 14.80% +/- 4.80% | -0.15 pts | +0.54 pts |
+
+  Brownouts landed at 1397/84000 island-seasons (1.66%). Oil flow rose on both
+  required axes: produced 290,161 -> 302,172 and consumed 88,284 -> 205,606;
+  Oil traded rose 834 -> 65,658. Full pytest passed (903 tests) with dev+server
+  extras.
 
 - **Business cycle and severity-scaled events** — games now own a seeded
   `BusinessCycle` that advances Expansion -> Boom -> Contraction -> Trough,

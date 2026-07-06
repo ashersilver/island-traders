@@ -8,7 +8,7 @@ from ..engine.events import EventResult
 from ..constants import (
     BASE_PRODUCTION, PRODUCTION_INPUTS, SEASONAL_WORKFORCE,
     SEASONAL_YIELD, FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
-    OUTPUT_PRODUCTION_INPUTS,
+    OUTPUT_PRODUCTION_INPUTS, OUTPUT_PRODUCTION_INPUT_STEPS,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     KITCHEN_SPECS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
@@ -382,6 +382,41 @@ class ProductionEngine:
         raw = OUTPUT_PRODUCTION_INPUTS.get(role_name, {}).get(output.value, {})
         return {ResourceType(k): v for k, v in raw.items()}
 
+    def _output_inputs_for_quantity(
+        self,
+        role_name: str,
+        output: ResourceType,
+        quantity: int,
+    ) -> dict[ResourceType, int]:
+        inputs = dict(self._output_inputs(role_name, output))
+        for resource, needed in self._output_step_inputs_for_quantity(
+            role_name, output, quantity
+        ).items():
+            inputs[resource] = inputs.get(resource, 0) + needed
+        return inputs
+
+    def _output_step_inputs_for_quantity(
+        self,
+        role_name: str,
+        output: ResourceType,
+        quantity: int,
+    ) -> dict[ResourceType, int]:
+        inputs: dict[ResourceType, int] = {}
+        step = OUTPUT_PRODUCTION_INPUT_STEPS.get(role_name, {}).get(output.value)
+        if step and quantity > 0:
+            blocks = quantity // max(1, int(step.get("per_units", 1)))
+            for resource_name, amount in step.get("inputs", {}).items():
+                resource = ResourceType(resource_name)
+                needed = int(amount) * blocks
+                if needed > 0:
+                    inputs[resource] = inputs.get(resource, 0) + needed
+        return inputs
+
+    def _effective_production_factor(self, player: Player, workforce_factor: float) -> float:
+        qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)
+        brownout_multiplier = getattr(player, "_brownout_capacity_multiplier", 1.0)
+        return max(player.production_capacity, workforce_factor) * qol_multiplier * brownout_multiplier
+
     def _seasonal_yield(self, role_name: str, season_name: str) -> float:
         """Seasonal base-yield multiplier (1.0 for Farmer — table already encodes it)."""
         if role_name == "Farmer":
@@ -432,7 +467,7 @@ class ProductionEngine:
         for output, qty in outputs.items():
             if qty <= 0:
                 continue
-            needs = self._output_inputs(role_name, output)
+            needs = self._output_inputs_for_quantity(role_name, output, qty)
             missing = [
                 resource
                 for resource, amount in needs.items()
@@ -503,27 +538,29 @@ class ProductionEngine:
                 self.telemetry.record_consumed(r, qty)
 
         workforce_factor = self._labour_productivity_factor(player, season_name, product_line)
-        qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)
-        effective_factor = max(player.production_capacity, workforce_factor) * qol_multiplier
+        effective_factor = self._effective_production_factor(player, workforce_factor)
 
         produced: dict[ResourceType, int] = {}
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
             role_outputs = self._role_outputs(role.name, season_name, product_line)
+            planned_outputs: dict[ResourceType, int] = {}
+            for r, base_qty in role_outputs.items():
+                qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_output_multiplier(player, r))
+                qty += event_result.productivity_bonus
+                planned_outputs[r] = qty
             output_inputs, skipped_outputs = self._affordable_output_inputs(
-                player, role.name, role_outputs
+                player, role.name, planned_outputs
             )
             for r, qty in output_inputs.items():
                 player.give_resources(r, qty)
                 if self.telemetry is not None:
                     self.telemetry.record_consumed(r, qty)
-            for r, base_qty in role_outputs.items():
+            for r, qty in planned_outputs.items():
                 if r in skipped_outputs:
                     continue
-                qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
-                if role.name == "Farmer":
-                    qty = int(qty * self._farmer_output_multiplier(player, r))
-                qty += event_result.productivity_bonus
                 if qty > 0:
                     # Deduct freight surcharge for Manufacturer shipment
                     freight = self._freight_surcharge(product_line, qty)
@@ -571,7 +608,8 @@ class ProductionEngine:
         )
         workforce_factor = min(1.0, workforce_factor + electrical_efficiency_bonus(player))
         qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)
-        effective_factor = max(player.production_capacity, workforce_factor) * qol_multiplier
+        brownout_multiplier = getattr(player, "_brownout_capacity_multiplier", 1.0)
+        effective_factor = self._effective_production_factor(player, workforce_factor)
         fill_pct = round(player.workforce.workforce_fill_rate(
             self._seasonal_workforce_required(player, season_name)
         ) * 100)
@@ -584,8 +622,15 @@ class ProductionEngine:
         for role in player.roles:
             sy = self._seasonal_yield(role.name, season_name)
             role_outputs = self._role_outputs(role.name, season_name, product_line)
+            planned_outputs: dict[ResourceType, int] = {}
+            for r, base_qty in role_outputs.items():
+                qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
+                if role.name == "Farmer":
+                    qty = int(qty * self._farmer_output_multiplier(player, r))
+                qty += event_result.productivity_bonus
+                planned_outputs[r] = qty
             role_specific_inputs, role_skipped = self._affordable_output_inputs(
-                player, role.name, role_outputs
+                player, role.name, planned_outputs
             )
             if role_skipped:
                 skipped_outputs[role.name] = sorted(role_skipped, key=lambda r: r.value)
@@ -593,13 +638,9 @@ class ProductionEngine:
                 output_specific_inputs[resource] = (
                     output_specific_inputs.get(resource, 0) + qty_needed
                 )
-            for r, base_qty in role_outputs.items():
+            for r, qty in planned_outputs.items():
                 if r in role_skipped:
                     continue
-                qty = max(0, int(base_qty * sy * event_result.yield_modifier * effective_factor))
-                if role.name == "Farmer":
-                    qty = int(qty * self._farmer_output_multiplier(player, r))
-                qty += event_result.productivity_bonus
                 if qty > 0:
                     outputs[r] = outputs.get(r, 0) + qty
                     freight_surcharge += self._freight_surcharge(product_line, qty)
@@ -622,6 +663,7 @@ class ProductionEngine:
             "workforce_factor": round(workforce_factor, 3),
             "effective_factor": round(effective_factor, 3),
             "qol_productivity_multiplier": round(qol_multiplier, 3),
+            "brownout_capacity_multiplier": round(brownout_multiplier, 3),
             "base_capacity_pct": round(player.production_capacity * 100),
             # Labour split
             "skilled_required": total_skilled_req,
@@ -947,11 +989,16 @@ class ProductionEngine:
                 recipe, active_engineer_specialty_counts(player)
             )
             mult = player.patent_input_multiplier(recipe.output)
-            return {
+            inputs = {
                 ResourceType(resource): ceil(amount * mult * qty)
                 for resource, amount in recipe.inputs.items()
                 if ceil(amount * mult * qty) > 0
             }
+            for resource, amount in self._output_step_inputs_for_quantity(
+                role_name, output, qty
+            ).items():
+                inputs[resource] = inputs.get(resource, 0) + amount
+            return inputs
 
         role = next(r for r in player.roles if r.name == role_name)
         role_player = self._role_player(player, role)
@@ -968,6 +1015,10 @@ class ProductionEngine:
             freight = self._freight_surcharge(product_line, qty)
             if freight:
                 inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight
+        for resource, amount in self._output_inputs_for_quantity(
+            role_name, output, qty
+        ).items():
+            inputs[resource] = inputs.get(resource, 0) + amount
         return inputs
 
     def produce_product(

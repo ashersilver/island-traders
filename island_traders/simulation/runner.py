@@ -161,11 +161,17 @@ class SimulationStats:
     gini_mean: float = 0.0
     hhi_mean: float = 0.0
     bankrupt_islands: int = 0
+    brownout_count: int = 0
 
     @property
     def bankruptcy_rate(self) -> float:
         island_games = self.num_games * max(1, len(self.role_stats))
         return self.bankrupt_islands / island_games if island_games else 0.0
+
+    @property
+    def brownout_rate(self) -> float:
+        island_seasons = self.num_games * self.num_years * len(SEASONS) * max(1, len(self.role_stats))
+        return self.brownout_count / island_seasons if island_seasons else 0.0
 
 
 class SimulationRunner:
@@ -202,6 +208,7 @@ class SimulationRunner:
         gini_sum = 0.0
         hhi_sum = 0.0
         bankrupt_islands = 0
+        brownout_count = 0
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -232,6 +239,7 @@ class SimulationRunner:
             if game.turn_manager:
                 game.turn_manager._rng = random.Random(game_seed)
             summary = game.run()
+            brownout_count += summary.brownout_count
 
             # Record stats
             final_wealths = [wealth for _, wealth in summary.final_rankings]
@@ -309,6 +317,7 @@ class SimulationRunner:
             gini_mean=round(gini_sum / self.num_games, 4) if self.num_games else 0.0,
             hhi_mean=round(hhi_sum / self.num_games, 4) if self.num_games else 0.0,
             bankrupt_islands=bankrupt_islands,
+            brownout_count=brownout_count,
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -408,6 +417,10 @@ def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> 
     print(
         f"  Bankruptcy: {stats.bankrupt_islands} island-games "
         f"({stats.bankruptcy_rate * 100:.2f}%)"
+    )
+    print(
+        f"  Brownouts: {stats.brownout_count} island-seasons "
+        f"({stats.brownout_rate * 100:.2f}%)"
     )
 
 

@@ -12,6 +12,7 @@ from ..constants import (
     MAX_WORKFORCE_FRACTION_OF_POPULATION,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     PEOPLE_PER_MEAL, EQUIPMENT_MAINTENANCE_CONTRACT_PER_100,
+    ENERGY_BASE, ENERGY_DIVISOR,
 )
 
 
@@ -431,6 +432,41 @@ class Player:
             if n > 0:
                 result[item_id] = n
         return result
+
+    def owned_capital_capacity_units(self, catalogue=None) -> int:
+        """Total capacity-unit footprint of owned capital, including failed units."""
+        if catalogue is None:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            catalogue = CAPITAL_CATALOGUE
+        by_id = {item.item_id: item for item in catalogue}
+        total = 0
+        for item_id, count in self.capital_inventory.items():
+            item = by_id.get(item_id)
+            unit_size = max(1, int(getattr(item, "capacity_units", 1))) if item else 1
+            total += unit_size * count
+        return total
+
+    def energy_intensive_capacity_units(self, catalogue=None) -> int:
+        """Total capacity units from fixed, grid-powered heavy plant."""
+        if catalogue is None:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            catalogue = CAPITAL_CATALOGUE
+        by_id = {item.item_id: item for item in catalogue}
+        total = 0
+        for inventory in (self.capital_inventory, self.failed_capital):
+            for item_id, count in inventory.items():
+                item = by_id.get(item_id)
+                if not item or not getattr(item, "energy_intensive", False):
+                    continue
+                total += max(1, int(getattr(item, "capacity_units", 1))) * count
+        return total
+
+    def energy_floor_oil_required(self, catalogue=None) -> int:
+        """Per-season building-power Oil floor for this island."""
+        from math import ceil
+
+        units = self.energy_intensive_capacity_units(catalogue)
+        return ENERGY_BASE + ceil(units / max(1, ENERGY_DIVISOR))
 
     def spares_capacity(self) -> int:
         """Total generic-spares storage from maintained warehouse capital."""

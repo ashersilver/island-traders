@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.24"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.25"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -91,12 +91,13 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
     "Educator":      {"Expertise": 6,                                 # feeds Course production
                       "Courses": 5,                                    # classroom slots ready Y1
                       "Reagents": 2,                                   # 2 seasons of Reagents
+                      "Oil": 2,                                        # building power + lab step buffer
                       "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
     # loan interest spread and insurance premiums — see island-ledger.md §3
     # for the full institutional-cash-pool model (future implementation).
-    "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
+    "Banker":        {"Expertise": 2, "Oil": 2},                      # knowledge + building power buffer
     # Manufacturer: FarmMachinery (default opening line) + Spares to sell,
     # plus 2 seasons of inputs.
     "Manufacturer":  {"FarmMachinery": 2, "Goods": 4, "Spares": 4,   # to sell
@@ -108,10 +109,10 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                22.0,
-    "Fish":                12.0,
-    "Grain":               10.0,
-    "Produce":             12.0,
+    "Food":                26.4,
+    "Fish":                14.4,
+    "Grain":               12.0,
+    "Produce":             14.4,
     "Meat":                16.2,
     "Ore":                  4.5,
     "Metal":                8.0,
@@ -123,10 +124,10 @@ BASE_PRICES: dict[str, float] = {
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":               40.0,
+    "Goods":                5.0,
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
-    "MedicalSupplies":      25.0,
-    "Vaccine":             33.5,
+    "MedicalSupplies":      30.0,
+    "Vaccine":             40.2,
     "Finance":             22.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
@@ -145,7 +146,7 @@ BASE_PRICES: dict[str, float] = {
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Oil": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Rebalance 2026-06-02 lifted Transporter output; #112 trims that uplift
     # after P3 demand made shipping overperform.
     "Transporter":   {"Freight": 3.25 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
@@ -167,7 +168,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
     # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
-    "Banker":        {"Finance": 1.0 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 0.7 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
@@ -205,6 +206,24 @@ OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
         "Metal": {"Ore": 2, "Oil": 1},
     },
 }
+
+# Lab-scale output inputs. These are charged per completed output block, not
+# as fixed per-season role inputs. Below the step size, classroom/base output
+# stays free of lab consumables.
+OUTPUT_PRODUCTION_INPUT_STEPS: dict[str, dict[str, dict]] = {
+    "Educator": {
+        "Courses": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
+        "Expertise": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
+    },
+}
+
+# Economic dependence P2a: all islands draw a flat building-power base, plus a
+# surcharge for owned fixed, grid-powered heavy plant.
+ENERGY_BASE: int = 1
+ENERGY_DIVISOR: int = 4
+BROWNOUT_CAPACITY_PENALTY: float = 0.10
+BROWNOUT_QOL_PENALTY: int = 3
+BANKER_OFFICE_GOODS_PER_SEASON: int = 1
 
 # Per-season input→output table for the Farmer island.
 # Replaces PRODUCTION_INPUTS["Farmer"] + BASE_PRODUCTION["Farmer"] for that role.
