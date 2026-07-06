@@ -4663,6 +4663,25 @@ class GameManager:
                         p, "_banker_office_goods_consumed_this_season", 0
                     ),
                 },
+                "continuing_education": {
+                    "managers": p.ce_manager_count(),
+                    "annual_need": getattr(
+                        p,
+                        "_ce_annual_need_this_season",
+                        p.ce_manager_count(),
+                    ),
+                    "expertise_ytd": round(p.ce_ytd(), 2),
+                    "expertise_consumed": round(
+                        getattr(p, "_ce_used_this_season", 0.0), 2
+                    ),
+                    "uncovered_fraction": round(
+                        getattr(p, "_ce_uncovered_fraction_this_season", 0.0), 4
+                    ),
+                    "penalty": round(float(getattr(p, "ce_penalty", 0.0)), 4),
+                    "manager_efficiency_multiplier": round(
+                        p.ce_manager_efficiency_multiplier(), 4
+                    ),
+                },
                 # Structured per-loan detail (Issue #6 — Loan rollover UI).
                 # Includes both borrower-side and lender-side active loans
                 # so the dashboard can show roles consistently.

@@ -33,6 +33,7 @@ from ..constants import (
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
     FLU_SEASON,
     MANUFACTURER_DURABLE_OUTPUTS,
+    CE_ANNUAL_PER_MANAGER,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import find_item, items_for_role
@@ -1010,7 +1011,20 @@ class AIStrategy:
                 )
         if banker_office_goods:
             inputs[ResourceType.GOODS] = max(inputs.get(ResourceType.GOODS, 0), 1)
+        ce_shortfall = self._ce_expertise_shortfall(player)
+        if ce_shortfall > 0:
+            inputs[ResourceType.EXPERTISE] = max(
+                inputs.get(ResourceType.EXPERTISE, 0), ce_shortfall
+            )
         return inputs
+
+    def _ce_expertise_shortfall(self, player: Player) -> int:
+        managers = player.ce_manager_count()
+        if managers <= 0:
+            return 0
+        annual_need = managers * CE_ANNUAL_PER_MANAGER
+        covered = player.ce_ytd() + player.inventory.get(ResourceType.EXPERTISE)
+        return max(0, int(ceil(annual_need - covered)))
 
     def _banker_has_active_book(
         self,
@@ -1435,6 +1449,14 @@ class AIStrategy:
             target_qty = qty_needed * target_runs
             if rtype == ResourceType.OIL:
                 target_qty += player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+            elif rtype == ResourceType.EXPERTISE:
+                production_need = player.all_required_inputs(
+                    season_name, chosen_line
+                ).get(ResourceType.EXPERTISE, 0)
+                target_qty = (
+                    production_need * self.target_production_runs
+                    + self._ce_expertise_shortfall(player)
+                )
             elif (
                 rtype == ResourceType.GOODS
                 and any(role.name == "Banker" for role in player.roles)
