@@ -268,7 +268,10 @@ class ProductionEngine:
             total_unskilled += u
             all_skilled_profs.update(SKILLED_PROFESSIONS.get(role.name, []))
         natural = player.workforce.labour_productivity_factor(
-            total_skilled, total_unskilled, list(all_skilled_profs)
+            total_skilled,
+            total_unskilled,
+            list(all_skilled_profs),
+            manager_efficiency_multiplier=player.ce_manager_efficiency_multiplier(),
         )
         natural = min(1.0, natural + electrical_efficiency_bonus(player))
         if not EXPERTISE_DEGRADATION_ENABLED:
@@ -604,7 +607,10 @@ class ProductionEngine:
         unskilled_active = len([w for w in player.workforce.active_workers if w.profession not in skilled_profs_list])
 
         workforce_factor = player.workforce.labour_productivity_factor(
-            total_skilled_req, total_unskilled_req, skilled_profs_list
+            total_skilled_req,
+            total_unskilled_req,
+            skilled_profs_list,
+            manager_efficiency_multiplier=player.ce_manager_efficiency_multiplier(),
         )
         workforce_factor = min(1.0, workforce_factor + electrical_efficiency_bonus(player))
         qol_multiplier = getattr(player, "_qol_productivity_multiplier", 1.0)

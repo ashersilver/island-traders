@@ -4,11 +4,11 @@ from math import ceil
 from .role import Role
 from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
-from .profession import Profession
+from .profession import Profession, WorkerBand
 from .insurance import InsurancePolicy
 from .equity import CapTable
 from ..constants import (
-    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
+    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, SEASONS,
     MAX_WORKFORCE_FRACTION_OF_POPULATION,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
     PEOPLE_PER_MEAL, EQUIPMENT_MAINTENANCE_CONTRACT_PER_100,
@@ -267,6 +267,8 @@ class Player:
     # Resident household spending pool. Payroll flows here from the island
     # treasury, then households spend it on end products.
     household_cash: float = 0.0
+    ce_history: list[float] = field(default_factory=lambda: [0.0] * len(SEASONS))
+    ce_penalty: float = 0.0
     # Capital equipment owned by this player, tracked as individual units
     # (#185 / #188): CapitalItem.item_id -> list[CapitalUnit].  This is the
     # source of truth; `capital_inventory`, `capital_acquired_ticks`,
@@ -936,6 +938,25 @@ class Player:
         ):
             return
         self.inventory = self.inventory.add(rtype, qty)
+
+    def _normalised_ce_history(self) -> list[float]:
+        size = len(SEASONS)
+        values = list(getattr(self, "ce_history", []))
+        if len(values) < size:
+            values.extend([0.0] * (size - len(values)))
+        elif len(values) > size:
+            values = values[-size:]
+        self.ce_history = [float(v) for v in values]
+        return self.ce_history
+
+    def ce_ytd(self) -> float:
+        return sum(self._normalised_ce_history())
+
+    def ce_manager_count(self) -> int:
+        return self.workforce.count_by_band(WorkerBand.MANAGER)
+
+    def ce_manager_efficiency_multiplier(self) -> float:
+        return max(0.0, 1.0 - float(getattr(self, "ce_penalty", 0.0)))
 
     def _install_equipment_resource(
         self, rtype: ResourceType, qty: int, acquired_tick: int

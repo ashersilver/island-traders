@@ -162,6 +162,9 @@ class SimulationStats:
     hhi_mean: float = 0.0
     bankrupt_islands: int = 0
     brownout_count: int = 0
+    ce_factor_mean: float = 1.0
+    ce_factor_min: float = 1.0
+    ce_factor_p10: float = 1.0
 
     @property
     def bankruptcy_rate(self) -> float:
@@ -209,6 +212,7 @@ class SimulationRunner:
         hhi_sum = 0.0
         bankrupt_islands = 0
         brownout_count = 0
+        ce_factor_samples: list[float] = []
 
         for game_idx in range(self.num_games):
             game_seed = self._rng.randint(0, 2**31)
@@ -240,6 +244,7 @@ class SimulationRunner:
                 game.turn_manager._rng = random.Random(game_seed)
             summary = game.run()
             brownout_count += summary.brownout_count
+            ce_factor_samples.extend(summary.ce_factor_samples)
 
             # Record stats
             final_wealths = [wealth for _, wealth in summary.final_rankings]
@@ -318,6 +323,15 @@ class SimulationRunner:
             hhi_mean=round(hhi_sum / self.num_games, 4) if self.num_games else 0.0,
             bankrupt_islands=bankrupt_islands,
             brownout_count=brownout_count,
+            ce_factor_mean=(
+                round(statistics.mean(ce_factor_samples), 4)
+                if ce_factor_samples else 1.0
+            ),
+            ce_factor_min=round(min(ce_factor_samples), 4) if ce_factor_samples else 1.0,
+            ce_factor_p10=(
+                round(statistics.quantiles(ce_factor_samples, n=10)[0], 4)
+                if len(ce_factor_samples) >= 10 else 1.0
+            ),
         )
 
     def export_csv(self, stats: SimulationStats, path: str) -> None:
@@ -421,6 +435,10 @@ def _print_role_balance(stats: SimulationStats, title: str = "Role Balance") -> 
     print(
         f"  Brownouts: {stats.brownout_count} island-seasons "
         f"({stats.brownout_rate * 100:.2f}%)"
+    )
+    print(
+        f"  Manager CE factor: mean {stats.ce_factor_mean:.3f}, "
+        f"p10 {stats.ce_factor_p10:.3f}, min {stats.ce_factor_min:.3f}"
     )
 
 

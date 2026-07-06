@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
+from math import ceil
 from ..models.player import Player
 from ..models.market import Market
 from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
@@ -64,6 +65,10 @@ from ..constants import (
     BROWNOUT_CAPACITY_PENALTY,
     BROWNOUT_QOL_PENALTY,
     BANKER_OFFICE_GOODS_PER_SEASON,
+    CE_ANNUAL_PER_MANAGER,
+    CE_PENALTY_PER_SEASON,
+    CE_RECOVERY_PER_SEASON,
+    CE_MAX,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
@@ -220,6 +225,7 @@ class TurnManager:
 
         self._process_seasonal_qol(year, season_index, event_results)
         self._process_consumer_demand(season_name, risk_reports)
+        self._process_continuing_education(season_index)
 
         # Loan repayment processing moved to AFTER the action phase
         # (2026-05-27 brief, Codex Player report: "an earlier mature
@@ -516,6 +522,50 @@ class TurnManager:
             player._banker_office_goods_consumed_this_season = consumed
             if consumed < needed:
                 self.market.post_demand(ResourceType.GOODS, needed - consumed)
+
+    def _process_continuing_education(
+        self,
+        season_index: int,
+        players: list[Player] | None = None,
+    ) -> None:
+        slot = season_index % len(SEASONS)
+        for player in players or self.players:
+            history = player._normalised_ce_history()
+            history[slot] = 0.0
+            managers = player.ce_manager_count()
+            annual_need = managers * CE_ANNUAL_PER_MANAGER
+            remaining = max(0.0, annual_need - sum(history))
+            available = player.inventory.get(ResourceType.EXPERTISE)
+            used = min(available, remaining)
+            if used > 0:
+                player.give_resources(ResourceType.EXPERTISE, int(used))
+                if getattr(self.production, "telemetry", None) is not None:
+                    self.production.telemetry.record_consumed(
+                        ResourceType.EXPERTISE, used
+                    )
+            history[slot] = float(used)
+            ytd = sum(history)
+            uncovered = max(0.0, annual_need - ytd)
+            fraction = (uncovered / annual_need) if annual_need else 0.0
+            if fraction > 0:
+                player.ce_penalty = min(
+                    CE_MAX,
+                    float(getattr(player, "ce_penalty", 0.0))
+                    + CE_PENALTY_PER_SEASON * fraction,
+                )
+                self.market.post_demand(ResourceType.EXPERTISE, int(ceil(uncovered)))
+            else:
+                player.ce_penalty = max(
+                    0.0,
+                    float(getattr(player, "ce_penalty", 0.0))
+                    - CE_RECOVERY_PER_SEASON,
+                )
+            player._ce_managers_this_season = managers
+            player._ce_annual_need_this_season = annual_need
+            player._ce_ytd_this_season = ytd
+            player._ce_used_this_season = used
+            player._ce_uncovered_fraction_this_season = fraction
+            player._ce_factor_this_season = player.ce_manager_efficiency_multiplier()
 
     def _consumer_demand_multiplier(self) -> float:
         cycle = getattr(self, "current_cycle", None)

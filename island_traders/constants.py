@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-22.25"
+APP_VERSION: str = "0.1.5-dev.2026-06-22.26"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -30,6 +30,13 @@ PAYROLL_WAGE_BY_BAND: dict[str, float] = {
     "Technician": 0.5,
     "Manager": 1.0,
 }
+
+# Continuing education upkeep (P2b, 2026-07-05). Each island owes one unit of
+# Expertise per active Manager-band worker over a rolling year.
+CE_ANNUAL_PER_MANAGER: int = 1
+CE_PENALTY_PER_SEASON: float = 0.05
+CE_RECOVERY_PER_SEASON: float = 0.05
+CE_MAX: float = 0.20
 
 STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
 TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
@@ -88,7 +95,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
     # Educator: Expertise + Courses on hand so other islands can train in
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
-    "Educator":      {"Expertise": 6,                                 # feeds Course production
+    "Educator":      {"Expertise": 7,                                 # feeds Course production and opening CE demand
                       "Courses": 5,                                    # classroom slots ready Y1
                       "Reagents": 2,                                   # 2 seasons of Reagents
                       "Oil": 2,                                        # building power + lab step buffer
@@ -104,7 +111,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
-                      "Expertise": 2, "Oil": 2, "Ore": 2},  # 2 seasons of inputs (makes own Reagents)
+                      "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
 }
 
 # Dollops per unit at balanced supply/demand

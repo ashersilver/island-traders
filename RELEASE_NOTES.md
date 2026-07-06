@@ -5,7 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.25`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.26`.
+
+- **Continuing education Expertise upkeep (P2b)** — Manager-band workers now
+  need 1 Expertise per active manager over a rolling year. Each island tracks a
+  single four-season CE ring and one accumulated CE penalty; shortfalls add
+  `5% * uncovered_fraction` per season up to `CE_MAX = 0.20`, full coverage
+  recovers 5 points per season, and the resulting multiplier applies evenly to
+  all Manager-band workers only. AI players now buy against their annual CE
+  shortfall, the server state exposes CE coverage/factor data, and the sim
+  runner reports manager CE-factor distribution. Calibration gives the Doctor
+  one extra opening Expertise buffer and the Educator one extra opening
+  Expertise unit so the new recurring sink lands without over-penalising the
+  healthcare island. Seed-42 1000-game sim versus P2a:
+
+  | Role | Before share +/- sigma | After share +/- sigma | Delta share | Delta sigma |
+  |---|---:|---:|---:|---:|
+  | Farmer | 12.32% +/- 6.78% | 11.88% +/- 6.66% | -0.44 pts | -0.12 pts |
+  | Miner | 14.68% +/- 5.09% | 14.32% +/- 5.01% | -0.36 pts | -0.08 pts |
+  | Transporter | 12.49% +/- 4.06% | 13.01% +/- 4.29% | +0.52 pts | +0.23 pts |
+  | Educator | 15.62% +/- 3.73% | 16.62% +/- 3.72% | +1.00 pts | -0.01 pts |
+  | Banker | 14.96% +/- 4.26% | 15.64% +/- 4.34% | +0.68 pts | +0.08 pts |
+  | Manufacturer | 15.12% +/- 3.89% | 15.65% +/- 3.85% | +0.53 pts | -0.04 pts |
+  | Doctor | 14.81% +/- 4.76% | 12.92% +/- 4.53% | -1.89 pts | -0.23 pts |
+
+  Manager CE factor distribution: mean 0.973, p10 0.900, min 0.800. Expertise
+  produced/consumed/traded moved from 72,065 / 7,794 / 14 under P2a to
+  71,607 / 33,970 / 3,554. Brownouts landed at 1222/84000 island-seasons
+  (1.45%). Full pytest passed (908 tests) with dev+server extras.
 
 - **Economic dependence inputs (P2a)** — every island now has a flat seasonal
   building-power Oil floor (`ENERGY_BASE = 1`) plus a surcharge only for owned

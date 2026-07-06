@@ -399,6 +399,7 @@ class Workforce:
         required_skilled: int,
         required_unskilled: int,
         skilled_professions: list[str],
+        manager_efficiency_multiplier: float = 1.0,
     ) -> float:
         """Weighted productivity: skilled workers count 70%, unskilled 30%.
 
@@ -413,8 +414,14 @@ class Workforce:
 
         weighted_fill = 0.70 * skilled_fill + 0.30 * unskilled_fill
 
+        def effective_efficiency(worker: Worker) -> float:
+            eff = worker.efficiency
+            if band_of(worker.profession) == WorkerBand.MANAGER:
+                eff *= manager_efficiency_multiplier
+            return eff
+
         avg_eff = (
-            sum(w.efficiency for w in skilled) / len(skilled)
+            sum(effective_efficiency(w) for w in skilled) / len(skilled)
             if skilled else EFFICIENCY_BASE
         )
         return weighted_fill * avg_eff

@@ -193,6 +193,7 @@ class GameSummary:
     # per-resource produced/consumed/traded volumes and input-starvation counts.
     resource_flow: "ResourceFlowTelemetry | None" = None
     brownout_count: int = 0
+    ce_factor_samples: list[float] = field(default_factory=list)
 
 
 class Game:
@@ -218,6 +219,7 @@ class Game:
         # Dynamic supply-chain liveness counters (B1/B2, #73); wired to the
         # market + production engine in setup().
         self.resource_flow = ResourceFlowTelemetry()
+        self._ce_factor_samples: list[float] = []
         self.business_cycle = BusinessCycle()
         self.current_cycle = self.business_cycle.snapshot()
 
@@ -667,6 +669,7 @@ class Game:
                     except Exception:
                         pass
                 self.turn_manager.run_season(year, season_index, event_results)
+                self._record_ce_factor_samples()
                 self.record_season_pl(SEASONS[season_index])
                 self._advance_temporary_absences()
                 cb = getattr(self, "after_season", None)
@@ -1410,7 +1413,13 @@ class Game:
             money_supply=list(self._money_supply_history),
             resource_flow=self.resource_flow,
             brownout_count=sum(getattr(p, "_brownout_count", 0) for p in self.players),
+            ce_factor_samples=list(self._ce_factor_samples),
         )
+
+    def _record_ce_factor_samples(self) -> None:
+        for player in self.players:
+            if player.ce_manager_count() > 0:
+                self._ce_factor_samples.append(player.ce_manager_efficiency_multiplier())
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],
                           current_tick: int) -> str:
@@ -1508,6 +1517,8 @@ class Game:
             "holdings": dict(p.holdings),
             "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
             "shareholder_loans": dict(p.shareholder_loans),
+            "ce_history": list(p._normalised_ce_history()),
+            "ce_penalty": float(getattr(p, "ce_penalty", 0.0)),
             "season_revenue": round(getattr(p, "_season_revenue", 0.0), 2),
             "season_costs": round(getattr(p, "_season_costs", 0.0), 2),
             "pl_history": list(getattr(p, "_pl_history", [])),
@@ -1745,6 +1756,8 @@ class Game:
                     if pd.get("cap_table") is not None else None
                 ),
                 shareholder_loans=dict(pd.get("shareholder_loans", {})),
+                ce_history=list(pd.get("ce_history", [0.0] * len(SEASONS))),
+                ce_penalty=float(pd.get("ce_penalty", 0.0)),
             )
             for r_str, qty in pd.get("inventory", {}).items():
                 # Save-migration: the consumable "LaboratoryEquipment" was
