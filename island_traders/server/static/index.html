@@ -5122,7 +5122,13 @@ function renderIslandWellbeing(me) {
   } else if (typeof me.qol_score === 'number') {
     qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
   }
-  const ce = me.continuing_education; // {factor, covered, managers} (0..1 factor)
+  // Continuing education (continuing-education-expertise-2026-07-05): the
+  // server emits {managers, annual_need, expertise_ytd, expertise_consumed,
+  // uncovered_fraction, penalty, manager_efficiency_multiplier} — not the
+  // {factor, covered} shape originally guessed. manager_efficiency_multiplier
+  // is the direct productivity multiplier (1 - penalty); "covered" managers
+  // is derived from managers x (1 - uncovered_fraction).
+  const ce = me.continuing_education;
   if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
   const parts = [];
   if (qolPct != null) {
@@ -5135,11 +5141,14 @@ function renderIslandWellbeing(me) {
       + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
       + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
   }
-  if (ce && typeof ce.factor === 'number') {
-    const pct = Math.round(ce.factor * 100);
+  if (ce && typeof ce.manager_efficiency_multiplier === 'number') {
+    const pct = Math.round(ce.manager_efficiency_multiplier * 100);
     const col = pct >= 95 ? 'var(--green)' : (pct >= 85 ? 'var(--gold)' : 'var(--red)');
-    const cov = (ce.covered != null && ce.managers != null)
-      ? ` <span style="color:var(--dim)">(${ce.covered}/${ce.managers} managers)</span>` : '';
+    let cov = '';
+    if (typeof ce.managers === 'number' && typeof ce.uncovered_fraction === 'number') {
+      const covered = Math.round(ce.managers * (1 - ce.uncovered_fraction));
+      cov = ` <span style="color:var(--dim)">(${covered}/${ce.managers} managers covered)</span>`;
+    }
     parts.push(`<div class="mkt-row"><span class="res">Continuing Ed.</span>`
       + `<span class="price" style="color:${col}">${pct}%</span></div>${cov}`);
   }

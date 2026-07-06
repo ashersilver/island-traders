@@ -5,7 +5,17 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.26`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.27`.
+
+- **UI: continuing-education tile reconciled to the real payload** — the
+  Island Wellbeing tile's Continuing Ed. row was stubbed against a guessed
+  `{factor, covered}` shape; the merged engine emits `{managers, annual_need,
+  expertise_ytd, expertise_consumed, uncovered_fraction, penalty,
+  manager_efficiency_multiplier}`. Now reads `manager_efficiency_multiplier`
+  directly and derives "N/M managers covered" from
+  `managers x (1 - uncovered_fraction)`. This completes the economics-vision
+  UI stubs (business-cycle chip, QoL score, and now CE coverage all live on
+  real engine data).
 
 - **Continuing education Expertise upkeep (P2b)** — Manager-band workers now
   need 1 Expertise per active manager over a rolling year. Each island tracks a
