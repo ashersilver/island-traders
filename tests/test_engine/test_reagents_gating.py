@@ -48,7 +48,7 @@ def test_new_science_set_professions_are_trainable_and_classified():
     assert Profession.MEDICAL_TECHNICIAN.value in SKILLED_PROFESSIONS["Doctor"]
 
 
-def test_educator_reagents_gate_patents_but_not_expertise_or_courses():
+def test_educator_lab_step_inputs_gate_large_expertise_but_not_courses():
     assert PRODUCTION_INPUTS["Educator"] == {}
     assert OUTPUT_PRODUCTION_INPUTS["Educator"] == {
         "Patents": {"Reagents": 1},
@@ -65,6 +65,8 @@ def test_educator_reagents_gate_patents_but_not_expertise_or_courses():
 
     educator = Player(0, "Edu", [ROLES["Educator"]], 100.0)
     educator.receive_resources(ResourceType.EXPERTISE, 10)
+    educator.receive_resources(ResourceType.REAGENTS, 1)
+    educator.receive_resources(ResourceType.OIL, 1)
     educator.workforce.add_workers(2, training_level=1, profession=Profession.PROFESSOR.value)
     educator.workforce.add_workers(4, training_level=1, profession=Profession.INSTRUCTOR.value)
 
@@ -77,6 +79,8 @@ def test_educator_reagents_gate_patents_but_not_expertise_or_courses():
     assert produced.get(ResourceType.EXPERTISE, 0) > 0
     assert produced.get(ResourceType.COURSES, 0) > 0
     assert ResourceType.PATENTS not in produced
+    assert educator.inventory.get(ResourceType.REAGENTS) == 0
+    assert educator.inventory.get(ResourceType.OIL) == 0
 
 
 def _educator_with_course_capacity(reagents: int) -> Player:

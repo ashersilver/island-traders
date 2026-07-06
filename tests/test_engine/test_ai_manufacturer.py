@@ -161,6 +161,7 @@ def test_ai_manufacturer_procures_visible_human_demand_line(monkeypatch):
     assert metal_bid.remaining == 6
     assert oil_bid is not None
     assert oil_bid.remaining == 4
+    assert any("imported 1x Oil" in action for action in actions)
     assert any("Manufacturer idle" in action for action in actions)
 
 

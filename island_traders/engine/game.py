@@ -192,6 +192,7 @@ class GameSummary:
     # Dynamic supply-chain liveness (B1/B2, #73): a ResourceFlowTelemetry with
     # per-resource produced/consumed/traded volumes and input-starvation counts.
     resource_flow: "ResourceFlowTelemetry | None" = None
+    brownout_count: int = 0
 
 
 class Game:
@@ -1408,6 +1409,7 @@ class Game:
             price_history=self.market.price_history,
             money_supply=list(self._money_supply_history),
             resource_flow=self.resource_flow,
+            brownout_count=sum(getattr(p, "_brownout_count", 0) for p in self.players),
         )
 
     def _year_end_summary(self, year: int, prices: dict[ResourceType, float],

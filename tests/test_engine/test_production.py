@@ -70,17 +70,21 @@ def test_banker_produces_finance_commodity(banker, normal_event):
     assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_expertise_runs_without_reagents(normal_event):
-    """Generic Education output is classroom-based; Reagents gate Patents and
-    science-track training, not all Expertise/Courses production."""
+def test_educator_expertise_runs_with_lab_step_inputs(normal_event):
+    """Generic Education now pays lab consumables only once it reaches the
+    10-unit step; Patents remain separately Reagents-gated."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
+    educator.receive_resources(ResourceType.REAGENTS, 1)
+    educator.receive_resources(ResourceType.OIL, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
     assert ResourceType.PATENTS not in produced
+    assert educator.inventory.get(ResourceType.REAGENTS) == 0
+    assert educator.inventory.get(ResourceType.OIL) == 0
 
 
 def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
@@ -112,9 +116,9 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
 
     assert produced[ResourceType.ORE] == 40
     assert produced[ResourceType.METAL] == 20
-    assert produced[ResourceType.OIL] == 40
+    assert produced[ResourceType.OIL] == 45
     assert miner.inventory.get(ResourceType.ORE) == 40
-    assert miner.inventory.get(ResourceType.OIL) == 40
+    assert miner.inventory.get(ResourceType.OIL) == 45
     assert miner.capital_count("miner.excavator") == 1
 
 
@@ -130,7 +134,7 @@ def test_miner_skips_metal_without_starting_ore_for_smelting(normal_event):
 
     assert produced[ResourceType.ORE] == 40
     assert ResourceType.METAL not in produced
-    assert produced[ResourceType.OIL] == 40
+    assert produced[ResourceType.OIL] == 45
 
 
 def test_banker_production_is_safe(banker, normal_event):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from math import ceil
+from collections.abc import Callable
 from ..models.player import EQUIPMENT_RESOURCE_CAPITAL, Player
 from ..models.market import Market
 from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
@@ -970,6 +971,7 @@ class AIStrategy:
         player: Player,
         season_name: str,
         product_line: str | None,
+        banker_office_goods: bool = False,
     ) -> dict[ResourceType, int]:
         inputs = dict(player.all_required_inputs(season_name, product_line))
         if any(role.name == "Manufacturer" for role in player.roles):
@@ -995,6 +997,7 @@ class AIStrategy:
                 inputs.get(ResourceType.FREIGHT, 0),
                 unresolved_repairs * EQUIPMENT_REPAIR_SHIP_FREIGHT,
             )
+        inputs.setdefault(ResourceType.OIL, 0)
         if (
             not any(role.name == "Manufacturer" for role in player.roles)
             and any(count > 0 for count in player.capital_inventory.values())
@@ -1005,7 +1008,33 @@ class AIStrategy:
                 inputs[ResourceType.SPARES] = max(
                     inputs.get(ResourceType.SPARES, 0), missing_spares
                 )
+        if banker_office_goods:
+            inputs[ResourceType.GOODS] = max(inputs.get(ResourceType.GOODS, 0), 1)
         return inputs
+
+    def _banker_has_active_book(
+        self,
+        player: Player,
+        other_players: list[Player],
+        loan_ledger: LoanLedger | None,
+        year: int,
+        season_index: int,
+    ) -> bool:
+        if not any(role.name == "Banker" for role in player.roles):
+            return False
+        if loan_ledger is not None and any(
+            loan.status == LoanStatus.ACTIVE
+            and loan.lender_id == player.player_id
+            and loan.borrower_id != player.player_id
+            for loan in loan_ledger.all_loans()
+        ):
+            return True
+        return any(
+            policy.banker_player_id == player.player_id
+            and policy.is_valid(year, season_index)
+            for insured in [player] + other_players
+            for policy in insured.insurance_policies
+        )
 
     def _capacity_units_for_item(self, item_id: str) -> int:
         item = find_item(CAPITAL_CATALOGUE, item_id)
@@ -1324,6 +1353,7 @@ class AIStrategy:
         loan_ledger: LoanLedger | None = None,
         training_registry=None,
         cycle: BusinessCycleSnapshot | None = None,
+        before_production: Callable[[], None] | None = None,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -1385,7 +1415,14 @@ class AIStrategy:
             )
         )
 
-        inputs_needed = self._inputs_for_ai_purchase(player, season_name, chosen_line)
+        inputs_needed = self._inputs_for_ai_purchase(
+            player,
+            season_name,
+            chosen_line,
+            banker_office_goods=self._banker_has_active_book(
+                player, other_players, loan_ledger, year, season_index,
+            ),
+        )
         for rtype, qty_needed in inputs_needed.items():
             if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
@@ -1396,6 +1433,13 @@ class AIStrategy:
                 if rtype in AI_EQUIPMENT_INPUTS else self.target_production_runs
             )
             target_qty = qty_needed * target_runs
+            if rtype == ResourceType.OIL:
+                target_qty += player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+            elif (
+                rtype == ResourceType.GOODS
+                and any(role.name == "Banker" for role in player.roles)
+            ):
+                target_qty = qty_needed
             have = player.inventory.get(rtype)
             if have >= target_qty:
                 continue
@@ -1424,6 +1468,31 @@ class AIStrategy:
                         buy_qty -= bought
                     except Exception:
                         pass
+            if buy_qty > 0 and rtype == ResourceType.OIL:
+                floor_shortfall = max(
+                    0,
+                    player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+                    - player.inventory.get(ResourceType.OIL),
+                )
+                fill_qty = min(
+                    buy_qty,
+                    floor_shortfall,
+                    market.market_maker_buy_depth(rtype),
+                )
+                if fill_qty > 0:
+                    ask = market.market_maker_ask(rtype)
+                    affordable_qty = min(fill_qty, int(player.dollops // ask))
+                    if affordable_qty > 0:
+                        try:
+                            market.post_supply(rtype, affordable_qty)
+                            paid = market.execute_buy(player, rtype, affordable_qty)
+                            actions.append(
+                                f"[AI] {player.name} imported {affordable_qty}x Oil "
+                                f"for {paid:.1f} Dp"
+                            )
+                            buy_qty -= affordable_qty
+                        except Exception:
+                            pass
             if buy_qty > 0:
                 bid_price = self._valuation_price(market, trading_engine, rtype)
                 affordable_qty = min(buy_qty, int(player.dollops // bid_price))
@@ -1436,6 +1505,9 @@ class AIStrategy:
                         )
                     except Exception:
                         pass
+
+        if before_production is not None:
+            before_production()
 
         produced_totals: dict[ResourceType, int] = {}
         missing: dict[ResourceType, int] = {}
@@ -1495,6 +1567,11 @@ class AIStrategy:
             )
 
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
+        oil_production_reserve = reserve_inputs.get(ResourceType.OIL, 0) * self.target_production_runs
+        reserve_inputs[ResourceType.OIL] = max(
+            reserve_inputs.get(ResourceType.OIL, 0),
+            oil_production_reserve + player.energy_floor_oil_required(CAPITAL_CATALOGUE),
+        )
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
         if is_manufacturer:
             listable_resources.add(ResourceType.SPARES)

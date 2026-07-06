@@ -4647,6 +4647,22 @@ class GameManager:
                 "banker_active_loan_cap": loan_book["cap"],
                 "spares_held": p.inventory.get(ResourceType.SPARES),
                 "spares_capacity": p.spares_capacity(),
+                "energy": {
+                    "oil_required": p.energy_floor_oil_required(CAPITAL_CATALOGUE),
+                    "oil_consumed": getattr(
+                        p, "_energy_floor_oil_consumed_this_season", 0
+                    ),
+                    "brownout": getattr(p, "_brownout_capacity_multiplier", 1.0) < 1.0,
+                    "capacity_multiplier": round(
+                        getattr(p, "_brownout_capacity_multiplier", 1.0), 3
+                    ),
+                    "qol_stability_delta": getattr(
+                        p, "_brownout_qol_stability_delta", 0
+                    ),
+                    "banker_office_goods_consumed": getattr(
+                        p, "_banker_office_goods_consumed_this_season", 0
+                    ),
+                },
                 # Structured per-loan detail (Issue #6 — Loan rollover UI).
                 # Includes both borrower-side and lender-side active loans
                 # so the dashboard can show roles consistently.
@@ -4886,20 +4902,19 @@ class GameManager:
             for r in p.all_required_inputs():
                 if p.inventory.get(r) <= 0:
                     needs.append(r.value)
-            campus_food_units = (
+            campus_extra = (
                 game.training.visiting_trainees(p.player_id)
-                * STAFFING_FOOD_PER_STAFF_PER_SEASON
                 if any(r.name == "Educator" for r in p.roles) else 0.0
             )
             # Add visiting medical staff to the extra_residents count so
             # the host island's sustenance calculation includes them.
             staffing = getattr(game, "staffing", None)
             if staffing:
-                campus_food_units += (
+                campus_extra += (
                     staffing.visiting_staff(p.player_id)
                     * STAFFING_FOOD_PER_STAFF_PER_SEASON
+                    * PEOPLE_PER_MEAL
                 )
-            campus_extra = campus_food_units * PEOPLE_PER_MEAL
             # Sustenance basket alert (2026-05-25 model): aggregate the
             # whole basket into a single "meals runway" figure rather
             # than one alert per resource. Inventory is fungible across

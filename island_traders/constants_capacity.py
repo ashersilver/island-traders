@@ -134,6 +134,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Ore": 4}},
         description="+4 Ore capacity",
         capacity_units=2,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="miner.crusher",
@@ -144,6 +145,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Ore": 2, "Metal": 2}, "input_relief": {"Ore": {"Oil": 0.2}}},
         description="+2 Ore, +2 Metal, –0.2 Oil per Ore",
         capacity_units=1,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="miner.enhanced_crusher_smelter",
@@ -158,6 +160,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         },
         description="+200% Metal productivity, -50% Oil per Metal",
         capacity_units=3,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="miner.oil_rig",
@@ -168,6 +171,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Oil": 4}},
         description="+4 Oil capacity",
         capacity_units=3,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="miner.refinery",
@@ -178,6 +182,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Oil": 2}, "enables_profession": "RefinerySpecialist"},
         description="+2 Oil, enables RefinerySpecialist multiplier",
         capacity_units=3,
+        energy_intensive=True,
     ),
 
     # ----- Transporter -----------------------------------------------------
@@ -252,6 +257,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Patents": 3}, "research_stock_per_season": 2},
         description="+3 Patent capacity, generates Research stock",
         capacity_units=4,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="educator.computer_cluster",
@@ -262,6 +268,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Patents": 1}, "input_relief": {"Expertise": {"Reagents": 0.2}}},
         description="+1 Patent, -0.2 Reagents per Expertise",
         capacity_units=1,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="educator.technical_workshop",
@@ -336,6 +343,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         },
         description="enables FarmMachinery + MiningEquipment lines",
         capacity_units=1,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="manufacturer.assembly_line",
@@ -356,6 +364,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         },
         description="+1 unit/season on any line",
         capacity_units=1,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="manufacturer.small_warehouse",
@@ -386,6 +395,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"unlocks_lines": ["MedicalDevices"], "capacity": {"MedicalDevices": 3}},
         description="enables MedicalDevices line",
         capacity_units=2,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="manufacturer.shipyard",
@@ -396,6 +406,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"unlocks_lines": ["TransportEquipment"], "capacity": {"TransportEquipment": 2}},
         description="enables TransportEquipment line",
         capacity_units=4,
+        energy_intensive=True,
     ),
 
     # ----- Doctor ----------------------------------------------------------
@@ -418,6 +429,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"MedicalSupplies": 2, "Vaccine": 1}},
         description="+2 MedicalSupplies, +1 Vaccine",
         capacity_units=3,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="doctor.vaccine_lab",
@@ -428,6 +440,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"capacity": {"Vaccine": 2}},
         description="+2 Vaccine capacity",
         capacity_units=2,
+        energy_intensive=True,
     ),
     CapitalItem(
         item_id="doctor.cold_chain_storage",
@@ -438,6 +451,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         effects={"vaccine_persistence": True},
         description="Vaccine doesn't expire between seasons",
         capacity_units=1,
+        energy_intensive=True,
     ),
     # 2026-06-02: Reagents are made on the Medical island from Oil + Ore but
     # had no capital item dedicated to their capacity — players saw a vague
@@ -657,6 +671,7 @@ def _multiply_capital_capacity(
             service_life_seasons=item.service_life_seasons,
             maintenance_per_season=item.maintenance_per_season,
             capacity_units=item.capacity_units,
+            energy_intensive=item.energy_intensive,
             lease_terms=dict(item.lease_terms) if item.lease_terms else None,
         ))
     return scaled

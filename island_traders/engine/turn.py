@@ -61,6 +61,9 @@ from ..constants import (
     VACCINE_INFECTION_REDUCTION,
     UNTREATED_RECOVERY_SEASONS,
     VACCINE_PANDEMIC_SIDELINE_REDUCTION,
+    BROWNOUT_CAPACITY_PENALTY,
+    BROWNOUT_QOL_PENALTY,
+    BANKER_OFFICE_GOODS_PER_SEASON,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..models.capacity import items_for_role, find_item, technical_workshop_trainee_capacity
@@ -204,14 +207,18 @@ class TurnManager:
                 self.io.print(f"\n[WORKPLACE] {report.player_name}: {report.describe()}")
 
         self._consume_and_post_sustenance()
+        human_players = [player for player in self.players if player.is_human]
+        if human_players:
+            self._process_energy_floor(human_players)
+            self._process_banker_office_goods(year, season_index, human_players)
         self._post_consumer_demand_signals(season_name, risk_reports)
-        self._process_seasonal_qol(year, season_index, event_results)
 
         if self.parallel_mode:
             results = self._run_season_parallel(year, season_index, event_results)
         else:
             results = self._run_season_sequential(year, season_index, event_results)
 
+        self._process_seasonal_qol(year, season_index, event_results)
         self._process_consumer_demand(season_name, risk_reports)
 
         # Loan repayment processing moved to AFTER the action phase
@@ -437,6 +444,78 @@ class TurnManager:
             player._qol_untreated_sidelined_this_season = 0
             player._qol_treated_this_season = 0
             player._qol_medevacs_this_season = 0
+            player._brownout_capacity_multiplier = 1.0
+            player._brownout_qol_stability_delta = 0
+
+    def _process_energy_floor(self, players: list[Player] | None = None) -> None:
+        for player in players or self.players:
+            player._brownout_capacity_multiplier = 1.0
+            player._brownout_qol_stability_delta = 0
+            required = player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+            player._energy_floor_oil_required_this_season = required
+            available = player.inventory.get(ResourceType.OIL)
+            consumed = min(available, required)
+            if consumed > 0:
+                player.give_resources(ResourceType.OIL, consumed)
+                player._oil_consumed_this_year = (
+                    getattr(player, "_oil_consumed_this_year", 0) + consumed
+                )
+                if getattr(self.production, "telemetry", None) is not None:
+                    self.production.telemetry.record_consumed(ResourceType.OIL, consumed)
+            player._energy_floor_oil_consumed_this_season = consumed
+            if consumed < required:
+                shortfall = required - consumed
+                unmet_fraction = shortfall / required if required else 0.0
+                self.market.post_demand(ResourceType.OIL, shortfall)
+                player._brownout_capacity_multiplier = max(
+                    0.0,
+                    1.0 - (BROWNOUT_CAPACITY_PENALTY * unmet_fraction),
+                )
+                player._brownout_qol_stability_delta = -BROWNOUT_QOL_PENALTY * unmet_fraction
+                player._brownout_count = getattr(player, "_brownout_count", 0) + 1
+                self.io.print(
+                    f"  [BROWNOUT] {player.name}: needed {required} Oil for "
+                    f"building power, supplied {consumed}; production capacity -"
+                    f"{BROWNOUT_CAPACITY_PENALTY * unmet_fraction * 100:.1f}% "
+                    "this season."
+                )
+
+    def _banker_has_active_book(self, banker: Player, year: int, season_index: int) -> bool:
+        has_loan = any(
+            loan.status == LoanStatus.ACTIVE
+            and loan.lender_id == banker.player_id
+            and loan.borrower_id != banker.player_id
+            for loan in self.loan_ledger.all_loans()
+        )
+        if has_loan:
+            return True
+        return any(
+            policy.banker_player_id == banker.player_id
+            and policy.is_valid(year, season_index)
+            for player in self.players
+            for policy in player.insurance_policies
+        )
+
+    def _process_banker_office_goods(
+        self,
+        year: int,
+        season_index: int,
+        players: list[Player] | None = None,
+    ) -> None:
+        for player in players or self.players:
+            if not any(role.name == "Banker" for role in player.roles):
+                continue
+            if not self._banker_has_active_book(player, year, season_index):
+                continue
+            needed = BANKER_OFFICE_GOODS_PER_SEASON
+            consumed = min(player.inventory.get(ResourceType.GOODS), needed)
+            if consumed > 0:
+                player.give_resources(ResourceType.GOODS, consumed)
+                if getattr(self.production, "telemetry", None) is not None:
+                    self.production.telemetry.record_consumed(ResourceType.GOODS, consumed)
+            player._banker_office_goods_consumed_this_season = consumed
+            if consumed < needed:
+                self.market.post_demand(ResourceType.GOODS, needed - consumed)
 
     def _consumer_demand_multiplier(self) -> float:
         cycle = getattr(self, "current_cycle", None)
@@ -613,6 +692,10 @@ class TurnManager:
                 event_result, season_name, year, season_index, self.loan_ledger,
                 training_registry=self.training,
                 cycle=self.current_cycle,
+                before_production=lambda: (
+                    self._process_energy_floor([player]),
+                    self._process_banker_office_goods(year, season_index, [player]),
+                ),
             )
             result.actions_taken = training_actions + actions
             for a in actions:
@@ -769,11 +852,7 @@ class TurnManager:
                 self.training.visiting_trainees(player.player_id)
                 if any(r.name == "Educator" for r in player.roles) else 0
             )
-            extra_residents = (
-                visiting_trainees
-                * STAFFING_FOOD_PER_STAFF_PER_SEASON
-                * PEOPLE_PER_MEAL
-            )
+            extra_residents = visiting_trainees
             absent_residents = self.training.trainees_away_from_home(player.player_id)
             meals = player.meals_needed(
                 extra_residents=extra_residents,
@@ -817,6 +896,7 @@ class TurnManager:
                 business_cycle_stability_delta=(
                     getattr(self.current_cycle, "stability_delta", 0)
                     + getattr(event, "qol_stability_delta", 0)
+                    + getattr(player, "_brownout_qol_stability_delta", 0)
                 ),
             )
             player._qol_breakdown = breakdown
