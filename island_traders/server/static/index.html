@@ -1802,6 +1802,26 @@ const API = SERVER_ORIGIN;
 let ws = null;
 let myPlayerId = null;
 let myPlayerIdx = null;
+
+// Season/year header: guarded so it never regresses. Season transitions run
+// on a separate game thread from the async WS request handlers; an in-flight
+// get_state computed just before a season boundary can be delivered to the
+// client AFTER the newer season_start/pre_season_start broadcast (out-of-order
+// delivery), which would otherwise flip the header back to the old season
+// until a manual page refresh forced a fresh state fetch. Track the highest
+// (year, season) ordinal shown so far and ignore any older one.
+const _SEASON_ORDER = ['Spring', 'Summer', 'Autumn', 'Winter'];
+let _lastSeasonOrdinal = -1;
+function _updateSeasonHeader(year, seasonName) {
+  if (!year || !seasonName) return;
+  const idx = _SEASON_ORDER.indexOf(seasonName);
+  // Unknown season string: fail open (always apply) rather than silently drop it.
+  const ordinal = idx === -1 ? Infinity : year * _SEASON_ORDER.length + idx;
+  if (ordinal < _lastSeasonOrdinal) return;
+  _lastSeasonOrdinal = ordinal;
+  document.getElementById('hdr-year').textContent = 'Year ' + year;
+  document.getElementById('hdr-season').textContent = seasonName;
+}
 let currentRoomId = null;
 let currentRoom = null;
 let gameState = null;
@@ -2296,6 +2316,10 @@ function enterWaiting(room) {
   currentRoomId = room.room_id;
   currentRoom = room;
   myPlayerIdx = null;
+  // A fresh room join starts back at Year 1 Spring; reset the season-header
+  // guard so it doesn't refuse to display an "earlier" season than one shown
+  // in a previous room during this same page session.
+  _lastSeasonOrdinal = -1;
   renderWaitingRoom(room);
   showScreen('waiting');
   connectWS();
@@ -5172,8 +5196,7 @@ function renderGameState() {
   if (!me) return;
 
   // Season/Year header
-  if (gameState.year) document.getElementById('hdr-year').textContent = 'Year ' + gameState.year;
-  if (gameState.season) document.getElementById('hdr-season').textContent = gameState.season;
+  _updateSeasonHeader(gameState.year, gameState.season);
   const gameCode = gameState.join_code || (currentRoom && currentRoom.join_code) || currentRoomId || '------';
   const gameCodeEl = document.getElementById('hdr-game-code');
   if (gameCodeEl) gameCodeEl.textContent = gameCode;
@@ -6494,8 +6517,7 @@ let preSeasonTimerInterval = null;
 
 function onPreSeasonStart(msg) {
   seasonPhase = 'pre_season';
-  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
-  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  _updateSeasonHeader(msg.year, msg.season);
   seasonActiveHumans = new Set(msg.active_humans || []);
   seasonReadySet = new Set();
   seasonDoneSet  = new Set();
@@ -6609,8 +6631,7 @@ function onSeasonStart(msg) {
   document.getElementById('pre-season-banner').classList.add('hidden');
   stopPreSeasonTimer();
 
-  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
-  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  _updateSeasonHeader(msg.year, msg.season);
   seasonActiveHumans = new Set(msg.active_humans || []);
   seasonReadySet = new Set();
   seasonDoneSet = new Set();

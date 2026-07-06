@@ -5,7 +5,24 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.27`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.28`.
+
+- **Fix: season header could stick on the old season until a page refresh** —
+  season transitions run on the game thread while `get_state` requests are
+  served async; an in-flight request computed just before a season boundary
+  could be delivered to the client *after* the newer `season_start`/
+  `pre_season_start` broadcast, silently reverting the header. The header
+  update is now guarded by a monotonic (year, season) ordinal — any older
+  season is ignored, so the display can only move forward (or reset on a
+  fresh room join).
+- **Fix: capital-repair failure message named the wrong resource** — repairing
+  a failed unit blocked by missing Spares (repairs need `capacity_units` worth,
+  per the manufacturer-capacity-scaling brief) showed a generic "needs enough
+  Dollops and Freight" message that predates that requirement, misleading
+  players into checking the wrong resources. Now surfaces the actual blocker
+  (e.g. "Need 1 Spares for Underwriting Desk; available 0.") computed by the
+  existing repair-quote logic. New regression tests
+  (`tests/test_server/test_capital_repair_message.py`).
 
 - **UI: continuing-education tile reconciled to the real payload** — the
   Island Wellbeing tile's Continuing Ed. row was stubbed against a guessed
