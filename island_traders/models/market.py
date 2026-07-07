@@ -92,6 +92,11 @@ class Market:
     # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
     # simulation. None during normal play, so live games pay nothing.
     telemetry: object | None = None
+    # Executed-trade ledger (Trade Blotter, #211). Every fill appends one
+    # canonical record here; ``player_fills`` shapes it per-viewer for the UI.
+    # Bounded to the most recent ``_FILLS_CAP`` fills to cap memory.
+    _fills: list[dict] = field(default_factory=list)
+    _next_fill_id: int = 0
 
     def _emit_market_event(self, rtype: ResourceType, side: str, action: str,
                            price: float, quantity: int, actor: str) -> None:
@@ -110,6 +115,39 @@ class Market:
         """Return and clear the buffered market events."""
         events, self._event_log = self._event_log, []
         return events
+
+    # Retain at most this many executed fills in the ledger (memory bound).
+    _FILLS_CAP = 500
+
+    def _record_fill(self, rtype: ResourceType, price: float, qty: int, *,
+                     buyer_id: int | None, buyer_name: str,
+                     seller_id: int | None, seller_name: str) -> None:
+        """Append one executed trade to the ledger (Trade Blotter, #211).
+
+        Records the canonical two-sided fill once; ``player_fills`` derives
+        each viewer's perspective (buy vs sell, counterparty) from it.
+        Self-trades (same island both sides) are not real trades and are
+        skipped.  Market-maker fills pass ``None`` for the maker side's id
+        and a ``"Market"`` name.
+        """
+        if qty <= 0:
+            return
+        if buyer_id is not None and buyer_id == seller_id:
+            return
+        self._fills.append({
+            "fill_id": self._next_fill_id,
+            "resource": rtype.value,
+            "price_per_unit": round(price, 2),
+            "quantity": int(qty),
+            "buyer_id": buyer_id,
+            "buyer_name": buyer_name,
+            "seller_id": seller_id,
+            "seller_name": seller_name,
+            "season_key": list(self._current_season_key),
+        })
+        self._next_fill_id += 1
+        if len(self._fills) > self._FILLS_CAP:
+            self._fills = self._fills[-self._FILLS_CAP:]
 
     def current_price(self, rtype: ResourceType) -> float:
         s = self.supply.get(rtype, 0)
@@ -178,6 +216,11 @@ class Market:
         self.supply[rtype] = max(0, self.supply.get(rtype, 0) - qty)
         self._maker_buy_depth[rtype] = depth - qty
         self.post_demand(rtype, qty)
+        self._record_fill(
+            rtype, price, qty,
+            buyer_id=buyer.player_id, buyer_name=buyer.name,
+            seller_id=None, seller_name="Market",
+        )
         if self.telemetry is not None:
             self.telemetry.record_traded(rtype, qty)
         return total
@@ -194,6 +237,11 @@ class Market:
         seller.receive_dollops(total)
         self.post_supply(rtype, qty)
         self._maker_sell_depth[rtype] = depth - qty
+        self._record_fill(
+            rtype, price, qty,
+            buyer_id=None, buyer_name="Market",
+            seller_id=seller.player_id, seller_name=seller.name,
+        )
         if self.telemetry is not None:
             self.telemetry.record_traded(rtype, qty)
         return total
@@ -350,17 +398,21 @@ class Market:
         raise ValueError("Bid not found")
 
     def post_offer(self, seller: Player, rtype: ResourceType,
-                   price_per_unit: float, qty: int) -> MarketOffer:
+                   price_per_unit: float, qty: int,
+                   replace: bool = True) -> MarketOffer:
         if rtype in NON_TRADABLE_RESOURCES:
             raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
             raise ValueError("Offer quantity must be positive")
         if price_per_unit <= 0:
             raise ValueError("Offer price must be positive")
-        # A new ask overrides this player's prior bids AND asks on this
-        # resource — cancel them first so any refunded units from a
-        # prior ask are visible to the inventory check below.
-        self.cancel_player_orders(seller.player_id, rtype)
+        # When ``replace`` (the default), a new ask supersedes this player's
+        # prior bids AND asks on this resource — cancel them first so any
+        # refunded units from a prior ask are visible to the inventory check
+        # below.  When ``replace`` is False the new ask *layers* on top of the
+        # existing ones (Trade Blotter, #211), letting an island stack orders.
+        if replace:
+            self.cancel_player_orders(seller.player_id, rtype)
         if seller.inventory.get(rtype) < qty:
             raise InsufficientSupplyError(
                 f"{seller.name} has only {seller.inventory.get(rtype)} {rtype.value}"
@@ -387,7 +439,8 @@ class Market:
         return offer
 
     def post_bid(self, buyer: Player, rtype: ResourceType,
-                 price_per_unit: float, qty: int) -> MarketBid:
+                 price_per_unit: float, qty: int,
+                 replace: bool = True) -> MarketBid:
         if rtype in NON_TRADABLE_RESOURCES:
             raise ValueError(f"{rtype.value} is not tradable")
         if qty <= 0:
@@ -399,10 +452,12 @@ class Market:
             raise InsufficientFundsError(
                 f"{buyer.name} has {buyer.dollops:.2f} but bid needs {total_cost:.2f}"
             )
-        # A new bid overrides this player's prior bids AND asks on this
-        # resource (cancels both).  Resources from any cancelled ask
-        # refund to the buyer/seller.
-        self.cancel_player_orders(buyer.player_id, rtype)
+        # When ``replace`` (the default), a new bid supersedes this player's
+        # prior bids AND asks on this resource (cancels both); resources from
+        # any cancelled ask refund.  When ``replace`` is False the bid *layers*
+        # on top of the existing orders (Trade Blotter, #211).
+        if replace:
+            self.cancel_player_orders(buyer.player_id, rtype)
         price = round(price_per_unit, 2)
         bid = MarketBid(
             bid_id=self._next_bid_id,
@@ -461,6 +516,11 @@ class Market:
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            self._record_fill(
+                bid.resource, trade_price, qty,
+                buyer_id=bid.buyer_id, buyer_name=bid.buyer_name,
+                seller_id=offer.seller_id, seller_name=offer.seller_name,
+            )
             if self.telemetry is not None:
                 self.telemetry.record_traded(bid.resource, qty)
 
@@ -504,6 +564,11 @@ class Market:
             seller.receive_dollops(cost)
             offer.remaining -= qty
             bid.remaining -= qty
+            self._record_fill(
+                offer.resource, trade_price, qty,
+                buyer_id=bid.buyer_id, buyer_name=bid.buyer_name,
+                seller_id=offer.seller_id, seller_name=offer.seller_name,
+            )
             if self.telemetry is not None:
                 self.telemetry.record_traded(offer.resource, qty)
 
@@ -555,6 +620,11 @@ class Market:
             seller.receive_dollops(cost)
             ask.remaining -= qty
             bid.remaining -= qty
+            self._record_fill(
+                rtype, trade_price, qty,
+                buyer_id=bid.buyer_id, buyer_name=bid.buyer_name,
+                seller_id=ask.seller_id, seller_name=ask.seller_name,
+            )
             if self.telemetry is not None:
                 self.telemetry.record_traded(rtype, qty)
 
@@ -607,6 +677,36 @@ class Market:
         ]
         return {"offers": offers, "bids": bids}
 
+    def player_fills(self, player_id: int, limit: int = 50) -> list[dict]:
+        """Executed trades involving ``player_id``, most recent first.
+
+        Shaped for the Trade Blotter Fills tab (#211): each row is from the
+        viewer's perspective — ``side`` is "buy" when the viewer received the
+        resource, "sell" when they supplied it — with the counterparty's name
+        (or "Market" for market-maker fills).
+        """
+        out: list[dict] = []
+        for f in reversed(self._fills):
+            if f["buyer_id"] == player_id:
+                side, counterparty, cp_id = "buy", f["seller_name"], f["seller_id"]
+            elif f["seller_id"] == player_id:
+                side, counterparty, cp_id = "sell", f["buyer_name"], f["buyer_id"]
+            else:
+                continue
+            out.append({
+                "fill_id": f["fill_id"],
+                "resource": f["resource"],
+                "side": side,
+                "price_per_unit": f["price_per_unit"],
+                "quantity": f["quantity"],
+                "counterparty": counterparty,
+                "counterparty_id": cp_id,
+                "season_key": f["season_key"],
+            })
+            if len(out) >= limit:
+                break
+        return out
+
     def buy_from_offers(self, buyer: Player, rtype: ResourceType,
                         qty: int) -> tuple[float, int]:
         offers = self.available_offers(rtype)
@@ -633,6 +733,11 @@ class Market:
             bought += take
             if offer._seller is not None and offer.seller_id != buyer.player_id:
                 offer._seller.receive_dollops(cost)
+                self._record_fill(
+                    rtype, offer.price_per_unit, take,
+                    buyer_id=buyer.player_id, buyer_name=buyer.name,
+                    seller_id=offer.seller_id, seller_name=offer.seller_name,
+                )
         buyer.receive_resources(rtype, bought, acquired_tick=self._current_tick())
         self.post_demand(rtype, bought)
         if bought > 0:
@@ -679,6 +784,11 @@ class Market:
             bid.remaining -= take
             total_paid += cost
             sold += take
+            self._record_fill(
+                rtype, bid.price_per_unit, take,
+                buyer_id=bid.buyer_id, buyer_name=bid.buyer_name,
+                seller_id=seller.player_id, seller_name=seller.name,
+            )
         if sold > 0:
             avg = total_paid / sold
             self._emit_market_event(rtype, "bid", "filled", avg, sold, seller.name)

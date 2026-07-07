@@ -344,6 +344,22 @@ button:active{transform:scale(.97)}
 }
 .tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
 
+/* Trade Blotter (#211) — tabbed overlay on the Market Board */
+.blotter-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:.6rem}
+.blotter-badge{display:inline-block;min-width:1.1em;padding:0 .35em;margin-left:.3em;
+  border-radius:999px;background:var(--accent);color:#001018;font-size:.66rem;font-weight:700;line-height:1.5}
+.blotter-note{font-size:.76rem;color:var(--dim);line-height:1.5;margin:.1rem 0 .55rem}
+.blotter-total{font-size:.85rem;margin-right:auto}
+.blotter-bar{display:flex;align-items:center;gap:.6rem;margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border)}
+.mkt-mode{cursor:pointer;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;
+  border:1px solid var(--border);background:var(--bg);color:var(--dim)}
+.mkt-mode[data-mode="layer"]{color:var(--green);border-color:var(--green)}
+.mkt-mode[data-mode="replace"]{color:var(--gold);border-color:var(--gold)}
+.blotter-fill{display:flex;align-items:center;gap:.5rem;font-size:.78rem;padding:.28rem 0;border-bottom:1px solid var(--border)}
+.blotter-fill .side-buy{color:var(--green);font-weight:700}
+.blotter-fill .side-sell{color:var(--gold);font-weight:700}
+.blotter-empty{font-size:.8rem;color:var(--dim);margin:.6rem 0}
+
 .g-side{grid-area:side;background:var(--panel);overflow-y:auto;padding:.75rem;border-right:1px solid var(--border)}
 .g-main{
   grid-area:main;background:var(--bg);overflow-y:auto;padding:.9rem;
@@ -4878,13 +4894,27 @@ function handleMessage(msg) {
       break;
     case 'market_order_update_ack':
       if (msg.ok) {
-        showToast(msg.action === 'cancel' ? 'Order cancelled.' : 'Order reduced.', { type: 'success' });
-        if (document.getElementById('overlay').classList.contains('active')) hideOverlay();
+        showToast(msg.action === 'cancel' ? 'Order removed.' : 'Order reduced.', { type: 'success' });
+        // Keep the Trade Blotter open when managing orders from its Orders
+        // tab (the following game_state refreshes it, #211); only the legacy
+        // prompt-driven Market Buy popup should close on an order update.
+        if (!_blotterOpen && document.getElementById('overlay').classList.contains('active')) hideOverlay();
       } else {
         addLog('Market order error: ' + (msg.error || 'Unknown error'), 'err');
         showToast(msg.error || 'Market order update failed.', { type: 'error' });
       }
       break;
+    case 'order_batch_result': {
+      // Trade Blotter capture (#211): surface any rejected rows; fills and
+      // resting orders arrive via the game_state that follows.
+      const rejected = (msg.results || []).filter(r => r && r.status === 'rejected');
+      if (rejected.length) {
+        rejected.forEach(r => addLog(
+          `Trade rejected: ${r.side} ${r.resource} — ${r.reason || 'not allowed'}`, 'err'));
+        showToast(`${rejected.length} order${rejected.length > 1 ? 's' : ''} rejected — see the log.`, { type: 'error' });
+      }
+      break;
+    }
     case 'transfer_offer_received': {
       const o = msg.offer;
       if (o) {
@@ -4932,6 +4962,7 @@ function handleMessage(msg) {
         buildIslandMap();
       }
       refreshPauseButton();
+      refreshOpenBlotter();   // keep an open Trade Blotter's orders/fills fresh (#211)
       break;
     case 'print':
       addLog(msg.text);
@@ -5753,6 +5784,15 @@ function _actOnHint(action, payload = {}) {
   // the next modal that opens.
   _pendingHintTarget = Object.assign({ action }, payload);
 
+  // Trade actions open the client-side Trade Blotter (#211) directly, like
+  // the Market Buy/Sell action buttons — capture rides `order_batch`, so we
+  // don't need the server's choose_action prompt and it works even while the
+  // player is parked (Done Trading). openTradeBlotter consumes the hint focus.
+  if (action === 'market_buy' || action === 'market_sell') {
+    openTradeBlotter('trade', { side: action === 'market_sell' ? 'sell' : 'buy' });
+    return;
+  }
+
   // Sub-issue C: hint clicked while in Done Trading state.  Option 1
   // (preferred per AyaySir IMP-04): auto-undo Done, queue the action to
   // fire as soon as the fresh choose_action prompt arrives.
@@ -6332,10 +6372,304 @@ function renderBarterMarket(compact = false) {
   `;
 }
 
-function showMarketBoardPopup() {
+// ==================== TRADE BLOTTER (#211) ====================
+// A tabbed overlay on the Market Board. Shows the island's live market, its
+// own resting bids/asks, and an executed-fills tape — and captures new trades
+// through the Trade tab. New orders LAYER on top of existing ones by default
+// (per-row toggle to Replace); capture rides the fire-and-forget `order_batch`
+// path (trading.execute_order_list), so the AI's turn-prompt flow is untouched.
+let _blotterOpen = false;
+let _blotterTab = 'market';
+let _blotterFocusSide = 'buy';
+let _blotterFocusResource = null;
+const _blotterModes = {};   // resource -> 'layer' | 'replace'
+
+function showMarketBoardPopup() { openTradeBlotter('market'); }
+
+function openTradeBlotter(tab, opts = {}) {
   if (!gameState) return;
-  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket();
-  showPopup('Market Board', html);
+  // Consume a pending decision-hint focus (Market Buy/Sell hint click).
+  const hint = _pendingHintTarget;
+  _pendingHintTarget = null;
+  if (hint && (hint.action === 'market_buy' || hint.action === 'market_sell')) {
+    _blotterFocusResource = hint.resource || null;
+    _blotterFocusSide = hint.action === 'market_sell' ? 'sell' : 'buy';
+  } else {
+    _blotterFocusResource = opts.focusResource || null;
+    if (opts.side) _blotterFocusSide = opts.side;
+  }
+  _blotterTab = tab || 'market';
+  _blotterOpen = true;
+  showPopup('Market Board',
+    `<div class="blotter-tabs" id="blotter-tabs">${_renderBlotterTabBar()}</div>`
+    + `<div id="blotter-pane"></div>`,
+    { className: 'market-dialog' });
+  _mountBlotterTab();
+}
+
+function _blotterMe() {
+  return (gameState && myPlayerIdx != null) ? gameState.players[myPlayerIdx] : null;
+}
+function _blotterCash() {
+  const me = _blotterMe();
+  return me ? (me.treasury ?? me.dollops ?? 0) : 0;
+}
+function _blotterInv(res) {
+  const me = _blotterMe();
+  return (me && me.inventory && me.inventory[res]) || 0;
+}
+
+function _renderBlotterTabBar() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const orderCount = (orders.offers || []).length + (orders.bids || []).length;
+  const fillCount = ((gameState && gameState.my_fills) || []).length;
+  const badge = n => n > 0 ? ` <span class="blotter-badge">${n}</span>` : '';
+  const tabs = [
+    ['market', 'Market', ''],
+    ['trade', 'Trade', ''],
+    ['orders', 'My orders', badge(orderCount)],
+    ['fills', 'Fills', badge(fillCount)],
+  ];
+  return tabs.map(([k, label, extra]) =>
+    `<button class="tab-btn${k === _blotterTab ? ' active' : ''}" data-blotter-tab="${k}" onclick="_switchBlotterTab('${k}')">${label}${extra}</button>`
+  ).join('');
+}
+
+function _switchBlotterTab(tab) {
+  _blotterTab = tab;
+  document.querySelectorAll('#blotter-tabs .tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.blotterTab === tab));
+  _mountBlotterTab();
+}
+
+function _mountBlotterTab() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  if (_blotterTab === 'trade') {
+    pane.innerHTML = _renderBlotterTradeTab();
+    pane.querySelectorAll('.blot-num').forEach(inp =>
+      inp.addEventListener('input', updateBlotterTotals));
+    updateBlotterTotals();
+    if (_blotterFocusResource) {
+      const row = pane.querySelector(`tr[data-blot-res="${_blotterFocusResource}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+  } else if (_blotterTab === 'orders') {
+    pane.innerHTML = _renderBlotterOrdersTab();
+  } else if (_blotterTab === 'fills') {
+    pane.innerHTML = _renderBlotterFillsTab();
+  } else {
+    pane.innerHTML = renderMarketTable(gameState.market || {}) + renderBarterMarket();
+  }
+}
+
+// Re-render the tab bar (badge counts) and any read-only tab in place when a
+// fresh game_state lands. The Trade tab is left untouched so a mid-entry form
+// isn't wiped out from under the player.
+function refreshOpenBlotter() {
+  if (!_blotterOpen) return;
+  const pane = document.getElementById('blotter-pane');
+  const overlay = document.getElementById('overlay');
+  if (!pane || !overlay || !overlay.classList.contains('active')) {
+    _blotterOpen = false;
+    return;
+  }
+  const bar = document.getElementById('blotter-tabs');
+  if (bar) bar.innerHTML = _renderBlotterTabBar();
+  if (_blotterTab !== 'trade') _mountBlotterTab();
+}
+
+function _renderBlotterTradeTab() {
+  const market = gameState.market || {};
+  const entries = Object.entries(market);
+  const focus = _blotterFocusResource;
+  // Tier rows by relevance (mirrors the old Market Buy popup): hinted/focused
+  // first, then live (any resting depth), then dormant behind an expander.
+  const tier1 = [], tier2 = [], tier3 = [];
+  for (const e of entries) {
+    const [res, d] = e;
+    if ((_currentHintResources && _currentHintResources.has(res)) || res === focus) tier1.push(e);
+    else if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) tier2.push(e);
+    else tier3.push(e);
+  }
+  if (focus) tier1.sort((a, b) => a[0] === focus ? -1 : (b[0] === focus ? 1 : 0));
+
+  const note = `<div class="blotter-note">
+    New orders <strong style="color:var(--green)">layer</strong> on top of your open orders by default —
+    flip a row to <strong style="color:var(--gold)">Replace</strong> to supersede your prior order on that commodity.
+    <span style="color:var(--gold)">Buy/Sell now</span> execute immediately at the shown price;
+    <span style="color:var(--green)">Bid/Ask</span> post a resting order at your price.
+    ${_blotterFocusSide === 'sell' ? 'Opened for <strong>selling</strong>.' : 'Opened for <strong>buying</strong>.'}
+  </div>`;
+
+  const primary = tier1.concat(tier2);
+  let html = note;
+  html += `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.4rem">Treasury: <strong style="color:var(--gold)">${_blotterCash().toFixed(1)} Dp</strong></div>`;
+  if (primary.length) {
+    html += '<div class="market-buy-wrap"><table class="market-buy-table">'
+      + _blotterTradeHeaderRow() + '<tbody>'
+      + primary.map(([res, d]) => _blotterTradeRow(res, d)).join('')
+      + '</tbody></table></div>';
+  } else {
+    html += '<div class="blotter-empty">No live market activity — every commodity is in the section below.</div>';
+  }
+  if (tier3.length) {
+    html += `<details class="mkt-dormant"><summary>Show all other commodities (${tier3.length})</summary>`
+      + '<div class="market-buy-wrap" style="margin-top:.5rem"><table class="market-buy-table">'
+      + _blotterTradeHeaderRow() + '<tbody>'
+      + tier3.map(([res, d]) => _blotterTradeRow(res, d)).join('')
+      + '</tbody></table></div></details>';
+  }
+  html += `<div class="blotter-bar">
+    <span class="blotter-total">Buy <strong id="blot-buy-total" style="color:var(--gold)">0 Dp</strong>
+      &nbsp;·&nbsp; Sell <strong id="blot-sell-total" style="color:var(--green)">0 Dp</strong></span>
+    <button class="btn-gold" onclick="submitBlotterTrade()">Place orders</button>
+  </div>`;
+  return html;
+}
+
+function _blotterTradeHeaderRow() {
+  return '<thead><tr>'
+    + '<th style="width:150px">Commodity</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Bid</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Ask</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Buy now</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Sell now</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Bid q @ price</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Ask q @ price</th>'
+    + '<th style="border-left:2px solid var(--border)">Mode</th>'
+    + '</tr></thead>';
+}
+
+function _blotterTradeRow(res, d) {
+  const askQty = d.ask_quantity ?? d.quantity ?? 0;
+  const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
+  const bidQty = d.bid_quantity ?? 0;
+  const bidPrice = d.bid_price;
+  const inv = _blotterInv(res);
+  const sellNowMax = Math.min(bidQty, inv);
+  const restPrefill = d.formula_price ? Number(d.formula_price).toFixed(2)
+    : (askPrice ? Number(askPrice).toFixed(2) : 0);
+  const askPrefill = bidPrice ? Number(bidPrice).toFixed(2) : restPrefill;
+  const mode = _blotterModes[res] || 'layer';
+  const focusClass = (res === _blotterFocusResource) ? ' class="mkt-row-focus"' : '';
+  const num = 'style="width:56px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
+  const px = 'style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
+  return `<tr data-blot-res="${esc(res)}"${focusClass}>
+    <td>${esc(res)}</td>
+    <td style="color:var(--green);border-left:2px solid var(--border)" title="${bidQty} wanted">${fmtMarketPrice(bidPrice)}</td>
+    <td style="color:var(--gold);border-left:2px solid var(--border)" title="${askQty} offered">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="blot-num blot-buynow" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp` : 'No ask available'}" ${num}/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><input type="number" inputmode="numeric" class="blot-num blot-sellnow" data-price="${bidPrice || 0}" data-max="${sellNowMax}" min="0" max="${sellNowMax}" placeholder="0" ${sellNowMax > 0 ? '' : 'disabled'} title="${sellNowMax > 0 ? `Sell up to ${sellNowMax} now at ${Number(bidPrice).toFixed(2)} Dp` : (inv <= 0 ? 'None in inventory' : 'No bid to sell into')}" ${num}/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-bidqty" min="0" placeholder="0" title="Quantity to bid for" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-bidpx" min="0" step="0.01" placeholder="${restPrefill}" title="Your bid price/unit — empty uses the reference" ${px}/></div></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-askqty" min="0" max="${inv}" placeholder="0" ${inv > 0 ? '' : 'disabled'} title="${inv > 0 ? `You hold ${inv}` : 'None in inventory to offer'}" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-askpx" min="0" step="0.01" placeholder="${askPrefill}" ${inv > 0 ? '' : 'disabled'} title="Your ask price/unit — empty uses the reference" ${px}/></div></td>
+    <td style="border-left:2px solid var(--border)"><button type="button" class="mkt-mode" data-mode="${mode}" onclick="toggleBlotterMode('${esc(res)}', this)" title="Layer: add alongside your open orders. Replace: supersede them.">${mode === 'replace' ? 'Replace' : 'Layer'}</button></td>
+  </tr>`;
+}
+
+function toggleBlotterMode(res, el) {
+  const next = (el.dataset.mode === 'replace') ? 'layer' : 'replace';
+  el.dataset.mode = next;
+  el.textContent = next === 'replace' ? 'Replace' : 'Layer';
+  _blotterModes[res] = next;
+}
+
+function updateBlotterTotals() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  let buy = 0, sell = 0;
+  pane.querySelectorAll('tr[data-blot-res]').forEach(tr => {
+    const buyNow = Math.max(0, parseInt(tr.querySelector('.blot-buynow')?.value) || 0);
+    const buyNowPx = parseFloat(tr.querySelector('.blot-buynow')?.dataset.price) || 0;
+    const sellNow = Math.max(0, parseInt(tr.querySelector('.blot-sellnow')?.value) || 0);
+    const sellNowPx = parseFloat(tr.querySelector('.blot-sellnow')?.dataset.price) || 0;
+    const bidQ = Math.max(0, parseInt(tr.querySelector('.blot-bidqty')?.value) || 0);
+    const bidPxEl = tr.querySelector('.blot-bidpx');
+    const bidPx = bidQ > 0 ? (parseFloat(bidPxEl?.value) || parseFloat(bidPxEl?.placeholder) || 0) : 0;
+    const askQ = Math.max(0, parseInt(tr.querySelector('.blot-askqty')?.value) || 0);
+    const askPxEl = tr.querySelector('.blot-askpx');
+    const askPx = askQ > 0 ? (parseFloat(askPxEl?.value) || parseFloat(askPxEl?.placeholder) || 0) : 0;
+    buy += buyNow * buyNowPx + bidQ * bidPx;
+    sell += sellNow * sellNowPx + askQ * askPx;
+  });
+  const b = document.getElementById('blot-buy-total');
+  const s = document.getElementById('blot-sell-total');
+  if (b) b.textContent = buy.toFixed(1) + ' Dp';
+  if (s) s.textContent = sell.toFixed(1) + ' Dp';
+}
+
+function submitBlotterTrade() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  const orders = [];
+  pane.querySelectorAll('tr[data-blot-res]').forEach(tr => {
+    const res = tr.dataset.blotRes;
+    const mode = _blotterModes[res] || 'layer';
+    const replace = mode === 'replace';
+    const readInt = sel => Math.max(0, parseInt(tr.querySelector(sel)?.value) || 0);
+    const readPx = (sel) => {
+      const el = tr.querySelector(sel);
+      return el ? (parseFloat(el.value) || parseFloat(el.placeholder) || 0) : 0;
+    };
+    const buyNow = Math.min(readInt('.blot-buynow'), parseInt(tr.querySelector('.blot-buynow')?.dataset.max) || 0);
+    if (buyNow > 0) orders.push({ side: 'buy', resource: res, quantity: buyNow });
+    const sellNow = Math.min(readInt('.blot-sellnow'), parseInt(tr.querySelector('.blot-sellnow')?.dataset.max) || 0);
+    if (sellNow > 0) orders.push({ side: 'sell', resource: res, quantity: sellNow });
+    const bidQ = readInt('.blot-bidqty');
+    const bidPx = readPx('.blot-bidpx');
+    if (bidQ > 0 && bidPx > 0) orders.push({ side: 'buy', resource: res, quantity: bidQ, limit_price: bidPx, replace });
+    const askQ = readInt('.blot-askqty');
+    const askPx = readPx('.blot-askpx');
+    if (askQ > 0 && askPx > 0) orders.push({ side: 'sell', resource: res, quantity: askQ, limit_price: askPx, replace });
+  });
+  if (!orders.length) { showToast('Enter a quantity to trade first.', { type: 'info' }); return; }
+  sendWsMessage({ type: 'order_batch', batch_ref: 'blotter-' + Date.now(), orders });
+  showToast(`Submitted ${orders.length} order${orders.length > 1 ? 's' : ''}.`, { type: 'info' });
+  _switchBlotterTab('orders');   // show the resulting resting orders once state returns
+}
+
+function _renderBlotterOrdersTab() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const offers = orders.offers || [];
+  const bids = orders.bids || [];
+  if (!offers.length && !bids.length) {
+    return `<div class="blotter-empty">No open orders. Place a resting bid or ask from the Trade tab to start layering a strategy.</div>`;
+  }
+  const row = (side, o) => {
+    const id = side === 'ask' ? o.offer_id : o.bid_id;
+    const tone = side === 'ask' ? 'var(--gold)' : 'var(--green)';
+    return `<div class="mkt-row" style="gap:.5rem;align-items:center">
+      <span class="res" style="min-width:150px">${side === 'ask' ? 'Ask' : 'Bid'} · ${esc(o.resource)}</span>
+      <span class="price" style="color:${tone};font-size:.8rem">${o.remaining} @ ${Number(o.price_per_unit).toFixed(2)} Dp</span>
+      <span style="flex:1"></span>
+      ${o.remaining > 1 ? `<button class="btn-ghost btn-sm" onclick="marketOrderReduce('${side}', ${id}, ${o.remaining})" title="Reduce this order">Reduce</button>` : ''}
+      <button class="btn-ghost btn-sm" onclick="marketOrderCancel('${side}', ${id})" title="Remove this order">Remove</button>
+    </div>`;
+  };
+  return `<div style="font-size:.76rem;color:var(--dim);margin-bottom:.5rem">Your standing bids and asks. Remove one to clear it, or Reduce its quantity.</div>`
+    + offers.map(o => row('ask', o)).join('')
+    + bids.map(o => row('bid', o)).join('');
+}
+
+function _renderBlotterFillsTab() {
+  const fills = (gameState && gameState.my_fills) || [];
+  if (!fills.length) {
+    return `<div class="blotter-empty">No trades executed yet. Fills appear here as your bids and asks are matched.</div>`;
+  }
+  const rows = fills.map(f => {
+    const cls = f.side === 'buy' ? 'side-buy' : 'side-sell';
+    const verb = f.side === 'buy' ? 'Bought' : 'Sold';
+    const sk = Array.isArray(f.season_key) ? f.season_key : null;
+    const when = sk ? `Y${sk[0] + 1}·S${sk[1] + 1}` : '';
+    return `<div class="blotter-fill">
+      <span class="${cls}" style="min-width:52px">${verb}</span>
+      <span style="min-width:150px">${f.quantity} × ${esc(f.resource)} @ ${Number(f.price_per_unit).toFixed(2)} Dp</span>
+      <span style="color:var(--dim)">${f.side === 'buy' ? 'from' : 'to'} ${esc(f.counterparty || 'Market')}</span>
+      <span style="flex:1"></span>
+      <span style="color:var(--dim);font-size:.72rem">${when}</span>
+    </div>`;
+  }).join('');
+  return `<div style="font-size:.76rem;color:var(--dim);margin-bottom:.5rem">Your executed trades, most recent first.</div>${rows}`;
 }
 
 // ---- Dependency flowchart popup ----
@@ -7027,6 +7361,8 @@ function _renderActionButton(o) {
   // prompt; the modal sends an independent capital_order so the menu stays live.
   const handler = o.value === 'request_training' ? 'openTrainingDesk()'
     : o.value === 'purchase_capital' ? 'openCapitalPicker()'
+    : o.value === 'market_buy' ? "openTradeBlotter('trade', {side:'buy'})"
+    : o.value === 'market_sell' ? "openTradeBlotter('trade', {side:'sell'})"
     : `sendResponse('${o.value}')`;
   const onclick = disabled ? '' : ` onclick="${handler}"`;
   // Informative sub-line: prefer a server-supplied context string (forward-

@@ -3250,9 +3250,10 @@ class GameManager:
             "batch_ref": batch_ref,
             "results": results,
         }))
-        state = self.get_game_state(room_id, lobby_player_id)
-        if state:
-            await websocket.send_text(json.dumps(state))
+        # Refresh every seat: a resting order or immediate fill can move
+        # another island's cash/inventory, so all clients need fresh state
+        # (not just the actor's).  Also surfaces the new fills tape (#211).
+        self._broadcast_state_all(room_id)
 
     async def _handle_market_order_update(
         self,
@@ -5026,6 +5027,11 @@ class GameManager:
             game.market.player_orders(viewer_engine_id)
             if viewer_engine_id is not None else {"offers": [], "bids": []}
         )
+        # Executed-trade tape for this viewer (Trade Blotter Fills tab, #211).
+        my_fills = (
+            game.market.player_fills(viewer_engine_id)
+            if viewer_engine_id is not None else []
+        )
 
         return {
             "type": "game_state",
@@ -5083,6 +5089,7 @@ class GameManager:
             },
             "market": market_data,
             "my_market_orders": my_market_orders,
+            "my_fills": my_fills,
             "barter_market": {"deals": barter_deals, "needs": barter_needs},
             "deals_awaiting_me": deals_awaiting_me,
             "my_deals": my_deals,
@@ -5137,6 +5144,30 @@ class GameManager:
             await ws.send_text(json.dumps(msg))
         except Exception:
             pass
+
+    def _broadcast_state_all(self, room_id: str) -> None:
+        """Push a fresh per-viewer snapshot to every connected client and
+        drain queued market events.
+
+        Mirrors the game-thread ``on_action_complete`` broadcast so that
+        fire-and-forget order handlers (``order_batch`` for Trade Blotter
+        capture, #211) keep *every* seat in sync — a fill against another
+        island's resting order changes that island's cash/inventory and
+        must reach its client, not just the actor's.
+        """
+        with self._ws_lock:
+            connected = list(self._ws_connections.get(room_id, {}).keys())
+        for lobby_id in connected:
+            state = self.get_game_state(room_id, lobby_id)
+            if state:
+                self._thread_safe_send(room_id, lobby_id, state)
+        room = self.rooms.get(room_id)
+        market = getattr(getattr(room, "game", None), "market", None)
+        if market is not None:
+            for ev in market.drain_events():
+                self._thread_safe_broadcast(
+                    room_id, {"type": "market_event", **ev}
+                )
 
     # ── Chat ──────────────────────────────────────────────────────────────────
 
