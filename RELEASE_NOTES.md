@@ -7,7 +7,7 @@ Release notes are required before merging a feature/fix branch into
 
 `APP_VERSION`: `0.1.5-dev.2026-06-22.29`.
 
-- **Feature: Trade Blotter — layered orders + executed-fills tape (#211)** — the
+- **Feature: Trade Blotter — layered orders + executed-fills tape (#210)** — the
   Market Board is now a tabbed **Trade Blotter** (Market · Trade · My orders ·
   Fills) that opens in response to Market Buy / Market Sell (and from the Market
   Board tile). It lets an island see exactly what bids and asks it has already

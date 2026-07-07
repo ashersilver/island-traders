@@ -1,4 +1,4 @@
-"""Trade Blotter (#211) server wiring: order_batch layering + my_fills tape."""
+"""Trade Blotter (#210) server wiring: order_batch layering + my_fills tape."""
 from __future__ import annotations
 
 import asyncio

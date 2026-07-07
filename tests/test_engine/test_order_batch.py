@@ -133,7 +133,7 @@ def test_execute_order_list_matches_sequential_market_primitives():
 
 
 def test_execute_order_list_layers_resting_orders_when_replace_false():
-    """Blotter capture (#211): replace:false stacks orders instead of
+    """Blotter capture (#210): replace:false stacks orders instead of
     superseding — the layered-strategy the Trade Blotter exposes."""
     market = Market()
     engine = TradingEngine(market, DealLedger())

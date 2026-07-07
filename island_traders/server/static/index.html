@@ -344,7 +344,7 @@ button:active{transform:scale(.97)}
 }
 .tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
 
-/* Trade Blotter (#211) — tabbed overlay on the Market Board */
+/* Trade Blotter (#210) — tabbed overlay on the Market Board */
 .blotter-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:.6rem}
 .blotter-badge{display:inline-block;min-width:1.1em;padding:0 .35em;margin-left:.3em;
   border-radius:999px;background:var(--accent);color:#001018;font-size:.66rem;font-weight:700;line-height:1.5}
@@ -4896,7 +4896,7 @@ function handleMessage(msg) {
       if (msg.ok) {
         showToast(msg.action === 'cancel' ? 'Order removed.' : 'Order reduced.', { type: 'success' });
         // Keep the Trade Blotter open when managing orders from its Orders
-        // tab (the following game_state refreshes it, #211); only the legacy
+        // tab (the following game_state refreshes it, #210); only the legacy
         // prompt-driven Market Buy popup should close on an order update.
         if (!_blotterOpen && document.getElementById('overlay').classList.contains('active')) hideOverlay();
       } else {
@@ -4905,7 +4905,7 @@ function handleMessage(msg) {
       }
       break;
     case 'order_batch_result': {
-      // Trade Blotter capture (#211): surface any rejected rows; fills and
+      // Trade Blotter capture (#210): surface any rejected rows; fills and
       // resting orders arrive via the game_state that follows.
       const rejected = (msg.results || []).filter(r => r && r.status === 'rejected');
       if (rejected.length) {
@@ -4962,7 +4962,7 @@ function handleMessage(msg) {
         buildIslandMap();
       }
       refreshPauseButton();
-      refreshOpenBlotter();   // keep an open Trade Blotter's orders/fills fresh (#211)
+      refreshOpenBlotter();   // keep an open Trade Blotter's orders/fills fresh (#210)
       break;
     case 'print':
       addLog(msg.text);
@@ -5784,7 +5784,7 @@ function _actOnHint(action, payload = {}) {
   // the next modal that opens.
   _pendingHintTarget = Object.assign({ action }, payload);
 
-  // Trade actions open the client-side Trade Blotter (#211) directly, like
+  // Trade actions open the client-side Trade Blotter (#210) directly, like
   // the Market Buy/Sell action buttons — capture rides `order_batch`, so we
   // don't need the server's choose_action prompt and it works even while the
   // player is parked (Done Trading). openTradeBlotter consumes the hint focus.
@@ -6372,7 +6372,7 @@ function renderBarterMarket(compact = false) {
   `;
 }
 
-// ==================== TRADE BLOTTER (#211) ====================
+// ==================== TRADE BLOTTER (#210) ====================
 // A tabbed overlay on the Market Board. Shows the island's live market, its
 // own resting bids/asks, and an executed-fills tape — and captures new trades
 // through the Trade tab. New orders LAYER on top of existing ones by default

@@ -98,7 +98,7 @@ class TradingEngine:
                 limit_price = (
                     None if limit_raw in (None, "", 0, 0.0) else float(limit_raw)
                 )
-                # Trade Blotter (#211): a resting order supersedes the player's
+                # Trade Blotter (#210): a resting order supersedes the player's
                 # prior orders on this resource when ``replace`` is true, else it
                 # *layers* alongside them.  Engine default stays True (supersede,
                 # the historical behaviour) for backward-compatible callers; the

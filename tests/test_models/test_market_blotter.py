@@ -1,4 +1,4 @@
-"""Trade Blotter (#211): order layering vs supersede, and the fills ledger.
+"""Trade Blotter (#210): order layering vs supersede, and the fills ledger.
 
 These lock in the two engine-level behaviours the blotter relies on:
   1. ``post_offer`` / ``post_bid`` layer alongside prior orders when

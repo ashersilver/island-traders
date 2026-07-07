@@ -3252,7 +3252,7 @@ class GameManager:
         }))
         # Refresh every seat: a resting order or immediate fill can move
         # another island's cash/inventory, so all clients need fresh state
-        # (not just the actor's).  Also surfaces the new fills tape (#211).
+        # (not just the actor's).  Also surfaces the new fills tape (#210).
         self._broadcast_state_all(room_id)
 
     async def _handle_market_order_update(
@@ -5027,7 +5027,7 @@ class GameManager:
             game.market.player_orders(viewer_engine_id)
             if viewer_engine_id is not None else {"offers": [], "bids": []}
         )
-        # Executed-trade tape for this viewer (Trade Blotter Fills tab, #211).
+        # Executed-trade tape for this viewer (Trade Blotter Fills tab, #210).
         my_fills = (
             game.market.player_fills(viewer_engine_id)
             if viewer_engine_id is not None else []
@@ -5151,7 +5151,7 @@ class GameManager:
 
         Mirrors the game-thread ``on_action_complete`` broadcast so that
         fire-and-forget order handlers (``order_batch`` for Trade Blotter
-        capture, #211) keep *every* seat in sync — a fill against another
+        capture, #210) keep *every* seat in sync — a fill against another
         island's resting order changes that island's cash/inventory and
         must reach its client, not just the actor's.
         """

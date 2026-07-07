@@ -92,7 +92,7 @@ class Market:
     # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
     # simulation. None during normal play, so live games pay nothing.
     telemetry: object | None = None
-    # Executed-trade ledger (Trade Blotter, #211). Every fill appends one
+    # Executed-trade ledger (Trade Blotter, #210). Every fill appends one
     # canonical record here; ``player_fills`` shapes it per-viewer for the UI.
     # Bounded to the most recent ``_FILLS_CAP`` fills to cap memory.
     _fills: list[dict] = field(default_factory=list)
@@ -122,7 +122,7 @@ class Market:
     def _record_fill(self, rtype: ResourceType, price: float, qty: int, *,
                      buyer_id: int | None, buyer_name: str,
                      seller_id: int | None, seller_name: str) -> None:
-        """Append one executed trade to the ledger (Trade Blotter, #211).
+        """Append one executed trade to the ledger (Trade Blotter, #210).
 
         Records the canonical two-sided fill once; ``player_fills`` derives
         each viewer's perspective (buy vs sell, counterparty) from it.
@@ -410,7 +410,7 @@ class Market:
         # prior bids AND asks on this resource — cancel them first so any
         # refunded units from a prior ask are visible to the inventory check
         # below.  When ``replace`` is False the new ask *layers* on top of the
-        # existing ones (Trade Blotter, #211), letting an island stack orders.
+        # existing ones (Trade Blotter, #210), letting an island stack orders.
         if replace:
             self.cancel_player_orders(seller.player_id, rtype)
         if seller.inventory.get(rtype) < qty:
@@ -455,7 +455,7 @@ class Market:
         # When ``replace`` (the default), a new bid supersedes this player's
         # prior bids AND asks on this resource (cancels both); resources from
         # any cancelled ask refund.  When ``replace`` is False the bid *layers*
-        # on top of the existing orders (Trade Blotter, #211).
+        # on top of the existing orders (Trade Blotter, #210).
         if replace:
             self.cancel_player_orders(buyer.player_id, rtype)
         price = round(price_per_unit, 2)
@@ -680,7 +680,7 @@ class Market:
     def player_fills(self, player_id: int, limit: int = 50) -> list[dict]:
         """Executed trades involving ``player_id``, most recent first.
 
-        Shaped for the Trade Blotter Fills tab (#211): each row is from the
+        Shaped for the Trade Blotter Fills tab (#210): each row is from the
         viewer's perspective — ``side`` is "buy" when the viewer received the
         resource, "sell" when they supplied it — with the counterparty's name
         (or "Market" for market-maker fills).
