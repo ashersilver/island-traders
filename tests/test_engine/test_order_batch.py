@@ -130,3 +130,45 @@ def test_execute_order_list_matches_sequential_market_primitives():
     assert _snapshot([batch_trader, batch_seller, batch_buyer], batch_market) == _snapshot(
         [seq_trader, seq_seller, seq_buyer], seq_market
     )
+
+
+def test_execute_order_list_layers_resting_orders_when_replace_false():
+    """Blotter capture (#210): replace:false stacks orders instead of
+    superseding — the layered-strategy the Trade Blotter exposes."""
+    market = Market()
+    engine = TradingEngine(market, DealLedger())
+    buyer = _player(1, "Banker", dollops=500.0)
+
+    engine.execute_order_list(
+        buyer,
+        [
+            {"side": "buy", "resource": "Oil", "quantity": 2,
+             "limit_price": 10.0, "replace": False},
+            {"side": "buy", "resource": "Oil", "quantity": 3,
+             "limit_price": 9.0, "replace": False},
+        ],
+        [buyer],
+    )
+
+    live = market.available_bids(ResourceType.OIL)
+    assert sorted(b.remaining for b in live) == [2, 3]
+
+
+def test_execute_order_list_supersedes_resting_orders_by_default():
+    """Omitting replace keeps the historical supersede behaviour so existing
+    callers (AI turn handlers, older clients) are unchanged."""
+    market = Market()
+    engine = TradingEngine(market, DealLedger())
+    buyer = _player(1, "Banker", dollops=500.0)
+
+    engine.execute_order_list(
+        buyer,
+        [
+            {"side": "buy", "resource": "Oil", "quantity": 2, "limit_price": 10.0},
+            {"side": "buy", "resource": "Oil", "quantity": 3, "limit_price": 9.0},
+        ],
+        [buyer],
+    )
+
+    live = market.available_bids(ResourceType.OIL)
+    assert [b.remaining for b in live] == [3]

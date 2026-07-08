@@ -98,6 +98,12 @@ class TradingEngine:
                 limit_price = (
                     None if limit_raw in (None, "", 0, 0.0) else float(limit_raw)
                 )
+                # Trade Blotter (#210): a resting order supersedes the player's
+                # prior orders on this resource when ``replace`` is true, else it
+                # *layers* alongside them.  Engine default stays True (supersede,
+                # the historical behaviour) for backward-compatible callers; the
+                # blotter client sends ``replace: false`` per order to layer.
+                replace = bool((raw_order or {}).get("replace", True))
                 if side not in ("buy", "sell"):
                     raise ValueError("side must be buy or sell")
                 if qty <= 0:
@@ -114,11 +120,11 @@ class TradingEngine:
             try:
                 if side == "buy":
                     result = self._execute_buy_order(
-                        index, player, rtype, qty, limit_price, players
+                        index, player, rtype, qty, limit_price, players, replace
                     )
                 else:
                     result = self._execute_sell_order(
-                        index, player, rtype, qty, limit_price, players
+                        index, player, rtype, qty, limit_price, players, replace
                     )
             except Exception as exc:
                 result = self._order_result(
@@ -135,6 +141,7 @@ class TradingEngine:
         qty: int,
         limit_price: float | None,
         players: list[Player],
+        replace: bool = True,
     ) -> dict:
         before_cash = player.dollops
         if limit_price is None:
@@ -148,7 +155,7 @@ class TradingEngine:
                 freight,
             )
 
-        bid = self.market.post_bid(player, rtype, limit_price, qty)
+        bid = self.market.post_bid(player, rtype, limit_price, qty, replace=replace)
         filled = bid.quantity - bid.remaining
         spent = round(before_cash - player.dollops, 2)
         freight = self.apply_freight_charge(player, rtype, filled, players)
@@ -171,6 +178,7 @@ class TradingEngine:
         qty: int,
         limit_price: float | None,
         players: list[Player],
+        replace: bool = True,
     ) -> dict:
         before_cash = player.dollops
         if limit_price is None:
@@ -187,7 +195,7 @@ class TradingEngine:
                 freight,
             )
 
-        offer = self.market.post_offer(player, rtype, limit_price, qty)
+        offer = self.market.post_offer(player, rtype, limit_price, qty, replace=replace)
         filled = offer.quantity - offer.remaining
         received = round(player.dollops - before_cash, 2)
         if filled == qty:

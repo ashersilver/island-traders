@@ -5,7 +5,37 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.28`.
+`APP_VERSION`: `0.1.5-dev.2026-06-22.29`.
+
+- **Feature: Trade Blotter — layered orders + executed-fills tape (#210)** — the
+  Market Board is now a tabbed **Trade Blotter** (Market · Trade · My orders ·
+  Fills) that opens in response to Market Buy / Market Sell (and from the Market
+  Board tile). It lets an island see exactly what bids and asks it has already
+  placed and capture new trades through one surface.
+  - **Layer vs. supersede.** Historically a new market order *always* superseded
+    the player's prior bid/ask on that resource (`Market.cancel_player_orders`,
+    called unconditionally by `post_offer`/`post_bid`). The blotter now defaults
+    to **layering** — a new order rests *alongside* existing ones so islands can
+    stack a strategy — with a per-row **Replace** toggle to supersede, plus a
+    prominent **Remove** control on each open order. `post_offer`/`post_bid` and
+    `execute_order_list` gain a `replace` flag (engine default stays `True`, so
+    AI turn handlers and existing callers are unchanged); the client sends
+    `replace: false` to layer.
+  - **Executed-fills ledger.** `Market` now records every fill (order-book cross,
+    tight-spread auto-exec, market-maker buy/sell, `buy_from_offers`/
+    `sell_to_bids`) once, and `Market.player_fills(player_id)` shapes it per
+    viewer (buy/sell side, counterparty, price, season). Exposed as `my_fills`
+    on every `game_state` snapshot and rendered on the Fills tab.
+  - **Capture path.** Trade entry rides the fire-and-forget `order_batch`
+    message (`trading.execute_order_list`), so the AI agent's turn-prompt flow
+    is untouched. `order_batch` now re-broadcasts fresh per-viewer state to every
+    seat, so a fill against another island's resting order reaches that island's
+    client (previously only the actor was refreshed).
+  - Self-trades are never recorded, and the existing auto-match/tight-spread
+    self-cross guards already prevent an island's own layered bid and ask from
+    trading with each other. New tests: `tests/test_models/test_market_blotter.py`,
+    `tests/test_server/test_trade_blotter.py`, plus layering cases in
+    `tests/test_engine/test_order_batch.py`.
 
 - **Fix: season header could stick on the old season until a page refresh** —
   season transitions run on the game thread while `get_state` requests are
