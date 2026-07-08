@@ -359,6 +359,14 @@ button:active{transform:scale(.97)}
 .blotter-fill .side-buy{color:var(--green);font-weight:700}
 .blotter-fill .side-sell{color:var(--gold);font-weight:700}
 .blotter-empty{font-size:.8rem;color:var(--dim);margin:.6rem 0}
+.blotter-addbar{display:flex;align-items:center;gap:.5rem;margin:.1rem 0 .55rem;font-size:.78rem;color:var(--dim)}
+.blotter-addbar select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:.76rem;max-width:300px}
+.blot-avail{font-size:.62rem;color:var(--dim);text-align:right;margin-top:1px;letter-spacing:.02em}
+.blot-hold{font-size:.66rem;color:var(--dim);margin-left:.15rem;white-space:nowrap}
+.blot-name{display:flex;align-items:center;gap:.25rem}
+.blot-pin,.blot-remove{cursor:pointer;border:none;background:none;color:var(--dim);font-size:.82rem;padding:0 1px;line-height:1}
+.blot-pin:hover,.blot-remove:hover{color:var(--text)}
+.blot-pin.pinned{color:var(--gold)}
 
 .g-side{grid-area:side;background:var(--panel);overflow-y:auto;padding:.75rem;border-right:1px solid var(--border)}
 .g-main{
@@ -6382,7 +6390,9 @@ let _blotterOpen = false;
 let _blotterTab = 'market';
 let _blotterFocusSide = 'buy';
 let _blotterFocusResource = null;
-const _blotterModes = {};   // resource -> 'layer' | 'replace'
+const _blotterModes = {};       // resource -> 'layer' | 'replace'
+const _blotterPinned = new Set(); // commodities the player pinned to the Trade tab
+const _blotterHidden = new Set(); // commodities the player removed from the Trade tab
 
 function showMarketBoardPopup() { openTradeBlotter('market'); }
 
@@ -6481,44 +6491,49 @@ function refreshOpenBlotter() {
 
 function _renderBlotterTradeTab() {
   const market = gameState.market || {};
-  const entries = Object.entries(market);
   const focus = _blotterFocusResource;
-  // Tier rows by relevance (mirrors the old Market Buy popup): hinted/focused
-  // first, then live (any resting depth), then dormant behind an expander.
-  const tier1 = [], tier2 = [], tier3 = [];
-  for (const e of entries) {
-    const [res, d] = e;
-    if ((_currentHintResources && _currentHintResources.has(res)) || res === focus) tier1.push(e);
-    else if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) tier2.push(e);
-    else tier3.push(e);
-  }
-  if (focus) tier1.sort((a, b) => a[0] === focus ? -1 : (b[0] === focus ? 1 : 0));
+  // Working set = (pinned ∪ focus ∪ hinted ∪ held ∪ live) − hidden, in that
+  // priority order.  Anything else is reachable from the "Add a commodity"
+  // picker; once added it's pinned and stays until removed.
+  const shown = [];
+  const seen = new Set();
+  const push = res => {
+    if (market[res] && !seen.has(res) && !_blotterHidden.has(res)) {
+      seen.add(res);
+      shown.push([res, market[res]]);
+    }
+  };
+  [..._blotterPinned].forEach(push);
+  if (focus) push(focus);
+  if (_currentHintResources) _currentHintResources.forEach(push);
+  Object.keys(market).forEach(res => { if (_blotterInv(res) > 0) push(res); });            // held stock
+  Object.entries(market).forEach(([res, d]) => {
+    if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) push(res);                 // live market
+  });
+  const allTradable = Object.keys(market).sort();
 
   const note = `<div class="blotter-note">
     New orders <strong style="color:var(--green)">layer</strong> on top of your open orders by default —
-    flip a row to <strong style="color:var(--gold)">Replace</strong> to supersede your prior order on that commodity.
-    <span style="color:var(--gold)">Buy/Sell now</span> execute immediately at the shown price;
-    <span style="color:var(--green)">Bid/Ask</span> post a resting order at your price.
-    ${_blotterFocusSide === 'sell' ? 'Opened for <strong>selling</strong>.' : 'Opened for <strong>buying</strong>.'}
+    flip a row to <strong style="color:var(--gold)">Replace</strong> to supersede.
+    <span style="color:var(--gold)">Buy/Sell now</span> execute immediately; <span style="color:var(--green)">Bid/Ask</span> post a resting order.
+    Each row shows what's available to trade — <strong>hold N</strong> is your uncommitted stock (not already on an ask).
   </div>`;
 
-  const primary = tier1.concat(tier2);
   let html = note;
-  html += `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.4rem">Treasury: <strong style="color:var(--gold)">${_blotterCash().toFixed(1)} Dp</strong></div>`;
-  if (primary.length) {
-    html += '<div class="market-buy-wrap"><table class="market-buy-table">'
-      + _blotterTradeHeaderRow() + '<tbody>'
-      + primary.map(([res, d]) => _blotterTradeRow(res, d)).join('')
-      + '</tbody></table></div>';
-  } else {
-    html += '<div class="blotter-empty">No live market activity — every commodity is in the section below.</div>';
-  }
-  if (tier3.length) {
-    html += `<details class="mkt-dormant"><summary>Show all other commodities (${tier3.length})</summary>`
-      + '<div class="market-buy-wrap" style="margin-top:.5rem"><table class="market-buy-table">'
-      + _blotterTradeHeaderRow() + '<tbody>'
-      + tier3.map(([res, d]) => _blotterTradeRow(res, d)).join('')
-      + '</tbody></table></div></details>';
+  html += `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.3rem">Treasury: <strong style="color:var(--gold)">${_blotterCash().toFixed(1)} Dp</strong></div>`;
+  html += `<div class="blotter-addbar">
+    <label for="blot-add-select">Add a commodity:</label>
+    <select id="blot-add-select" onchange="blotterAddCommodity(this)">
+      <option value="">Select to add / jump to…</option>
+      ${allTradable.map(res => `<option value="${esc(res)}">${esc(res)} — hold ${_blotterInv(res)}, bid ${market[res].bid_quantity ?? 0}, ask ${market[res].ask_quantity ?? 0}</option>`).join('')}
+    </select>
+  </div>`;
+  html += '<div class="market-buy-wrap"><table class="market-buy-table">'
+    + _blotterTradeHeaderRow() + '<tbody id="blot-tbody">'
+    + shown.map(([res, d]) => _blotterTradeRow(res, d)).join('')
+    + '</tbody></table></div>';
+  if (!shown.length) {
+    html += `<div class="blotter-empty">Nothing to show yet — use “Add a commodity” above to start a bid or ask.</div>`;
   }
   html += `<div class="blotter-bar">
     <span class="blotter-total">Buy <strong id="blot-buy-total" style="color:var(--gold)">0 Dp</strong>
@@ -6552,17 +6567,26 @@ function _blotterTradeRow(res, d) {
     : (askPrice ? Number(askPrice).toFixed(2) : 0);
   const askPrefill = bidPrice ? Number(bidPrice).toFixed(2) : restPrefill;
   const mode = _blotterModes[res] || 'layer';
+  const pinned = _blotterPinned.has(res);
   const focusClass = (res === _blotterFocusResource) ? ' class="mkt-row-focus"' : '';
   const num = 'style="width:56px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
   const px = 'style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
+  const avail = n => `<div class="blot-avail">0–${n}</div>`;
   return `<tr data-blot-res="${esc(res)}"${focusClass}>
-    <td>${esc(res)}</td>
+    <td>
+      <div class="blot-name">
+        <button type="button" class="blot-pin${pinned ? ' pinned' : ''}" onclick="blotterTogglePin('${esc(res)}', this)" title="${pinned ? 'Pinned — kept when you reopen the blotter' : 'Pin to keep this row'}">${pinned ? '★' : '☆'}</button>
+        <span>${esc(res)}</span>
+        <button type="button" class="blot-remove" onclick="blotterRemoveRow('${esc(res)}')" title="Remove this row">✕</button>
+      </div>
+      <span class="blot-hold" title="Your uncommitted stock — not already on an ask">hold ${inv}</span>
+    </td>
     <td style="color:var(--green);border-left:2px solid var(--border)" title="${bidQty} wanted">${fmtMarketPrice(bidPrice)}</td>
     <td style="color:var(--gold);border-left:2px solid var(--border)" title="${askQty} offered">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
-    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="blot-num blot-buynow" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp` : 'No ask available'}" ${num}/></td>
-    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><input type="number" inputmode="numeric" class="blot-num blot-sellnow" data-price="${bidPrice || 0}" data-max="${sellNowMax}" min="0" max="${sellNowMax}" placeholder="0" ${sellNowMax > 0 ? '' : 'disabled'} title="${sellNowMax > 0 ? `Sell up to ${sellNowMax} now at ${Number(bidPrice).toFixed(2)} Dp` : (inv <= 0 ? 'None in inventory' : 'No bid to sell into')}" ${num}/></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="blot-num blot-buynow" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp` : 'No ask available'}" ${num}/>${avail(askQty)}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><input type="number" inputmode="numeric" class="blot-num blot-sellnow" data-price="${bidPrice || 0}" data-max="${sellNowMax}" min="0" max="${sellNowMax}" placeholder="0" ${sellNowMax > 0 ? '' : 'disabled'} title="${sellNowMax > 0 ? `Sell up to ${sellNowMax} now at ${Number(bidPrice).toFixed(2)} Dp` : (inv <= 0 ? 'None in inventory' : 'No bid to sell into')}" ${num}/>${avail(sellNowMax)}</td>
     <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-bidqty" min="0" placeholder="0" title="Quantity to bid for" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-bidpx" min="0" step="0.01" placeholder="${restPrefill}" title="Your bid price/unit — empty uses the reference" ${px}/></div></td>
-    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-askqty" min="0" max="${inv}" placeholder="0" ${inv > 0 ? '' : 'disabled'} title="${inv > 0 ? `You hold ${inv}` : 'None in inventory to offer'}" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-askpx" min="0" step="0.01" placeholder="${askPrefill}" ${inv > 0 ? '' : 'disabled'} title="Your ask price/unit — empty uses the reference" ${px}/></div></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-askqty" min="0" max="${inv}" placeholder="0" ${inv > 0 ? '' : 'disabled'} title="${inv > 0 ? `You hold ${inv}` : 'None in inventory to offer'}" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-askpx" min="0" step="0.01" placeholder="${askPrefill}" ${inv > 0 ? '' : 'disabled'} title="Your ask price/unit — empty uses the reference" ${px}/></div>${avail(inv)}</td>
     <td style="border-left:2px solid var(--border)"><button type="button" class="mkt-mode" data-mode="${mode}" onclick="toggleBlotterMode('${esc(res)}', this)" title="Layer: add alongside your open orders. Replace: supersede them.">${mode === 'replace' ? 'Replace' : 'Layer'}</button></td>
   </tr>`;
 }
@@ -6572,6 +6596,52 @@ function toggleBlotterMode(res, el) {
   el.dataset.mode = next;
   el.textContent = next === 'replace' ? 'Replace' : 'Layer';
   _blotterModes[res] = next;
+}
+
+// Add (or jump to) a commodity row from the picker. New rows are pinned so
+// they persist across game-state refreshes and reopening the blotter (#210).
+function blotterAddCommodity(sel) {
+  const res = sel.value;
+  sel.value = '';
+  if (!res || !gameState || !gameState.market || !gameState.market[res]) return;
+  _blotterHidden.delete(res);
+  _blotterPinned.add(res);
+  const tbody = document.getElementById('blot-tbody');
+  if (!tbody) return;
+  let tr = tbody.querySelector(`tr[data-blot-res="${res}"]`);
+  if (!tr) {
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = _blotterTradeRow(res, gameState.market[res]);
+    tr = tmp.firstElementChild;
+    tbody.insertBefore(tr, tbody.firstChild);
+    tr.querySelectorAll('.blot-num').forEach(inp =>
+      inp.addEventListener('input', updateBlotterTotals));
+    updateBlotterTotals();
+  }
+  if (tr) tr.scrollIntoView({ block: 'nearest' });
+}
+
+function blotterTogglePin(res, btn) {
+  if (_blotterPinned.has(res)) {
+    _blotterPinned.delete(res);
+    btn.classList.remove('pinned');
+    btn.textContent = '☆';
+    btn.title = 'Pin to keep this row';
+  } else {
+    _blotterPinned.add(res);
+    _blotterHidden.delete(res);
+    btn.classList.add('pinned');
+    btn.textContent = '★';
+    btn.title = 'Pinned — kept when you reopen the blotter';
+  }
+}
+
+function blotterRemoveRow(res) {
+  _blotterPinned.delete(res);
+  _blotterHidden.add(res);   // stays hidden on refresh/reopen until re-added
+  const tr = document.querySelector(`#blot-tbody tr[data-blot-res="${res}"]`);
+  if (tr) tr.remove();
+  updateBlotterTotals();
 }
 
 function updateBlotterTotals() {
