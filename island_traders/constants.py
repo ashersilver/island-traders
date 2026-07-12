@@ -799,11 +799,16 @@ WORKFORCE_PARTICIPATION_RATE: float = 0.50
 # expertise gaps are tracked the same way the underlying productivity
 # factor sums them across roles.
 EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
-    # Brief-spec values.  Currently UNUSED in production — see
-    # EXPERTISE_DEGRADATION_ENABLED below.
-    "unique_specialist": 0.10,
-    "manager":           0.25,
-    "technician":        0.50,
+    # Gentle safety-net floors (2026-07-12 calibration for GitHub #47):
+    # the ONLY job here is to stop a fully-missing-expertise line from
+    # hard-stopping at exactly zero.  Kept low so the floor barely
+    # re-prices the economy — the spec 0.10/0.25/0.50 values shifted
+    # Educator -4.6 / Manufacturer -3.7 / Doctor +3.8 pts (well past the
+    # ±2σ gate); these values keep the floor while holding all roles
+    # inside the gate.  See requirements/expertise-degradation-floor-2026-07-12.md.
+    "unique_specialist": 0.05,
+    "manager":           0.10,
+    "technician":        0.20,
     "unskilled":         1.00,  # no floor change — existing behaviour
 }
 
@@ -822,7 +827,7 @@ EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
 # so a future calibration work can flip this flag and tune the floors,
 # but the application code in _labour_productivity_factor checks this
 # flag before applying — default behaviour is unchanged.
-EXPERTISE_DEGRADATION_ENABLED: bool = False
+EXPERTISE_DEGRADATION_ENABLED: bool = True
 
 # Primary Manager-tier "unique specialist" per role.  Losing this triggers
 # the harshest (0.10) floor.

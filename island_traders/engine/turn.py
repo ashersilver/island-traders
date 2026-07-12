@@ -4027,6 +4027,44 @@ class TurnManager:
                     f"\n[LOAN DEFAULT] {borrower.name} could not repay {amount:.1f} {sym} "
                     f"to {lender_name}. Paid {paid:.1f} {sym}, shortfall {shortfall:.1f} {sym}."
                 )
+                self._repossess_loan_collateral(loan, borrower, lender, shortfall, sym)
+
+    def _repossess_loan_collateral(
+        self, loan, borrower, lender, shortfall: float, sym: str
+    ) -> None:
+        """On default of a SECURED loan, seize the pledged capital item from the
+        borrower and credit the lender its book value toward the shortfall (#189).
+
+        Book value is the item's catalogue cost (leases already treat capital as
+        holding its cost; there is no depreciation curve in the wealth model).
+        The credit is capped at the shortfall so the lender is made whole at most,
+        never profits from a default. Nothing happens for unsecured loans, for a
+        borrower who no longer holds the item, or when there is no live lender
+        (synthetic depositor loans, lender_id < 0)."""
+        if not loan.secured or not loan.collateral_item_id:
+            return
+        item_id = loan.collateral_item_id
+        if borrower.capital_inventory.get(item_id, 0) <= 0:
+            self.io.print(
+                f"  [COLLATERAL] {borrower.name} no longer holds the pledged "
+                f"item; nothing to repossess."
+            )
+            return
+        borrower.remove_capital(item_id, 1)
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        item_name = item.name if item else item_id
+        book_value = float(item.cost) if item else 0.0
+        recovered = round(min(book_value, shortfall), 1)
+        if lender and lender.player_id != borrower.player_id and recovered > 0:
+            lender.dollops += recovered
+            self.io.print(
+                f"  [COLLATERAL] {item_name} repossessed from {borrower.name}; "
+                f"{lender.name} recovers {recovered:.1f} {sym} of the shortfall."
+            )
+        else:
+            self.io.print(
+                f"  [COLLATERAL] {item_name} repossessed from {borrower.name}."
+            )
 
     def _find_banker(self) -> Player | None:
         for p in self.players:

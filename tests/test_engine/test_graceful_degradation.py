@@ -122,10 +122,8 @@ def test_full_doctor_roster_no_floor():
 
 def test_labour_productivity_factor_returns_floor_when_enabled():
     """When the feature flag is on, an empty workforce gets the composed
-    floor rather than zero.  Currently disabled by default
-    (EXPERTISE_DEGRADATION_ENABLED is False because the floor application
-    requires re-calibration before activation), so this test patches the
-    flag on for the assertion."""
+    floor rather than zero.  Patches the flag on explicitly so the test is
+    independent of the module default (which is now True — GitHub #47)."""
     from unittest.mock import patch
     from island_traders.constants import EXPERTISE_DEGRADATION_FLOORS
     miner = _player(1, "Miner")
@@ -140,11 +138,14 @@ def test_labour_productivity_factor_returns_floor_when_enabled():
 
 
 def test_labour_productivity_factor_returns_natural_when_disabled():
-    """With the feature flag off (default), the floor is never applied —
-    natural factor (zero, for an empty workforce) wins."""
+    """With the feature flag explicitly off, the floor is never applied —
+    natural factor (zero, for an empty workforce) wins. Patched off rather
+    than relying on the module default (which is now True for GitHub #47)."""
+    from unittest.mock import patch
     miner = _player(1, "Miner")
     miner.workforce.workers.clear()
-    factor = _engine()._labour_productivity_factor(miner, "Spring")
+    with patch("island_traders.engine.production.EXPERTISE_DEGRADATION_ENABLED", False):
+        factor = _engine()._labour_productivity_factor(miner, "Spring")
     assert factor == 0.0
 
 
