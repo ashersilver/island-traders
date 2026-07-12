@@ -450,3 +450,60 @@ def test_capital_finance_rate_uses_three_year_posted_plus_premium():
         posted_funding_rates(0, 0)[3] + CAPITAL_FINANCE_PREMIUM_PTS,
         4,
     )
+
+
+def test_secured_loan_default_repossesses_collateral_and_credits_lender():
+    # #189: a secured loan that defaults must seize the pledged capital item
+    # from the borrower and credit the lender its book value (capped at the
+    # shortfall). Borrower can't repay; lender is a distinct player.
+    borrower = Player(
+        player_id=0, name="Miner", roles=[ROLES["Miner"]], dollops=0.0, is_human=True,
+    )
+    borrower.add_capital("miner.crusher", 1)  # cost 50.0
+    lender = Player(
+        player_id=1, name="Banker", roles=[ROLES["Banker"]], dollops=100.0, is_human=True,
+    )
+    loans = LoanLedger()
+    loans.create_loan(
+        borrower_id=borrower.player_id,
+        lender_id=lender.player_id,
+        principal=200.0,
+        interest_rate=0.05,
+        issued_year=0,
+        issued_season=0,
+        term_years=1,
+        collateral_item_id="miner.crusher",
+        secured=True,
+    )
+    tm = _turn_manager([borrower, lender], loans, LoanIO([]))
+
+    tm._process_loan_repayments(year=1, season=0)
+
+    loan = loans.all_loans()[0]
+    assert loan.status == LoanStatus.DEFAULTED
+    # collateral seized from the borrower
+    assert borrower.capital_inventory.get("miner.crusher", 0) == 0
+    # lender recovers book value (50), capped at the 210 shortfall -> full 50
+    assert lender.dollops == 150.0
+
+
+def test_unsecured_loan_default_does_not_touch_capital():
+    borrower = Player(
+        player_id=0, name="Miner", roles=[ROLES["Miner"]], dollops=0.0, is_human=True,
+    )
+    borrower.add_capital("miner.crusher", 1)
+    lender = Player(
+        player_id=1, name="Banker", roles=[ROLES["Banker"]], dollops=100.0, is_human=True,
+    )
+    loans = LoanLedger()
+    loans.create_loan(
+        borrower_id=borrower.player_id, lender_id=lender.player_id, principal=200.0,
+        interest_rate=0.05, issued_year=0, issued_season=0, term_years=1,
+    )  # secured defaults False
+    tm = _turn_manager([borrower, lender], loans, LoanIO([]))
+
+    tm._process_loan_repayments(year=1, season=0)
+
+    assert loans.all_loans()[0].status == LoanStatus.DEFAULTED
+    assert borrower.capital_inventory.get("miner.crusher", 0) == 1  # untouched
+    assert lender.dollops == 100.0  # no recovery credit
