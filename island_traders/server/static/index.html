@@ -3058,12 +3058,16 @@ function openCapitalPicker() {
     showToast('No capital equipment is defined for this island.');
     return;
   }
-  // Show the FULL list with status so the player sees both what they can build
-  // and what they already own / what failed (and can rebuild) — not just the
-  // not-yet-owned subset.  Orderable = not-owned OR failed (rebuild a failure).
-  const orderable = cat.filter(c => (c.owned || 0) <= 0 || (c.failed || 0) > 0);
-  const builtHealthy = cat.filter(c => (c.owned || 0) > 0 && (c.failed || 0) <= 0);
-  if (orderable.length === 1 && !builtHealthy.length) {
+  // Every catalogue item stays orderable: capital_inventory is a COUNT and
+  // capacity scales with it (manufacturer-capacity-scaling brief), so owning
+  // a healthy unit must not hide the item — "you own 1 Foundry" plus an
+  // equipment-bound line means the fix is buying a SECOND Foundry. The server
+  // (_handle_capital_order) has no ownership restriction either. Previously
+  // owned-and-healthy items were shelved in a non-clickable "already built"
+  // list, which dead-ended the equipment-shortfall hint (live report,
+  // game L69KIW 2026-07-12: Forge capital-blocked with no visible way out).
+  const orderable = cat;
+  if (orderable.length === 1) {
     openCapitalOrder(orderable[0].item_id); return;
   }
   const arrivalOf = c => c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
@@ -3094,17 +3098,11 @@ function openCapitalPicker() {
     const failed = (c.failed || 0) > 0;
     const tag = failed
       ? `<span style="color:var(--red)">⚠ ${c.failed} failed — rebuild</span>`
-      : (c.mandatory ? '<span style="color:var(--gold)">Required</span>' : 'Build');
+      : (c.owned || 0) > 0
+        ? `<span style="color:var(--green)">✓ own ${c.owned}</span> — build another`
+        : (c.mandatory ? '<span style="color:var(--gold)">Required</span>' : 'Build');
     rows.push(`<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
       + `${esc(c.name)} — ${c.cost} Dp · ${reqOf(c)}${unitNote(c)} · ${arrivalOf(c)}${buildNote(c)} · ${tag}</button>`);
-  }
-  if (builtHealthy.length) {
-    rows.push('<div style="margin:.35rem 0 .15rem;font-size:.72rem;color:var(--dim);'
-      + 'text-transform:uppercase;letter-spacing:.05em">Already built</div>');
-    for (const c of builtHealthy) {
-      rows.push(`<div style="text-align:left;opacity:.7;padding:.3rem .4rem;font-size:.8rem">`
-        + `✓ ${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''} — built</div>`);
-    }
   }
   document.getElementById('cap-pick-list').innerHTML = rows.join('');
   document.getElementById('capital-pick-overlay').classList.add('active');
@@ -5997,12 +5995,13 @@ function renderDecisionHints(player, role) {
         const deliv = o.delivery_seasons
           ? `, ${o.delivery_seasons} season${o.delivery_seasons !== 1 ? 's' : ''} to arrive` : '';
         const owned = o.owned ? ` (you own ${o.owned})` : '';
-        why = `Needs ${o.count}× ${o.name}${owned} — ${o.cost_each} Dp each`
-            + ` (${o.total_cost} Dp total${deliv}). Buy it from the market/deals now, `
-            + `or in the next investing window.`;
+        const another = o.owned ? 'another ' : '';
+        why = `Needs ${another}${o.count}× ${o.name}${owned} — ${o.cost_each} Dp each`
+            + ` (${o.total_cost} Dp total${deliv}). Order it via Purchase Equipment `
+            + `(capital order desk).`;
       } else {
-        why = `Limited by capital equipment. Buy the equipment that boosts ${output.output} `
-            + `from the market/deals, or in the next investing window.`;
+        why = `Limited by capital equipment. Order the equipment that boosts ${output.output} `
+            + `via Purchase Equipment (capital order desk).`;
       }
       hints.push({
         tone: 'warn',
