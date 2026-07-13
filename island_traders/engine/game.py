@@ -1673,6 +1673,9 @@ class Game:
                     "maturity_season": l.maturity_season,
                     "term_years": l.term_years,
                     "status": l.status.value,
+                    "rolled_over_from_loan_id": l.rolled_over_from_loan_id,
+                    "rolled_over_from_loan_ids": list(l.rolled_over_from_loan_ids),
+                    "rolled_over_to_loan_id": l.rolled_over_to_loan_id,
                     "own_committed": l.own_committed,
                     "external_funded": l.external_funded,
                     "posted_at_issue": l.posted_at_issue,
@@ -1810,6 +1813,10 @@ class Game:
         ld = data.get("loan_ledger", {})
         game.loan_ledger._next_id = ld.get("next_id", 0)
         for loan_d in ld.get("loans", []):
+            rolled_from_id = loan_d.get("rolled_over_from_loan_id")
+            rolled_from_ids = list(loan_d.get("rolled_over_from_loan_ids", []))
+            if rolled_from_id is not None and not rolled_from_ids:
+                rolled_from_ids = [rolled_from_id]
             loan = Loan(
                 loan_id=loan_d["loan_id"],
                 borrower_id=loan_d["borrower_id"],
@@ -1825,6 +1832,9 @@ class Game:
                     "term_years",
                     max(1, loan_d["maturity_year"] - loan_d["issued_year"]),
                 ),
+                rolled_over_from_loan_id=rolled_from_id,
+                rolled_over_from_loan_ids=rolled_from_ids,
+                rolled_over_to_loan_id=loan_d.get("rolled_over_to_loan_id"),
                 own_committed=loan_d.get("own_committed", 0.0),
                 external_funded=loan_d.get("external_funded", 0.0),
                 posted_at_issue=loan_d.get("posted_at_issue", 0.0),

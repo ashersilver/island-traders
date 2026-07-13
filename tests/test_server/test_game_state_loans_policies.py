@@ -82,11 +82,39 @@ def test_game_state_includes_structured_loans_detail():
     assert loan["repayment_amount"] == 110.0
     assert loan["term_years"] == 1
     assert loan["seasons_to_maturity"] == 2  # matures Y1 S0, now Y0 S2 → 2 seasons
+    assert loan["can_consolidate"] is False
     # Banker should see the same loan as lender
     banker_data = next(p for p in state["players"] if p["lobby_player_id"] == "host")
     bank_loans = banker_data["loans_detail"]
     assert any(l["role"] == "lender" and l["loan_id"] == loan["loan_id"]
                for l in bank_loans)
+
+
+def test_game_state_marks_borrower_loans_consolidation_eligible():
+    mgr = GameManager()
+    room, banker, farmer = _bootstrap_game(mgr, with_loan=True)
+    room.game.loan_ledger.create_loan(
+        borrower_id=farmer.player_id, lender_id=banker.player_id,
+        principal=50.0, interest_rate=0.08,
+        issued_year=0, issued_season=0, term_years=2,
+    )
+
+    state = mgr.get_game_state(room.room_id, "p2")
+    assert state is not None
+    farmer_data = next(p for p in state["players"] if p["lobby_player_id"] == "p2")
+    borrower_loans = [
+        loan for loan in farmer_data["loans_detail"]
+        if loan["role"] == "borrower"
+    ]
+    assert len(borrower_loans) == 2
+    assert all(loan["can_consolidate"] is True for loan in borrower_loans)
+
+    banker_data = next(p for p in state["players"] if p["lobby_player_id"] == "host")
+    lender_loans = [
+        loan for loan in banker_data["loans_detail"]
+        if loan["role"] == "lender"
+    ]
+    assert all(loan["can_consolidate"] is False for loan in lender_loans)
 
 
 def test_game_state_includes_structured_policies_detail():

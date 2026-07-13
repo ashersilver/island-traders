@@ -125,6 +125,8 @@ class Loan:
     # If this loan was created by rolling over a previous one, the original
     # loan's id is recorded here for traceability.
     rolled_over_from_loan_id: int | None = None
+    rolled_over_from_loan_ids: list[int] = field(default_factory=list)
+    rolled_over_to_loan_id: int | None = None
     # Phase D — capital-reserve bookkeeping (all default 0.0 for
     # backward compat / for synthetic depositor loans where they don't
     # apply).  See economy-lifecycle-2026-05.md §3.
@@ -249,6 +251,72 @@ class LoanLedger:
             term_years=new_term_years,
         )
         new_loan.rolled_over_from_loan_id = old.loan_id
+        new_loan.rolled_over_from_loan_ids = [old.loan_id]
+        old.rolled_over_to_loan_id = new_loan.loan_id
+        return new_loan
+
+    def consolidate_loans(
+        self,
+        loan_ids: list[int],
+        new_rate: float,
+        new_term_years: int,
+        year: int,
+        season: int,
+        *,
+        own_committed: float = 0.0,
+        external_funded: float = 0.0,
+        posted_at_issue: float = 0.0,
+        reserve_ratio_at_issue: float = 0.0,
+    ) -> Loan:
+        """Refinance several active loans from one lender into one new loan."""
+        if new_term_years < 1 or new_term_years > 3:
+            raise ValueError(f"new_term_years must be 1-3, got {new_term_years}")
+        if len(loan_ids) < 2:
+            raise ValueError("At least two loans are required for consolidation")
+
+        selected: list[Loan] = []
+        seen: set[int] = set()
+        for loan_id in loan_ids:
+            if loan_id in seen:
+                raise ValueError(f"Duplicate loan id {loan_id}")
+            seen.add(loan_id)
+            loan = next((l for l in self.loans if l.loan_id == loan_id), None)
+            if loan is None:
+                raise ValueError(f"No loan with id {loan_id}")
+            if loan.status != LoanStatus.ACTIVE:
+                raise ValueError(
+                    f"Loan {loan_id} is {loan.status.value}, cannot consolidate"
+                )
+            selected.append(loan)
+
+        borrower_id = selected[0].borrower_id
+        lender_id = selected[0].lender_id
+        if lender_id < 0:
+            raise ValueError("External funding loans cannot be consolidated")
+        if any(l.borrower_id != borrower_id for l in selected):
+            raise ValueError("All consolidated loans must have the same borrower")
+        if any(l.lender_id != lender_id for l in selected):
+            raise ValueError("All consolidated loans must have the same lender")
+
+        new_loan = self.create_loan(
+            borrower_id=borrower_id,
+            lender_id=lender_id,
+            principal=round(sum(l.repayment_amount for l in selected), 1),
+            interest_rate=new_rate,
+            issued_year=year,
+            issued_season=season,
+            term_years=new_term_years,
+            own_committed=own_committed,
+            external_funded=external_funded,
+            posted_at_issue=posted_at_issue,
+            reserve_ratio_at_issue=reserve_ratio_at_issue,
+        )
+        source_ids = [l.loan_id for l in selected]
+        new_loan.rolled_over_from_loan_id = source_ids[0]
+        new_loan.rolled_over_from_loan_ids = source_ids
+        for old in selected:
+            old.status = LoanStatus.ROLLED_OVER
+            old.rolled_over_to_loan_id = new_loan.loan_id
         return new_loan
 
     def outstanding_debt(self, player_id: int) -> float:

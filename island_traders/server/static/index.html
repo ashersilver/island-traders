@@ -5428,6 +5428,9 @@ function renderGameState() {
       loansEl.innerHTML = loans.map(loan => {
         const isBorrower = loan.role === 'borrower';
         const due = loan.seasons_to_maturity <= 1;
+        const consolidateEntry = isBorrower && loan.can_consolidate
+          ? `<div style="margin-top:.35rem"><button class="btn-ghost btn-sm" onclick="sendResponse('consolidate_loans')" title="Combine two or more loans from this lender into one new quoted loan">Consolidate…</button></div>`
+          : '';
         return (
           `<div style="margin-bottom:.5rem;padding:.4rem;border:1px solid var(--border);border-radius:4px;${due ? 'border-color:var(--gold);' : ''}">` +
             `<div style="display:flex;justify-content:space-between;align-items:baseline">` +
@@ -5443,6 +5446,7 @@ function renderGameState() {
                 `(${loan.seasons_to_maturity} season${loan.seasons_to_maturity === 1 ? '' : 's'})` +
               `</span>` +
             `</div>` +
+            consolidateEntry +
           `</div>`
         );
       }).join('');
@@ -5755,6 +5759,7 @@ const _HINT_OPEN_LABEL = {
   request_training:  'Request Training',
   view_loans:        'View Loans',
   offer_loan:        'Offer Loan',
+  consolidate_loans: 'Consolidate Loans',
   manage_insurance:  'Manage Insurance',
   produce:           'Produce',
   review_training:   'Review Training',

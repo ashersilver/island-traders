@@ -99,6 +99,35 @@ def test_rollover_marks_old_loan_as_rolled_over_and_creates_new_loan():
     assert ledger.outstanding_debt(1) == new.repayment_amount
 
 
+def test_consolidate_marks_source_loans_and_creates_one_replacement():
+    ledger = LoanLedger()
+    first = ledger.create_loan(
+        borrower_id=1, lender_id=0, principal=100.0, interest_rate=0.10,
+        issued_year=0, issued_season=0, term_years=1,
+    )
+    second = ledger.create_loan(
+        borrower_id=1, lender_id=0, principal=50.0, interest_rate=0.08,
+        issued_year=0, issued_season=1, term_years=2,
+    )
+
+    new = ledger.consolidate_loans(
+        loan_ids=[first.loan_id, second.loan_id],
+        new_rate=0.12,
+        new_term_years=3,
+        year=0,
+        season=2,
+    )
+
+    assert first.status == LoanStatus.ROLLED_OVER
+    assert second.status == LoanStatus.ROLLED_OVER
+    assert first.rolled_over_to_loan_id == new.loan_id
+    assert second.rolled_over_to_loan_id == new.loan_id
+    assert new.principal == first.repayment_amount + second.repayment_amount
+    assert new.rolled_over_from_loan_id == first.loan_id
+    assert new.rolled_over_from_loan_ids == [first.loan_id, second.loan_id]
+    assert ledger.outstanding_debt(1) == new.repayment_amount
+
+
 def test_rollover_rejects_unknown_loan():
     ledger = LoanLedger()
     import pytest
@@ -282,6 +311,48 @@ def test_action_rollover_uses_named_option_picker_not_numeric_index():
     # for the loan pick.
     quantity_prompts = captured.get("quantity_prompts", [])
     assert not any("which loan" in p.lower() for p in quantity_prompts)
+
+
+def test_action_consolidate_releases_source_reserve_before_cap_and_reserve_checks():
+    borrower = Player(player_id=1, name="Farmer", roles=[ROLES["Farmer"]],
+                      dollops=50.0, is_human=True)
+    banker = Player(player_id=0, name="Banker", roles=[ROLES["Banker"]],
+                    dollops=0.0, is_human=True)
+    banker.workforce.workers = []  # cap is the one-slot starter cap.
+    ledger = LoanLedger()
+    first = ledger.create_loan(
+        borrower_id=borrower.player_id, lender_id=banker.player_id,
+        principal=50.0, interest_rate=0.10,
+        issued_year=0, issued_season=0, term_years=1,
+        own_committed=2.75, external_funded=47.25,
+    )
+    second = ledger.create_loan(
+        borrower_id=borrower.player_id, lender_id=banker.player_id,
+        principal=50.0, interest_rate=0.10,
+        issued_year=0, issued_season=1, term_years=1,
+        own_committed=2.75, external_funded=47.25,
+    )
+    io = ScriptedIO(quantities=[2])
+    tm = _turn_manager([banker, borrower], ledger, io)
+    result = TurnResult(player_id=borrower.player_id, season=2, year=0)
+
+    tm._action_consolidate_loans(borrower, result, year=0, season_index=2)
+
+    assert first.status == LoanStatus.ROLLED_OVER
+    assert second.status == LoanStatus.ROLLED_OVER
+    new_loan = ledger.all_loans()[2]
+    assert new_loan.principal == 110.0
+    assert new_loan.term_years == 2
+    assert new_loan.own_committed == 5.5
+    assert new_loan.external_funded == 104.5
+    assert new_loan.rolled_over_from_loan_ids == [first.loan_id, second.loan_id]
+    assert first.rolled_over_to_loan_id == new_loan.loan_id
+    assert second.rolled_over_to_loan_id == new_loan.loan_id
+    assert banker.dollops == 0.0
+    assert borrower.dollops == 50.0
+    assert result.actions_taken == [
+        f"loan:consolidate:{first.loan_id}+{second.loan_id}->#{new_loan.loan_id}"
+    ]
 
 
 # ===========================================================================
