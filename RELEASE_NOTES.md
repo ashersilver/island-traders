@@ -3,9 +3,9 @@
 Release notes are required before merging a feature/fix branch into
 `pre-release`.
 
-## Unreleased
+## 0.1.5 — 2026-07-14
 
-`APP_VERSION`: `0.1.5-dev.2026-06-22.29`.
+Tag: `v0.1.5` · running `APP_VERSION`: `0.1.5` · package `version`: `0.1.5`.
 
 - **Feature: Trade Blotter — layered orders + executed-fills tape (#210)** — the
   Market Board is now a tabbed **Trade Blotter** (Market · Trade · My orders ·
