@@ -3,6 +3,12 @@
 Release notes are required before merging a feature/fix branch into
 `pre-release`.
 
+## Unreleased
+
+`APP_VERSION`: `0.1.6-dev.2026-07-14.1`.
+
+(No entries yet — the 0.1.6-dev series opens here.)
+
 ## 0.1.5 — 2026-07-14
 
 Tag: `v0.1.5` · running `APP_VERSION`: `0.1.5` · package `version`: `0.1.5`.
