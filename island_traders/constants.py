@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.5-dev.2026-06-19.2"
+APP_VERSION: str = "0.1.5"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -30,6 +30,13 @@ PAYROLL_WAGE_BY_BAND: dict[str, float] = {
     "Technician": 0.5,
     "Manager": 1.0,
 }
+
+# Continuing education upkeep (P2b, 2026-07-05). Each island owes one unit of
+# Expertise per active Manager-band worker over a rolling year.
+CE_ANNUAL_PER_MANAGER: int = 1
+CE_PENALTY_PER_SEASON: float = 0.05
+CE_RECOVERY_PER_SEASON: float = 0.05
+CE_MAX: float = 0.20
 
 STARTING_DOLLOPS: float = 1500.0   # per-player default (economy-lifecycle Phase A; was 700)
 TOTAL_STARTING_DOLLOPS: float = 10500.0  # 1500 × 7 players; server overrides via GameRoom.starting_capital
@@ -88,43 +95,46 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
     # Educator: Expertise + Courses on hand so other islands can train in
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
-    "Educator":      {"Expertise": 6,                                 # feeds Course production
+    "Educator":      {"Expertise": 7,                                 # feeds Course production and opening CE demand
                       "Courses": 5,                                    # classroom slots ready Y1
                       "Reagents": 2,                                   # 2 seasons of Reagents
+                      "Oil": 2,                                        # building power + lab step buffer
                       "PassengerSeats": 10},                            # bootstraps cross-island training
     # Banker: no production output to stock; just the working knowledge they
     # need to write loans / underwrite insurance.  Banker income comes from
     # loan interest spread and insurance premiums — see island-ledger.md §3
     # for the full institutional-cash-pool model (future implementation).
-    "Banker":        {"Expertise": 2},                                 # 2 seasons of expertise
-    # Manufacturer: FarmMachinery (default opening line) to sell + 2 seasons of inputs
-    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4,                 # to sell
+    "Banker":        {"Expertise": 2, "Oil": 2},                      # knowledge + building power buffer
+    # Manufacturer: FarmMachinery (default opening line) + Spares to sell,
+    # plus 2 seasons of inputs.
+    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4, "Spares": 4,   # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
-    "Doctor":        {"HealthServices": 2, "Vaccine": 1,             # to sell
-                      "Expertise": 2, "Oil": 2, "Ore": 2},  # 2 seasons of inputs (makes own Reagents)
+    "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
+                      "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
 }
 
 # Dollops per unit at balanced supply/demand
 BASE_PRICES: dict[str, float] = {
-    "Food":                22.0,
-    "Fish":                12.0,
-    "Grain":               10.0,
-    "Produce":             12.0,
+    "Food":                26.4,
+    "Fish":                14.4,
+    "Grain":               12.0,
+    "Produce":             14.4,
     "Meat":                16.2,
     "Ore":                  4.5,
     "Metal":                8.0,
     "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
-    # HealthServices/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
+    # MedicalSupplies/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
     "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
     "Expertise":           17.1,
     "Courses":             23.75,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":               40.0,
-    "HealthServices":      25.0,
-    "Vaccine":             33.5,
+    "Goods":                5.0,
+    "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
+    "MedicalSupplies":      30.0,
+    "Vaccine":             40.2,
     "Finance":             22.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
@@ -143,7 +153,7 @@ BASE_PRICES: dict[str, float] = {
 BASE_PRODUCTION: dict[str, dict[str, int]] = {
     "Miner":         {"Ore": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Metal": 2 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Oil": 4 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+                      "Oil": 4.5 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Rebalance 2026-06-02 lifted Transporter output; #112 trims that uplift
     # after P3 demand made shipping overperform.
     "Transporter":   {"Freight": 3.25 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
@@ -165,11 +175,11 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
     # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
-    "Banker":        {"Finance": 1.0 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 0.7 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
-    "Doctor":        {"HealthServices": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
+    "Doctor":        {"MedicalSupplies": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Reagents": 6},
 }
@@ -204,6 +214,24 @@ OUTPUT_PRODUCTION_INPUTS: dict[str, dict[str, dict[str, int]]] = {
     },
 }
 
+# Lab-scale output inputs. These are charged per completed output block, not
+# as fixed per-season role inputs. Below the step size, classroom/base output
+# stays free of lab consumables.
+OUTPUT_PRODUCTION_INPUT_STEPS: dict[str, dict[str, dict]] = {
+    "Educator": {
+        "Courses": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
+        "Expertise": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
+    },
+}
+
+# Economic dependence P2a: all islands draw a flat building-power base, plus a
+# surcharge for owned fixed, grid-powered heavy plant.
+ENERGY_BASE: int = 1
+ENERGY_DIVISOR: int = 4
+BROWNOUT_CAPACITY_PENALTY: float = 0.10
+BROWNOUT_QOL_PENALTY: int = 3
+BANKER_OFFICE_GOODS_PER_SEASON: int = 1
+
 # Per-season input→output table for the Farmer island.
 # Replaces PRODUCTION_INPUTS["Farmer"] + BASE_PRODUCTION["Farmer"] for that role.
 # Inputs are consumed and outputs produced exactly as listed; workforce/event modifiers still apply.
@@ -234,6 +262,21 @@ FARMER_SEASONAL_CONVERSION: dict[str, dict] = {
     },
 }
 
+FARMER_HORTICULTURALIST_BONUS_MULTIPLIER: float = 1.35
+FARMER_VETERINARIAN_BONUS_MULTIPLIER: float = 1.50
+FARMER_FISH_WITHOUT_MARINE_BIOLOGIST_MULTIPLIER: float = 0.50
+FISH_PROCESSING_TECHNICIANS_PER_BOAT: int = 2
+
+MANUFACTURER_DURABLE_CAP_BASE: int = 6
+MANUFACTURER_DURABLE_CAP_BONUS_PER_ITEM: int = 2
+MANUFACTURER_DURABLE_CAP_MAX: int = 10
+MANUFACTURER_DURABLE_OUTPUTS: tuple[str, ...] = (
+    "FarmMachinery",
+    "MiningEquipment",
+    "TransportEquipment",
+    "MedicalDevices",
+)
+
 # ForgeHaven (Manufacturer) produces one of four specialised product lines each season.
 # The player (or AI) chooses which line to run at the start of production.
 # Keys match ResourceType values for the output resource.
@@ -256,6 +299,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,   # AssemblyWorkers to weld and fit
         "unskilled":        3,   # general labour for sub-assembly
         "freight_per_unit": 1,   # durable board-scale unit; shipped on flatbeds
+        "build_cost_dollops": 3.0,
         "desc":             "Tractors & Farm Machinery",
     },
     "Goods": {
@@ -265,6 +309,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,
         "unskilled":        2,
         "freight_per_unit": 1,
+        "build_cost_dollops": 0.2,
         "desc":             "Consumer Goods",
     },
     "MiningEquipment": {
@@ -274,6 +319,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          3,   # Engineers to spec heavy drilling rigs
         "unskilled":        2,
         "freight_per_unit": 1,   # durable board-scale unit; specialist transport
+        "build_cost_dollops": 4.0,
         "desc":             "Mining Equipment",
     },
     # Reagents (formerly "LaboratoryEquipment") moved to the Medical Sciences
@@ -286,6 +332,7 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          3,   # precision assembly; Engineers/AssemblyWorkers
         "unskilled":        1,   # minimal general labour
         "freight_per_unit": 1,   # durable board-scale unit; high-value items
+        "build_cost_dollops": 3.0,
         "desc":             "Medical & Dental Devices",
     },
     "TransportEquipment": {
@@ -295,7 +342,18 @@ MANUFACTURER_PRODUCT_LINES: dict[str, dict] = {
         "skilled":          2,
         "unskilled":        3,
         "freight_per_unit": 0,   # self-propelled / delivered under own power
+        "build_cost_dollops": 4.0,
         "desc":             "Transportation Equipment",
+    },
+    "Spares": {
+        "inputs":           {"Metal": 2, "Oil": 1},
+        "output":           "Spares",
+        "qty":              4,
+        "skilled":          1,   # Mechanic/AssemblyWorker
+        "unskilled":        2,
+        "freight_per_unit": 0,   # small parts; repair freight handles delivery
+        "build_cost_dollops": 1.0,
+        "desc":             "Equipment Spares Kits",
     },
 }
 
@@ -343,6 +401,61 @@ HOUSEHOLD_ACTIVITY_STIMULUS_PER_CAPITA: float = 0.1
 CONSUMER_DELIVERY_FREIGHT_FEE_PER_UNIT: float = 8.0
 FREIGHT_UNITS_PER_TRADE_UNIT: float = 0.1
 FREIGHT_FEE_PER_TRADE_UNIT: float = 1.0
+
+# Medical response + seasonal QoL (2026-07-04 medical brief).
+DOCTOR_TREATMENTS_PER_SEASON: int = 3
+NURSE_TREATMENTS_PER_SEASON: int = 2
+UNTREATED_RECOVERY_SEASONS: int = 2
+TREATED_RECOVERY_SEASONS: int = 1
+MEDEVAC_SEATS: int = 2
+MEDEVAC_FEE: float = 8.0
+NURSE_UPKEEP_SUPPLIES: int = 1
+NURSE_QOL_WORKFORCE_COVERAGE: int = 15
+NURSE_QOL_BONUS_CAP_POINTS: float = 15.0
+NURSE_PRODUCTIVITY_BONUS_CAP: float = 0.20
+MEDICAL_SUPPLIES_STOCKPILE_PEOPLE_PER_UNIT: int = 10
+QOL_PRODUCTIVITY_MIN: float = 0.85
+QOL_PRODUCTIVITY_MAX: float = 1.15
+
+# Business cycle + severity-scaled disasters (2026-07-04 brief).
+PANDEMIC_DURATION_SEASONS: int = 2
+VACCINE_PANDEMIC_SIDELINE_REDUCTION: float = 0.80
+SEVERITY_PROFILES: dict[str, dict[str, float]] = {
+    "Minor": {
+        "yield_penalty": 0.0,
+        "damage_bonus": 0,
+        "workforce_sidelined_fraction": 0.10,
+        "capital_failure_multiplier": 1.5,
+        "pandemic_yield_modifier": 0.50,
+        "pandemic_sidelined_fraction": 0.20,
+        "rebuild_levy_fraction": 0.05,
+    },
+    "Major": {
+        "yield_penalty": 0.25,
+        "damage_bonus": 1,
+        "workforce_sidelined_fraction": 0.20,
+        "capital_failure_multiplier": 2.5,
+        "pandemic_yield_modifier": 0.40,
+        "pandemic_sidelined_fraction": 0.35,
+        "rebuild_levy_fraction": 0.10,
+    },
+    "Catastrophic": {
+        "yield_penalty": 1.0,
+        "damage_bonus": 2,
+        "workforce_sidelined_fraction": 0.35,
+        "capital_failure_multiplier": 4.0,
+        "pandemic_yield_modifier": 0.25,
+        "pandemic_sidelined_fraction": 0.50,
+        "rebuild_levy_fraction": 0.20,
+    },
+}
+REBUILD_LEVY_MIN_DOLLOPS: float = 20.0
+REBUILD_LEVY_INSTALLMENTS: int = 2
+ENERGY_CRISIS_OIL_PRICE_MULTIPLIER: float = 2.0
+ENERGY_CRISIS_DURATION_SEASONS: int = 2
+HARBOUR_BLOCKADE_FREIGHT_PRICE_MULTIPLIER: float = 3.0
+BABY_BOOM_POPULATION_GROWTH_MULTIPLIER: float = 2.0
+BABY_BOOM_QOL_STABILITY_DELTA: int = 5
 
 # How strongly prices respond to supply/demand imbalance
 PRICE_ELASTICITY: float = 0.3
@@ -419,7 +532,13 @@ STARTING_TRAINED_FRACTION: dict[str, float] = {
 # (6 total) — matches the Doctor block below, STARTING_TRAINED_FRACTION = 1.00,
 # and RULES.md. Revisit if the Apprenticeship pipeline reshapes the medical tiers.
 STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
-    "Farmer":        [("Farmer", 1), ("Horticulturalist", 1), ("Veterinarian", 1)],
+    "Farmer":        [
+        ("Farmer", 1),
+        ("Horticulturalist", 1),
+        ("Veterinarian", 1),
+        ("Marine Biologist", 1),
+        ("Fish Processing Technician", 2),
+    ],
     "Miner":         [("Miner", 1), ("MiningTechnician", 1), ("OilExtractionWorker", 1)],
     "Transporter":   [
         ("LogisticsManager", 1),     # Manager
@@ -497,20 +616,52 @@ DEFAULT_SERVICE_LIFE_SEASONS: int = 20
 # the item's purchase cost per owned unit per season.  Tunable.
 DEFAULT_MAINTENANCE_FRACTION: float = 0.03
 
-# Equipment warranty + failure model (#130, 2026-06-12).  Warranties are sold
-# by the Manufacturer and charged annually.  Unwarranted equipment rolls an
-# annual age-based failure check; failed units need paid repair parts plus
+# Equipment warranty + failure model (#130, 2026-06-12; #188 failure curve
+# 2026-06-21).  Warranties are sold by the Manufacturer and charged annually.
+# Unwarranted equipment rolls a failure check every season on the #188
+# per-quarter Weibull schedule; failed units need paid repair parts plus
 # Freight spares delivery before they contribute capacity again.
 EQUIPMENT_WARRANTY_ANNUAL_RATE: float = 0.20
-EQUIPMENT_FAILURE_PROB_BY_AGE_YEAR: dict[int, float] = {
-    1: 0.05,
-    2: 0.15,
-    3: 0.40,
+# Per-quarter Weibull failure probability (#188).  Each entry is the chance an
+# uninsured unit fails during that quarter of its life (Q1 = first season
+# owned).  Rolled every season using the unit's current quarter; for ages
+# beyond Q20 the last value is held.  Supersedes the old annual age-bucket
+# table {1: 0.05, 2: 0.15, 3: 0.40}.
+EQUIPMENT_FAILURE_PROB_BY_QUARTER: dict[int, float] = {
+    1: 0.0470,  2: 0.0509,  3: 0.0551,  4: 0.0596,  5: 0.0644,
+    6: 0.0696,  7: 0.0751,  8: 0.0810,  9: 0.0873, 10: 0.0940,
+    11: 0.1012, 12: 0.1088, 13: 0.1169, 14: 0.1256, 15: 0.1348,
+    16: 0.1446, 17: 0.1550, 18: 0.1661, 19: 0.1778, 20: 0.1902,
 }
-EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.50
+# Multiplier applied to the per-quarter failure probability for events such as
+# natural disasters (earthquake, flood) and sabotage during strikes (#188).
+# Default 1.0 (no event); the engine exposes a seam to raise it.
+EQUIPMENT_FAILURE_EVENT_MULTIPLIER: float = 1.0
+# Repair/parts fee on failure as a fraction of the unit's purchase value
+# ($35 per $100 basis, #188; was 0.50 under the old straw-man model).
+EQUIPMENT_FAILURE_REPAIR_FRACTION: float = 0.35
+# A spares kit on hand cuts a repair bill in half (#185: "each kit reduces
+# repair costs by 50%").  Without a pre-stocked spare the baseline fraction
+# above applies (spares are manufactured at failure time).
+EQUIPMENT_SPARES_REPAIR_DISCOUNT: float = 0.5
+# #188 maintenance / warranty contract cost per $100 of equipment value, by
+# term in years: (baseline, with Predictive Maintenance).  Charged ONCE upfront
+# on a #185 order (not recurring); covers the unit until the term lapses, after
+# which it becomes failure-eligible again.  Replaces the flat recurring premium
+# for contracted units.
+EQUIPMENT_MAINTENANCE_CONTRACT_PER_100: dict[int, tuple[float, float]] = {
+    1: (8.62, 7.11),
+    2: (19.90, 14.82),
+    3: (35.70, 23.94),
+    4: (55.29, 34.88),
+    5: (78.23, 47.91),
+}
 EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
 EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
 EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
+# Referral kickback paid to the Manufacturer (by the Bank) when a capital order
+# is financed — origination incentive for steering the deal through financing.
+MANUFACTURER_FINANCE_REFERRAL_RATE: float = 0.02
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +691,12 @@ STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
         # Farmer's retirement to create a real double squeeze).
         ("farmer.harvester", 1, 4),
     ],
+    "Manufacturer": [
+        # Starting spares storage (2026-06-22): lets Forge hold 10 generic
+        # spares from turn one without making the opening-invest screen pay
+        # for baseline warehouse infrastructure.
+        ("manufacturer.small_warehouse", 1, 0),
+    ],
 }
 
 # Baseline (non-seasonal) skilled and unskilled worker requirements per production cycle.
@@ -561,7 +718,10 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 # This is the legacy two-tier classification — see WorkerBand for the new three-band
 # (Manager / Technician / Worker) classification used by the production capacity model.
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
-    "Farmer":       ["Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian", "Mechanic", "Chef"],
+    "Farmer":       [
+        "Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian",
+        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef",
+    ],
     "Miner":        [
         "Miner", "MiningTechnician", "MiningForeman",
         "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
@@ -608,6 +768,16 @@ STARTING_POPULATION: int = 50
 # workforce can't outgrow the populace.
 MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 
+# Fraction of the population the starting workforce represents (2026-07-01
+# playtest ask: "workers should no longer include the whole population").
+# Applied as Game.setup's `workforce_scale`, which uniformly scales both
+# STARTING_WORKFORCE totals and each named profession's seed count in
+# STARTING_WORKERS_BY_PROFESSION — so the calibrated manager/technician/worker
+# *ratios* for each role (e.g. Educator's Professor/Lecturer bootstrap mix)
+# are preserved, only the absolute headcount shrinks. Previously this was a
+# hardcoded workforce_scale = 1.0 (100% — the whole population was workforce).
+WORKFORCE_PARTICIPATION_RATE: float = 0.50
+
 # ---------------------------------------------------------------------------
 # Graceful degradation (GitHub #47 + 2026-05-27 playtest)
 # ---------------------------------------------------------------------------
@@ -629,11 +799,16 @@ MAX_WORKFORCE_FRACTION_OF_POPULATION: float = 0.60
 # expertise gaps are tracked the same way the underlying productivity
 # factor sums them across roles.
 EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
-    # Brief-spec values.  Currently UNUSED in production — see
-    # EXPERTISE_DEGRADATION_ENABLED below.
-    "unique_specialist": 0.10,
-    "manager":           0.25,
-    "technician":        0.50,
+    # Gentle safety-net floors (2026-07-12 calibration for GitHub #47):
+    # the ONLY job here is to stop a fully-missing-expertise line from
+    # hard-stopping at exactly zero.  Kept low so the floor barely
+    # re-prices the economy — the spec 0.10/0.25/0.50 values shifted
+    # Educator -4.6 / Manufacturer -3.7 / Doctor +3.8 pts (well past the
+    # ±2σ gate); these values keep the floor while holding all roles
+    # inside the gate.  See requirements/expertise-degradation-floor-2026-07-12.md.
+    "unique_specialist": 0.05,
+    "manager":           0.10,
+    "technician":        0.20,
     "unskilled":         1.00,  # no floor change — existing behaviour
 }
 
@@ -652,7 +827,7 @@ EXPERTISE_DEGRADATION_FLOORS: dict[str, float] = {
 # so a future calibration work can flip this flag and tune the floors,
 # but the application code in _labour_productivity_factor checks this
 # flag before applying — default behaviour is unchanged.
-EXPERTISE_DEGRADATION_ENABLED: bool = False
+EXPERTISE_DEGRADATION_ENABLED: bool = True
 
 # Primary Manager-tier "unique specialist" per role.  Losing this triggers
 # the harshest (0.10) floor.
@@ -688,7 +863,9 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "Mechanic":             4,    # multi-island Technician (Apprenticeship pipeline)
     # Agriculture
     "Farmer":               2,
+    "Marine Biologist":     2,
     "FarmingTechnician":    4,
+    "Fish Processing Technician": 8,
     "Horticulturalist":      2,
     "Veterinarian":         1,
     # Manufacturing

@@ -8,6 +8,13 @@ from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.engine.events import EventResult
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.engine.turn import TurnAction
+from island_traders.constants import (
+    EQUIPMENT_FAILURE_REPAIR_FRACTION,
+    EQUIPMENT_REPAIR_SHIP_FREIGHT,
+    EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+)
+from island_traders.constants_capacity import CAPITAL_CATALOGUE
+from island_traders.models.capacity import find_item
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
 from island_traders.server.app import GameManager, GameRoom, LobbyPlayer
@@ -145,6 +152,37 @@ def test_game_state_exposes_qol_payload():
     assert player_state["pollution_index"] == 0.125
 
 
+def test_game_state_capital_owned_failed_units_include_repair_cost():
+    mgr, room, players = _bootstrap_game(["Educator", "Manufacturer", "Transporter"])
+    educator = players[0]
+    item = find_item(CAPITAL_CATALOGUE, "educator.research_lab")
+    assert item is not None
+    educator.add_capital(item.item_id, 1, acquired_tick=-4)
+    educator.capital_units[item.item_id][0].status = "failed"
+    educator.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    educator.receive_resources(ResourceType.SPARES, item.capacity_units)
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    educator_data = next(p for p in state["players"] if p["player_id"] == educator.player_id)
+    lab = next(
+        c for c in educator_data["capacity"]["capital_owned"]
+        if c["item_id"] == item.item_id
+    )
+
+    assert lab["repairable_failed"] == 1
+    assert lab["repair_cost"] == {
+        "dp": round(
+            item.cost * EQUIPMENT_FAILURE_REPAIR_FRACTION
+            * EQUIPMENT_SPARES_REPAIR_DISCOUNT,
+            2,
+        ),
+        "freight": EQUIPMENT_REPAIR_SHIP_FREIGHT,
+        "spares": item.capacity_units,
+        "repairable": True,
+        "reason": "",
+    }
+
+
 def test_training_pipeline_shape():
     mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
     educator, farmer = players
@@ -181,6 +219,8 @@ def test_training_pipeline_shape():
         "transport_mode",
         "tickets_supplied_by_requester",
         "dollops_to_educator",
+        "student_loan_requested",
+        "loan_financed",
         "return_year",
         "return_season",
         "seasons_remaining",
@@ -199,10 +239,93 @@ def test_training_pipeline_shape():
     assert batch["transport_mode"] == "transporter"
     assert batch["tickets_supplied_by_requester"] == 0
     assert batch["dollops_to_educator"] == 25.0
+    assert batch["student_loan_requested"] is False
     assert batch["return_year"] == 1
     assert batch["return_season"] == "Summer"
     assert batch["seasons_remaining"] == 1
     assert batch["counter_message"] is None
+
+
+def test_server_local_faculty_training_skips_passenger_seats_and_fee():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    educator = players[0]
+
+    result = mgr._submit_training_batch_row(
+        room,
+        educator,
+        {
+            "profession": Profession.LECTURER.value,
+            "count": 1,
+            "campus_player_id": "p0",
+            "transport_mode": "air_ticket",
+            "tickets_supplied_by_requester": 1,
+            "dollops_to_educator": 50,
+        },
+        index=0,
+        year=0,
+        season=0,
+    )
+
+    assert result["status"] == "submitted"
+    req = room.game.training.request_by_id(result["batch_id"])
+    assert req.transport_mode == "self_training"
+    assert req.tickets_supplied_by_requester == 0
+    assert req.dollops_to_educator == 0.0
+
+
+def test_server_cross_island_faculty_training_keeps_passenger_seats():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    farmer = players[1]
+
+    result = mgr._submit_training_batch_row(
+        room,
+        farmer,
+        {
+            "profession": Profession.LECTURER.value,
+            "count": 1,
+            "campus_player_id": "p0",
+            "transport_mode": "air_ticket",
+            "tickets_supplied_by_requester": 1,
+            "dollops_to_educator": 50,
+        },
+        index=0,
+        year=0,
+        season=0,
+    )
+
+    assert result["status"] == "submitted"
+    req = room.game.training.request_by_id(result["batch_id"])
+    assert req.transport_mode == "air_ticket"
+    assert req.tickets_supplied_by_requester == 1
+    assert req.dollops_to_educator == 50.0
+
+
+def test_server_training_batch_records_student_loan_flag():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    farmer = players[1]
+
+    result = mgr._submit_training_batch_row(
+        room,
+        farmer,
+        {
+            "profession": Profession.LECTURER.value,
+            "count": 1,
+            "campus_player_id": "p0",
+            "dollops_to_educator": 50,
+            "financing": True,
+        },
+        index=0,
+        year=0,
+        season=0,
+    )
+
+    assert result["status"] == "submitted"
+    req = room.game.training.request_by_id(result["batch_id"])
+    assert req.student_loan_requested is True
+
+    state = mgr.get_game_state(room.room_id, "p1")
+    farmer_data = next(p for p in state["players"] if p["player_id"] == farmer.player_id)
+    assert farmer_data["training_pipeline"][0]["student_loan_requested"] is True
 
 
 def test_personnel_training_counts_group_by_target_profession():
@@ -241,6 +364,83 @@ def test_training_pipeline_empty():
     farmer_data = next(p for p in state["players"] if p["player_id"] == players[1].player_id)
 
     assert farmer_data["training_pipeline"] == []
+
+
+def test_pending_actions_contains_review_training_for_educator():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer"])
+    educator, farmer = players
+    worker_id = farmer.workforce.active_workers[0].worker_id
+    room.game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=25.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+        year=0,
+        season=0,
+        transport_mode="air_ticket",
+    )
+
+    educator_state = mgr.get_game_state(room.room_id, "p0")
+    farmer_state = mgr.get_game_state(room.room_id, "p1")
+
+    assert "review_training" in educator_state["pending_actions"]
+    assert "review_training" not in farmer_state["pending_actions"]
+
+
+def test_pending_actions_contains_arrange_transport_for_transporter_only():
+    mgr, room, players = _bootstrap_game(["Educator", "Farmer", "Transporter"])
+    educator, farmer, _transporter = players
+    worker_id = farmer.workforce.active_workers[0].worker_id
+    req = room.game.training.propose(
+        requester_id=farmer.player_id,
+        worker_ids=[worker_id],
+        educator_id=educator.player_id,
+        dollops_to_educator=25.0,
+        target_profession=Profession.FARMING_TECHNICIAN.value,
+        year=0,
+        season=0,
+        transport_mode="cargo",
+    )
+    room.game.training.educator_approve(req.batch_id)
+
+    transporter_state = mgr.get_game_state(room.room_id, "p2")
+    farmer_state = mgr.get_game_state(room.room_id, "p1")
+
+    assert "arrange_transport" in transporter_state["pending_actions"]
+    assert "arrange_transport" not in farmer_state["pending_actions"]
+
+
+def test_pending_actions_contains_review_staffing_for_provider_only():
+    mgr, room, players = _bootstrap_game(["Doctor", "Farmer"])
+    doctor, farmer = players
+    room.game.staffing.propose(
+        requester_id=farmer.player_id,
+        provider_id=doctor.player_id,
+        profession=Profession.NURSE.value,
+        staff_count=1,
+        duration_seasons=1,
+        fee_total=20.0,
+        year=0,
+        season=0,
+    )
+
+    doctor_state = mgr.get_game_state(room.room_id, "p0")
+    farmer_state = mgr.get_game_state(room.room_id, "p1")
+
+    assert "review_staffing_requests" in doctor_state["pending_actions"]
+    assert "review_staffing_requests" not in farmer_state["pending_actions"]
+
+
+def test_pending_actions_contains_repair_capital_for_repairable_failed_unit():
+    mgr, room, players = _bootstrap_game(["Educator", "Manufacturer", "Transporter"])
+    educator = players[0]
+    educator.add_capital("educator.research_lab", 1, acquired_tick=-4)
+    educator.capital_units["educator.research_lab"][0].status = "failed"
+
+    state = mgr.get_game_state(room.room_id, "p0")
+
+    assert "repair_capital" in state["pending_actions"]
 
 
 def test_finance_hidden_from_market_data():

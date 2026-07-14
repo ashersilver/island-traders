@@ -188,6 +188,15 @@ button:active{transform:scale(.97)}
 .psb-ready-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--dim)}
 .psb-dot{display:inline-block;width:.5rem;height:.5rem;border-radius:50%;background:var(--dim)}
 .psb-dot.ready{background:#88ddaa}
+.psb-report-panels{display:flex;gap:.7rem;flex-wrap:wrap;width:100%}
+.psb-panel{flex:1 1 180px;min-width:160px;background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:6px;padding:.5rem .7rem}
+.psb-panel h4{margin:0 0 .35rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim)}
+.psb-panel-row{display:flex;justify-content:space-between;font-size:.75rem;padding:.1rem 0}
+.psb-panel-row .lbl{color:var(--dim)}
+.psb-panel-row .val{font-weight:600;color:var(--text)}
+.psb-panel-row .val.pos{color:#88ddaa}
+.psb-panel-row .val.neg{color:var(--red)}
+.psb-panel-row .val.warn{color:#f5c518}
 
 /* Pause overlay (Issue #1) */
 .pause-overlay{
@@ -309,6 +318,11 @@ button:active{transform:scale(.97)}
   background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);
   padding:.3rem .9rem;
 }
+.cycle-chip{
+  display:inline-flex;align-items:center;font-size:.72rem;font-weight:600;
+  color:var(--gold);background:var(--bg);border:1px solid var(--border);
+  border-radius:20px;padding:.2rem .6rem;white-space:nowrap;
+}
 .season-badge .season-year{font-size:.85rem;font-weight:700;color:var(--heading)}
 .season-badge .season-name{font-size:.85rem;font-weight:700;color:var(--accent)}
 .game-code-pill{
@@ -329,6 +343,30 @@ button:active{transform:scale(.97)}
   cursor:pointer;border:1px solid transparent;border-bottom:none;
 }
 .tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
+
+/* Trade Blotter (#210) — tabbed overlay on the Market Board */
+.blotter-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:.6rem}
+.blotter-badge{display:inline-block;min-width:1.1em;padding:0 .35em;margin-left:.3em;
+  border-radius:999px;background:var(--accent);color:#001018;font-size:.66rem;font-weight:700;line-height:1.5}
+.blotter-note{font-size:.76rem;color:var(--dim);line-height:1.5;margin:.1rem 0 .55rem}
+.blotter-total{font-size:.85rem;margin-right:auto}
+.blotter-bar{display:flex;align-items:center;gap:.6rem;margin-top:.7rem;padding-top:.6rem;border-top:1px solid var(--border)}
+.mkt-mode{cursor:pointer;font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;
+  border:1px solid var(--border);background:var(--bg);color:var(--dim)}
+.mkt-mode[data-mode="layer"]{color:var(--green);border-color:var(--green)}
+.mkt-mode[data-mode="replace"]{color:var(--gold);border-color:var(--gold)}
+.blotter-fill{display:flex;align-items:center;gap:.5rem;font-size:.78rem;padding:.28rem 0;border-bottom:1px solid var(--border)}
+.blotter-fill .side-buy{color:var(--green);font-weight:700}
+.blotter-fill .side-sell{color:var(--gold);font-weight:700}
+.blotter-empty{font-size:.8rem;color:var(--dim);margin:.6rem 0}
+.blotter-addbar{display:flex;align-items:center;gap:.5rem;margin:.1rem 0 .55rem;font-size:.78rem;color:var(--dim)}
+.blotter-addbar select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:.76rem;max-width:300px}
+.blot-avail{font-size:.62rem;color:var(--dim);text-align:right;margin-top:1px;letter-spacing:.02em}
+.blot-hold{font-size:.66rem;color:var(--dim);margin-left:.15rem;white-space:nowrap}
+.blot-name{display:flex;align-items:center;gap:.25rem}
+.blot-pin,.blot-remove{cursor:pointer;border:none;background:none;color:var(--dim);font-size:.82rem;padding:0 1px;line-height:1}
+.blot-pin:hover,.blot-remove:hover{color:var(--text)}
+.blot-pin.pinned{color:var(--gold)}
 
 .g-side{grid-area:side;background:var(--panel);overflow-y:auto;padding:.75rem;border-right:1px solid var(--border)}
 .g-main{
@@ -373,8 +411,15 @@ button:active{transform:scale(.97)}
 }
 /* On narrow single-column layouts the element-level display:none still hides. */
 .layout-menu{position:relative}
+/* position:fixed + appended to <body> at open time (see toggleLayoutMenu) —
+   .g-hdr has backdrop-filter, which creates a containing block that traps
+   descendant fixed/absolute elements inside its own stacking context. Left
+   nested inside .layout-menu, this popup painted underneath .g-main (later
+   sibling, its own stacking context) despite z-index, showing only its
+   background color with no visible rows. Portaling to <body> sidesteps the
+   whole ancestor-stacking-context problem instead of trying to out-z-index it. */
 .layout-pop{
-  position:absolute;right:0;top:110%;z-index:60;min-width:170px;
+  position:fixed;z-index:9999;min-width:170px;
   background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
   padding:.4rem;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none
 }
@@ -395,6 +440,16 @@ button:active{transform:scale(.97)}
   background:var(--bg);color:var(--dim);border:1px solid var(--border)
 }
 .log-filter-bar .lf-btn.active{background:var(--accent);color:#04090f;border-color:var(--accent);font-weight:700}
+.log-search{display:flex;align-items:center;gap:.25rem;flex:1 1 7rem;min-width:6rem;
+  background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:.05rem .4rem}
+.log-search .ls-icon{font-size:.7rem;color:var(--dim);line-height:1}
+.log-search input{flex:1;min-width:0;background:none;border:none;outline:none;
+  font-family:inherit;font-size:.68rem;color:var(--text);padding:.12rem 0}
+.log-search input::placeholder{color:var(--dim)}
+.log-search .ls-clear{cursor:pointer;color:var(--dim);font-weight:700;font-size:.78rem;
+  line-height:1;padding:0 .1rem;display:none}
+.log-search.has-text .ls-clear{display:inline}
+.g-log-line.log-search-hidden{display:none!important}
 /* --- Tile system: per-tile collapse/hide/reorder (UI v2 phase 1, #114) --- */
 .section[data-tile]>h3{position:relative}
 .tile-ctl{display:inline-flex;gap:.1rem;margin-left:auto;opacity:0;transition:opacity .15s}
@@ -487,6 +542,57 @@ button:active{transform:scale(.97)}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
 .mkt-row .res{color:var(--text)}
+/* Production schedule rows (per-output capacity + limiting factor) */
+.prod-sched-row{padding:.18rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.prod-sched-row:last-child{border-bottom:none}
+.prod-sched-row .psr-top{display:flex;justify-content:space-between;align-items:center;font-size:.79rem}
+.prod-sched-row .psr-top .res{color:var(--text);font-weight:600}
+.prod-sched-row .psr-note{font-size:.68rem;color:var(--dim);margin-top:.05rem;line-height:1.25}
+/* ---- Chat: topic list + docked windows ---- */
+.chat-topic-row{display:flex;align-items:center;justify-content:space-between;gap:.4rem;
+  padding:.22rem .35rem;border-radius:4px;cursor:pointer;font-size:.8rem}
+.chat-topic-row:hover{background:var(--bg)}
+.chat-topic-row .ctr-name{display:flex;align-items:center;gap:.35rem;min-width:0}
+.chat-topic-row .ctr-name .ctr-topic{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-unread{background:var(--red);color:#fff;border-radius:999px;font-size:.62rem;font-weight:800;
+  padding:.02rem .4rem;min-width:1.05em;text-align:center}
+#chat-windows{position:fixed;right:.6rem;bottom:.6rem;z-index:7000;display:flex;
+  align-items:flex-end;gap:.5rem;flex-wrap:wrap-reverse;justify-content:flex-end;
+  max-width:calc(100vw - 1.2rem);pointer-events:none}
+.chat-win{pointer-events:auto;display:flex;flex-direction:column;width:300px;height:340px;
+  min-width:220px;min-height:120px;max-width:90vw;max-height:80vh;resize:both;overflow:hidden;
+  background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:0 8px 30px rgba(0,0,0,.55)}
+.chat-win.minimized{height:auto!important;resize:none}
+.chat-win.minimized .cw-body,.chat-win.minimized .cw-input{display:none}
+.cw-head{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;cursor:default;
+  background:var(--bg);border-bottom:1px solid var(--border);border-radius:var(--radius) var(--radius) 0 0}
+.cw-head .cw-title{flex:1;font-weight:700;font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cw-head button{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.85rem;line-height:1;padding:0 .2rem}
+.cw-head button:hover{color:var(--accent)}
+.cw-body{flex:1;overflow-y:auto;padding:.35rem .5rem;font-size:.79rem;line-height:1.35;display:flex;flex-direction:column;gap:.2rem}
+.cw-msg .cw-from{font-weight:700}
+.cw-msg .cw-ts{color:var(--dim);font-size:.64rem;margin-left:.3rem}
+.cw-msg .mention{background:rgba(231,192,93,.22);color:var(--gold);border-radius:3px;padding:0 .15rem}
+.cw-msg.mine .cw-from{color:var(--accent)}
+.cw-input{display:flex;align-items:center;gap:.25rem;padding:.3rem .4rem;border-top:1px solid var(--border);position:relative}
+.cw-input input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-family:inherit;font-size:.78rem;padding:.25rem .4rem;outline:none}
+.cw-input .cw-emoji-btn,.cw-input .cw-send{background:none;border:none;cursor:pointer;font-size:1rem;padding:0 .15rem;color:var(--dim)}
+.cw-input .cw-send{color:var(--accent);font-weight:700;font-size:.82rem}
+.cw-emoji-pop{position:absolute;bottom:110%;right:.4rem;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;padding:.3rem;display:none;grid-template-columns:repeat(6,1fr);gap:.1rem;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.cw-emoji-pop.open{display:grid}
+.cw-emoji-pop span{cursor:pointer;font-size:1.05rem;padding:.1rem;text-align:center;border-radius:4px}
+.cw-emoji-pop span:hover{background:var(--bg)}
+.cw-mentions{position:absolute;bottom:110%;left:.4rem;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;min-width:8rem;display:none;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:2}
+.cw-mentions.open{display:block}
+.cw-mentions .cwm-row{padding:.22rem .5rem;cursor:pointer;font-size:.78rem}
+.cw-mentions .cwm-row:hover,.cw-mentions .cwm-row.active{background:var(--accent);color:#04090f}
+/* read-only chat panel (spectator) */
+.chat-ro-msg{font-size:.8rem;line-height:1.35;padding:.12rem 0}
+.chat-ro-msg .cw-from{font-weight:700}
 .mkt-row .price{color:var(--gold);font-weight:600}
 .mkt-row .supply{color:var(--dim);font-size:.72rem}
 .market-mini{width:100%;border-collapse:collapse;font-size:.72rem;table-layout:fixed}
@@ -531,10 +637,27 @@ button:active{transform:scale(.97)}
 .action-btns button.recommended{border-color:var(--gold);box-shadow:0 0 0 1px rgba(246,185,59,.45)}
 .action-btns button:hover:not([disabled]){border-color:var(--accent)}
 .action-btns button[disabled]{opacity:.45;cursor:not-allowed}
-/* Grouped action layout (Phase 2 of the UX review) */
-.action-groups{display:flex;flex-direction:column;gap:.45rem}
-.action-group{border:1px solid var(--border);border-radius:6px;padding:.45rem .55rem;background:rgba(0,0,0,.15)}
-.action-group-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin-bottom:.3rem;font-weight:700}
+/* Grouped action accordion (Phase 3 of the UX review) */
+.action-groups{display:flex;flex-direction:column;gap:.4rem;width:100%}
+.action-group{border:1px solid var(--border);border-radius:6px;background:rgba(0,0,0,.15);overflow:hidden}
+.action-group.pinned{border-color:var(--gold)}
+.action-group-head{display:flex;align-items:center;gap:.45rem;padding:.4rem .55rem;cursor:pointer;user-select:none}
+.action-group-head:hover{background:rgba(255,255,255,.04)}
+.action-group .ag-chev{font-size:.6rem;color:var(--dim);transition:transform .15s;transform:rotate(90deg)}
+.action-group.collapsed .ag-chev{transform:rotate(0deg)}
+.action-group.collapsed .action-btns{display:none}
+.action-group .ag-ico{font-size:.9rem;line-height:1}
+.action-group .ag-label{font-size:.78rem;font-weight:700;color:var(--text)}
+.action-group .ag-summary{font-size:.66rem;color:var(--dim)}
+.action-group .ag-pin{margin-left:auto;background:transparent;border:none;color:var(--text);padding:.1rem .3rem;font-size:.8rem;line-height:1;cursor:pointer;opacity:.3;filter:grayscale(1)}
+.action-group-head:hover .ag-pin{opacity:.65}
+.action-group .ag-pin:hover{opacity:1}
+.action-group.pinned .ag-pin{opacity:1;filter:none}
+.action-group .action-btns{flex-direction:column;flex-wrap:nowrap;gap:.3rem;padding:.1rem .5rem .5rem}
+.action-group .action-btns button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;padding:.4rem .6rem;border-radius:5px}
+.action-group .action-btns button .act-main{display:flex;align-items:center;gap:.4rem;width:100%;font-weight:600}
+.action-group .action-btns button .act-sub{font-size:.7rem;color:var(--dim);line-height:1.35;font-weight:400}
+.action-group .action-btns button.highlight .act-sub{color:rgba(0,0,0,.72)}
 
 /* island map */
 .island-map-container{width:100%;margin-bottom:.5rem}
@@ -557,6 +680,40 @@ button:active{transform:scale(.97)}
 .dialog .opts button:hover{border-color:var(--accent);background:rgba(10,189,227,.07)}
 .dialog input[type=number],.dialog input[type=text]{width:100%;margin:.5rem 0;padding:.5rem}
 .popup-footer{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1rem;align-items:center}
+.cap-order-dialog{width:min(980px,96vw)}
+.cap-order-item{font-weight:700;margin-bottom:.7rem;color:var(--heading)}
+.cap-order-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:.8rem;align-items:start}
+.cap-order-options{display:grid;gap:.55rem}
+.cap-option{display:grid;grid-template-columns:24px minmax(0,1fr) 90px;gap:.55rem;align-items:start;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.14);padding:.65rem}
+.cap-option input[type=checkbox]{margin-top:.2rem}
+.cap-option input[type=number]{max-width:84px;margin:.25rem 0 0}
+.cap-option-title{font-weight:700;color:var(--heading);font-size:.84rem}
+.cap-option-copy{color:var(--dim);font-size:.74rem;line-height:1.35;margin-top:.12rem}
+.cap-option-cost{text-align:right;color:var(--gold);font-weight:800;font-variant-numeric:tabular-nums;font-size:.78rem}
+.cap-controls{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.45rem}
+.cap-controls select{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:.3rem}
+.cap-inline{display:flex;gap:.35rem;align-items:center;color:var(--text);font-size:.75rem}
+.cap-inline input{margin:0}
+.cap-info-btn{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--accent);background:rgba(10,189,227,.09);color:var(--accent);font-size:.68rem;font-weight:800;padding:0;margin-left:.25rem}
+.cap-info{display:none;margin-top:.45rem;border:1px solid rgba(116,167,255,.36);background:rgba(116,167,255,.08);color:#c9ddff;border-radius:6px;padding:.45rem;font-size:.72rem;line-height:1.35}
+.cap-info.active{display:block}
+.cap-quote{border:1px solid rgba(246,185,59,.38);background:rgba(246,185,59,.07);border-radius:8px;padding:.7rem;display:grid;gap:.35rem}
+.cap-quote-row{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:.5rem;align-items:baseline;padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.78rem}
+.cap-quote-row:last-child{border-bottom:0}
+.cap-quote-label{color:var(--dim)}
+.cap-quote-value{text-align:right;color:var(--text);font-weight:800;font-variant-numeric:tabular-nums}
+.cap-quote-row.total{border-top:1px solid rgba(246,185,59,.4);border-bottom:0;margin-top:.25rem;padding-top:.55rem}
+.cap-quote-row.total .cap-quote-label{color:var(--heading);font-weight:800}
+.cap-quote-row.total .cap-quote-value{color:var(--gold);font-size:1rem}
+.cap-quote-row.contingent .cap-quote-label,.cap-quote-row.contingent .cap-quote-value{color:var(--dim);font-size:.72rem}
+.cap-terms{border:1px solid var(--border);background:rgba(0,0,0,.14);border-radius:8px;margin-top:.65rem;padding:.7rem}
+.cap-terms h4{margin:0 0 .45rem;color:var(--accent);font-size:.82rem}
+.cap-terms ul{margin:0;padding-left:1rem;color:var(--dim);font-size:.73rem;line-height:1.45}
+@media(max-width:760px){
+  .cap-order-grid{grid-template-columns:1fr}
+  .cap-option{grid-template-columns:24px minmax(0,1fr)}
+  .cap-option-cost{text-align:left;grid-column:2}
+}
 
 /* ---- Non-blocking message layer (toasts + message modal) ----
    Native alert()/confirm()/prompt() block the JS main thread, which freezes
@@ -697,6 +854,27 @@ button:active{transform:scale(.97)}
 .training-decision-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
 .training-row-blocker{font-size:.66rem;color:var(--gold);margin-top:.1rem;white-space:normal;line-height:1.25}
 .training-row-supply-hint{font-size:.63rem;color:var(--dim);margin-top:.06rem;line-height:1.2}
+/* ---- Capital negotiation alerts ---- */
+.cap-neg-alert{
+  border:1px solid rgba(231,192,93,.65);border-radius:var(--radius-sm);
+  padding:.35rem .5rem;margin:.25rem 0 .1rem;font-size:.76rem;line-height:1.35;
+  background:rgba(231,192,93,.07)
+}
+.cap-neg-alert.status-proposed{border-color:rgba(231,192,93,.65)}
+.cap-neg-alert.status-countered{border-color:rgba(39,174,96,.6);background:rgba(39,174,96,.06)}
+.cap-neg-alert-hdr{font-weight:700;color:var(--gold);margin-bottom:.12rem}
+.cap-neg-alert.status-countered .cap-neg-alert-hdr{color:var(--green)}
+.cap-neg-alert-detail{color:var(--dim);font-size:.71rem;margin-top:.08rem;line-height:1.3}
+.cap-neg-btns{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+.cap-neg-btns button{font-size:.68rem;padding:.2rem .5rem;cursor:pointer;
+  border:1px solid var(--border);border-radius:3px;background:rgba(255,255,255,.06);
+  color:var(--text)}
+.cap-neg-btns .btn-accept{border-color:rgba(39,174,96,.6);color:var(--green)}
+.cap-neg-btns .btn-counter{border-color:rgba(231,192,93,.6);color:var(--gold)}
+.cap-neg-btns .btn-reject{border-color:rgba(231,76,60,.5);color:var(--red)}
+#cap-neg-badge{display:inline-block;background:var(--gold);color:#1a1200;
+  border-radius:999px;font-size:.61rem;font-weight:800;
+  padding:.02rem .38rem;min-width:1.1em;text-align:center;margin-left:.3rem;vertical-align:middle}
 /* ---- Staffing contract strip ---- */
 .staffing-strip{display:grid;gap:.22rem;margin:.15rem 0 .1rem}
 .staffing-row{display:grid;grid-template-columns:1fr auto;align-items:start;gap:.3rem;
@@ -917,6 +1095,8 @@ body.fx-off .ih-pins .pdot{animation:none}
       <span id="psb-ready-label">Ready to Start ✓</span>
     </button>
   </div>
+  <!-- Season report panels (populated by season_report WS message from engine) -->
+  <div id="psb-report" style="display:none;width:100%;margin-top:.6rem;border-top:1px solid var(--border);padding-top:.6rem"></div>
 </div>
 
 <!-- ===================== LANDING ===================== -->
@@ -1219,6 +1399,10 @@ body.fx-off .ih-pins .pdot{animation:none}
         <span class="season-year" id="hdr-year">Year 1</span>
         <span class="season-name" id="hdr-season">Spring</span>
       </div>
+      <!-- Business-cycle phase chip (business-cycle-severity-events brief).
+           Hidden until the engine ships gameState.business_cycle; then
+           renderBusinessCycleChip lights it up. -->
+      <span class="cycle-chip hidden" id="hdr-cycle-chip"></span>
       <div class="game-code-pill" title="Game code for rejoining">
         <span>Game</span>
         <strong id="hdr-game-code">------</strong>
@@ -1346,6 +1530,9 @@ body.fx-off .ih-pins .pdot{animation:none}
         <div class="stat"><span class="lbl">Equipment Value</span><span class="val gold" id="s-equipment">—</span></div>
         <div class="stat"><span class="lbl">Workers (active/total)</span><span class="val" id="s-workers">—</span><span id="s-sus-warn" title=""></span></div>
         <div class="stat personnel-stat"><span class="lbl">Personnel</span><div class="val personnel-breakdown" id="s-personnel" onclick="showPersonnelPopup()" title="Click for training pipeline + staffing detail">—</div></div>
+        <div class="stat" id="s-order-book-row" style="display:none;cursor:pointer" onclick="showOrderBookPopup()" title="Click to review and reorder your production queue">
+          <span class="lbl">Order Book</span><span class="val" id="s-order-book-count">—</span>
+        </div>
         <div id="s-training-decisions"></div>
         <div id="s-training-strip"></div>
         <div id="s-staffing-strip"></div>
@@ -1362,6 +1549,13 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="s-inventory">—</div>
       </div>
+      <!-- Island wellbeing (medical-response-quality-of-life + continuing-education
+           briefs). Hidden until the engine ships me.quality_of_life /
+           me.continuing_education; renderIslandWellbeing fills it in. -->
+      <div class="section hidden" data-tile="wellbeing" data-tile-label="Island wellbeing" id="wellbeing-tile">
+        <h3>Island Wellbeing</h3>
+        <div id="s-wellbeing"></div>
+      </div>
       <div class="section" data-tile="capacity" data-tile-label="Production capacity">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           Production Capacity
@@ -1374,10 +1568,12 @@ body.fx-off .ih-pins .pdot{animation:none}
       <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
         <h3 style="display:flex;align-items:center;gap:.4rem">
           🏗 Build &amp; Develop
+          <span id="cap-neg-badge" style="display:none">0</span>
           <button class="btn-gold btn-sm" id="build-btn" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
-                  onclick="sendResponse('purchase_capital')"
+                  onclick="openCapitalPicker()"
                   title="Buy capital equipment (available on your turn)">＋ Build…</button>
         </h3>
+        <div id="s-capital-neg-alerts"></div>
         <div id="build-develop-list" style="font-size:.8rem;color:var(--dim)">—</div>
       </div>
       <div class="section" data-tile="insurance" data-tile-label="Insurance">
@@ -1464,6 +1660,14 @@ body.fx-off .ih-pins .pdot{animation:none}
         </h3>
         <div id="deals-panel" onclick="openDealsDialog()" style="cursor:pointer;font-size:.82rem;line-height:1.4">—</div>
       </div>
+      <div class="section" data-tile="chat" data-tile-label="Chat">
+        <h3 style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span>💬 Chat <span id="chat-badge" class="deals-badge" style="display:none"></span></span>
+          <button class="btn-ghost btn-sm" style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openNewChatDialog()" title="Start a private chat with one or more islands">＋ New chat</button>
+        </h3>
+        <div id="chat-topics" style="font-size:.82rem;line-height:1.4">—</div>
+      </div>
     </div>
 
     <div class="g-log" id="event-log" data-filter="all">
@@ -1473,6 +1677,12 @@ body.fx-off .ih-pins .pdot{animation:none}
         <button class="lf-btn"        data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
         <button class="lf-btn"        data-f="events"   onclick="setLogFilter('events')">Events</button>
         <button class="lf-btn"        data-f="training" onclick="setLogFilter('training')">Training</button>
+        <span class="log-search" id="log-search">
+          <span class="ls-icon">🔍</span>
+          <input type="text" id="log-search-input" placeholder="Search log…"
+                 autocomplete="off" oninput="applyLogSearch(this.value)">
+          <span class="ls-clear" title="Clear search" onclick="clearLogSearch()">✕</span>
+        </span>
       </div>
     </div>
   </div>
@@ -1486,10 +1696,117 @@ body.fx-off .ih-pins .pdot{animation:none}
   </div>
 </div>
 
+<!-- Capital Equipment Order form (#185) -->
+<div class="overlay" id="capital-order-overlay">
+  <div class="dialog cap-order-dialog">
+    <h3>Capital Equipment Order</h3>
+    <div id="cap-order-item" class="cap-order-item"></div>
+    <div class="cap-order-grid">
+      <div class="cap-order-options">
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-maintenance" checked onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Maintenance / warranty contract <button class="cap-info-btn" onclick="toggleCapOrderInfo('maintenance')" title="Show maintenance terms">i</button></div>
+            <div class="cap-option-copy">Prepaid repair cover using the #188 per-quarter Weibull failure model.</div>
+            <div class="cap-controls">
+              <select id="cap-order-term" oninput="updateCapOrderTotal()">
+                <option value="0">None</option>
+                <option value="1">1 year</option>
+                <option value="2">2 years</option>
+                <option value="3" selected>3 years</option>
+                <option value="4">4 years</option>
+                <option value="5">5 years</option>
+              </select>
+              <label class="cap-inline"><input type="checkbox" id="cap-order-predictive" checked onchange="updateCapOrderTotal()"> Predictive Maint.</label>
+            </div>
+            <div class="cap-info" id="cap-info-maintenance">Repair cost is roughly 35% of list price. Contract prices follow issue #188 and account for age, disasters, and sabotage risk.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-maint-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-guarantee" checked disabled>
+          <div>
+            <div class="cap-option-title">Manufacturer guarantee</div>
+            <div class="cap-option-copy">One season standard guarantee, no charge.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-spares-toggle" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Spares kits <button class="cap-info-btn" onclick="toggleCapOrderInfo('spares')" title="Show spares terms">i</button></div>
+            <div class="cap-option-copy">Each kit cuts one future repair by 50% when attached to this unit.</div>
+            <div class="cap-controls">
+              <input type="number" id="cap-order-spares" min="0" value="0" oninput="updateCapOrderTotal()">
+            </div>
+            <div class="cap-info" id="cap-info-spares">Spares cost 15% of list price per kit at order time. Building spares at failure costs 50% more.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-spares-cost">0.00 Dp</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-expedited" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Expedited repair eligibility <button class="cap-info-btn" onclick="toggleCapOrderInfo('expedited')" title="Show expedited terms">i</button></div>
+            <div class="cap-option-copy">Allows fast repair after a failure when spares and air freight are available.</div>
+            <div class="cap-info" id="cap-info-expedited">Standard repair completes next season. Expedited repair needs attached spares plus air freight and is billed only at failure.</div>
+          </div>
+          <div class="cap-option-cost" id="cap-expedite-cost">Contingent</div>
+        </div>
+
+        <div class="cap-option">
+          <input type="checkbox" id="cap-order-financing" onchange="updateCapOrderTotal()">
+          <div>
+            <div class="cap-option-title">Apply for bank financing <button class="cap-info-btn" onclick="toggleCapOrderInfo('financing')" title="Show financing terms">i</button></div>
+            <div class="cap-option-copy">Request a capital loan for the agreed order total.</div>
+            <div class="cap-info" id="cap-info-financing">Loan application amount equals the agreed total. Bank/manufacturer incentives are internal and not displayed in buyer pricing.</div>
+          </div>
+          <div class="cap-option-cost">0.00 Dp</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cap-quote" id="cap-order-total"></div>
+        <div class="cap-terms">
+          <h4>Standard Terms</h4>
+          <ul>
+            <li>Repair is approximately 35% of list price.</li>
+            <li>#188 uses per-quarter Weibull failure, adjusted by disasters and sabotage.</li>
+            <li>Each spares kit reduces one repair by 50%.</li>
+            <li>Spares built at failure cost 50% more.</li>
+            <li>Standard repair completes next season.</li>
+            <li>Expedited repair needs spares plus air freight.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalOrder()">Cancel</button>
+      <button onclick="submitCapitalOrder()">Send offer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Capital item picker: lists buildable equipment, then opens the order form
+     (#185) for the chosen item. Routed from the "Purchase Equipment" action. -->
+<div class="overlay" id="capital-pick-overlay">
+  <div class="dialog">
+    <h3>Purchase Equipment</h3>
+    <div id="cap-pick-list" style="display:flex;flex-direction:column;gap:.4rem;margin:.6rem 0"></div>
+    <div class="opts" style="flex-direction:row;gap:.5rem;justify-content:flex-end">
+      <button onclick="closeCapitalPicker()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Non-blocking message layer (toasts + message modal). Separate from the
      IO-prompt overlay above so it never disturbs an active game prompt, and
      never blocks the event loop (the season countdown keeps ticking). -->
 <div id="toast-stack"></div>
+<!-- Docked, non-modal chat windows (resize + minimize, anchored bottom-right). -->
+<div id="chat-windows"></div>
 <div id="msg-overlay">
   <div id="msg-dialog">
     <h3 id="msg-title"></h3>
@@ -1509,6 +1826,26 @@ const API = SERVER_ORIGIN;
 let ws = null;
 let myPlayerId = null;
 let myPlayerIdx = null;
+
+// Season/year header: guarded so it never regresses. Season transitions run
+// on a separate game thread from the async WS request handlers; an in-flight
+// get_state computed just before a season boundary can be delivered to the
+// client AFTER the newer season_start/pre_season_start broadcast (out-of-order
+// delivery), which would otherwise flip the header back to the old season
+// until a manual page refresh forced a fresh state fetch. Track the highest
+// (year, season) ordinal shown so far and ignore any older one.
+const _SEASON_ORDER = ['Spring', 'Summer', 'Autumn', 'Winter'];
+let _lastSeasonOrdinal = -1;
+function _updateSeasonHeader(year, seasonName) {
+  if (!year || !seasonName) return;
+  const idx = _SEASON_ORDER.indexOf(seasonName);
+  // Unknown season string: fail open (always apply) rather than silently drop it.
+  const ordinal = idx === -1 ? Infinity : year * _SEASON_ORDER.length + idx;
+  if (ordinal < _lastSeasonOrdinal) return;
+  _lastSeasonOrdinal = ordinal;
+  document.getElementById('hdr-year').textContent = 'Year ' + year;
+  document.getElementById('hdr-season').textContent = seasonName;
+}
 let currentRoomId = null;
 let currentRoom = null;
 let gameState = null;
@@ -1639,10 +1976,10 @@ const ISLAND_BRIEFINGS = {
   },
   Doctor: {
     title: 'Healthcare and Health Research Island',
-    summary: 'Sell resilience. Produce HealthServices and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
+    summary: 'Sell resilience. Produce MedicalSupplies and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
     complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
-    full: `You produce HealthServices and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
+    full: `You produce MedicalSupplies and Vaccine and supply medical labour. A Nurse can restore a food-stricken island immediately on arrival, but that nurse must travel by PassengerSeat and is unavailable to you until returning later.<br><br>Your strongest strategy is preventive: watch the board for hunger and injury risk, keep travel options available, and make other governors realise that avoiding collapse is cheaper than recovering from it.`
   },
 };
 let investSelected = new Set(); // currently checked item_ids
@@ -2003,6 +2340,10 @@ function enterWaiting(room) {
   currentRoomId = room.room_id;
   currentRoom = room;
   myPlayerIdx = null;
+  // A fresh room join starts back at Year 1 Spring; reset the season-header
+  // guard so it doesn't refuse to display an "earlier" season than one shown
+  // in a previous room during this same page session.
+  _lastSeasonOrdinal = -1;
   renderWaitingRoom(room);
   showScreen('waiting');
   connectWS();
@@ -2040,7 +2381,9 @@ function renderWaitingRoom(room) {
   }).join('');
 
   // Only host can start
-  const isHost = room.creator_id === undefined || room.players[0]?.player_id === myPlayerId;
+  const isHost = room.creator_id === undefined
+    ? room.players[0]?.player_id === myPlayerId
+    : room.creator_id === myPlayerId;
   document.getElementById('btn-start-auction').style.display = isHost ? '' : 'none';
   document.getElementById('btn-add-ai').style.display = isHost ? '' : 'none';
 }
@@ -2670,9 +3013,360 @@ function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
 }
 
+// Capital Equipment Order form (#185): collects order conditions and sends a
+// `capital_order` offer. The server routes it to the Manufacturer review flow.
+let capOrderItem = null;
+function moneyDp(value) {
+  return `${(Math.round((Number(value) || 0) * 100) / 100).toFixed(2)} Dp`;
+}
+function openCapitalOrder(itemId) {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  const it = cat.find(c => c.item_id === itemId);
+  if (!it) return;
+  capOrderItem = it;
+  const arrival = it.delivery_seasons === 0 ? 'arrives now'
+    : `${it.delivery_seasons}-season delivery`;
+  document.getElementById('cap-order-item').textContent =
+    `${it.name} — ${it.cost} Dp · ${arrival}`;
+  document.getElementById('cap-order-maintenance').checked = true;
+  document.getElementById('cap-order-term').value = '3';
+  document.getElementById('cap-order-predictive').checked = true;
+  document.getElementById('cap-order-spares-toggle').checked = false;
+  document.getElementById('cap-order-spares').value = 0;
+  document.getElementById('cap-order-expedited').checked = false;
+  document.getElementById('cap-order-financing').checked = false;
+  document.querySelectorAll('#capital-order-overlay .cap-info').forEach(el => el.classList.remove('active'));
+  updateCapOrderTotal();
+  document.getElementById('capital-order-overlay').classList.add('active');
+}
+function closeCapitalOrder() {
+  document.getElementById('capital-order-overlay').classList.remove('active');
+  capOrderItem = null;
+}
+function toggleCapOrderInfo(key) {
+  const el = document.getElementById(`cap-info-${key}`);
+  if (el) el.classList.toggle('active');
+}
+// "Purchase Equipment" action → pick a buildable item, then open the #185/#188
+// order form for it (term contract, financing, etc.). Replaces the legacy
+// server-driven item picker so the one obvious button reaches the new modal.
+function openCapitalPicker() {
+  const me = gameState && gameState.players[myPlayerIdx];
+  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  if (!cat.length) {
+    showToast('No capital equipment is defined for this island.');
+    return;
+  }
+  // Every catalogue item stays orderable: capital_inventory is a COUNT and
+  // capacity scales with it (manufacturer-capacity-scaling brief), so owning
+  // a healthy unit must not hide the item — "you own 1 Foundry" plus an
+  // equipment-bound line means the fix is buying a SECOND Foundry. The server
+  // (_handle_capital_order) has no ownership restriction either. Previously
+  // owned-and-healthy items were shelved in a non-clickable "already built"
+  // list, which dead-ended the equipment-shortfall hint (live report,
+  // game L69KIW 2026-07-12: Forge capital-blocked with no visible way out).
+  const orderable = cat;
+  if (orderable.length === 1) {
+    openCapitalOrder(orderable[0].item_id); return;
+  }
+  const arrivalOf = c => c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
+  const reqOf = c => c.cash_only ? 'cash-only' : 'requires equipment';
+  // Capacity-scaling display (manufacturer-capacity-scaling brief): each item
+  // now consumes N Manufacturer "capacity units"; surface the unit count and
+  // whether the Manufacturer currently has the stock to build it.
+  const unitNote = c => (c.capacity_units > 1) ? ` · ${c.capacity_units}-unit build` : '';
+  const buildNote = c => {
+    if (c.cash_only || c.manufacturer_stock == null) return '';
+    const units = Math.max(1, c.capacity_units || 1);
+    return (c.manufacturer_stock >= units)
+      ? ' · <span style="color:var(--green)">✓ Forge can build</span>'
+      : ` · <span style="color:var(--gold)">⚠ Forge short (${c.manufacturer_stock}/${units} ${esc(c.manufactured_resource || 'units')})</span>`;
+  };
+  const rows = [];
+  // When the viewer is the Manufacturer, show the seasonal durable-output
+  // allowance it has left (rises as it invests in assembly capacity).
+  const capInfo = (me && me.capacity) || {};
+  if (capInfo.manufacturer_durable_allowance != null) {
+    rows.push(`<div style="margin:0 0 .35rem;font-size:.74rem;color:var(--dim)">`
+      + `Durable output this season: `
+      + `<strong style="color:var(--text)">${capInfo.manufacturer_durable_remaining}`
+      + `/${capInfo.manufacturer_durable_allowance}</strong> units left`
+      + ` <span style="color:var(--dim)">· raises with assembly line / precision workshop</span></div>`);
+  }
+  for (const c of orderable) {
+    const failed = (c.failed || 0) > 0;
+    const tag = failed
+      ? `<span style="color:var(--red)">⚠ ${c.failed} failed — rebuild</span>`
+      : (c.owned || 0) > 0
+        ? `<span style="color:var(--green)">✓ own ${c.owned}</span> — build another`
+        : (c.mandatory ? '<span style="color:var(--gold)">Required</span>' : 'Build');
+    rows.push(`<button style="text-align:left" onclick="pickCapitalItem('${c.item_id}')">`
+      + `${esc(c.name)} — ${c.cost} Dp · ${reqOf(c)}${unitNote(c)} · ${arrivalOf(c)}${buildNote(c)} · ${tag}</button>`);
+  }
+  document.getElementById('cap-pick-list').innerHTML = rows.join('');
+  document.getElementById('capital-pick-overlay').classList.add('active');
+}
+function closeCapitalPicker() {
+  document.getElementById('capital-pick-overlay').classList.remove('active');
+}
+function pickCapitalItem(itemId) {
+  closeCapitalPicker();
+  openCapitalOrder(itemId);
+}
+// #188 maintenance/warranty contract cost per $100, by term: [baseline, predictive].
+const CAP_CONTRACT_PER_100 = {
+  1: [8.62, 7.11], 2: [19.90, 14.82], 3: [35.70, 23.94],
+  4: [55.29, 34.88], 5: [78.23, 47.91],
+};
+function updateCapOrderTotal() {
+  if (!capOrderItem) return;
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const termEl = document.getElementById('cap-order-term');
+  const predictiveEl = document.getElementById('cap-order-predictive');
+  termEl.disabled = !wantsMaintenance;
+  predictiveEl.disabled = !wantsMaintenance;
+  const term = wantsMaintenance ? parseInt(termEl.value, 10) : 0;
+  const predictive = document.getElementById('cap-order-predictive').checked;
+  const sparesToggle = document.getElementById('cap-order-spares-toggle');
+  const sparesInput = document.getElementById('cap-order-spares');
+  if (parseInt(sparesInput.value || '0', 10) > 0) sparesToggle.checked = true;
+  sparesInput.disabled = !sparesToggle.checked;
+  const kits = sparesToggle.checked
+    ? Math.max(0, parseInt(sparesInput.value || '0', 10)) : 0;
+  const rate = CAP_CONTRACT_PER_100[term];
+  const contract = rate
+    ? Math.round((predictive ? rate[1] : rate[0]) * capOrderItem.cost / 100 * 100) / 100 : 0;
+  const sparesCost = Math.round(0.15 * capOrderItem.cost * kits * 100) / 100;
+  const total = Math.round((capOrderItem.cost + contract + sparesCost) * 100) / 100;
+  const expeditedEstimate = Math.round(0.15 * capOrderItem.cost * 100) / 100;
+  const maintLabel = term
+    ? `${term}yr contract${predictive ? ' · Predictive Maint.' : ''}`
+    : 'No maintenance contract';
+  document.getElementById('cap-maint-cost').textContent = moneyDp(contract);
+  document.getElementById('cap-spares-cost').textContent =
+    kits ? `${moneyDp(sparesCost)} (${kits}x)` : moneyDp(0);
+  document.getElementById('cap-expedite-cost').textContent =
+    document.getElementById('cap-order-expedited').checked
+      ? `~${moneyDp(expeditedEstimate)} at failure`
+      : 'Optional';
+  const _me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  const _cash = (_me && (_me.treasury ?? _me.dollops)) || 0;
+  const _short = total > _cash;
+  document.getElementById('cap-order-total').innerHTML = `
+    <div class="cap-quote-row" style="color:${_short ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_short ? ' — short, finance or lower the order' : ''}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">${esc(maintLabel)}</div><div class="cap-quote-value">${moneyDp(contract)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Manufacturer guarantee</div><div class="cap-quote-value">${moneyDp(0)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits}</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
+    <div class="cap-quote-row total"><div class="cap-quote-label">Recommended total</div><div class="cap-quote-value">${moneyDp(total)}</div></div>
+    <div class="cap-quote-row contingent"><div class="cap-quote-label">+ Expedited repair, if eligible</div><div class="cap-quote-value">~${moneyDp(expeditedEstimate)}</div></div>
+  `;
+}
+function submitCapitalOrder() {
+  if (!capOrderItem) return;
+  const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
+  const wantsSpares = document.getElementById('cap-order-spares-toggle').checked;
+  sendWsMessage({
+    type: 'capital_order',
+    item_id: capOrderItem.item_id,
+    maintenance_term_years: wantsMaintenance ? parseInt(document.getElementById('cap-order-term').value, 10) : 0,
+    predictive_maintenance: wantsMaintenance && document.getElementById('cap-order-predictive').checked,
+    spares_kits: wantsSpares ? Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)) : 0,
+    expedited_eligible: document.getElementById('cap-order-expedited').checked,
+    financing: document.getElementById('cap-order-financing').checked,
+  });
+  closeCapitalOrder();
+}
+
+function capitalNegotiationLabel(n) {
+  if (!n) return 'capital order';
+  const item = n.name || n.item_id || 'capital equipment';
+  const total = n.counter_total ?? n.buyer_offer ?? n.recommended_total;
+  return `${item} (${moneyDp(total)})`;
+}
+
+// ---- Capital negotiation local-state merge ----
+// Keeps gameState.capital_negotiations_awaiting_me / my_capital_negotiations
+// in sync with push messages so a stale game_state broadcast can't lose them.
+const _capNegBuffer = new Map(); // negotiation_id -> negotiation payload
+
+function _mergeCapNeg(n) {
+  if (!n || n.negotiation_id == null) return;
+  const active = n.status === 'proposed' || n.status === 'countered';
+  if (active) {
+    _capNegBuffer.set(n.negotiation_id, n);
+  } else {
+    _capNegBuffer.delete(n.negotiation_id);
+  }
+  if (!gameState) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  _applyCapNegToState(n, me);
+}
+
+function _applyCapNegToState(n, me) {
+  const nid = n.negotiation_id;
+  gameState.capital_negotiations_awaiting_me =
+    (gameState.capital_negotiations_awaiting_me || []).filter(x => x.negotiation_id !== nid);
+  gameState.my_capital_negotiations =
+    (gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid);
+  const active = n.status === 'proposed' || n.status === 'countered';
+  if (active && n.awaiting_id === me) {
+    gameState.capital_negotiations_awaiting_me =
+      [n, ...(gameState.capital_negotiations_awaiting_me || [])];
+  }
+  if (n.buyer_id === me || n.manufacturer_id === me) {
+    gameState.my_capital_negotiations =
+      [n, ...(gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid)];
+  }
+}
+
+// Forget a negotiation entirely (settled/declined) — drop it from the push
+// buffer and both local lists. Used when only the id is known (e.g. a
+// capital_order_ack-shaped settlement that carries negotiation_id but no payload).
+function _clearCapNeg(nid) {
+  if (nid == null) return;
+  _capNegBuffer.delete(nid);
+  if (!gameState) return;
+  gameState.capital_negotiations_awaiting_me =
+    (gameState.capital_negotiations_awaiting_me || []).filter(x => x.negotiation_id !== nid);
+  gameState.my_capital_negotiations =
+    (gameState.my_capital_negotiations || []).filter(x => x.negotiation_id !== nid);
+}
+
+function _reapplyCapNegBuffer() {
+  const me = _myEnginePlayerId();
+  if (me == null || !_capNegBuffer.size) return;
+  for (const n of _capNegBuffer.values()) {
+    // Only re-apply if game_state doesn't already have it
+    const inAwaiting = (gameState.capital_negotiations_awaiting_me || [])
+      .some(x => x.negotiation_id === n.negotiation_id);
+    if (!inAwaiting) _applyCapNegToState(n, me);
+  }
+}
+
+function renderCapitalNegotiationAlerts() {
+  const el = document.getElementById('s-capital-neg-alerts');
+  const badge = document.getElementById('cap-neg-badge');
+  if (!el) return;
+  const awaiting = (gameState && gameState.capital_negotiations_awaiting_me) || [];
+  const me = _myEnginePlayerId();
+  // Render only negotiations this viewer can actually act on, in the role the
+  // payload assigns them. A self-build (buyer === manufacturer) has no
+  // counterparty to review and must never appear as an incoming order — guard
+  // here too so a stale payload can't mislabel the viewer's own order as
+  // "from another player". The badge counts only what actually renders.
+  const rows = awaiting.map(n => {
+    if (n == null || n.buyer_id === n.manufacturer_id) return '';
+    const isBuyer = n.buyer_id === me;
+    const isManufacturer = n.manufacturer_id === me;
+    const statusClass = n.status === 'countered' ? 'status-countered' : 'status-proposed';
+    let hdrText, detail, btns;
+    if (isManufacturer && !isBuyer && n.status === 'proposed') {
+      hdrText = `📦 Capital order from ${esc(n.buyer_name || 'buyer')}`;
+      const termLine = n.maintenance_term_years
+        ? `${n.maintenance_term_years}yr contract${n.predictive_maintenance ? ' + predictive' : ''}`
+        : 'no maintenance';
+      const sparesLine = n.spares_kits ? `, ${n.spares_kits} spares kit(s)` : '';
+      detail = `${esc(n.name)} — offered ${moneyDp(n.buyer_offer)} (rec. ${moneyDp(n.recommended_total)})`
+        + `<div class="cap-neg-alert-detail">${esc(termLine)}${sparesLine}</div>`;
+      btns = `<div class="cap-neg-btns">
+        <button class="btn-accept" onclick="respondCapNeg(${n.negotiation_id},'accept')">Accept ${moneyDp(n.buyer_offer)}</button>
+        <button class="btn-counter" onclick="respondCapNeg(${n.negotiation_id},'counter',${n.recommended_total})">Counter…</button>
+        <button class="btn-reject" onclick="respondCapNeg(${n.negotiation_id},'decline')">Decline</button>
+      </div>`;
+    } else if (isBuyer && !isManufacturer && n.status === 'countered') {
+      hdrText = `📦 Counter-offer from ${esc(n.manufacturer_name || 'manufacturer')}`;
+      detail = `${esc(n.name)} — ${moneyDp(n.counter_total)} (you offered ${moneyDp(n.buyer_offer)}, rec. ${moneyDp(n.recommended_total)})`;
+      btns = `<div class="cap-neg-btns">
+        <button class="btn-accept" onclick="acceptCapCounter(${n.negotiation_id})">Accept ${moneyDp(n.counter_total)}</button>
+      </div>`;
+    } else {
+      return '';
+    }
+    return `<div class="cap-neg-alert ${statusClass}">
+      <div class="cap-neg-alert-hdr">${hdrText}</div>
+      <div>${detail}</div>
+      ${btns}
+    </div>`;
+  }).filter(Boolean);
+  if (badge) {
+    if (rows.length) {
+      badge.textContent = rows.length;
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  el.innerHTML = rows.join('');
+}
+
+function respondCapNeg(nid, action, suggestedTotal) {
+  if (action === 'accept') {
+    sendWsMessage({ type: 'capital_negotiation_respond', negotiation_id: nid, action: 'accept' });
+  } else if (action === 'decline') {
+    sendWsMessage({ type: 'capital_negotiation_respond', negotiation_id: nid, action: 'decline' });
+  } else {
+    showPromptModal('Counter-offer to buyer', {
+      submitLabel: 'Send counter',
+      fields: [{
+        name: 'total', label: 'Your counter total (Dp)', type: 'number',
+        placeholder: suggestedTotal != null ? String(suggestedTotal) : '',
+        validate: v => (isNaN(parseFloat(v)) || parseFloat(v) <= 0)
+          ? 'Enter a counter total greater than 0.' : null,
+      }],
+      onSubmit: vals => {
+        sendWsMessage({
+          type: 'capital_negotiation_respond',
+          negotiation_id: nid,
+          action: 'counter',
+          counter_total: parseFloat(vals.total),
+        });
+      },
+    });
+  }
+}
+
+function acceptCapCounter(nid) {
+  sendWsMessage({ type: 'capital_negotiation_accept', negotiation_id: nid });
+}
+
+function onCapitalNegotiationAck(msg) {
+  if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+  renderCapitalNegotiationAlerts();
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const type = msg.result === 'declined' ? 'error'
+    : msg.result === 'countered' ? 'info' : 'success';
+  showToast(`Capital order ${msg.result || 'updated'}: ${label}`, { type });
+  addLog(`📦 Capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
+}
+
+function onCapitalNegotiationPush(msg) {
+  if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+  renderCapitalNegotiationAlerts();
+  const label = capitalNegotiationLabel(msg.negotiation);
+  const from = msg.from ? `${msg.from}: ` : '';
+  const type = msg.result === 'accepted' ? 'success'
+    : msg.result === 'declined' ? 'error' : 'info';
+  const needsAction = msg.negotiation && msg.negotiation.awaiting_id === _myEnginePlayerId();
+  showToast(
+    needsAction
+      ? `${from}capital order ${msg.result || 'updated'}: ${label}. Review in Build &amp; Develop.`
+      : `${from}capital order ${msg.result || 'updated'}: ${label}`,
+    { type, ms: needsAction ? 9000 : 6000 },
+  );
+  addLog(`📦 ${from}capital order ${msg.result || 'updated'}: ${label}.`, type === 'error' ? 'err' : 'info');
+}
+
+function repairCapitalItem(itemId) {
+  sendWsMessage({ type: 'capital_repair', item_id: itemId });
+}
+
 // UI v3 phase 4: persistent Build & Develop panel — owned capital vs. what
 // the island can still build (from capacity.capital_catalogue). The header
-// "＋ Build…" button launches the existing Purchase Equipment action.
+// "＋ Build…" button launches the existing Purchase Equipment action; an
+// "Available" row opens the richer Capital Equipment Order form (#185).
 function renderBuildDevelop(me) {
   const el = document.getElementById('build-develop-list');
   if (!el) return;
@@ -2687,12 +3381,15 @@ function renderBuildDevelop(me) {
   if (owned.length) {
     html += '<div class="bd-head">Built</div>' + owned.map(c => {
       const failed = c.failed > 0;
+      const repairable = (c.repairable_failed ?? c.failed ?? 0) > 0;
       const sub = failed ? `${c.failed} failed — needs repair`
         : (c.cash_only ? 'cash-only' : esc(c.role));
       return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
         <div class="bx">${failed ? '⚠' : '✓'}</div>
         <div class="bd-body"><div class="bd-name">${esc(c.name)}${c.owned > 1 ? ` ×${c.owned}` : ''}</div>
-          <div class="bd-sub">${sub}</div></div></div>`;
+          <div class="bd-sub">${sub}</div></div>
+        ${repairable ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(c.item_id)}')" title="Attempt repair of one failed unit">Repair</button>` : ''}
+      </div>`;
     }).join('');
   }
   if (avail.length) {
@@ -2700,7 +3397,7 @@ function renderBuildDevelop(me) {
       const arrival = c.delivery_seasons === 0 ? 'arrives now' : `${c.delivery_seasons}-season delivery`;
       const sub = (c.cash_only ? 'cash-only' : 'requires equipment') + ' · ' + arrival;
       const req = c.mandatory ? '<span class="bd-req">Required</span>' : '';
-      return `<div class="bd-row avail" title="${esc(c.description || '')}">
+      return `<div class="bd-row avail" style="cursor:pointer" title="Order ${esc(c.name)} with options" onclick="openCapitalOrder('${c.item_id}')">
         <div class="bx">＋</div>
         <div class="bd-body"><div class="bd-name">${esc(c.name)} ${req}</div>
           <div class="bd-sub">${sub}</div></div>
@@ -2722,12 +3419,27 @@ function renderCapacityPanel(capacity) {
   } else {
     let html = '';
     if (owned.length) {
-      html += owned.map(it =>
-        `<div class="mkt-row" title="${esc(it.description || '')}">
-           <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}</span>
+      html += owned.map(it => {
+        const repFailed = it.repairable_failed ?? it.failed ?? 0;
+        const repairBtn = repFailed > 0
+          ? `<button class="btn-ghost btn-sm" onclick="repairCapitalItem('${esc(it.item_id)}')" title="Attempt repair of one failed unit">Repair</button>`
+          : '';
+        let costLine = '';
+        if (repFailed > 0 && it.repair_cost) {
+          const rc = it.repair_cost;
+          const canRepair = rc.repairable !== false;
+          const costTxt = canRepair
+            ? `${rc.dp} Dp + ${rc.freight} freight`
+            : `${rc.dp} Dp — ${esc(rc.reason || 'insufficient funds')}`;
+          costLine = `<div style="font-size:.67rem;color:${canRepair ? 'var(--dim)' : 'var(--red)'};margin-top:.1rem;width:100%">Next repair: ${costTxt}</div>`;
+        }
+        return `<div class="mkt-row" title="${esc(it.description || '')}" style="flex-wrap:wrap">
+           <span class="res">${esc(it.name)}${it.count > 1 ? ` ×${it.count}` : ''}${repFailed > 0 ? ` <span style="color:var(--red);font-size:.68rem">⚠ ${repFailed} failed</span>` : ''}</span>
            <span class="price" style="color:var(--dim);font-size:.7rem">${esc(it.role)}</span>
-         </div>`
-      ).join('');
+           ${repairBtn}
+           ${costLine}
+         </div>`;
+      }).join('');
     }
     if (inTransit.length) {
       html += '<div style="color:var(--gold);font-size:.72rem;margin-top:.45rem;font-weight:700">On order / arriving:</div>';
@@ -2747,17 +3459,36 @@ function renderCapacityPanel(capacity) {
     outEl.innerHTML = '';
     return;
   }
+  // Production schedule: per output, how much can be produced this season and —
+  // when something caps it — the limiting factor + what to buy/train to lift it.
+  const _shortText = (m) => Object.entries(m || {})
+    .map(([k, v]) => `${fmtQty(v)} ${k}`).join(', ');
   outEl.innerHTML = outputs.map(o => {
-    const max = (o.max_producible === null || o.max_producible === undefined)
-                  ? '∞' : o.max_producible;
-    const prefix = o.is_service_output ? 'underwrite up to ' : 'max ';
-    const colour = o.binding === 'inputs'    ? '#ff8a8a'
+    const unlimited = o.max_producible === null || o.max_producible === undefined;
+    const max = unlimited ? '∞' : fmtQty(o.max_producible);
+    const verb = o.is_service_output ? 'Underwrite up to' : 'Produce up to';
+    const blocked = !unlimited && Number(o.max_producible) <= 0;
+    const colour = blocked ? '#ff8a8a'
+                 : o.binding === 'inputs'    ? '#ff8a8a'
                  : o.binding === 'workforce' ? '#ffcc66'
                  : o.binding === 'equipment' ? '#88aaff'
-                 : 'var(--dim)';
-    return `<div class="mkt-row" title="Binding constraint: ${o.binding}">
-              <span class="res">${esc(o.output)}</span>
-              <span class="price" style="color:${colour}">${prefix}${max}</span>
+                 : 'var(--green)';
+    let note = '';
+    if (o.binding === 'inputs' && Object.keys(o.inputs_short || {}).length) {
+      note = `limited by inputs — buy ${_shortText(o.inputs_short)}`;
+    } else if (o.binding === 'workforce' && Object.keys(o.workforce_short || {}).length) {
+      note = `limited by staffing — need ${_shortText(o.workforce_short)}`;
+    } else if (o.binding === 'equipment' && Object.keys(o.equipment_short || {}).length) {
+      note = `limited by equipment — build ${_shortText(o.equipment_short)}`;
+    } else if (o.binding && o.binding !== 'none') {
+      note = `limited by ${o.binding}`;
+    }
+    return `<div class="prod-sched-row" title="Binding constraint: ${o.binding}">
+              <div class="psr-top">
+                <span class="res">${esc(o.output)}</span>
+                <span class="price" style="color:${colour}">${verb} ${max}</span>
+              </div>
+              ${note ? `<div class="psr-note">${esc(note)}</div>` : ''}
             </div>`;
   }).join('');
 }
@@ -3014,6 +3745,237 @@ function sendWsMessage(obj) {
   }
 }
 
+// ==================== CHAT (multi-channel, docked windows) ====================
+const chatChannels = new Map();    // channel_id -> {channel_id, topic, is_room, participants[], messages[], unread}
+const chatOpenWindows = new Set(); // channel_ids with an open window
+const CHAT_EMOJIS = ['😀','😂','😉','😎','👍','👎','🙏','🎉','🔥','💰','📈','📉','🚢','⚓','🛠','🌾','⛏','🐟','🤝','🤔','💡','⚠️','✅','❌','💬','🙌','😤','🤑','🫡','🧐'];
+
+function _chatMyName() {
+  const me = (gameState && myPlayerIdx != null) ? gameState.players[myPlayerIdx] : null;
+  return me ? me.name : null;
+}
+function _chatIdToName() {
+  const map = {};
+  for (const p of ((gameState && gameState.players) || [])) map[p.lobby_player_id] = p.name;
+  return map;
+}
+function _chatUpsert(ch, replaceMessages) {
+  let c = chatChannels.get(ch.channel_id);
+  if (!c) {
+    c = { channel_id: ch.channel_id, topic: ch.topic, is_room: !!ch.is_room,
+          participants: ch.participants || [], messages: [], unread: 0 };
+    chatChannels.set(ch.channel_id, c);
+  } else {
+    if (ch.topic) c.topic = ch.topic;
+    if (ch.participants) c.participants = ch.participants;
+  }
+  if (Array.isArray(ch.messages) && (replaceMessages || !c.messages.length)) {
+    c.messages = ch.messages.slice();
+  }
+  return c;
+}
+function _chatEnsureRoom() {
+  if (!chatChannels.has('room'))
+    chatChannels.set('room', { channel_id:'room', topic:'Room', is_room:true, participants:[], messages:[], unread:0 });
+}
+
+function onChatHistory(msg) {
+  for (const ch of (msg.channels || [])) _chatUpsert(ch, true);
+  renderChatPanel();
+  for (const id of chatOpenWindows) renderChatWindow(id);
+}
+function onChatChannel(msg) {            // a private channel I'm part of was created
+  const c = _chatUpsert(msg.channel, true);
+  renderChatPanel();
+  openChatWindow(c.channel_id);          // auto-open it
+}
+function onChatMessage(msg) {
+  let c = chatChannels.get(msg.channel_id) || _chatUpsert({ channel_id: msg.channel_id, topic: msg.topic, messages: [] });
+  c.messages.push(msg);
+  if (c.messages.length > 100) c.messages = c.messages.slice(-100);
+  if (chatOpenWindows.has(c.channel_id) && !document.getElementById('cw-'+c.channel_id)?.classList.contains('minimized')) {
+    appendChatMessage(c.channel_id, msg);
+  } else {
+    c.unread = (c.unread || 0) + 1;
+    if ((msg.mentions || []).includes(_chatMyName()))
+      showToast(`💬 ${msg.from} mentioned you in ${c.topic}`, { type: 'info' });
+  }
+  renderChatPanel();
+}
+function mergeChatState(state) {         // resync from polled/pushed game_state
+  if (!state || !Array.isArray(state.chat)) return;
+  for (const ch of state.chat) _chatUpsert(ch, !chatOpenWindows.has(ch.channel_id));
+  renderChatPanel();
+}
+
+function renderChatPanel() {
+  const el = document.getElementById('chat-topics');
+  const badge = document.getElementById('chat-badge');
+  if (!el) return;
+  _chatEnsureRoom();
+  const chans = [...chatChannels.values()].sort((a, b) =>
+    (b.is_room ? 1 : 0) - (a.is_room ? 1 : 0) || a.topic.localeCompare(b.topic));
+  el.innerHTML = chans.map(c => {
+    const u = c.unread || 0;
+    return `<div class="chat-topic-row" onclick="openChatWindow('${c.channel_id}')">
+      <span class="ctr-name">${c.is_room ? '🏛' : '🔒'} <span class="ctr-topic">${esc(c.topic)}</span></span>
+      ${u ? `<span class="chat-unread">${u}</span>` : ''}</div>`;
+  }).join('');
+  let tot = 0; for (const c of chatChannels.values()) tot += c.unread || 0;
+  if (badge) { badge.textContent = tot; badge.style.display = tot ? 'inline-block' : 'none'; }
+}
+
+function openChatWindow(channelId) {
+  const c = chatChannels.get(channelId);
+  if (!c) return;
+  c.unread = 0;
+  chatOpenWindows.add(channelId);
+  let win = document.getElementById('cw-' + channelId);
+  if (!win) {
+    win = document.createElement('div');
+    win.className = 'chat-win';
+    win.id = 'cw-' + channelId;
+    win.innerHTML = `
+      <div class="cw-head">
+        <span class="cw-title"></span>
+        <button title="Minimize" onclick="toggleMinimizeChat('${channelId}')">▁</button>
+        <button title="Close" onclick="closeChatWindow('${channelId}')">✕</button>
+      </div>
+      <div class="cw-body" id="cwb-${channelId}"></div>
+      <div class="cw-input">
+        <div class="cw-mentions" id="cwm-${channelId}"></div>
+        <div class="cw-emoji-pop" id="cwe-${channelId}"></div>
+        <input id="cwi-${channelId}" type="text" maxlength="500" placeholder="Message…" autocomplete="off"
+               oninput="onChatInput('${channelId}')" onkeydown="onChatKey(event,'${channelId}')">
+        <button class="cw-emoji-btn" title="Emoji" onclick="toggleEmoji('${channelId}')">🙂</button>
+        <button class="cw-send" onclick="sendChat('${channelId}')">Send</button>
+      </div>`;
+    document.getElementById('chat-windows').appendChild(win);
+    document.getElementById('cwe-' + channelId).innerHTML =
+      CHAT_EMOJIS.map(e => `<span onclick="insertEmoji('${channelId}','${e}')">${e}</span>`).join('');
+  }
+  win.classList.remove('minimized');
+  win.querySelector('.cw-title').textContent = (c.is_room ? '🏛 ' : '🔒 ') + c.topic;
+  renderChatWindow(channelId);
+  const inp = document.getElementById('cwi-' + channelId); if (inp) inp.focus();
+  renderChatPanel();
+}
+function toggleMinimizeChat(id) { document.getElementById('cw-' + id)?.classList.toggle('minimized'); }
+function closeChatWindow(id) { chatOpenWindows.delete(id); document.getElementById('cw-' + id)?.remove(); }
+
+function renderChatWindow(id) {
+  const c = chatChannels.get(id), body = document.getElementById('cwb-' + id);
+  if (!c || !body) return;
+  body.innerHTML = c.messages.map(_chatMsgHtml).join('');
+  body.scrollTop = body.scrollHeight;
+}
+function appendChatMessage(id, m) {
+  const body = document.getElementById('cwb-' + id);
+  if (!body) return;
+  body.insertAdjacentHTML('beforeend', _chatMsgHtml(m));
+  body.scrollTop = body.scrollHeight;
+}
+function _chatMsgHtml(m) {
+  const mine = m.from === _chatMyName();
+  const t = new Date((m.ts || 0) * 1000);
+  const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  return `<div class="cw-msg ${mine ? 'mine' : ''}"><span class="cw-from">${esc(m.from)}</span>` +
+    `<span class="cw-ts">${hhmm}</span><div>${_renderChatText(m.text, m.mentions)}</div></div>`;
+}
+function _renderChatText(text, mentions) {
+  let html = esc(text || '');
+  for (const name of (mentions || [])) {
+    const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp('@' + safe, 'g'), `<span class="mention">@${esc(name)}</span>`);
+  }
+  return html;
+}
+
+function sendChat(id) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+  sendWsMessage({ type: 'chat', channel_id: id, text });
+  inp.value = ''; _closeMentions(id); _closeEmoji(id);
+}
+function onChatKey(e, id) {
+  const pop = document.getElementById('cwm-' + id);
+  if (pop && pop.classList.contains('open')) {
+    if (e.key === 'Enter') { const a = pop.querySelector('.cwm-row.active'); if (a) { e.preventDefault(); _applyMention(id, a.dataset.name); return; } }
+    if (e.key === 'Escape') { _closeMentions(id); return; }
+  }
+  if (e.key === 'Enter') { e.preventDefault(); sendChat(id); }
+}
+
+// emoji
+function toggleEmoji(id) { document.getElementById('cwe-' + id)?.classList.toggle('open'); }
+function _closeEmoji(id) { document.getElementById('cwe-' + id)?.classList.remove('open'); }
+function insertEmoji(id, e) { const inp = document.getElementById('cwi-' + id); if (inp) { inp.value += e; inp.focus(); } _closeEmoji(id); }
+
+// @mention autocomplete
+function _channelMentionNames(id) {
+  const c = chatChannels.get(id);
+  const idToName = _chatIdToName();
+  let names = ((gameState && gameState.players) || []).map(p => p.name).filter(n => n && n !== _chatMyName());
+  if (c && !c.is_room && (c.participants || []).length) {
+    const allowed = new Set(c.participants.map(pid => idToName[pid]).filter(Boolean));
+    names = names.filter(n => allowed.has(n));
+  }
+  return names;
+}
+function onChatInput(id) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  const m = /@([\w'-]*)$/.exec(inp.value.slice(0, inp.selectionStart));
+  const pop = document.getElementById('cwm-' + id);
+  if (!m) { _closeMentions(id); return; }
+  const q = m[1].toLowerCase();
+  const matches = _channelMentionNames(id).filter(n => n.toLowerCase().startsWith(q)).slice(0, 6);
+  if (!matches.length) { _closeMentions(id); return; }
+  pop.innerHTML = matches.map((n, i) =>
+    `<div class="cwm-row ${i === 0 ? 'active' : ''}" data-name="${esc(n)}" onclick="_applyMention('${id}', this.dataset.name)">${esc(n)}</div>`).join('');
+  pop.classList.add('open');
+}
+function _closeMentions(id) { document.getElementById('cwm-' + id)?.classList.remove('open'); }
+function _applyMention(id, name) {
+  const inp = document.getElementById('cwi-' + id);
+  if (!inp) return;
+  inp.value = inp.value.replace(/@([\w'-]*)$/, '@' + name + ' ');
+  inp.focus(); _closeMentions(id);
+}
+
+// New private chat dialog (topic + participant checkboxes)
+// Includes AI seats (2026-07-01) — a private channel naming an AI player is
+// how a human delivers a coaching hint to it; the server folds any message
+// sent on that channel into the AI's next few decisions.
+function openNewChatDialog() {
+  const others = ((gameState && gameState.players) || []).filter(p => p.name !== _chatMyName());
+  if (!others.length) { showToast('No other islands to chat with yet.', { type: 'info' }); return; }
+  const rows = others.map((p, i) =>
+    `<label style="display:flex;align-items:center;gap:.5rem;padding:.2rem 0;font-size:.85rem">
+       <input type="checkbox" class="newchat-part" value="${esc(p.name)}"> ${esc(p.name)}
+       ${p.is_human ? '' : '<span style="color:var(--gold);font-size:.7rem" title="AI player — chat here becomes a coaching hint">🤖 AI</span>'}
+       <span style="color:var(--dim);font-size:.75rem">${esc((p.role_names || []).join('/'))}</span></label>`).join('');
+  _openMsgModal('New private chat',
+    `<label for="newchat-topic">Topic</label>
+     <input id="newchat-topic" type="text" placeholder="e.g. Ore cartel" maxlength="80">
+     <div style="margin:.4rem 0 .2rem;color:var(--dim);font-size:.78rem">Invite islands (one or more). Messages to an 🤖 AI island become coaching hints it factors into its next few decisions.</div>
+     ${rows}
+     <div class="popup-footer">
+       <button class="btn-ghost" id="newchat-cancel">Cancel</button>
+       <button class="btn-gold" id="newchat-create">Create</button>
+     </div>`);
+  document.getElementById('newchat-cancel').onclick = () => _closeMsgModal();
+  document.getElementById('newchat-create').onclick = () => {
+    const topic = (document.getElementById('newchat-topic').value || '').trim() || 'Private chat';
+    const parts = [...document.querySelectorAll('.newchat-part:checked')].map(c => c.value);
+    if (!parts.length) { showToast('Pick at least one island.', { type: 'error' }); return; }
+    sendWsMessage({ type: 'chat_create_channel', topic, participants: parts });
+    _closeMsgModal();
+  };
+}
+
 function _renderTrainingStrip(pipeline) {
   const el = document.getElementById('s-training-strip');
   if (!el) return;
@@ -3061,6 +4023,45 @@ function _renderTrainingStrip(pipeline) {
     <div class="training-strip">${rows}</div>`;
 }
 
+// Client-side diff of training_pipeline statuses across game_state snapshots,
+// so the requester gets a toast the moment the Educator approves/declines
+// their batch — the engine only drives this via the sequential wizard and
+// doesn't push a dedicated WS event to the requester.
+let _lastTrainingPipelineStatus = {};
+function _notifyTrainingPipelineChanges(pipeline) {
+  const prev = _lastTrainingPipelineStatus;
+  const next = {};
+  for (const b of pipeline) {
+    next[b.batch_id] = b.status;
+    const prevStatus = prev[b.batch_id];
+    if (prevStatus === undefined || prevStatus === b.status) continue;
+    if (prevStatus === 'awaiting_educator' || prevStatus === 'countered') {
+      if (b.status === 'awaiting_transport' || b.status === 'dispatched') {
+        let loanNote = '';
+        if (b.student_loan_requested) {
+          loanNote = b.loan_financed === true ? ' (Student Loan approved by the Bank)'
+            : b.loan_financed === false ? ' (Student Loan unavailable — paid in cash)'
+            : '';
+        }
+        showToast(
+          `✅ Training approved: ${b.worker_count} → ${b.target_profession}, `
+          + `${(b.dollops_to_educator ?? 0).toFixed(1)} Dp${loanNote}.`,
+          { type: 'success', duration: 7000 }
+        );
+        addLog(`Training batch #${b.batch_id} approved by ${b.educator_name}${loanNote}.`, 'ok');
+      } else if (b.status === 'rejected') {
+        showToast(
+          `❌ Training declined: ${b.worker_count} → ${b.target_profession}`
+          + (b.counter_message ? ` — ${b.counter_message}` : ''),
+          { type: 'error', duration: 8000 }
+        );
+        addLog(`Training batch #${b.batch_id} declined by ${b.educator_name}.`, 'err');
+      }
+    }
+  }
+  _lastTrainingPipelineStatus = next;
+}
+
 function _renderTrainingPipelineSection(pipeline) {
   if (!pipeline || !pipeline.length) {
     return `<section class="popup-section">
@@ -3085,16 +4086,30 @@ function _renderTrainingPipelineSection(pipeline) {
     } else if (b.seasons_blocked > 0) {
       blockerCell = `<span style="color:var(--dim);font-size:.72rem">${b.seasons_blocked} season${b.seasons_blocked !== 1 ? 's' : ''} waiting</span>`;
     }
+    let feeCell = `${(b.dollops_to_educator ?? 0).toFixed(1)} Dp`;
+    if (b.student_loan_requested) {
+      if (b.loan_financed === true) {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--green)">✓ Bank loan approved</span>`;
+      } else if (b.loan_financed === false) {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--gold)">⚠ Loan unavailable — paid cash</span>`;
+      } else {
+        feeCell += `<br><span style="font-size:.67rem;color:var(--dim)">Loan requested — pending</span>`;
+      }
+    }
+    const cancelCell = b.status === 'awaiting_educator'
+      ? `<button class="btn-ghost btn-sm" onclick="cancelTrainingRequest(${b.batch_id})" title="Withdraw this request before the Educator reviews it">Cancel</button>`
+      : '<span style="color:var(--dim)">—</span>';
     return `
     <tr>
       <td>${b.worker_count}</td>
       <td>${esc(b.target_profession || '—')}</td>
       <td style="color:${b.status==='dispatched'?'var(--green)':b.status==='countered'?'var(--red)':'var(--dim)'}">${esc(_formatTrainingStatus(b.status))}</td>
       <td>${esc(b.educator_name || '—')}</td>
-      <td>${(b.dollops_to_educator ?? 0).toFixed(1)} Dp</td>
+      <td>${feeCell}</td>
       <td>${returnCell}</td>
       <td>${waitCell}</td>
       <td>${blockerCell}</td>
+      <td>${cancelCell}</td>
     </tr>`;
   }).join('');
   const notes = pipeline
@@ -3106,12 +4121,18 @@ function _renderTrainingPipelineSection(pipeline) {
     <table class="popup-table">
       <thead><tr>
         <th>Workers</th><th>Training for</th><th>Status</th><th>Educator</th>
-        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th>
+        <th>Fee</th><th>Return date</th><th>Seasons left</th><th>Blocked / waiting</th><th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     ${notes}
   </section>`;
+}
+
+function cancelTrainingRequest(batchId) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'cancel_training', training_id: batchId }));
+  }
 }
 
 // ---- Medical staffing strip helpers ----
@@ -3267,15 +4288,181 @@ function _renderStaffingSection(player) {
   </section>`;
 }
 
+function _renderTransferOffersSection(player) {
+  const offers = player.transfer_offers || [];
+  if (!offers.length) return '';
+  const names = _playerNameLookup();
+  const rows = offers.map(o => {
+    const isSender   = o.from_player === player.player_id;
+    const counterpart = names[isSender ? o.to_player : o.from_player] || `Player ${isSender ? o.to_player : o.from_player}`;
+    const dirLabel   = isSender
+      ? `Send ${o.count} ${esc(o.profession)} → ${esc(counterpart)}`
+      : `Receive ${o.count} ${esc(o.profession)} from ${esc(counterpart)}`;
+    const feeLabel   = `${(o.fee_per_head * o.count).toFixed(1)} Dp (${o.fee_per_head}/head)`;
+    const btns = isSender
+      ? `<span style="font-size:.72rem;color:var(--dim)">Awaiting response</span>`
+      : `<button class="btn-gold btn-sm" onclick="respondTransferOffer('${esc(o.offer_id)}',true)">Accept</button>
+         <button class="btn-ghost btn-sm" onclick="respondTransferOffer('${esc(o.offer_id)}',false)">Decline</button>`;
+    return `<tr><td>${dirLabel}</td><td>${feeLabel}</td><td>${btns}</td></tr>`;
+  }).join('');
+  return `<section class="popup-section">
+    <h4>Pending Worker Transfers</h4>
+    <table class="popup-table">
+      <thead><tr><th>Transfer</th><th>Fee</th><th>Action</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:.5rem">
+      <button class="btn-ghost btn-sm" onclick="openMakeTransferOfferForm()">+ Offer / Request Workers</button>
+    </div>
+  </section>`;
+}
+
+function respondTransferOffer(offerId, accept) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'worker_transfer_respond', offer_id: offerId, accept }));
+  }
+}
+
+function openMakeTransferOfferForm() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  const names = _playerNameLookup();
+  const otherPlayers = gameState.players.filter(p => p.player_id !== me.player_id);
+  if (!otherPlayers.length) { showToast('No other islands to trade workers with.'); return; }
+
+  const profOptions = Object.keys(me.workforce_professions || {})
+    .map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  const playerOptions = otherPlayers
+    .map(p => `<option value="${p.player_id}">${esc(p.name)}</option>`).join('');
+
+  showPopup('Offer / Request Workers', `
+    <section class="popup-section">
+      <table class="popup-table">
+        <tr><th>Direction</th><td>
+          <select id="tf-direction">
+            <option value="offer">I send workers (offer)</option>
+            <option value="request">I receive workers (request)</option>
+          </select>
+        </td></tr>
+        <tr><th>Other island</th><td><select id="tf-player">${playerOptions}</select></td></tr>
+        <tr><th>Profession</th><td>
+          <select id="tf-profession">
+            <option value="Unskilled">Unskilled</option>${profOptions}
+          </select>
+        </td></tr>
+        <tr><th>Count</th><td><input type="number" id="tf-count" value="1" min="1" style="width:5rem"></td></tr>
+        <tr><th>Fee / head (Dp)</th><td><input type="number" id="tf-fee" value="10" min="0" step="1" style="width:6rem"></td></tr>
+      </table>
+      <div style="margin-top:.7rem;display:flex;gap:.5rem">
+        <button class="btn-gold btn-sm" onclick="submitTransferOffer()">Send Offer</button>
+        <button class="btn-ghost btn-sm" onclick="closePopup()">Cancel</button>
+      </div>
+    </section>`);
+}
+
+function submitTransferOffer() {
+  const direction  = document.getElementById('tf-direction')?.value;
+  const to_player  = parseInt(document.getElementById('tf-player')?.value, 10);
+  const profession = document.getElementById('tf-profession')?.value;
+  const count      = parseInt(document.getElementById('tf-count')?.value, 10);
+  const fee_per_head = parseFloat(document.getElementById('tf-fee')?.value);
+  if (!direction || !to_player || !profession || count < 1 || fee_per_head < 0) {
+    showToast('Please fill in all fields.', { type: 'err' }); return;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'worker_transfer_offer', to_player_id: to_player, profession, count, fee_per_head, direction }));
+    closePopup();
+    showToast('Transfer offer sent.');
+  }
+}
+
 function showPersonnelPopup() {
   if (!gameState || myPlayerIdx == null) return;
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
   const body =
+    _renderTransferOffersSection(me) +
     _renderTrainingPipelineSection(me.training_pipeline || []) +
     _renderStaffingContractsSection(me.staffing_contracts || []) +
     _renderStaffingSection(me);
   showPopup(`Personnel — ${esc(me.name)}`, body);
+}
+
+// ==================== MANUFACTURER ORDER BOOK (#194) ====================
+function _renderOrderBookRow(o, idx, total) {
+  const promiseLabel = (o.promised_year != null && o.promised_season != null)
+    ? `Year ${o.promised_year}, ${esc(o.promised_season)}`
+    : '<span style="color:var(--dim)">—</span>';
+  const priceLabel = o.status === 'accepted'
+    ? moneyDp(o.counter_total != null ? o.counter_total : o.buyer_offer)
+    : (o.counter_total != null ? `Countered ${moneyDp(o.counter_total)}` : moneyDp(o.buyer_offer));
+  let actionsHtml = '';
+  if (o.status === 'proposed' && o.awaiting_id === _myEnginePlayerId()) {
+    actionsHtml = `<button class="btn-accept btn-sm" onclick="respondCapNeg(${o.negotiation_id},'accept')">Accept</button>
+      <button class="btn-counter btn-sm" onclick="respondCapNeg(${o.negotiation_id},'counter',${o.recommended_total})">Counter…</button>
+      <button class="btn-reject btn-sm" onclick="respondCapNeg(${o.negotiation_id},'decline')">Decline</button>`;
+  } else {
+    actionsHtml = `<span style="color:var(--dim);font-size:.72rem">—</span>`;
+  }
+  const canMoveUp = !o.locked && idx > 0;
+  const canMoveDown = !o.locked && idx < total - 1;
+  const reorderHtml = o.locked
+    ? `<span style="color:var(--dim);font-size:.68rem" title="Already in production — cannot reorder">🔒 locked</span>`
+    : `<button class="btn-ghost btn-sm" ${canMoveUp ? '' : 'disabled'} onclick="reorderOrderBook(${o.negotiation_id},-1)" title="Move up (produce sooner)">▲</button>
+       <button class="btn-ghost btn-sm" ${canMoveDown ? '' : 'disabled'} onclick="reorderOrderBook(${o.negotiation_id},1)" title="Move down (produce later)">▼</button>`;
+  return `<tr>
+    <td>${o.queue_position + 1}</td>
+    <td>${esc(o.name || o.item_id)}</td>
+    <td>${esc(o.buyer_name || `Player ${o.buyer_id}`)}</td>
+    <td style="text-transform:capitalize">${esc(o.status)}</td>
+    <td>${priceLabel}</td>
+    <td>${promiseLabel}</td>
+    <td>${actionsHtml}</td>
+    <td>${reorderHtml}</td>
+  </tr>`;
+}
+
+function _renderOrderBookSection(me) {
+  const orders = (me.order_book || []).slice().sort((a, b) => a.queue_position - b.queue_position);
+  if (!orders.length) {
+    return `<section class="popup-section">
+      <h4>Order Book</h4>
+      <p class="empty-state">No orders currently queued.</p>
+    </section>`;
+  }
+  const rows = orders.map((o, idx) => _renderOrderBookRow(o, idx, orders.length)).join('');
+  return `<section class="popup-section">
+    <h4>Order Book — Production Queue</h4>
+    <table class="popup-table">
+      <thead><tr>
+        <th>#</th><th>Item</th><th>Buyer</th><th>Status</th><th>Price</th>
+        <th>Promised</th><th>Review</th><th>Reorder</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </section>`;
+}
+
+function showOrderBookPopup() {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  showPopup(`Order Book — ${esc(me.name)}`, _renderOrderBookSection(me));
+}
+
+function reorderOrderBook(negotiationId, direction) {
+  if (!gameState || myPlayerIdx == null) return;
+  const me = gameState.players[myPlayerIdx];
+  if (!me) return;
+  const orders = (me.order_book || []).slice().sort((a, b) => a.queue_position - b.queue_position);
+  const ids = orders.map(o => o.negotiation_id);
+  const idx = ids.indexOf(negotiationId);
+  const swapIdx = idx + direction;
+  if (idx < 0 || swapIdx < 0 || swapIdx >= ids.length) return;
+  // Never allow a swap across a locked entry's fixed slot.
+  if (orders[idx].locked || orders[swapIdx].locked) return;
+  [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+  sendWsMessage({ type: 'manufacturer_reorder_queue', negotiation_ids: ids });
 }
 
 // ==================== INVENTORY / INSURANCE / LOANS POPUPS (Phase 6 §5) ====================
@@ -3670,8 +4857,101 @@ function handleMessage(msg) {
       addLog(`🏦 Bought ${msg.shares} share(s) of your island for `
         + `${msg.cost} Dp (${msg.price_per_share} Dp/share).`, 'ok');
       break;
+    case 'capital_order_ack':
+      let financeNote = '';
+      if (msg.financed) {
+        // Capital financing is convenience-priced at posted-3yr + 5.0pts
+        // (loan-negotiation brief). Surface the premium + the cheaper
+        // alternative so the +5pt cost is explicit, not hidden.
+        const rateStr = (typeof msg.loan_rate === 'number')
+          ? ` at ${(msg.loan_rate * 100).toFixed(1)}%` : '';
+        let premiumStr = '';
+        if (typeof msg.loan_rate === 'number' && typeof msg.posted_3yr_rate === 'number') {
+          const pts = (msg.loan_rate - msg.posted_3yr_rate) * 100;
+          premiumStr = ` — a ${pts.toFixed(1)}pt convenience premium over the `
+            + `${(msg.posted_3yr_rate * 100).toFixed(1)}% posted 3-yr rate; `
+            + `negotiate a loan at the Bank for a better rate`;
+        }
+        financeNote = `, financed via Bank loan${rateStr} (repay ${msg.loan_repayment} Dp)${premiumStr}`;
+      } else if (msg.financing) {
+        financeNote = ', financing unavailable — paid from treasury';
+      }
+      addLog(`📦 Ordered ${msg.name} for ${msg.upfront} Dp`
+        + (msg.spares_kits ? ` (+${msg.spares_kits} spares kit(s))` : '')
+        + financeNote + '.', 'ok');
+      showToast(`Order placed: ${msg.name}`);
+      // A manufacturer-accept settles via this capital_order_ack-shaped payload
+      // (the settlement's type overwrites the negotiation ack). Clear the now-
+      // settled negotiation from the awaiting list + push buffer so its review
+      // box disappears and a stale game_state can't re-inject it.
+      if (msg.negotiation) _mergeCapNeg(msg.negotiation);
+      else if (msg.negotiation_id != null) _clearCapNeg(msg.negotiation_id);
+      renderCapitalNegotiationAlerts();
+      break;
+    case 'capital_negotiation':
+      onCapitalNegotiationPush(msg);
+      break;
+    case 'capital_negotiation_ack':
+      onCapitalNegotiationAck(msg);
+      break;
+    case 'capital_repair_ack':
+      addLog(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), msg.ok ? 'ok' : 'err');
+      showToast(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), { type: msg.ok ? 'success' : 'error' });
+      break;
+    case 'market_order_update_ack':
+      if (msg.ok) {
+        showToast(msg.action === 'cancel' ? 'Order removed.' : 'Order reduced.', { type: 'success' });
+        // Keep the Trade Blotter open when managing orders from its Orders
+        // tab (the following game_state refreshes it, #210); only the legacy
+        // prompt-driven Market Buy popup should close on an order update.
+        if (!_blotterOpen && document.getElementById('overlay').classList.contains('active')) hideOverlay();
+      } else {
+        addLog('Market order error: ' + (msg.error || 'Unknown error'), 'err');
+        showToast(msg.error || 'Market order update failed.', { type: 'error' });
+      }
+      break;
+    case 'order_batch_result': {
+      // Trade Blotter capture (#210): surface any rejected rows; fills and
+      // resting orders arrive via the game_state that follows.
+      const rejected = (msg.results || []).filter(r => r && r.status === 'rejected');
+      if (rejected.length) {
+        rejected.forEach(r => addLog(
+          `Trade rejected: ${r.side} ${r.resource} — ${r.reason || 'not allowed'}`, 'err'));
+        showToast(`${rejected.length} order${rejected.length > 1 ? 's' : ''} rejected — see the log.`, { type: 'error' });
+      }
+      break;
+    }
+    case 'transfer_offer_received': {
+      const o = msg.offer;
+      if (o) {
+        const names = _playerNameLookup();
+        const from = names[o.from_player] || `Player ${o.from_player}`;
+        addLog(`📦 Worker transfer offer from ${from}: ${o.count} ${o.profession} @ ${o.fee_per_head} Dp/head.`, 'info');
+        showToast(`Transfer offer from ${from} — open Personnel to respond.`, { type: 'info', duration: 8000 });
+      }
+      break;
+    }
+    case 'transfer_offer_sent':
+      showToast('Transfer offer sent — waiting for response.', { type: 'success' });
+      break;
+    case 'worker_transfer_result':
+      if (msg.ok && msg.accepted) {
+        const moved = msg.workers_moved;
+        addLog(`✅ Transfer complete: ${moved} ${msg.profession} workers moved. Fee: ${msg.fee_paid?.toFixed(1)} Dp.`, 'ok');
+        showToast(`Transfer complete — ${moved} ${msg.profession} workers moved.`, { type: 'success' });
+      } else if (msg.ok && !msg.accepted) {
+        addLog('Transfer offer declined.', 'info');
+        showToast('Transfer offer declined.', { type: 'info' });
+      } else {
+        showToast(msg.error || 'Transfer failed.', { type: 'error' });
+      }
+      break;
     case 'game_state':
       gameState = msg;
+      // Re-apply push buffers so a stale broadcast can't silently drop
+      // deals or capital negotiations that arrived via push moments earlier.
+      _reapplyCapNegBuffer();
+      _reapplyDealBuffer();
       syncServerLog(msg);
       syncSeasonTimerFromState(msg);
       // Don't auto-jump to the game screen while the user is still on the
@@ -3688,6 +4968,7 @@ function handleMessage(msg) {
         buildIslandMap();
       }
       refreshPauseButton();
+      refreshOpenBlotter();   // keep an open Trade Blotter's orders/fills fresh (#210)
       break;
     case 'print':
       addLog(msg.text);
@@ -3727,6 +5008,28 @@ function handleMessage(msg) {
     case 'training_batch_result':
       onTrainingBatchResult(msg);
       break;
+    case 'cancel_training_result':
+      if (msg.ok) {
+        const refundNote = msg.refunded > 0 ? ` ${msg.refunded.toFixed(1)} Dp refunded.` : '';
+        showToast(`Training request cancelled.${refundNote}`, { type: 'success' });
+      } else {
+        showToast(msg.error || 'Could not cancel training request.', { type: 'error' });
+      }
+      break;
+    case 'manufacturer_reorder_ack':
+      if (msg.ok) {
+        showToast('Production queue reordered.', { type: 'success' });
+        // game_state follows right behind with the updated order_book; re-render
+        // the popup in place if it's currently open so the new order is visible.
+        if (document.getElementById('overlay')?.classList.contains('active')
+            && gameState && myPlayerIdx != null) {
+          const me = gameState.players[myPlayerIdx];
+          if (me) document.getElementById('dlg-body').innerHTML = _renderOrderBookSection(me);
+        }
+      } else {
+        showToast(msg.error || 'Could not reorder production queue.', { type: 'error' });
+      }
+      break;
     case 'deal_response':
       onDealResponsePush(msg);
       break;
@@ -3742,6 +5045,9 @@ function handleMessage(msg) {
     }
     case 'pre_season_start':
       onPreSeasonStart(msg);
+      break;
+    case 'season_report':
+      renderSeasonReport(msg.season_report);
       break;
     case 'pre_season_end':
       onPreSeasonEnd(msg);
@@ -3788,10 +5094,20 @@ function handleMessage(msg) {
       }
       break;
     case 'chat':
-      addLog(`[${msg.from}] ${msg.text}`, 'info');
+      onChatMessage(msg);
+      break;
+    case 'chat_channel':
+      onChatChannel(msg);
+      break;
+    case 'chat_history':
+      onChatHistory(msg);
       break;
     case 'error':
+      // Surface server errors as a toast, not just a buried log line — a failed
+      // action (e.g. a capital order the Manufacturer can't fulfil) was
+      // previously silent because it only went to the activity log.
       addLog(msg.message, 'err');
+      showToast(msg.message, { type: 'error', ms: 8000 });
       break;
   }
 }
@@ -3830,6 +5146,77 @@ function renderWealthBreakdown(me){
   el.innerHTML = rows;
 }
 
+// ==================== PENDING ECONOMY-FEATURE INDICATORS ====================
+// Stubs for the not-yet-merged economics-vision engine features. Each renders
+// only when its data is present in the state payload, so they are invisible
+// no-ops until the matching Codex PR lands, then activate automatically. Field
+// names follow the briefs in requirements/codex-tasks/; reconcile if the
+// engine diverges when the PR merges.
+
+// Business cycle phase chip in the header (business-cycle-severity-events).
+function renderBusinessCycleChip() {
+  const chip = document.getElementById('hdr-cycle-chip');
+  if (!chip) return;
+  const cyc = gameState && gameState.business_cycle;
+  if (!cyc || !cyc.phase) { chip.classList.add('hidden'); return; }
+  const icon = { Expansion: '📈', Boom: '🔥', Contraction: '📉', Trough: '🧊' }[cyc.phase] || '•';
+  const note = cyc.note ? ` — ${esc(cyc.note)}` : '';
+  chip.textContent = `${icon} ${cyc.phase}${note}`;
+  chip.title = cyc.note || `Business cycle: ${cyc.phase}`;
+  chip.classList.remove('hidden');
+}
+
+// Island wellbeing tile: Quality-of-Life index + continuing-education coverage
+// (medical-response-quality-of-life + continuing-education-expertise briefs).
+function renderIslandWellbeing(me) {
+  const tile = document.getElementById('wellbeing-tile');
+  const body = document.getElementById('s-wellbeing');
+  if (!tile || !body || !me) return;
+  // QoL: the medical/QoL engine currently emits a 0..1 scalar `qol_score`; a
+  // richer {score, components:{nutrition,medical,goods,stability}} object may
+  // arrive later — read either.
+  const qolObj = me.quality_of_life;
+  let qolPct = null, comps = null;
+  if (qolObj && typeof qolObj.score === 'number') {
+    qolPct = qolObj.score <= 1 ? qolObj.score * 100 : qolObj.score;
+    comps = qolObj.components || null;
+  } else if (typeof me.qol_score === 'number') {
+    qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
+  }
+  // Continuing education (continuing-education-expertise-2026-07-05): the
+  // server emits {managers, annual_need, expertise_ytd, expertise_consumed,
+  // uncovered_fraction, penalty, manager_efficiency_multiplier} — not the
+  // {factor, covered} shape originally guessed. manager_efficiency_multiplier
+  // is the direct productivity multiplier (1 - penalty); "covered" managers
+  // is derived from managers x (1 - uncovered_fraction).
+  const ce = me.continuing_education;
+  if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
+  const parts = [];
+  if (qolPct != null) {
+    const comp = comps ? ['nutrition', 'medical', 'goods', 'stability']
+      .filter(k => typeof comps[k] === 'number')
+      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(comps[k])}`)
+      .join(' · ') : '';
+    const col = qolPct >= 100 ? 'var(--green)' : (qolPct >= 85 ? 'var(--text)' : 'var(--gold)');
+    parts.push(`<div class="mkt-row"><span class="res">Quality of Life</span>`
+      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
+      + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
+  }
+  if (ce && typeof ce.manager_efficiency_multiplier === 'number') {
+    const pct = Math.round(ce.manager_efficiency_multiplier * 100);
+    const col = pct >= 95 ? 'var(--green)' : (pct >= 85 ? 'var(--gold)' : 'var(--red)');
+    let cov = '';
+    if (typeof ce.managers === 'number' && typeof ce.uncovered_fraction === 'number') {
+      const covered = Math.round(ce.managers * (1 - ce.uncovered_fraction));
+      cov = ` <span style="color:var(--dim)">(${covered}/${ce.managers} managers covered)</span>`;
+    }
+    parts.push(`<div class="mkt-row"><span class="res">Continuing Ed.</span>`
+      + `<span class="price" style="color:${col}">${pct}%</span></div>${cov}`);
+  }
+  body.innerHTML = parts.join('');
+  tile.classList.remove('hidden');
+}
+
 // ==================== GAME RENDERING ====================
 function renderGameState() {
   if (!gameState) return;
@@ -3846,8 +5233,7 @@ function renderGameState() {
   if (!me) return;
 
   // Season/Year header
-  if (gameState.year) document.getElementById('hdr-year').textContent = 'Year ' + gameState.year;
-  if (gameState.season) document.getElementById('hdr-season').textContent = gameState.season;
+  _updateSeasonHeader(gameState.year, gameState.season);
   const gameCode = gameState.join_code || (currentRoom && currentRoom.join_code) || currentRoomId || '------';
   const gameCodeEl = document.getElementById('hdr-game-code');
   if (gameCodeEl) gameCodeEl.textContent = gameCode;
@@ -3979,6 +5365,18 @@ function renderGameState() {
     const hintEl = document.getElementById('s-campus-load-hint');
     if (hintEl) hintEl.textContent = campusLoad > 0 ? `+${campusLoad} Food/season` : '';
   }
+  // Order Book — only visible for Manufacturers with at least one queued order
+  const orderBookRow = document.getElementById('s-order-book-row');
+  if (orderBookRow) {
+    const isManufacturer = (me.role || '').toLowerCase().includes('manufactur')
+      || (playerRoles(me) || []).some(r => (r || '').toLowerCase().includes('manufactur'));
+    const orderBook = me.order_book || [];
+    orderBookRow.style.display = isManufacturer ? '' : 'none';
+    const countEl = document.getElementById('s-order-book-count');
+    if (countEl) countEl.textContent = orderBook.length
+      ? `${orderBook.length} order${orderBook.length !== 1 ? 's' : ''} queued`
+      : 'No orders queued';
+  }
   document.getElementById('hdr-wealth').textContent =
     'Net Worth ' + (me.net_worth ?? me.wealth) + ' Dp';
 
@@ -3987,6 +5385,12 @@ function renderGameState() {
     .filter(([,q]) => q > 0)
     .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
     .join('') || '<span style="color:var(--dim)">Empty</span>';
+
+  // Pending economics-vision features (business cycle, QoL, continuing
+  // education). These render only when the engine ships the data, so they're
+  // inert until the respective Codex PRs land, then light up automatically.
+  renderBusinessCycleChip();
+  renderIslandWellbeing(me);
 
   // Insurance: prefer structured `policies_detail`; fall back to plain strings.
   const polsDetail = me.policies_detail || [];
@@ -4047,6 +5451,11 @@ function renderGameState() {
     }
   }
 
+  // Pending actions set — used by _renderActionButton to highlight buttons
+  window._pendingActions = new Set(gameState.pending_actions || []);
+
+  _notifyTrainingPipelineChanges(me.training_pipeline || []);
+
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
   renderBuildDevelop(me);
@@ -4081,7 +5490,9 @@ function renderGameState() {
   }
 
   renderDealsPanel();
+  renderCapitalNegotiationAlerts();
   renderTradeFinder();
+  mergeChatState(gameState);
 }
 
 // ==================== TRADE FINDER (UI v2 phase 1, #114) ====================
@@ -4346,6 +5757,7 @@ const _HINT_OPEN_LABEL = {
   offer_loan:        'Offer Loan',
   manage_insurance:  'Manage Insurance',
   produce:           'Produce',
+  review_training:   'Review Training',
 };
 let _currentHintActions = new Set();
 // Resources currently mentioned by hints (Phase 5: drives Market Buy row
@@ -4377,6 +5789,15 @@ function _actOnHint(action, payload = {}) {
   // Stash the focus target — both code paths below need it consumed by
   // the next modal that opens.
   _pendingHintTarget = Object.assign({ action }, payload);
+
+  // Trade actions open the client-side Trade Blotter (#210) directly, like
+  // the Market Buy/Sell action buttons — capture rides `order_batch`, so we
+  // don't need the server's choose_action prompt and it works even while the
+  // player is parked (Done Trading). openTradeBlotter consumes the hint focus.
+  if (action === 'market_buy' || action === 'market_sell') {
+    openTradeBlotter('trade', { side: action === 'market_sell' ? 'sell' : 'buy' });
+    return;
+  }
 
   // Sub-issue C: hint clicked while in Done Trading state.  Option 1
   // (preferred per AyaySir IMP-04): auto-undo Done, queue the action to
@@ -4433,6 +5854,39 @@ function renderDecisionHints(player, role) {
   const roleLabel = role === 'ALL' ? 'these islands' : (roleDisplayName(role) || 'this island');
   const hints = [];
   const sustenanceAlerts = gameState.sustenance_alerts?.[String(player.player_id)] || [];
+
+  // Repair hints — one card per broken-and-repairable capital item in the
+  // active tab. Repair is a direct capital_repair WS message (not a
+  // TurnAction), so these carry a custom_button instead of triggers_action.
+  for (const item of (cap.capital_owned || [])) {
+    const repairable = item.repairable_failed ?? item.failed ?? 0;
+    if (repairable <= 0) continue;
+    const rc = item.repair_cost;
+    const costTxt = rc
+      ? (rc.repairable !== false
+          ? `${rc.dp} Dp + ${rc.freight} freight`
+          : `${rc.dp} Dp — ${rc.reason || 'insufficient funds/freight'}`)
+      : 'cost unknown until you can afford it';
+    hints.push({
+      tone: 'warn',
+      title: `Repair ${item.name}`,
+      why: `${repairable} unit(s) down. Next repair: ${costTxt}.`,
+      custom_button: `<button class="btn-gold btn-sm hint-open" onclick="repairCapitalItem('${esc(item.item_id)}')">Repair now →</button>`,
+    });
+  }
+
+  // Training hint — Educators see a nudge to review their pending training
+  // queue ahead of next season. Reuses the same pending_actions signal that
+  // already highlights the action-menu button (review_training is a native
+  // TurnAction, so the existing _actOnHint/sendResponse path just works).
+  if ((window._pendingActions || new Set()).has('review_training')) {
+    hints.push({
+      tone: 'watch',
+      title: 'Review training requests',
+      why: 'Workers are waiting on your approval to start training for next season.',
+      triggers_action: 'review_training',
+    });
+  }
 
   for (const alert of sustenanceAlerts) {
     // 2026-05-27 (Codex Player #6): tailor the advice to the actual
@@ -4541,12 +5995,13 @@ function renderDecisionHints(player, role) {
         const deliv = o.delivery_seasons
           ? `, ${o.delivery_seasons} season${o.delivery_seasons !== 1 ? 's' : ''} to arrive` : '';
         const owned = o.owned ? ` (you own ${o.owned})` : '';
-        why = `Needs ${o.count}× ${o.name}${owned} — ${o.cost_each} Dp each`
-            + ` (${o.total_cost} Dp total${deliv}). Buy it from the market/deals now, `
-            + `or in the next investing window.`;
+        const another = o.owned ? 'another ' : '';
+        why = `Needs ${another}${o.count}× ${o.name}${owned} — ${o.cost_each} Dp each`
+            + ` (${o.total_cost} Dp total${deliv}). Order it via Purchase Equipment `
+            + `(capital order desk).`;
       } else {
-        why = `Limited by capital equipment. Buy the equipment that boosts ${output.output} `
-            + `from the market/deals, or in the next investing window.`;
+        why = `Limited by capital equipment. Order the equipment that boosts ${output.output} `
+            + `via Purchase Equipment (capital order desk).`;
       }
       hints.push({
         tone: 'warn',
@@ -4574,11 +6029,14 @@ function renderDecisionHints(player, role) {
 
   el.innerHTML = visible.map(h => {
     const payload = h.target_resource ? { resource: h.target_resource } : {};
+    const button = h.custom_button
+      ? `<div class="hint-actions">${h.custom_button}</div>`
+      : _renderHintOpenButton(h.triggers_action, payload);
     return `
     <div class="decision-card ${h.tone}">
       <strong>${esc(h.title)}</strong>
       <div class="why">${esc(h.why)}</div>
-      ${_renderHintOpenButton(h.triggers_action, payload)}
+      ${button}
     </div>`;
   }).join('');
 }
@@ -4632,15 +6090,16 @@ function _upsertDeal(list, deal) {
     .sort((a, b) => (b.deal_id || 0) - (a.deal_id || 0));
 }
 
-function mergeDealMessage(msg) {
-  if (!msg || !msg.deal || !gameState) return;
-  const deal = msg.deal;
-  const me = _myEnginePlayerId();
-  if (me == null || deal.deal_id == null) return;
+// Buffer of deals received via push. Keyed by deal_id so a later push for the
+// same deal always wins. Cleared for settled deals (accepted/rejected/expired).
+// _reapplyDealBuffer() merges the buffer into gameState after every game_state
+// replace, preventing a stale AI-broadcast snapshot from silently dropping a
+// deal that the player already saw via deal_response push (C3 race fix).
+const _dealPushBuffer = new Map();
 
+function _applyDealToState(deal, me) {
   gameState.deals_awaiting_me = _withoutDeal(gameState.deals_awaiting_me, deal.deal_id);
   gameState.my_deals = _withoutDeal(gameState.my_deals, deal.deal_id);
-
   const active = deal.status === 'pending' || deal.status === 'returned';
   if (active && deal.awaiting_id === me) {
     gameState.deals_awaiting_me = _upsertDeal(gameState.deals_awaiting_me, deal);
@@ -4648,6 +6107,35 @@ function mergeDealMessage(msg) {
   if (deal.proposer_id === me) {
     gameState.my_deals = _upsertDeal(gameState.my_deals, deal);
   }
+}
+
+function _reapplyDealBuffer() {
+  if (!gameState || !_dealPushBuffer.size) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  for (const deal of _dealPushBuffer.values()) {
+    const alreadyIn =
+      (gameState.deals_awaiting_me || []).some(d => d.deal_id === deal.deal_id) ||
+      (gameState.my_deals || []).some(d => d.deal_id === deal.deal_id);
+    if (!alreadyIn) _applyDealToState(deal, me);
+  }
+}
+
+function mergeDealMessage(msg) {
+  if (!msg || !msg.deal) return;
+  const deal = msg.deal;
+  if (deal.deal_id == null) return;
+  // Update buffer: keep active deals, evict settled ones.
+  const active = deal.status === 'pending' || deal.status === 'returned';
+  if (active) {
+    _dealPushBuffer.set(deal.deal_id, deal);
+  } else {
+    _dealPushBuffer.delete(deal.deal_id);
+  }
+  if (!gameState) return;
+  const me = _myEnginePlayerId();
+  if (me == null) return;
+  _applyDealToState(deal, me);
   renderDealsPanel();
 }
 
@@ -4891,10 +6379,366 @@ function renderBarterMarket(compact = false) {
   `;
 }
 
-function showMarketBoardPopup() {
+// ==================== TRADE BLOTTER (#210) ====================
+// A tabbed overlay on the Market Board. Shows the island's live market, its
+// own resting bids/asks, and an executed-fills tape — and captures new trades
+// through the Trade tab. New orders LAYER on top of existing ones by default
+// (per-row toggle to Replace); capture rides the fire-and-forget `order_batch`
+// path (trading.execute_order_list), so the AI's turn-prompt flow is untouched.
+let _blotterOpen = false;
+let _blotterTab = 'market';
+let _blotterFocusSide = 'buy';
+let _blotterFocusResource = null;
+const _blotterModes = {};       // resource -> 'layer' | 'replace'
+const _blotterPinned = new Set(); // commodities the player pinned to the Trade tab
+const _blotterHidden = new Set(); // commodities the player removed from the Trade tab
+
+function showMarketBoardPopup() { openTradeBlotter('market'); }
+
+function openTradeBlotter(tab, opts = {}) {
   if (!gameState) return;
-  const html = renderMarketTable(gameState.market || {}) + renderBarterMarket();
-  showPopup('Market Board', html);
+  // Consume a pending decision-hint focus (Market Buy/Sell hint click).
+  const hint = _pendingHintTarget;
+  _pendingHintTarget = null;
+  if (hint && (hint.action === 'market_buy' || hint.action === 'market_sell')) {
+    _blotterFocusResource = hint.resource || null;
+    _blotterFocusSide = hint.action === 'market_sell' ? 'sell' : 'buy';
+  } else {
+    _blotterFocusResource = opts.focusResource || null;
+    if (opts.side) _blotterFocusSide = opts.side;
+  }
+  _blotterTab = tab || 'market';
+  _blotterOpen = true;
+  showPopup('Market Board',
+    `<div class="blotter-tabs" id="blotter-tabs">${_renderBlotterTabBar()}</div>`
+    + `<div id="blotter-pane"></div>`,
+    { className: 'market-dialog' });
+  _mountBlotterTab();
+}
+
+function _blotterMe() {
+  return (gameState && myPlayerIdx != null) ? gameState.players[myPlayerIdx] : null;
+}
+function _blotterCash() {
+  const me = _blotterMe();
+  return me ? (me.treasury ?? me.dollops ?? 0) : 0;
+}
+function _blotterInv(res) {
+  const me = _blotterMe();
+  return (me && me.inventory && me.inventory[res]) || 0;
+}
+
+function _renderBlotterTabBar() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const orderCount = (orders.offers || []).length + (orders.bids || []).length;
+  const fillCount = ((gameState && gameState.my_fills) || []).length;
+  const badge = n => n > 0 ? ` <span class="blotter-badge">${n}</span>` : '';
+  const tabs = [
+    ['market', 'Market', ''],
+    ['trade', 'Trade', ''],
+    ['orders', 'My orders', badge(orderCount)],
+    ['fills', 'Fills', badge(fillCount)],
+  ];
+  return tabs.map(([k, label, extra]) =>
+    `<button class="tab-btn${k === _blotterTab ? ' active' : ''}" data-blotter-tab="${k}" onclick="_switchBlotterTab('${k}')">${label}${extra}</button>`
+  ).join('');
+}
+
+function _switchBlotterTab(tab) {
+  _blotterTab = tab;
+  document.querySelectorAll('#blotter-tabs .tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.blotterTab === tab));
+  _mountBlotterTab();
+}
+
+function _mountBlotterTab() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  if (_blotterTab === 'trade') {
+    pane.innerHTML = _renderBlotterTradeTab();
+    pane.querySelectorAll('.blot-num').forEach(inp =>
+      inp.addEventListener('input', updateBlotterTotals));
+    updateBlotterTotals();
+    if (_blotterFocusResource) {
+      const row = pane.querySelector(`tr[data-blot-res="${_blotterFocusResource}"]`);
+      if (row) row.scrollIntoView({ block: 'nearest' });
+    }
+  } else if (_blotterTab === 'orders') {
+    pane.innerHTML = _renderBlotterOrdersTab();
+  } else if (_blotterTab === 'fills') {
+    pane.innerHTML = _renderBlotterFillsTab();
+  } else {
+    pane.innerHTML = renderMarketTable(gameState.market || {}) + renderBarterMarket();
+  }
+}
+
+// Re-render the tab bar (badge counts) and any read-only tab in place when a
+// fresh game_state lands. The Trade tab is left untouched so a mid-entry form
+// isn't wiped out from under the player.
+function refreshOpenBlotter() {
+  if (!_blotterOpen) return;
+  const pane = document.getElementById('blotter-pane');
+  const overlay = document.getElementById('overlay');
+  if (!pane || !overlay || !overlay.classList.contains('active')) {
+    _blotterOpen = false;
+    return;
+  }
+  const bar = document.getElementById('blotter-tabs');
+  if (bar) bar.innerHTML = _renderBlotterTabBar();
+  if (_blotterTab !== 'trade') _mountBlotterTab();
+}
+
+function _renderBlotterTradeTab() {
+  const market = gameState.market || {};
+  const focus = _blotterFocusResource;
+  // Working set = (pinned ∪ focus ∪ hinted ∪ held ∪ live) − hidden, in that
+  // priority order.  Anything else is reachable from the "Add a commodity"
+  // picker; once added it's pinned and stays until removed.
+  const shown = [];
+  const seen = new Set();
+  const push = res => {
+    if (market[res] && !seen.has(res) && !_blotterHidden.has(res)) {
+      seen.add(res);
+      shown.push([res, market[res]]);
+    }
+  };
+  [..._blotterPinned].forEach(push);
+  if (focus) push(focus);
+  if (_currentHintResources) _currentHintResources.forEach(push);
+  Object.keys(market).forEach(res => { if (_blotterInv(res) > 0) push(res); });            // held stock
+  Object.entries(market).forEach(([res, d]) => {
+    if ((d.ask_quantity ?? 0) > 0 || (d.bid_quantity ?? 0) > 0) push(res);                 // live market
+  });
+  const allTradable = Object.keys(market).sort();
+
+  const note = `<div class="blotter-note">
+    New orders <strong style="color:var(--green)">layer</strong> on top of your open orders by default —
+    flip a row to <strong style="color:var(--gold)">Replace</strong> to supersede.
+    <span style="color:var(--gold)">Buy/Sell now</span> execute immediately; <span style="color:var(--green)">Bid/Ask</span> post a resting order.
+    Each row shows what's available to trade — <strong>hold N</strong> is your uncommitted stock (not already on an ask).
+  </div>`;
+
+  let html = note;
+  html += `<div style="font-size:.82rem;color:var(--dim);margin-bottom:.3rem">Treasury: <strong style="color:var(--gold)">${_blotterCash().toFixed(1)} Dp</strong></div>`;
+  html += `<div class="blotter-addbar">
+    <label for="blot-add-select">Add a commodity:</label>
+    <select id="blot-add-select" onchange="blotterAddCommodity(this)">
+      <option value="">Select to add / jump to…</option>
+      ${allTradable.map(res => `<option value="${esc(res)}">${esc(res)} — hold ${_blotterInv(res)}, bid ${market[res].bid_quantity ?? 0}, ask ${market[res].ask_quantity ?? 0}</option>`).join('')}
+    </select>
+  </div>`;
+  html += '<div class="market-buy-wrap"><table class="market-buy-table">'
+    + _blotterTradeHeaderRow() + '<tbody id="blot-tbody">'
+    + shown.map(([res, d]) => _blotterTradeRow(res, d)).join('')
+    + '</tbody></table></div>';
+  if (!shown.length) {
+    html += `<div class="blotter-empty">Nothing to show yet — use “Add a commodity” above to start a bid or ask.</div>`;
+  }
+  html += `<div class="blotter-bar">
+    <span class="blotter-total">Buy <strong id="blot-buy-total" style="color:var(--gold)">0 Dp</strong>
+      &nbsp;·&nbsp; Sell <strong id="blot-sell-total" style="color:var(--green)">0 Dp</strong></span>
+    <button class="btn-gold" onclick="submitBlotterTrade()">Place orders</button>
+  </div>`;
+  return html;
+}
+
+function _blotterTradeHeaderRow() {
+  return '<thead><tr>'
+    + '<th style="width:150px">Commodity</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Bid</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Ask</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Buy now</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Sell now</th>'
+    + '<th style="color:var(--green);border-left:2px solid var(--border)">Bid q @ price</th>'
+    + '<th style="color:var(--gold);border-left:2px solid var(--border)">Ask q @ price</th>'
+    + '<th style="border-left:2px solid var(--border)">Mode</th>'
+    + '</tr></thead>';
+}
+
+function _blotterTradeRow(res, d) {
+  const askQty = d.ask_quantity ?? d.quantity ?? 0;
+  const askPrice = d.ask_price ?? d.best_price ?? d.formula_price;
+  const bidQty = d.bid_quantity ?? 0;
+  const bidPrice = d.bid_price;
+  const inv = _blotterInv(res);
+  const sellNowMax = Math.min(bidQty, inv);
+  const restPrefill = d.formula_price ? Number(d.formula_price).toFixed(2)
+    : (askPrice ? Number(askPrice).toFixed(2) : 0);
+  const askPrefill = bidPrice ? Number(bidPrice).toFixed(2) : restPrefill;
+  const mode = _blotterModes[res] || 'layer';
+  const pinned = _blotterPinned.has(res);
+  const focusClass = (res === _blotterFocusResource) ? ' class="mkt-row-focus"' : '';
+  const num = 'style="width:56px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
+  const px = 'style="width:66px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;text-align:right"';
+  const avail = n => `<div class="blot-avail">0–${n}</div>`;
+  return `<tr data-blot-res="${esc(res)}"${focusClass}>
+    <td>
+      <div class="blot-name">
+        <button type="button" class="blot-pin${pinned ? ' pinned' : ''}" onclick="blotterTogglePin('${esc(res)}', this)" title="${pinned ? 'Pinned — kept when you reopen the blotter' : 'Pin to keep this row'}">${pinned ? '★' : '☆'}</button>
+        <span>${esc(res)}</span>
+        <button type="button" class="blot-remove" onclick="blotterRemoveRow('${esc(res)}')" title="Remove this row">✕</button>
+      </div>
+      <span class="blot-hold" title="Your uncommitted stock — not already on an ask">hold ${inv}</span>
+    </td>
+    <td style="color:var(--green);border-left:2px solid var(--border)" title="${bidQty} wanted">${fmtMarketPrice(bidPrice)}</td>
+    <td style="color:var(--gold);border-left:2px solid var(--border)" title="${askQty} offered">${askQty ? fmtMarketPrice(askPrice) : '—'}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><input type="number" inputmode="numeric" class="blot-num blot-buynow" data-price="${askPrice}" data-max="${askQty}" min="0" max="${askQty}" placeholder="0" ${askQty ? '' : 'disabled'} title="${askQty ? `Buy up to ${askQty} now at ${Number(askPrice).toFixed(2)} Dp` : 'No ask available'}" ${num}/>${avail(askQty)}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><input type="number" inputmode="numeric" class="blot-num blot-sellnow" data-price="${bidPrice || 0}" data-max="${sellNowMax}" min="0" max="${sellNowMax}" placeholder="0" ${sellNowMax > 0 ? '' : 'disabled'} title="${sellNowMax > 0 ? `Sell up to ${sellNowMax} now at ${Number(bidPrice).toFixed(2)} Dp` : (inv <= 0 ? 'None in inventory' : 'No bid to sell into')}" ${num}/>${avail(sellNowMax)}</td>
+    <td style="border-left:2px solid var(--border);background:rgba(38,222,129,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-bidqty" min="0" placeholder="0" title="Quantity to bid for" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-bidpx" min="0" step="0.01" placeholder="${restPrefill}" title="Your bid price/unit — empty uses the reference" ${px}/></div></td>
+    <td style="border-left:2px solid var(--border);background:rgba(246,185,59,.06)"><div class="market-bid-cell"><input type="number" inputmode="numeric" class="blot-num blot-askqty" min="0" max="${inv}" placeholder="0" ${inv > 0 ? '' : 'disabled'} title="${inv > 0 ? `You hold ${inv}` : 'None in inventory to offer'}" ${num}/><span>@</span><input type="number" inputmode="decimal" class="blot-num blot-askpx" min="0" step="0.01" placeholder="${askPrefill}" ${inv > 0 ? '' : 'disabled'} title="Your ask price/unit — empty uses the reference" ${px}/></div>${avail(inv)}</td>
+    <td style="border-left:2px solid var(--border)"><button type="button" class="mkt-mode" data-mode="${mode}" onclick="toggleBlotterMode('${esc(res)}', this)" title="Layer: add alongside your open orders. Replace: supersede them.">${mode === 'replace' ? 'Replace' : 'Layer'}</button></td>
+  </tr>`;
+}
+
+function toggleBlotterMode(res, el) {
+  const next = (el.dataset.mode === 'replace') ? 'layer' : 'replace';
+  el.dataset.mode = next;
+  el.textContent = next === 'replace' ? 'Replace' : 'Layer';
+  _blotterModes[res] = next;
+}
+
+// Add (or jump to) a commodity row from the picker. New rows are pinned so
+// they persist across game-state refreshes and reopening the blotter (#210).
+function blotterAddCommodity(sel) {
+  const res = sel.value;
+  sel.value = '';
+  if (!res || !gameState || !gameState.market || !gameState.market[res]) return;
+  _blotterHidden.delete(res);
+  _blotterPinned.add(res);
+  const tbody = document.getElementById('blot-tbody');
+  if (!tbody) return;
+  let tr = tbody.querySelector(`tr[data-blot-res="${res}"]`);
+  if (!tr) {
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = _blotterTradeRow(res, gameState.market[res]);
+    tr = tmp.firstElementChild;
+    tbody.insertBefore(tr, tbody.firstChild);
+    tr.querySelectorAll('.blot-num').forEach(inp =>
+      inp.addEventListener('input', updateBlotterTotals));
+    updateBlotterTotals();
+  }
+  if (tr) tr.scrollIntoView({ block: 'nearest' });
+}
+
+function blotterTogglePin(res, btn) {
+  if (_blotterPinned.has(res)) {
+    _blotterPinned.delete(res);
+    btn.classList.remove('pinned');
+    btn.textContent = '☆';
+    btn.title = 'Pin to keep this row';
+  } else {
+    _blotterPinned.add(res);
+    _blotterHidden.delete(res);
+    btn.classList.add('pinned');
+    btn.textContent = '★';
+    btn.title = 'Pinned — kept when you reopen the blotter';
+  }
+}
+
+function blotterRemoveRow(res) {
+  _blotterPinned.delete(res);
+  _blotterHidden.add(res);   // stays hidden on refresh/reopen until re-added
+  const tr = document.querySelector(`#blot-tbody tr[data-blot-res="${res}"]`);
+  if (tr) tr.remove();
+  updateBlotterTotals();
+}
+
+function updateBlotterTotals() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  let buy = 0, sell = 0;
+  pane.querySelectorAll('tr[data-blot-res]').forEach(tr => {
+    const buyNow = Math.max(0, parseInt(tr.querySelector('.blot-buynow')?.value) || 0);
+    const buyNowPx = parseFloat(tr.querySelector('.blot-buynow')?.dataset.price) || 0;
+    const sellNow = Math.max(0, parseInt(tr.querySelector('.blot-sellnow')?.value) || 0);
+    const sellNowPx = parseFloat(tr.querySelector('.blot-sellnow')?.dataset.price) || 0;
+    const bidQ = Math.max(0, parseInt(tr.querySelector('.blot-bidqty')?.value) || 0);
+    const bidPxEl = tr.querySelector('.blot-bidpx');
+    const bidPx = bidQ > 0 ? (parseFloat(bidPxEl?.value) || parseFloat(bidPxEl?.placeholder) || 0) : 0;
+    const askQ = Math.max(0, parseInt(tr.querySelector('.blot-askqty')?.value) || 0);
+    const askPxEl = tr.querySelector('.blot-askpx');
+    const askPx = askQ > 0 ? (parseFloat(askPxEl?.value) || parseFloat(askPxEl?.placeholder) || 0) : 0;
+    buy += buyNow * buyNowPx + bidQ * bidPx;
+    sell += sellNow * sellNowPx + askQ * askPx;
+  });
+  const b = document.getElementById('blot-buy-total');
+  const s = document.getElementById('blot-sell-total');
+  if (b) b.textContent = buy.toFixed(1) + ' Dp';
+  if (s) s.textContent = sell.toFixed(1) + ' Dp';
+}
+
+function submitBlotterTrade() {
+  const pane = document.getElementById('blotter-pane');
+  if (!pane) return;
+  const orders = [];
+  pane.querySelectorAll('tr[data-blot-res]').forEach(tr => {
+    const res = tr.dataset.blotRes;
+    const mode = _blotterModes[res] || 'layer';
+    const replace = mode === 'replace';
+    const readInt = sel => Math.max(0, parseInt(tr.querySelector(sel)?.value) || 0);
+    const readPx = (sel) => {
+      const el = tr.querySelector(sel);
+      return el ? (parseFloat(el.value) || parseFloat(el.placeholder) || 0) : 0;
+    };
+    const buyNow = Math.min(readInt('.blot-buynow'), parseInt(tr.querySelector('.blot-buynow')?.dataset.max) || 0);
+    if (buyNow > 0) orders.push({ side: 'buy', resource: res, quantity: buyNow });
+    const sellNow = Math.min(readInt('.blot-sellnow'), parseInt(tr.querySelector('.blot-sellnow')?.dataset.max) || 0);
+    if (sellNow > 0) orders.push({ side: 'sell', resource: res, quantity: sellNow });
+    const bidQ = readInt('.blot-bidqty');
+    const bidPx = readPx('.blot-bidpx');
+    if (bidQ > 0 && bidPx > 0) orders.push({ side: 'buy', resource: res, quantity: bidQ, limit_price: bidPx, replace });
+    const askQ = readInt('.blot-askqty');
+    const askPx = readPx('.blot-askpx');
+    if (askQ > 0 && askPx > 0) orders.push({ side: 'sell', resource: res, quantity: askQ, limit_price: askPx, replace });
+  });
+  if (!orders.length) { showToast('Enter a quantity to trade first.', { type: 'info' }); return; }
+  sendWsMessage({ type: 'order_batch', batch_ref: 'blotter-' + Date.now(), orders });
+  showToast(`Submitted ${orders.length} order${orders.length > 1 ? 's' : ''}.`, { type: 'info' });
+  _switchBlotterTab('orders');   // show the resulting resting orders once state returns
+}
+
+function _renderBlotterOrdersTab() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const offers = orders.offers || [];
+  const bids = orders.bids || [];
+  if (!offers.length && !bids.length) {
+    return `<div class="blotter-empty">No open orders. Place a resting bid or ask from the Trade tab to start layering a strategy.</div>`;
+  }
+  const row = (side, o) => {
+    const id = side === 'ask' ? o.offer_id : o.bid_id;
+    const tone = side === 'ask' ? 'var(--gold)' : 'var(--green)';
+    return `<div class="mkt-row" style="gap:.5rem;align-items:center">
+      <span class="res" style="min-width:150px">${side === 'ask' ? 'Ask' : 'Bid'} · ${esc(o.resource)}</span>
+      <span class="price" style="color:${tone};font-size:.8rem">${o.remaining} @ ${Number(o.price_per_unit).toFixed(2)} Dp</span>
+      <span style="flex:1"></span>
+      ${o.remaining > 1 ? `<button class="btn-ghost btn-sm" onclick="marketOrderReduce('${side}', ${id}, ${o.remaining})" title="Reduce this order">Reduce</button>` : ''}
+      <button class="btn-ghost btn-sm" onclick="marketOrderCancel('${side}', ${id})" title="Remove this order">Remove</button>
+    </div>`;
+  };
+  return `<div style="font-size:.76rem;color:var(--dim);margin-bottom:.5rem">Your standing bids and asks. Remove one to clear it, or Reduce its quantity.</div>`
+    + offers.map(o => row('ask', o)).join('')
+    + bids.map(o => row('bid', o)).join('');
+}
+
+function _renderBlotterFillsTab() {
+  const fills = (gameState && gameState.my_fills) || [];
+  if (!fills.length) {
+    return `<div class="blotter-empty">No trades executed yet. Fills appear here as your bids and asks are matched.</div>`;
+  }
+  const rows = fills.map(f => {
+    const cls = f.side === 'buy' ? 'side-buy' : 'side-sell';
+    const verb = f.side === 'buy' ? 'Bought' : 'Sold';
+    const sk = Array.isArray(f.season_key) ? f.season_key : null;
+    const when = sk ? `Y${sk[0] + 1}·S${sk[1] + 1}` : '';
+    return `<div class="blotter-fill">
+      <span class="${cls}" style="min-width:52px">${verb}</span>
+      <span style="min-width:150px">${f.quantity} × ${esc(f.resource)} @ ${Number(f.price_per_unit).toFixed(2)} Dp</span>
+      <span style="color:var(--dim)">${f.side === 'buy' ? 'from' : 'to'} ${esc(f.counterparty || 'Market')}</span>
+      <span style="flex:1"></span>
+      <span style="color:var(--dim);font-size:.72rem">${when}</span>
+    </div>`;
+  }).join('');
+  return `<div style="font-size:.76rem;color:var(--dim);margin-bottom:.5rem">Your executed trades, most recent first.</div>${rows}`;
 }
 
 // ---- Dependency flowchart popup ----
@@ -5076,8 +6920,7 @@ let preSeasonTimerInterval = null;
 
 function onPreSeasonStart(msg) {
   seasonPhase = 'pre_season';
-  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
-  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  _updateSeasonHeader(msg.year, msg.season);
   seasonActiveHumans = new Set(msg.active_humans || []);
   seasonReadySet = new Set();
   seasonDoneSet  = new Set();
@@ -5104,7 +6947,76 @@ function onPreSeasonStart(msg) {
     _renderPreSeasonDots(seasonActiveHumans, seasonReadySet);
     if (secs > 0) startPreSeasonTimer();
   }
+  // Clear any stale season report from the previous pre-season
+  const reportEl = document.getElementById('psb-report');
+  if (reportEl) { reportEl.style.display = 'none'; reportEl.innerHTML = ''; }
+
   addLog(`📋 Pre-season review: ${msg.season} Year ${msg.year} (${secs}s).`, 'info');
+}
+
+function renderSeasonReport(report) {
+  const el = document.getElementById('psb-report');
+  if (!el || !report) return;
+
+  const fmt = (v, dp = 1) => (v == null ? '—' : Number(v).toFixed(dp));
+  const valClass = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+  const row = (label, val, cls = '') =>
+    `<div class="psb-panel-row"><span class="lbl">${label}</span><span class="val ${cls}">${val}</span></div>`;
+
+  // P&L panel — last season + 3 prior
+  let plHtml = '';
+  const history = report.pl_history || [];
+  if (history.length) {
+    plHtml = history.slice().reverse().map(s =>
+      `<div style="font-size:.7rem;color:var(--dim);margin-top:.25rem">${esc(s.season)}</div>` +
+      row('Revenue', fmt(s.revenue) + ' Dp', 'pos') +
+      row('Costs',   fmt(s.costs)   + ' Dp', 'neg') +
+      row('Profit',  fmt(s.profit)  + ' Dp', valClass(s.profit))
+    ).join('<hr style="border:none;border-top:1px solid var(--border);margin:.3rem 0">');
+  } else {
+    plHtml = `<div style="font-size:.75rem;color:var(--dim)">No data yet — available after first season.</div>`;
+  }
+
+  // Balance sheet panel
+  const bs = report.balance_sheet || {};
+  const bsHtml = bs.treasury != null ? [
+    row('Treasury',   fmt(bs.treasury)         + ' Dp'),
+    row('Inventory',  fmt(bs.inventory_value)   + ' Dp'),
+    row('Capital',    fmt(bs.capital_value)     + ' Dp'),
+    row('Loans',     '-' + fmt(bs.loans)        + ' Dp', 'neg'),
+    `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`,
+    row('Net Worth',  fmt(bs.net_worth)         + ' Dp', valClass(bs.net_worth)),
+  ].join('') : `<div style="font-size:.75rem;color:var(--dim)">—</div>`;
+
+  // Deficiencies panel
+  const defs = report.deficiencies || [];
+  const defHtml = defs.length
+    ? defs.map(d =>
+        `<div class="psb-panel-row" style="flex-direction:column;align-items:flex-start;padding:.15rem 0">
+           <span style="font-size:.75rem">${esc(d.name)}</span>
+           <span style="font-size:.67rem;color:${d.repairable !== false ? 'var(--red)' : '#888'}">
+             ${d.failed} failed${d.repairable === false ? ' (not repairable)' : ''}
+           </span>
+         </div>`).join('')
+    : `<div style="font-size:.75rem;color:#88ddaa">No issues ✓</div>`;
+
+  // Manpower panel
+  const mp = report.manpower || {};
+  const mpHtml = mp.population != null ? [
+    row('Population',  mp.population),
+    row('Employed',    mp.employed + ' / ' + mp.capacity, mp.vacancies > 0 ? 'warn' : ''),
+    row('Vacancies',   mp.vacancies, mp.vacancies > 0 ? 'warn' : 'pos'),
+    row('In training', mp.training_queue || 0),
+    row('Graduating',  mp.graduating_next || 0, mp.graduating_next > 0 ? 'pos' : ''),
+  ].join('') : `<div style="font-size:.75rem;color:var(--dim)">—</div>`;
+
+  el.innerHTML = `<div class="psb-report-panels">
+    <div class="psb-panel"><h4>P&amp;L — Seasons</h4>${plHtml}</div>
+    <div class="psb-panel"><h4>Balance Sheet</h4>${bsHtml}</div>
+    <div class="psb-panel"><h4>Production Issues</h4>${defHtml}</div>
+    <div class="psb-panel"><h4>Manpower</h4>${mpHtml}</div>
+  </div>`;
+  el.style.display = 'block';
 }
 
 function onPreSeasonEnd(msg) {
@@ -5122,8 +7034,7 @@ function onSeasonStart(msg) {
   document.getElementById('pre-season-banner').classList.add('hidden');
   stopPreSeasonTimer();
 
-  if (msg.year)   document.getElementById('hdr-year').textContent = 'Year ' + msg.year;
-  if (msg.season) document.getElementById('hdr-season').textContent = msg.season;
+  _updateSeasonHeader(msg.year, msg.season);
   seasonActiveHumans = new Set(msg.active_humans || []);
   seasonReadySet = new Set();
   seasonDoneSet = new Set();
@@ -5157,12 +7068,29 @@ function onSeasonStart(msg) {
 // re-render — tracks the same authoritative server deadline as everyone else
 // (not just the one-shot season_start). Idempotent: safe to call every snapshot.
 function syncSeasonTimerFromState(msg) {
+  // Resync the Done Trading button + ready state from the authoritative
+  // per-snapshot fields, not just the one-shot season_start/ready_update
+  // broadcasts. Those broadcasts only reach a tab connected at the exact
+  // instant they fire — a tab that reconnects, was backgrounded, or joined
+  // mid-season never gets another chance in Ready-only mode (no timer to
+  // force a resend), so the button could stay stuck hidden indefinitely.
+  // game_state arrives constantly (every action, every poll), so anchoring
+  // visibility here makes it self-healing. (2026-07-03: button was visible
+  // on only 1 of 6 human tabs after ~10h of play — this is that fix.)
+  if (Array.isArray(msg.season_active_humans)) {
+    seasonActiveHumans = new Set(msg.season_active_humans);
+  }
+  if (Array.isArray(msg.season_ready_set)) {
+    seasonReadySet = new Set(msg.season_ready_set);
+    imReady = seasonReadySet.has(myPlayerId);
+  }
+  const showForMe = seasonActiveHumans.has(myPlayerId);
+
   const end = +msg.season_timer_end || 0;
   if (msg.season_phase === 'action' && end > 0 && msg.server_now) {
     seasonPhase = 'action';
     const offsetMs = Date.now() - msg.server_now * 1000;  // client - server
     seasonTimerEnd = end * 1000 + offsetMs;
-    const showForMe = seasonActiveHumans.has(myPlayerId);
     document.getElementById('season-timer-box').classList.toggle('hidden', !showForMe);
     if (showForMe && !seasonTimerInterval) startSeasonTimer();
     else updateSeasonTimerUI();
@@ -5170,6 +7098,16 @@ function syncSeasonTimerFromState(msg) {
     // Not in the action window (pre-season / resolved) — drop any stale timer.
     seasonTimerEnd = 0;
     stopSeasonTimer();
+  }
+
+  if (msg.season_phase === 'action') {
+    const btn = document.getElementById('ready-btn');
+    if (btn) {
+      btn.classList.toggle('hidden', !showForMe);
+      btn.classList.toggle('is-ready', imReady);
+      const label = document.getElementById('ready-btn-label');
+      if (label) label.textContent = imReady ? 'Done ✓ (click to undo)' : 'Done Trading ✓';
+    }
   }
 }
 
@@ -5443,12 +7381,41 @@ function buildIslandMap() {
 // see ws_adapter.action_option_payload + ACTION_GROUPS.
 const ACTION_GROUP_ORDER = ['Production', 'Trade', 'People', 'Capital', 'Finance', 'Info'];
 
+// Per-group display chrome for the accordion (Phase 3 of the UX review).
+// Keys match the server-supplied option.group values; unknown groups fall back
+// to a neutral bullet + the raw group name.
+const ACTION_GROUP_META = {
+  Production: {ico: '\u{1F528}', label: 'Make'},        // hammer
+  Trade:      {ico: '⇄',    label: 'Trade'},        // left-right arrows
+  People:     {ico: '\u{1F465}', label: 'People'},       // busts
+  Capital:    {ico: '\u{1F3D7}', label: 'Grow'},         // construction
+  Finance:    {ico: '\u{1FA99}', label: 'Money'},        // coin
+  Info:       {ico: 'ℹ',    label: 'Info'},          // information source
+};
+
+// Accordion open/pin state, persisted across re-renders so batch flows
+// (Training Desk, Capital Picker) and the "Menu" recovery button don't reset
+// the player's expanded sections mid-turn.  `_actionExpanded` starts null and
+// is initialised on the first render; `_actionPinned` locks a section open.
+let _actionExpanded = null;
+const _actionPinned = new Set();
+
+// Per-product Produce buttons carry a "produce::<key>" value; collapse them
+// back to the base "produce" action so recommended/hint matching (which keys
+// off the bare action value) still lights the right button and auto-opens the
+// Make section.
+function _baseActionValue(v) {
+  return (typeof v === 'string' && v.startsWith('produce::')) ? 'produce' : v;
+}
+
 function _renderActionButton(o) {
   const classes = [];
   if (o.value === 'produce') classes.push('highlight');
   // Server-set recommended (Codex Phase 1 default = false) OR client-set from
   // a live Decision Hint that triggers this action (Phase 4 hint wiring).
-  if (o.recommended || _currentHintActions.has(o.value)) classes.push('recommended');
+  const pending = window._pendingActions || new Set();
+  const baseVal = _baseActionValue(o.value);
+  if (o.recommended || _currentHintActions.has(baseVal) || pending.has(baseVal)) classes.push('recommended');
   const classAttr = classes.length ? ` class="${classes.join(' ')}"` : '';
   const disabled = o.enabled === false;
   const disabledAttr = disabled ? ' disabled' : '';
@@ -5458,9 +7425,22 @@ function _renderActionButton(o) {
   // #158: route the training action to the batch Training Desk dialog instead
   // of the single-request sequential wizard. The desk submits a training_batch
   // (handled independently of choose_action), so the action menu stays live.
-  const handler = o.value === 'request_training' ? 'openTrainingDesk()' : `sendResponse('${o.value}')`;
+  // Route the capital-purchase action to the #185/#188 order picker+modal
+  // (term contract / financing) instead of the legacy server-driven item
+  // prompt; the modal sends an independent capital_order so the menu stays live.
+  const handler = o.value === 'request_training' ? 'openTrainingDesk()'
+    : o.value === 'purchase_capital' ? 'openCapitalPicker()'
+    : o.value === 'market_buy' ? "openTradeBlotter('trade', {side:'buy'})"
+    : o.value === 'market_sell' ? "openTradeBlotter('trade', {side:'sell'})"
+    : `sendResponse('${o.value}')`;
   const onclick = disabled ? '' : ` onclick="${handler}"`;
-  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${esc(o.label)}</button>`;
+  // Informative sub-line: prefer a server-supplied context string (forward-
+  // compatible — the payload may start carrying `context` later), otherwise
+  // surface a disabled action's reason inline instead of only as a tooltip.
+  const sub = o.context || (disabled ? o.disabled_reason : '');
+  const subHtml = sub ? `<span class="act-sub">${esc(sub)}</span>` : '';
+  const inner = `<span class="act-main">${esc(o.label)}</span>${subHtml}`;
+  return `<button${classAttr}${disabledAttr}${titleAttr}${onclick}>${inner}</button>`;
 }
 
 // Show the "you're done — click Undo to resume" banner in place of the
@@ -5549,6 +7529,7 @@ function openTrainingDesk() {
     transport: 'air_ticket',
     tickets: 0,
     fee: 0,
+    student_loan: false,
   }];
   showDlg('Training Desk — Book Workers', _renderTrainingDesk());
 }
@@ -5592,6 +7573,9 @@ function _renderTrainingDesk() {
         <label style="flex:0 0 84px;font-size:.74rem;color:var(--dim)">Fee (Dp)
           <input type="number" min="0" value="${row.fee}" onchange="_tdEdit(${i},'fee',this.value)" style="width:100%;display:block">
         </label>
+        <label style="flex:0 0 auto;font-size:.74rem;color:var(--dim);align-self:flex-end;padding-bottom:.2rem" title="Bank finances the educator fee — worker repays over time">
+          <input type="checkbox" ${row.student_loan ? 'checked' : ''} onchange="_tdEdit(${i},'student_loan',this.checked)"> Loan
+        </label>
         <button class="btn-ghost btn-sm" onclick="_tdRemove(${i})" ${_trainingDeskRows.length <= 1 ? 'disabled' : ''} title="Remove this row">✕</button>
       </div>
     </div>`;
@@ -5626,7 +7610,7 @@ function _tdAddRow() {
   const opts = _myTrainingOptions();
   const first = opts && opts.professions[0];
   if (!first) return;
-  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0 });
+  _trainingDeskRows.push({ profession: first.value, count: 1, transport: 'air_ticket', tickets: 0, fee: 0, student_loan: false });
   _rerenderTrainingDesk();
 }
 
@@ -5644,6 +7628,7 @@ function _tdSubmit() {
       transport_mode: r.transport,
       tickets_supplied_by_requester: r.transport === 'air_ticket' ? (parseInt(r.tickets, 10) || 0) : 0,
       dollops_to_educator: parseFloat(r.fee) || 0,
+      student_loan_requested: !!r.student_loan,
     }));
   if (!requests.length) { showToast('Add at least one worker to book.', { type: 'error' }); return; }
   _trainingDeskSeq += 1;
@@ -5699,16 +7684,89 @@ function showActionPrompt(msg) {
   const unknownGroups = Object.keys(buckets).filter(g => !ACTION_GROUP_ORDER.includes(g));
   const groups = knownGroups.concat(unknownGroups);
 
+  // A group is "recommended" when it holds any recommended / hinted / pending
+  // action — mirror the per-button logic in _renderActionButton so the panel
+  // auto-opens the section the player is being nudged toward.
+  const pending = window._pendingActions || new Set();
+  const isRec = o => { const b = _baseActionValue(o.value); return o.recommended || _currentHintActions.has(b) || pending.has(b); };
+  const recGroups = groups.filter(g => buckets[g].some(isRec));
+
+  // First render: default-open the recommended group(s), else just the first.
+  // Later renders keep whatever the player has toggled (persisted state).
+  if (_actionExpanded === null) {
+    _actionExpanded = new Set(recGroups.length ? recGroups : (groups.length ? [groups[0]] : []));
+  }
+  // Pinned sections and any section with a live recommendation stay open.
+  recGroups.forEach(g => _actionExpanded.add(g));
+  _actionPinned.forEach(g => _actionExpanded.add(g));
+
   const groupsHtml = groups.map(g => {
+    const meta = ACTION_GROUP_META[g] || {ico: '•', label: g};
     const buttons = buckets[g].map(_renderActionButton).join('');
-    return `<div class="action-group">
-      <div class="action-group-label">${esc(g)}</div>
+    const open = _actionExpanded.has(g);
+    const pinned = _actionPinned.has(g);
+    const n = buckets[g].length;
+    return `<div class="action-group${open ? '' : ' collapsed'}${pinned ? ' pinned' : ''}" data-group="${esc(g)}">
+      <div class="action-group-head" data-group="${esc(g)}">
+        <span class="ag-chev" aria-hidden="true">▶</span>
+        <span class="ag-ico" aria-hidden="true">${meta.ico}</span>
+        <span class="ag-label">${esc(meta.label)}</span>
+        <span class="ag-summary">${n} action${n === 1 ? '' : 's'}</span>
+        <button class="ag-pin" type="button" data-group="${esc(g)}"
+                title="${pinned ? 'Unpin — allow collapsing' : 'Pin this section open'}"
+                aria-label="${pinned ? 'Unpin section' : 'Pin section open'}"
+                aria-pressed="${pinned}">📌</button>
+      </div>
       <div class="action-btns">${buttons}</div>
     </div>`;
   }).join('');
 
   document.getElementById('prompt-btns').innerHTML = `<div class="action-groups">${groupsHtml}</div>`;
   document.getElementById('prompt-input').innerHTML = '';
+  _wireActionAccordion();
+}
+
+// Attach expand/collapse + pin handlers after the accordion markup lands.
+// Header click toggles the section (unless it's pinned open); the pin button
+// locks a section open across re-renders.  All state lives in the module-level
+// _actionExpanded / _actionPinned sets so it survives menu re-renders.
+function _wireActionAccordion() {
+  const root = document.getElementById('prompt-btns');
+  if (!root) return;
+  root.querySelectorAll('.action-group-head').forEach(head => {
+    head.addEventListener('click', e => {
+      if (e.target.closest('.ag-pin')) return;   // pin has its own handler
+      const g = head.dataset.group;
+      if (_actionPinned.has(g)) return;           // pinned = locked open
+      const sec = head.closest('.action-group');
+      const nowCollapsed = !sec.classList.contains('collapsed');
+      sec.classList.toggle('collapsed', nowCollapsed);
+      if (nowCollapsed) _actionExpanded.delete(g);
+      else _actionExpanded.add(g);
+    });
+  });
+  root.querySelectorAll('.ag-pin').forEach(pin => {
+    pin.addEventListener('click', e => {
+      e.stopPropagation();
+      const g = pin.dataset.group;
+      const sec = pin.closest('.action-group');
+      if (_actionPinned.has(g)) {
+        _actionPinned.delete(g);
+        sec.classList.remove('pinned');
+        pin.setAttribute('aria-pressed', 'false');
+        pin.title = 'Pin this section open';
+        pin.setAttribute('aria-label', 'Pin section open');
+      } else {
+        _actionPinned.add(g);
+        _actionExpanded.add(g);
+        sec.classList.add('pinned');
+        sec.classList.remove('collapsed');
+        pin.setAttribute('aria-pressed', 'true');
+        pin.title = 'Unpin — allow collapsing';
+        pin.setAttribute('aria-label', 'Unpin section');
+      }
+    });
+  });
 }
 
 // Standard cancel button for any modal — sends the CANCEL_SENTINEL to the
@@ -5780,13 +7838,19 @@ function submitNumberInput(id) {
 
 function showQuantityInput(msg) {
   _activePromptType = 'dialog';
+  const prefill = (typeof msg.prefill === 'number') ? ` value="${msg.prefill}"` : '';
   showDlg(msg.prompt, `
-    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}" placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
+    <input type="number" id="qty-in" inputmode="numeric" min="${msg.min}" max="${msg.max}"${prefill} placeholder="${msg.min}–${msg.max}" style="width:100%;margin:.5rem 0"/>
     <div style="display:flex;gap:.5rem">
       <button class="btn-primary" style="flex:1" onclick="submitNumberInput('qty-in')">OK</button>
       ${CANCEL_BTN_HTML}
     </div>
   `);
+  // Pre-select the prefilled value so the player can overtype it immediately.
+  if (prefill) {
+    const el = document.getElementById('qty-in');
+    if (el) { el.focus(); el.select(); }
+  }
 }
 
 function showDollopInput(msg) {
@@ -5884,6 +7948,64 @@ function _marketBuyHeaderRow() {
     + '</tr></thead>';
 }
 
+function _renderMyMarketOrders() {
+  const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
+  const offers = orders.offers || [];
+  const bids = orders.bids || [];
+  if (!offers.length && !bids.length) return '';
+  const row = (side, o) => {
+    const id = side === 'ask' ? o.offer_id : o.bid_id;
+    const tone = side === 'ask' ? 'var(--gold)' : 'var(--green)';
+    return `<div class="mkt-row" style="gap:.45rem">
+      <span class="res">${side === 'ask' ? 'Ask' : 'Bid'} · ${esc(o.resource)}</span>
+      <span class="price" style="color:${tone};font-size:.76rem">${o.remaining} @ ${Number(o.price_per_unit).toFixed(2)} Dp</span>
+      <button class="btn-ghost btn-sm" onclick="marketOrderCancel('${side}', ${id})" title="Cancel this order">Cancel</button>
+      ${o.remaining > 1 ? `<button class="btn-ghost btn-sm" onclick="marketOrderReduce('${side}', ${id}, ${o.remaining})" title="Reduce this order quantity">Reduce</button>` : ''}
+    </div>`;
+  };
+  return `<div style="margin:.45rem 0 .65rem">
+    <div style="font-size:.74rem;color:var(--dim);font-weight:700;margin-bottom:.25rem">Your open orders</div>
+    ${offers.map(o => row('ask', o)).join('')}
+    ${bids.map(o => row('bid', o)).join('')}
+  </div>`;
+}
+
+function marketOrderCancel(side, orderId) {
+  sendWsMessage({
+    type: 'market_order_update',
+    side,
+    action: 'cancel',
+    order_id: orderId,
+  });
+}
+
+function marketOrderReduce(side, orderId, currentRemaining) {
+  showPromptModal('Reduce Order', {
+    submitLabel: 'Reduce',
+    fields: [{
+      name: 'remaining',
+      label: 'New remaining quantity',
+      type: 'number',
+      placeholder: String(Math.max(0, currentRemaining - 1)),
+      validate: (v) => {
+        const n = parseInt(v, 10);
+        if (!Number.isFinite(n) || n < 0) return 'Enter zero or a positive quantity.';
+        if (n >= currentRemaining) return 'Enter a quantity lower than the current remaining amount.';
+        return null;
+      },
+    }],
+    onSubmit: (vals) => {
+      sendWsMessage({
+        type: 'market_order_update',
+        side,
+        action: 'reduce',
+        order_id: orderId,
+        remaining: parseInt(vals.remaining, 10),
+      });
+    },
+  });
+}
+
 function showMarketBuyPopup(msg) {
   // Mark this as an active IO-driven prompt so hint buttons are suppressed
   // while the modal is open.  Without this, _activePromptType stays
@@ -5935,6 +8057,7 @@ function showMarketBuyPopup(msg) {
       Opened from a Decision Hint about <strong>${esc(focusResource)}</strong> — the row is pinned at the top and highlighted.
     </div>`;
   }
+  html += _renderMyMarketOrders();
 
   // Primary table: hint-mentioned + live market rows.
   const primary = tier1.concat(tier2);
@@ -6262,6 +8385,9 @@ function addLog(text, cls = '') {
     div.classList.add('log-mine');
   }
   div.textContent = text;
+  if (_logSearchTerm && !text.toLowerCase().includes(_logSearchTerm)) {
+    div.classList.add('log-search-hidden');
+  }
   log.appendChild(div);
   const lines = log.querySelectorAll('.g-log-line');
   const excess = lines.length - LOG_DOM_MAX;
@@ -6281,6 +8407,36 @@ function setLogFilter(f) {
   document.querySelectorAll('#log-filter-bar .lf-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.f === f));
   try { localStorage.setItem('it_log_filter', f); } catch (e) {}
+}
+
+// --- Log text search (combines with the category filter above) ---
+let _logSearchTerm = '';
+function applyLogSearch(term) {
+  _logSearchTerm = (term || '').trim().toLowerCase();
+  const box = document.getElementById('log-search');
+  if (box) box.classList.toggle('has-text', _logSearchTerm.length > 0);
+  const log = document.getElementById('event-log');
+  if (!log) return;
+  log.querySelectorAll('.g-log-line').forEach(line => {
+    const hit = !_logSearchTerm
+      || (line.textContent || '').toLowerCase().includes(_logSearchTerm);
+    line.classList.toggle('log-search-hidden', !hit);
+  });
+  // Earlier (trimmed) lines are held off-DOM; surface them so a search can
+  // reach the full history rather than only the visible tail.
+  if (_logSearchTerm && _logEarlier.length) {
+    const btn = document.getElementById('log-earlier-btn');
+    if (btn) btn.click();
+    log.querySelectorAll('.g-log-line').forEach(line => {
+      const hit = (line.textContent || '').toLowerCase().includes(_logSearchTerm);
+      line.classList.toggle('log-search-hidden', !hit);
+    });
+  }
+}
+function clearLogSearch() {
+  const input = document.getElementById('log-search-input');
+  if (input) input.value = '';
+  applyLogSearch('');
 }
 
 // --- Modular layout: hide/collapse panels + presets ---
@@ -6389,10 +8545,25 @@ function applyLayoutPreset(name) {
   applyLayoutState((LAYOUT_PRESETS[name] || []).slice());
   closeLayoutMenu();
 }
+// The popup is portaled to <body> the first time it opens (see below) so it
+// escapes the containing-block trap created by .g-hdr's backdrop-filter,
+// which was making it paint underneath .g-main despite z-index (colour box
+// visible, rows never shown). Once portaled it stays a child of <body> and
+// is repositioned against the button's live position on every open.
 function toggleLayoutMenu(ev) {
   if (ev) ev.stopPropagation();
   const pop = document.getElementById('layout-pop');
-  if (pop) pop.classList.toggle('open');
+  const btn = document.getElementById('layout-btn');
+  if (!pop || !btn) return;
+  if (pop.parentElement !== document.body) document.body.appendChild(pop);
+  const opening = !pop.classList.contains('open');
+  pop.classList.toggle('open');
+  if (opening) {
+    const r = btn.getBoundingClientRect();
+    pop.style.top = `${r.bottom + 4}px`;
+    pop.style.left = 'auto';
+    pop.style.right = `${window.innerWidth - r.right}px`;
+  }
 }
 function closeLayoutMenu() {
   const pop = document.getElementById('layout-pop');
@@ -6400,7 +8571,10 @@ function closeLayoutMenu() {
 }
 document.addEventListener('click', (e) => {
   const menu = document.querySelector('.layout-menu');
-  if (menu && !menu.contains(e.target)) closeLayoutMenu();
+  const pop = document.getElementById('layout-pop');
+  const insideMenu = menu && menu.contains(e.target);
+  const insidePop = pop && pop.contains(e.target);
+  if (!insideMenu && !insidePop) closeLayoutMenu();
 });
 function restoreLayoutPrefs() {
   try {

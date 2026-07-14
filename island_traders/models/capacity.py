@@ -49,6 +49,13 @@ class CapitalItem:
     # sentinel like -1.0 to mean "actually nothing" if needed — for now
     # 0.0 triggers the default).
     maintenance_per_season: float = 0.0
+    # Manufacturer capacity consumed to build this item. A light tool is 1;
+    # large plant, aircraft, shipyards, labs, and theatres consume more.
+    capacity_units: int = 1
+    # Counts toward the seasonal grid-electricity Oil surcharge. Defaults to
+    # False so mobile fuel-burners, storage, offices, and classrooms are not
+    # double-charged beyond their existing production inputs.
+    energy_intensive: bool = False
     # Optional lease terms; when set, this capital item can be financed
     # through the lease subsystem.
     lease_terms: dict | None = None

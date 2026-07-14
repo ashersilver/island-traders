@@ -51,6 +51,24 @@ def _request(target: str, worker_count: int = 1, educator_id: int = 1) -> Traini
     )
 
 
+def _self_training_request(
+    target: str,
+    worker_ids: list[int],
+    educator_id: int = 1,
+) -> TrainingRequest:
+    return TrainingRequest(
+        batch_id=100,
+        requester_id=educator_id,
+        worker_ids=worker_ids,
+        educator_id=educator_id,
+        transporter_id=None,
+        dollops_to_educator=0.0,
+        dollops_to_transporter=0.0,
+        target_profession=target,
+        transport_mode="self_training",
+    )
+
+
 def _staff(educator: Player, profession: Profession, count: int) -> None:
     educator.workforce.add_workers(
         count, training_level=1, profession=profession.value
@@ -92,10 +110,10 @@ def test_technical_capacity_min_of_2x_td_and_instructors_staffing_only():
     educator = _player(1, "Educator")
     _staff(educator, Profession.TECHNICAL_DIRECTOR, 2)
     _staff(educator, Profession.INSTRUCTOR, 3)
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     assert tm._technical_course_capacity(educator) == 3
 
-    educator.capital_inventory.clear()
+    educator.capital_units.clear()
     # Staffing unchanged — workshop check happens separately.
     assert tm._technical_course_capacity(educator) == 3
 
@@ -204,6 +222,74 @@ def test_capacity_blocks_third_manager_course_when_lecturers_pinned():
     assert "Manager-course staffing full: 2/2" in msg
 
 
+def test_faculty_self_training_reserved_lane_breaks_manager_deadlock():
+    """Diagnosis: the old gate was `_training_capacity_status` counting
+    already-approved/dispatched Manager courses against the same Professor /
+    Lecturer staffing pool used for self-training. With capacity saturated,
+    Lecturer self-training was rejected, so Education could not grow the
+    faculty needed to serve more external requests."""
+    training = TrainingRegistry()
+    tm = _turn_manager(training)
+    educator = _player(1, "Educator")
+    _staff(educator, Profession.PROFESSOR, 1)
+    _staff(educator, Profession.LECTURER, 1)
+    trainee = educator.workforce.add_workers(1)[0]
+    _fund_training(educator, courses=4, expertise=4)
+
+    external = training.propose(
+        0, [10], educator.player_id, 0.0, target_profession=Profession.BANKER.value
+    )
+    training.educator_approve(external.batch_id)
+    training.dispatch(external.batch_id, year=0, season=0, num_seasons=4)
+    assert tm._manager_course_capacity(educator) == 1
+    assert training.manager_courses_in_flight(educator.player_id) == 1
+
+    self_req = training.propose(
+        educator.player_id,
+        [trainee.worker_id],
+        educator.player_id,
+        0.0,
+        target_profession=Profession.LECTURER.value,
+        year=0,
+        season=0,
+        transport_mode="self_training",
+        duration_seasons=1,
+    )
+
+    ok, msg = tm._training_capacity_status(educator, self_req, 0, 0)
+    assert ok, msg
+    assert "reserved faculty self-training lane" in tm._self_training_reserved_lane_note(
+        educator, self_req, 0, 0
+    )
+
+    tm._consume_training_capacity(educator, self_req, 0, 0)
+    training.educator_approve(self_req.batch_id)
+    training.dispatch(self_req.batch_id, year=0, season=0, num_seasons=1)
+    educator.workforce.dispatch_for_training(self_req.worker_ids)
+
+    second = _self_training_request(
+        Profession.PROFESSOR.value, [trainee.worker_id + 1], educator.player_id
+    )
+    ok2, msg2 = tm._training_capacity_status(educator, second, 0, 0)
+    assert not ok2
+    assert "faculty self-training reserved lane full: 1/1" in msg2
+
+    completed = training.process_returns(
+        year=self_req.return_year,
+        season=self_req.return_season,
+    )
+    assert completed == [self_req]
+    returned = educator.workforce.return_from_training(
+        self_req.worker_ids, self_req.target_profession
+    )
+    assert len(returned) == 1
+    assert educator.workforce.count_profession(Profession.LECTURER.value) == 2
+
+    next_external = _request(Profession.BANKER.value, worker_count=1)
+    ok3, msg3 = tm._training_capacity_status(educator, next_external, 0, 1)
+    assert ok3, msg3
+
+
 def test_technical_workshop_capital_item_renamed():
     item = find_item(CAPITAL_CATALOGUE, "educator.technical_workshop")
     assert item is not None
@@ -239,7 +325,7 @@ def test_technical_workshop_caps_trainee_headcount():
     _staff(educator, Profession.INSTRUCTOR, 6)
     _fund_training(educator)
     # 1 workshop = 6 trainee seats.
-    educator.capital_inventory["educator.technical_workshop"] = 1
+    educator.add_capital("educator.technical_workshop", 1)
 
     # First batch of 4 trainees fits (6 - 0 = 6 seats free; uses 4).
     # Bypass propose() to avoid the annual university intake cap — this
@@ -275,7 +361,7 @@ def test_technical_workshop_caps_trainee_headcount():
     assert "4/6 trainee seat(s)" in msg
 
     # With a second workshop the same batch fits (12 - 4 = 8 free; uses 3).
-    educator.capital_inventory["educator.technical_workshop"] = 2
+    educator.add_capital("educator.technical_workshop", 2)
     ok2, _ = tm._training_capacity_status(educator, req2)
     assert ok2 is True
 
@@ -294,6 +380,13 @@ def test_technical_workshop_is_mandatory_minimum_for_educator():
     banker_quote_rate (posted funding + 2% margin + borrower risk)."""
     from island_traders.constants_capacity import MANDATORY_MINIMUM_INVESTMENT
     assert "educator.technical_workshop" in MANDATORY_MINIMUM_INVESTMENT["Educator"]
+
+
+def test_shipyard_is_mandatory_minimum_for_manufacturer():
+    """TransportEquipment is a live manufacturer product line, so opening
+    setup needs a capital path that makes it buildable."""
+    from island_traders.constants_capacity import MANDATORY_MINIMUM_INVESTMENT
+    assert "manufacturer.shipyard" in MANDATORY_MINIMUM_INVESTMENT["Manufacturer"]
 
 
 def test_legacy_apprenticeship_slot_callers_updated():

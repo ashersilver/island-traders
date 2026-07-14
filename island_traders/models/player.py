@@ -4,14 +4,15 @@ from math import ceil
 from .role import Role
 from .resource import ResourceBundle, ResourceType
 from .workforce import Workforce
-from .profession import Profession
+from .profession import Profession, WorkerBand
 from .insurance import InsurancePolicy
 from .equity import CapTable
 from ..constants import (
-    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL,
+    PRODUCTION_INPUTS, BASE_PRODUCTION, CURRENCY_SYMBOL, SEASONS,
     MAX_WORKFORCE_FRACTION_OF_POPULATION,
     FARMER_SEASONAL_CONVERSION, MANUFACTURER_PRODUCT_LINES,
-    PEOPLE_PER_MEAL,
+    PEOPLE_PER_MEAL, EQUIPMENT_MAINTENANCE_CONTRACT_PER_100,
+    ENERGY_BASE, ENERGY_DIVISOR,
 )
 
 
@@ -23,6 +24,107 @@ EQUIPMENT_RESOURCE_CAPITAL: dict[ResourceType, tuple[str, str]] = {
     ResourceType.FARM_MACHINERY: ("Farmer", "farmer.tractor"),
     ResourceType.MINING_EQUIPMENT: ("Miner", "miner.excavator"),
 }
+
+
+@dataclass
+class CapitalUnit:
+    """A single owned capital item, tracked individually (#185 / #188).
+
+    Conditions chosen at purchase are stored per unit so failure, repair and
+    pricing can vary by what the buyer ordered.  ``purchase_value`` is the list
+    price paid and is the intended basis for warranty premiums and the repair
+    fee.  Phase 2 introduces the record with behaviour-preserving defaults; the
+    order-time conditions and ``purchase_value`` are populated by the order /
+    delivery flow in later phases, so until then the engine still prices off
+    the catalogue ``CapitalItem.cost``.
+    """
+    item_id: str
+    acquired_tick: int = 0
+    unit_id: int = 0
+    purchase_value: float = 0.0
+    # --- conditions captured at purchase (the #185 order form) ---
+    maintenance_term_years: int = 0
+    predictive_maintenance: bool = False
+    guarantee_seasons: int = 1            # resolved #185 decision: 1 season, no charge
+    warranty: bool = False
+    spares_attached: int = 0
+    expedited_eligible: bool = False
+    # --- runtime state ---
+    status: str = "in_service"            # in_service | failed
+    repair_completes_at_tick: int | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "item_id": self.item_id,
+            "acquired_tick": self.acquired_tick,
+            "unit_id": self.unit_id,
+            "purchase_value": self.purchase_value,
+            "maintenance_term_years": self.maintenance_term_years,
+            "predictive_maintenance": self.predictive_maintenance,
+            "guarantee_seasons": self.guarantee_seasons,
+            "warranty": self.warranty,
+            "spares_attached": self.spares_attached,
+            "expedited_eligible": self.expedited_eligible,
+            "status": self.status,
+            "repair_completes_at_tick": self.repair_completes_at_tick,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "CapitalUnit":
+        return cls(
+            item_id=str(raw.get("item_id", "")),
+            acquired_tick=int(raw.get("acquired_tick", 0)),
+            unit_id=int(raw.get("unit_id", 0)),
+            purchase_value=float(raw.get("purchase_value", 0.0)),
+            maintenance_term_years=int(raw.get("maintenance_term_years", 0)),
+            predictive_maintenance=bool(raw.get("predictive_maintenance", False)),
+            guarantee_seasons=int(raw.get("guarantee_seasons", 1)),
+            warranty=bool(raw.get("warranty", False)),
+            spares_attached=int(raw.get("spares_attached", 0)),
+            expedited_eligible=bool(raw.get("expedited_eligible", False)),
+            status=str(raw.get("status", "in_service")),
+            repair_completes_at_tick=raw.get("repair_completes_at_tick"),
+        )
+
+
+def capital_unit_from_order(
+    item_id: str, order: dict | None, acquired_tick: int, unit_id: int = 0,
+) -> CapitalUnit:
+    """Build a CapitalUnit carrying the #185 order-form conditions.
+
+    ``order`` is the order payload captured at purchase (see
+    ``Player.place_capital_order``); the form's ``spares_kits`` count maps to
+    the unit's ``spares_attached``.  Missing keys fall back to the same
+    defaults as a plain purchase (guarantee 1 season, no maintenance/warranty).
+    """
+    order = order or {}
+    return CapitalUnit(
+        item_id=item_id,
+        acquired_tick=acquired_tick,
+        unit_id=unit_id,
+        purchase_value=float(order.get("purchase_value", 0.0)),
+        maintenance_term_years=int(order.get("maintenance_term_years", 0)),
+        predictive_maintenance=bool(order.get("predictive_maintenance", False)),
+        guarantee_seasons=int(order.get("guarantee_seasons", 1)),
+        warranty=bool(order.get("warranty", False)),
+        spares_attached=int(order.get("spares_kits", order.get("spares_attached", 0))),
+        expedited_eligible=bool(order.get("expedited_eligible", False)),
+    )
+
+
+def maintenance_contract_cost(
+    purchase_value: float, term_years: int, predictive: bool,
+) -> float:
+    """Upfront #188 maintenance/warranty contract cost for one unit.
+
+    Looks up the per-$100 term price (baseline vs Predictive Maintenance) and
+    scales it to ``purchase_value``.  Returns 0.0 for no/invalid term.
+    """
+    rate = EQUIPMENT_MAINTENANCE_CONTRACT_PER_100.get(int(term_years))
+    if rate is None or purchase_value <= 0:
+        return 0.0
+    per_100 = rate[1] if predictive else rate[0]
+    return round(per_100 * purchase_value / 100.0, 2)
 
 
 def _allocate_raw_meals(
@@ -165,13 +267,16 @@ class Player:
     # Resident household spending pool. Payroll flows here from the island
     # treasury, then households spend it on end products.
     household_cash: float = 0.0
-    # Capital equipment owned by this player, keyed by CapitalItem.item_id.
-    # Populated during the Investing Phase and via mid-game purchases.
-    # See `island_traders.constants_capacity.CAPITAL_CATALOGUE`.
-    capital_inventory: dict[str, int] = field(default_factory=dict)
-    # Acquisition ticks for owned capital, keyed by item_id. Tick = year*4 + season.
-    # Used for straight-line book value depreciation over 5 years.
-    capital_acquired_ticks: dict[str, list[int]] = field(default_factory=dict)
+    ce_history: list[float] = field(default_factory=lambda: [0.0] * len(SEASONS))
+    ce_penalty: float = 0.0
+    # Capital equipment owned by this player, tracked as individual units
+    # (#185 / #188): CapitalItem.item_id -> list[CapitalUnit].  This is the
+    # source of truth; `capital_inventory`, `capital_acquired_ticks`,
+    # `capital_warranties` and `failed_capital` are derived read-only views
+    # (below) for the many count-based readers.  Populated during the Investing
+    # Phase and via mid-game purchases.  See
+    # `island_traders.constants_capacity.CAPITAL_CATALOGUE`.
+    capital_units: dict[str, list[CapitalUnit]] = field(default_factory=dict)
     # Capital items purchased mid-game that are still in transit.
     # Each entry: {"item_id": str, "arrives_at_tick": int (year*4 + season_index)}.
     capital_in_transit: list[dict] = field(default_factory=list)
@@ -180,20 +285,21 @@ class Player:
     # Unmaintained units contribute 0 capacity until paid; reset by the
     # next season's maintenance step.  Not persisted in save files.
     unmaintained_capital: dict[str, int] = field(default_factory=dict)
-    # Equipment warranties (#130): item_id -> warranted unit count.  Warranted
-    # units pay an annual premium to the Manufacturer and do not roll failure.
-    capital_warranties: dict[str, int] = field(default_factory=dict)
-    # Failed equipment units that contribute 0 capacity until repaired.
-    failed_capital: dict[str, int] = field(default_factory=dict)
     # Paid ship repairs that complete on a future tick.  Each entry:
     # {"item_id": str, "count": int, "completes_at_tick": int}.
     capital_repair_in_progress: list[dict] = field(default_factory=list)
+    # Manufacturer durable equipment units produced in the current season.
+    # Reset by Game._process_capital_maintenance at each season boundary.
+    manufacturer_durable_output_used: int = 0
     # Active patents this player has bought, keyed by output resource name.
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        self._season_revenue = 0.0
+        self._season_costs = 0.0
+        self._pl_history = []
         self._oil_consumed_this_year = 0
         self._food_demanded_this_year = 0
         self._food_bought_this_year = 0
@@ -204,6 +310,25 @@ class Player:
         self._health_coverage = 0.0
         self._pollution_index = 0.0
         self._qol_observed_years = 0
+        self._qol_index = 50.0
+        self._qol_breakdown = {}
+        self._qol_productivity_multiplier = 1.0
+        self._qol_meals_needed_this_season = 0
+        self._qol_meals_satisfied_this_season = 0
+        self._qol_food_variety_this_season = set()
+        self._qol_goods_demanded_this_season = 0
+        self._qol_goods_bought_this_season = 0
+        self._qol_active_nurses_this_season = 0
+        self._qol_medical_insurance_active = False
+        self._qol_untreated_sidelined_this_season = 0
+        self._qol_treated_this_season = 0
+        self._qol_medevacs_this_season = 0
+        # Monotonic id source for CapitalUnit.unit_id (per player); start above
+        # any ids already present (e.g. when loaded from a save).
+        self._capital_unit_seq = max(
+            (u.unit_id for units in self.capital_units.values() for u in units),
+            default=0,
+        )
 
     # --- Equity / balance-sheet split (Phase 1, additive) ------------------
     # `dollops` (above) is the ISLAND's operating treasury.  `personal_cash`
@@ -243,89 +368,227 @@ class Player:
             total += shares * share_price_by_island.get(str(island_id), 0.0)
         return total
 
+    # ----- derived count/tick views over the per-unit source of truth -----
+
+    @property
+    def capital_inventory(self) -> dict[str, int]:
+        """Owned-unit count per item_id (derived from ``capital_units``)."""
+        return {
+            item_id: len(units)
+            for item_id, units in self.capital_units.items()
+            if units
+        }
+
+    @capital_inventory.setter
+    def capital_inventory(self, value: dict[str, int]) -> None:
+        """Rebuild units from a {item_id: count} map (bulk seeding / tests).
+
+        Conditions reset to defaults and acquisition tick 0; callers needing
+        ages or order conditions should use ``add_capital`` instead.
+        """
+        self.capital_units = {}
+        for item_id, count in value.items():
+            if count > 0:
+                self.add_capital(item_id, int(count))
+
+    @property
+    def capital_acquired_ticks(self) -> dict[str, list[int]]:
+        """Acquisition ticks per item_id, in unit (oldest-first) order."""
+        return {
+            item_id: [u.acquired_tick for u in units]
+            for item_id, units in self.capital_units.items()
+            if units
+        }
+
+    @property
+    def capital_warranties(self) -> dict[str, int]:
+        """Warranted-unit count per item_id."""
+        out: dict[str, int] = {}
+        for item_id, units in self.capital_units.items():
+            n = sum(1 for u in units if u.warranty)
+            if n:
+                out[item_id] = n
+        return out
+
+    @property
+    def failed_capital(self) -> dict[str, int]:
+        """Failed-unit count per item_id (down until repaired)."""
+        out: dict[str, int] = {}
+        for item_id, units in self.capital_units.items():
+            n = sum(1 for u in units if u.status == "failed")
+            if n:
+                out[item_id] = n
+        return out
+
     def effective_capital_inventory(self) -> dict[str, int]:
         """Capital available for production this season.
 
-        Identical to ``capital_inventory`` minus this season's
-        ``unmaintained_capital`` counts — unmaintained units contribute
-        zero capacity until paid (Phase C capital lifecycle).
+        In-service (non-failed) units minus this season's
+        ``unmaintained_capital`` counts — failed and unmaintained units
+        contribute zero capacity until repaired/paid (Phase C lifecycle).
         """
-        if not self.unmaintained_capital and not self.failed_capital:
-            return self.capital_inventory
-        return {
-            item_id: max(
-                0,
-                count
-                - self.unmaintained_capital.get(item_id, 0)
-                - self.failed_capital.get(item_id, 0),
-            )
-            for item_id, count in self.capital_inventory.items()
-        }
+        result: dict[str, int] = {}
+        for item_id, units in self.capital_units.items():
+            in_service = sum(1 for u in units if u.status == "in_service")
+            n = in_service - self.unmaintained_capital.get(item_id, 0)
+            if n > 0:
+                result[item_id] = n
+        return result
 
-    def add_capital(self, item_id: str, count: int = 1, acquired_tick: int = 0) -> None:
-        """Add `count` of a capital item to the inventory (e.g. on delivery)."""
-        self.capital_inventory[item_id] = self.capital_inventory.get(item_id, 0) + count
-        ticks = self.capital_acquired_ticks.setdefault(item_id, [])
-        ticks.extend([acquired_tick] * count)
+    def owned_capital_capacity_units(self, catalogue=None) -> int:
+        """Total capacity-unit footprint of owned capital, including failed units."""
+        if catalogue is None:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            catalogue = CAPITAL_CATALOGUE
+        by_id = {item.item_id: item for item in catalogue}
+        total = 0
+        for item_id, count in self.capital_inventory.items():
+            item = by_id.get(item_id)
+            unit_size = max(1, int(getattr(item, "capacity_units", 1))) if item else 1
+            total += unit_size * count
+        return total
+
+    def energy_intensive_capacity_units(self, catalogue=None) -> int:
+        """Total capacity units from fixed, grid-powered heavy plant."""
+        if catalogue is None:
+            from ..constants_capacity import CAPITAL_CATALOGUE
+            catalogue = CAPITAL_CATALOGUE
+        by_id = {item.item_id: item for item in catalogue}
+        total = 0
+        for inventory in (self.capital_inventory, self.failed_capital):
+            for item_id, count in inventory.items():
+                item = by_id.get(item_id)
+                if not item or not getattr(item, "energy_intensive", False):
+                    continue
+                total += max(1, int(getattr(item, "capacity_units", 1))) * count
+        return total
+
+    def energy_floor_oil_required(self, catalogue=None) -> int:
+        """Per-season building-power Oil floor for this island."""
+        from math import ceil
+
+        units = self.energy_intensive_capacity_units(catalogue)
+        return ENERGY_BASE + ceil(units / max(1, ENERGY_DIVISOR))
+
+    def spares_capacity(self) -> int:
+        """Total generic-spares storage from maintained warehouse capital."""
+        from ..constants_capacity import CAPITAL_CATALOGUE
+        from .capacity import find_item
+
+        capacity = 0
+        for item_id, count in self.effective_capital_inventory().items():
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            if not item:
+                continue
+            capacity += int(item.effects.get("spares_storage", 0)) * count
+        return capacity
+
+    def add_capital(
+        self,
+        item_id: str,
+        count: int = 1,
+        acquired_tick: int = 0,
+        units: list[CapitalUnit] | None = None,
+    ) -> None:
+        """Add capital units (e.g. on delivery).
+
+        Pass pre-built ``units`` (carrying order-time conditions) to attach
+        them directly; otherwise ``count`` plain units are created at
+        ``acquired_tick`` with default conditions.
+        """
+        lst = self.capital_units.setdefault(item_id, [])
+        if units is not None:
+            for u in units:
+                self._capital_unit_seq += 1
+                if not u.unit_id:
+                    u.unit_id = self._capital_unit_seq
+                lst.append(u)
+            return
+        for _ in range(count):
+            self._capital_unit_seq += 1
+            lst.append(CapitalUnit(
+                item_id=item_id,
+                acquired_tick=acquired_tick,
+                unit_id=self._capital_unit_seq,
+            ))
 
     def add_capital_warranty(self, item_id: str, count: int = 1) -> int:
         """Warranty up to ``count`` owned, unwarranted units of ``item_id``."""
-        owned = self.capital_inventory.get(item_id, 0)
-        current = self.capital_warranties.get(item_id, 0)
-        add = max(0, min(count, owned - current))
-        if add > 0:
-            self.capital_warranties[item_id] = current + add
-        return add
+        added = 0
+        for u in self.capital_units.get(item_id, []):
+            if added >= count:
+                break
+            if not u.warranty:
+                u.warranty = True
+                added += 1
+        return added
 
     def mark_capital_failed(self, item_id: str, count: int = 1) -> int:
         """Mark up to ``count`` in-service units down for repair."""
-        owned = self.capital_inventory.get(item_id, 0)
-        failed = self.failed_capital.get(item_id, 0)
-        add = max(0, min(count, owned - failed))
-        if add > 0:
-            self.failed_capital[item_id] = failed + add
-        return add
+        marked = 0
+        for u in self.capital_units.get(item_id, []):
+            if marked >= count:
+                break
+            if u.status == "in_service":
+                u.status = "failed"
+                marked += 1
+        return marked
 
     def complete_capital_repair(self, item_id: str, count: int = 1) -> int:
-        failed = self.failed_capital.get(item_id, 0)
-        repaired = max(0, min(count, failed))
-        if repaired > 0:
-            remaining = failed - repaired
-            if remaining:
-                self.failed_capital[item_id] = remaining
-            else:
-                self.failed_capital.pop(item_id, None)
+        """Return up to ``count`` failed units of ``item_id`` to service."""
+        repaired = 0
+        for u in self.capital_units.get(item_id, []):
+            if repaired >= count:
+                break
+            if u.status == "failed":
+                u.status = "in_service"
+                u.repair_completes_at_tick = None
+                repaired += 1
         return repaired
 
     def remove_capital(self, item_id: str, count: int = 1) -> int:
-        """Remove up to `count` of a capital item (e.g. destroyed by event).
-        Returns the actual count removed."""
-        have = self.capital_inventory.get(item_id, 0)
-        n = min(have, count)
+        """Remove up to `count` of a capital item, oldest first (e.g.
+        expiry or destroyed by event).  Returns the actual count removed."""
+        units = self.capital_units.get(item_id, [])
+        n = min(len(units), count)
         if n > 0:
-            self.capital_inventory[item_id] = have - n
-            ticks = self.capital_acquired_ticks.get(item_id, [])
-            if ticks:
-                del ticks[:n]
-                if not ticks:
-                    self.capital_acquired_ticks.pop(item_id, None)
-            if self.capital_inventory[item_id] == 0:
-                del self.capital_inventory[item_id]
-            remaining = self.capital_inventory.get(item_id, 0)
-            if self.capital_warranties.get(item_id, 0) > remaining:
-                if remaining:
-                    self.capital_warranties[item_id] = remaining
-                else:
-                    self.capital_warranties.pop(item_id, None)
-            if self.failed_capital.get(item_id, 0) > remaining:
-                if remaining:
-                    self.failed_capital[item_id] = remaining
-                else:
-                    self.failed_capital.pop(item_id, None)
+            del units[:n]
+            if not units:
+                self.capital_units.pop(item_id, None)
         return n
 
     def capital_count(self, item_id: str) -> int:
         return self.capital_inventory.get(item_id, 0)
+
+    def place_capital_order(
+        self,
+        item_id: str,
+        order: dict | None,
+        current_tick: int,
+        delivery_seasons: int,
+    ) -> int:
+        """Place a capital order (#185), delivering now or after the build time.
+
+        ``order`` carries the chosen order-form conditions (see
+        ``capital_unit_from_order``); pass ``None`` for a plain purchase.  When
+        ``delivery_seasons`` is positive the order rides on ``capital_in_transit``
+        and ``deliver_in_transit`` materialises the unit on arrival.  Returns the
+        tick the equipment is/was delivered.
+        """
+        if delivery_seasons <= 0:
+            if order:
+                self.add_capital(item_id, units=[
+                    capital_unit_from_order(item_id, order, current_tick)
+                ])
+            else:
+                self.add_capital(item_id, 1, acquired_tick=current_tick)
+            return current_tick
+        arrives_at = current_tick + delivery_seasons
+        entry: dict = {"item_id": item_id, "arrives_at_tick": arrives_at}
+        if order:
+            entry["order"] = dict(order)
+        self.capital_in_transit.append(entry)
+        return arrives_at
 
     def deliver_in_transit(self, current_tick: int) -> list[str]:
         """Move items whose arrival tick has passed into capital_inventory.
@@ -334,12 +597,38 @@ class Player:
         remaining: list[dict] = []
         for entry in self.capital_in_transit:
             if entry["arrives_at_tick"] <= current_tick:
-                self.add_capital(entry["item_id"], 1, acquired_tick=current_tick)
+                order = entry.get("order")
+                if order:
+                    # Honour the #185 order conditions captured at purchase.
+                    self.add_capital(entry["item_id"], units=[
+                        capital_unit_from_order(entry["item_id"], order, current_tick)
+                    ])
+                else:
+                    self.add_capital(entry["item_id"], 1, acquired_tick=current_tick)
                 delivered.append(entry["item_id"])
             else:
                 remaining.append(entry)
         self.capital_in_transit = remaining
         return delivered
+
+    def manufacture_spares(self, count: int = 1) -> int:
+        """Manufacture generic spares into this island's inventory (#185/#188).
+
+        Spares are produced by the Manufacturer as tradable repair kits and
+        held until transferred with delivered equipment, sold, or consumed in
+        a repair.  Returns the number actually manufactured after warehouse
+        capacity is applied.
+        """
+        if count <= 0:
+            return 0
+        room_left = max(
+            0,
+            self.spares_capacity() - self.inventory.get(ResourceType.SPARES),
+        )
+        produced = min(count, room_left)
+        if produced > 0:
+            self.receive_resources(ResourceType.SPARES, produced)
+        return produced
 
     # ------------------------------------------------------------------ Patents
 
@@ -650,6 +939,25 @@ class Player:
             return
         self.inventory = self.inventory.add(rtype, qty)
 
+    def _normalised_ce_history(self) -> list[float]:
+        size = len(SEASONS)
+        values = list(getattr(self, "ce_history", []))
+        if len(values) < size:
+            values.extend([0.0] * (size - len(values)))
+        elif len(values) > size:
+            values = values[-size:]
+        self.ce_history = [float(v) for v in values]
+        return self.ce_history
+
+    def ce_ytd(self) -> float:
+        return sum(self._normalised_ce_history())
+
+    def ce_manager_count(self) -> int:
+        return self.workforce.count_by_band(WorkerBand.MANAGER)
+
+    def ce_manager_efficiency_multiplier(self) -> float:
+        return max(0.0, 1.0 - float(getattr(self, "ce_penalty", 0.0)))
+
     def _install_equipment_resource(
         self, rtype: ResourceType, qty: int, acquired_tick: int
     ) -> bool:
@@ -668,9 +976,57 @@ class Player:
                 f"{self.name} has {self.dollops:.2f} {CURRENCY_SYMBOL} but needs {amount:.2f}"
             )
         self.dollops -= amount
+        self._season_costs = round(getattr(self, "_season_costs", 0.0) + amount, 2)
 
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
+        self._season_revenue = round(getattr(self, "_season_revenue", 0.0) + amount, 2)
+
+    def count_workers(self, profession: str) -> int:
+        if profession == Profession.UNSKILLED.value:
+            return max(0, self.population - self.workforce.count)
+        return len([
+            worker for worker in self.workforce.active_workers
+            if worker.profession == profession
+        ])
+
+    def remove_workers(self, profession: str, count: int) -> list:
+        if count <= 0:
+            return []
+        if profession == Profession.UNSKILLED.value:
+            available = self.count_workers(profession)
+            if available < count:
+                raise ValueError(
+                    f"{self.name} only has {available} available {profession} workers"
+                )
+            self.population -= count
+            return []
+        selected = [
+            worker for worker in self.workforce.active_workers
+            if worker.profession == profession
+        ][:count]
+        if len(selected) < count:
+            raise ValueError(
+                f"{self.name} only has {len(selected)} available {profession} workers"
+            )
+        selected_ids = {worker.worker_id for worker in selected}
+        self.workforce.workers = [
+            worker for worker in self.workforce.workers
+            if worker.worker_id not in selected_ids
+        ]
+        return selected
+
+    def add_workers(self, profession: str, count: int, training_level: int = 1) -> list:
+        if count <= 0:
+            return []
+        if profession == Profession.UNSKILLED.value:
+            self.population += count
+            return []
+        return self.workforce.add_workers(
+            count,
+            training_level=training_level,
+            profession=profession,
+        )
 
     def wealth_breakdown(self, prices: dict[ResourceType, float],
                          loan_ledger=None, capital_catalogue=None,

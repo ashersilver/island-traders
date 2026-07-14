@@ -2,17 +2,35 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from ..constants import CURRENCY_SYMBOL
+from ..engine.cycle import BusinessCycleSnapshot, fallback_phase_for_date
+
+LOAN_COUNTER_FLOOR_SPREAD: float = 0.005
+AI_BANKER_ACCEPT_SPREAD: float = 0.01
+AI_BANKER_COUNTER_FLOOR: float = 0.0075
+CAPITAL_FINANCE_PREMIUM_PTS: float = 0.05
 
 
-def posted_funding_rates(year: int, season: int) -> dict[int, float]:
+def posted_funding_rates(
+    year: int,
+    season: int,
+    cycle: BusinessCycleSnapshot | str | None = None,
+) -> dict[int, float]:
     """Bank cost-of-funds curve for 1/2/3-year money.
 
-    Rates move through a simple economic cycle: cheap money early in the
-    cycle, tighter credit around the peak, then easing again.
+    Rates move through the shared BusinessCycle table. Callers inside a Game
+    should pass the current cycle snapshot; standalone callers fall back to a
+    deterministic cycle position for the date.
     """
-    cycle_modifiers = [-0.005, 0.0, 0.0125, 0.006]
-    cycle = (year + (season // 2)) % len(cycle_modifiers)
-    base = 0.05 + cycle_modifiers[cycle]
+    if cycle is None:
+        snapshot = fallback_phase_for_date(year, season)
+        modifier = snapshot.rate_modifier
+    elif isinstance(cycle, str):
+        snapshot = fallback_phase_for_date(year, season)
+        from ..engine.cycle import PHASES
+        modifier = PHASES.get(cycle, PHASES[snapshot.phase]).rate_modifier
+    else:
+        modifier = cycle.rate_modifier
+    base = 0.05 + modifier
     return {
         1: round(base, 4),
         2: round(base + 0.0075, 4),
@@ -40,10 +58,47 @@ def banker_quote_rate(
     term_years: int,
     year: int,
     season: int,
+    cycle: BusinessCycleSnapshot | str | None = None,
 ) -> float:
-    rates = posted_funding_rates(year, season)
+    rates = posted_funding_rates(year, season, cycle=cycle)
     cost = rates.get(term_years, rates[1])
     return round(cost + 0.02 + borrower_risk_premium(borrower, loan_ledger, principal), 4)
+
+
+def loan_counter_floor_rate(posted_rate: float) -> float:
+    return round(posted_rate + LOAN_COUNTER_FLOOR_SPREAD, 4)
+
+
+def ai_banker_accept_rate(posted_rate: float, risk_premium: float) -> float:
+    return round(posted_rate + AI_BANKER_ACCEPT_SPREAD + risk_premium, 4)
+
+
+def ai_banker_counter_rate(
+    borrower_counter: float,
+    opening_quote: float,
+    posted_rate: float,
+) -> float:
+    floor = posted_rate + AI_BANKER_COUNTER_FLOOR
+    return round(max(floor, (borrower_counter + opening_quote) / 2), 4)
+
+
+def capital_finance_rate(
+    year: int,
+    season: int,
+    cycle: BusinessCycleSnapshot | str | None = None,
+) -> float:
+    return round(
+        posted_funding_rates(year, season, cycle=cycle)[3]
+        + CAPITAL_FINANCE_PREMIUM_PTS,
+        4,
+    )
+
+
+class CapitalFinanceError(Exception):
+    """Raised when a capital order cannot be financed via the Bank.
+
+    Carries a buyer-facing message; callers should fall back to cash settlement.
+    """
 
 
 class LoanStatus(Enum):

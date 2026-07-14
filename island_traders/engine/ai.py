@@ -1,10 +1,12 @@
 from __future__ import annotations
 from math import ceil
+from collections.abc import Callable
 from ..models.player import EQUIPMENT_RESOURCE_CAPITAL, Player
 from ..models.market import Market
-from ..models.resource import ResourceType
+from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.deal import DealProposal, DealStatus
 from ..engine.events import EventResult
+from ..engine.cycle import BusinessCycleSnapshot
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
@@ -30,9 +32,11 @@ from ..constants import (
     EQUIPMENT_REPAIR_SHIP_FREIGHT,
     EQUIPMENT_WARRANTY_ANNUAL_RATE,
     FLU_SEASON,
+    MANUFACTURER_DURABLE_OUTPUTS,
+    CE_ANNUAL_PER_MANAGER,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
-from ..models.capacity import items_for_role
+from ..models.capacity import find_item, items_for_role
 
 AI_TARGET_PRODUCTION_RUNS = 2
 AI_OFFER_MARKUP = 1.0
@@ -63,6 +67,7 @@ AI_INSURANCE_MIN_FATALITY_RATE = 0.005
 AI_VACCINE_CASH_RESERVE = 50.0
 AI_HEALTH_QOL_COVERAGE_THRESHOLD = 0.5
 AI_HEALTH_QOL_CASH_RESERVE = 50.0
+AI_SPARES_TARGET_STOCK = 2
 
 
 class AIStrategy:
@@ -195,6 +200,7 @@ class AIStrategy:
         loan_ledger: LoanLedger,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> str | None:
         if borrower.is_human or banker.player_id == borrower.player_id:
             return None
@@ -208,9 +214,10 @@ class AIStrategy:
                 f"reached ({active}/{cap})"
             )
         term_years = 1
-        funding_rate = posted_funding_rates(year, season_index)[term_years]
+        funding_rate = posted_funding_rates(year, season_index, cycle=cycle)[term_years]
         rate = banker_quote_rate(
-            borrower, loan_ledger, principal, term_years, year, season_index
+            borrower, loan_ledger, principal, term_years, year, season_index,
+            cycle=cycle,
         )
         reserve_ratio = self._banker_reserve_ratio(banker)
         own_share = round(reserve_ratio * principal, 2)
@@ -258,6 +265,7 @@ class AIStrategy:
         season_name: str,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if loan_ledger is None:
             return []
@@ -279,7 +287,8 @@ class AIStrategy:
             if principal <= 0:
                 continue
             action = self._ai_issue_loan(
-                banker, borrower, principal, loan_ledger, year, season_index
+                banker, borrower, principal, loan_ledger, year, season_index,
+                cycle=cycle,
             )
             if action:
                 actions.append(action)
@@ -295,6 +304,7 @@ class AIStrategy:
         year: int,
         season_index: int,
         product_line: str | None = None,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if any(role.name == "Banker" for role in player.roles):
             return []
@@ -318,7 +328,8 @@ class AIStrategy:
                     other_players, exclude_player_id=player.player_id
                 ):
                     action = self._ai_issue_loan(
-                        banker, player, principal, loan_ledger, year, season_index
+                        banker, player, principal, loan_ledger, year, season_index,
+                        cycle=cycle,
                     )
                     if action:
                         return [action]
@@ -372,6 +383,7 @@ class AIStrategy:
         loan_ledger: LoanLedger | None,
         year: int,
         season_index: int,
+        cycle: BusinessCycleSnapshot | None = None,
     ) -> list[str]:
         if loan_ledger is None:
             return []
@@ -386,7 +398,8 @@ class AIStrategy:
             if seasons_to_maturity > 1 or player.dollops >= loan.repayment_amount:
                 continue
             new_rate = banker_quote_rate(
-                player, loan_ledger, loan.repayment_amount, 1, year, season_index
+                player, loan_ledger, loan.repayment_amount, 1, year, season_index,
+                cycle=cycle,
             )
             try:
                 new_loan = loan_ledger.rollover_loan(
@@ -700,9 +713,15 @@ class AIStrategy:
             has_human_demand = self._has_human_equipment_demand(
                 demand_players, training_registry=training_registry
             )
+        # Spares bids are excluded from the routing gate: every capital-owning
+        # AI now posts a small standing Spares bid (2 kits), so counting them
+        # made has_visible_bid ~always true and re-routed every sim game into
+        # the profit chooser. Spares still competes on score inside whichever
+        # path runs — it just doesn't get to steer the routing.
         has_visible_bid = any(
             market.best_bid(ResourceType(line["output"])) is not None
-            for line in MANUFACTURER_PRODUCT_LINES.values()
+            for line_key, line in MANUFACTURER_PRODUCT_LINES.items()
+            if line_key != "Spares"
         )
 
         current_line = getattr(
@@ -732,10 +751,33 @@ class AIStrategy:
                 line_key: self._manufacturer_demand_score(player, market, line_key)
                 for line_key in MANUFACTURER_PRODUCT_LINES
             }
+        else:
+            # The structural revenue_opportunities model doesn't cover every
+            # line (Spares in particular) — backfill missing lines with the
+            # demand score so max()/comparisons below never KeyError and a
+            # bid-pulled line can still win on merit.
+            for line_key in MANUFACTURER_PRODUCT_LINES:
+                scores.setdefault(
+                    line_key,
+                    self._manufacturer_demand_score(player, market, line_key),
+                )
         feasible = [
             line_key for line_key in MANUFACTURER_PRODUCT_LINES
             if self._manufacturer_line_feasible(player, line_key)
         ]
+        # Spares competes in the normal scoring like any other line (repair
+        # bids from other islands pull its score up via bid_pull). The ONLY
+        # hard override is a genuine emergency: own capital sits failed with
+        # no kit on hand, so a repair is blocked/premium-priced right now.
+        # The first cut of this override fired on ANY standing bid or
+        # whenever stock dipped below 4 (== the starting seed), chronically
+        # diverting the Manufacturer from lines worth several times more —
+        # 1000-game sim: 10.4% -> 3.3% win rate. Score-competition + narrow
+        # emergency restores the opportunity-cost tradeoff.
+        if "Spares" in feasible and self._spares_emergency(player):
+            player.ai_product_line = "Spares"
+            player.ai_product_line_human_demand = has_human_demand
+            return "Spares"
         if not feasible:
             chosen = max(scores, key=lambda line_key: scores[line_key])
             player.ai_product_line = chosen
@@ -758,9 +800,16 @@ class AIStrategy:
         """Legacy profit/bid chooser used when there is no human demand signal."""
         best_line = next(iter(MANUFACTURER_PRODUCT_LINES))
         best_score = float("-inf")
+        # A standing bid narrows the candidate set (real demand signal) —
+        # except Spares: the ubiquitous 2-kit buffer bids from other AIs
+        # would otherwise make Spares the ONLY candidate whenever equipment
+        # bids are absent, crowding out lines worth 4-5x more (this tanked
+        # the Manufacturer's sim win rate 10.4% -> 3.3%). Spares still
+        # competes on score whenever the candidate set includes it.
         bid_lines = [
             line_key for line_key, line in MANUFACTURER_PRODUCT_LINES.items()
-            if market.best_bid(ResourceType(line["output"])) is not None
+            if line_key != "Spares"
+            and market.best_bid(ResourceType(line["output"])) is not None
         ]
         candidates = bid_lines or list(MANUFACTURER_PRODUCT_LINES)
         for line_key, line in MANUFACTURER_PRODUCT_LINES.items():
@@ -848,6 +897,15 @@ class AIStrategy:
                     return True
         return False
 
+    def _spares_emergency(self, player: Player) -> bool:
+        """Own capital failed with zero kits on hand — repair is blocked or
+        premium-priced until a Spares run happens. This is the only condition
+        that overrides normal product-line scoring."""
+        if player.spares_capacity() <= 0:
+            return False
+        needed = self._max_failed_repair_spares_required(player)
+        return needed > 0 and player.inventory.get(ResourceType.SPARES) < needed
+
     def _manufacturer_demand_score(
         self, player: Player, market: Market, line_key: str
     ) -> float:
@@ -888,10 +946,17 @@ class AIStrategy:
 
     def _manufacturer_line_feasible(self, player: Player, line_key: str) -> bool:
         line = MANUFACTURER_PRODUCT_LINES[line_key]
-        return all(
+        if not all(
             player.inventory.get(ResourceType(resource)) >= qty
             for resource, qty in line["inputs"].items()
-        )
+        ):
+            return False
+        build_cost = float(line.get("build_cost_dollops", 0.0)) * int(line.get("qty", 0))
+        if build_cost > player.dollops:
+            return False
+        if line.get("output") in MANUFACTURER_DURABLE_OUTPUTS:
+            return ProductionEngine().manufacturer_durable_allowance_remaining(player) > 0
+        return True
 
     def _manufacturer_freight_surcharge(self, product_line: str | None, qty: int) -> int:
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
@@ -907,6 +972,7 @@ class AIStrategy:
         player: Player,
         season_name: str,
         product_line: str | None,
+        banker_office_goods: bool = False,
     ) -> dict[ResourceType, int]:
         inputs = dict(player.all_required_inputs(season_name, product_line))
         if any(role.name == "Manufacturer" for role in player.roles):
@@ -932,7 +998,80 @@ class AIStrategy:
                 inputs.get(ResourceType.FREIGHT, 0),
                 unresolved_repairs * EQUIPMENT_REPAIR_SHIP_FREIGHT,
             )
+        inputs.setdefault(ResourceType.OIL, 0)
+        if (
+            not any(role.name == "Manufacturer" for role in player.roles)
+            and any(count > 0 for count in player.capital_inventory.values())
+        ):
+            target = self._spares_target_stock(player)
+            missing_spares = max(0, target - player.inventory.get(ResourceType.SPARES))
+            if missing_spares > 0:
+                inputs[ResourceType.SPARES] = max(
+                    inputs.get(ResourceType.SPARES, 0), missing_spares
+                )
+        if banker_office_goods:
+            inputs[ResourceType.GOODS] = max(inputs.get(ResourceType.GOODS, 0), 1)
+        ce_shortfall = self._ce_expertise_shortfall(player)
+        if ce_shortfall > 0:
+            inputs[ResourceType.EXPERTISE] = max(
+                inputs.get(ResourceType.EXPERTISE, 0), ce_shortfall
+            )
         return inputs
+
+    def _ce_expertise_shortfall(self, player: Player) -> int:
+        managers = player.ce_manager_count()
+        if managers <= 0:
+            return 0
+        annual_need = managers * CE_ANNUAL_PER_MANAGER
+        covered = player.ce_ytd() + player.inventory.get(ResourceType.EXPERTISE)
+        return max(0, int(ceil(annual_need - covered)))
+
+    def _banker_has_active_book(
+        self,
+        player: Player,
+        other_players: list[Player],
+        loan_ledger: LoanLedger | None,
+        year: int,
+        season_index: int,
+    ) -> bool:
+        if not any(role.name == "Banker" for role in player.roles):
+            return False
+        if loan_ledger is not None and any(
+            loan.status == LoanStatus.ACTIVE
+            and loan.lender_id == player.player_id
+            and loan.borrower_id != player.player_id
+            for loan in loan_ledger.all_loans()
+        ):
+            return True
+        return any(
+            policy.banker_player_id == player.player_id
+            and policy.is_valid(year, season_index)
+            for insured in [player] + other_players
+            for policy in insured.insurance_policies
+        )
+
+    def _capacity_units_for_item(self, item_id: str) -> int:
+        item = find_item(CAPITAL_CATALOGUE, item_id)
+        return max(1, int(getattr(item, "capacity_units", 1))) if item else 1
+
+    def _spares_target_stock(self, player: Player) -> int:
+        max_units = max(
+            (self._capacity_units_for_item(item_id)
+             for item_id in player.capital_inventory),
+            default=AI_SPARES_TARGET_STOCK,
+        )
+        return max(AI_SPARES_TARGET_STOCK, 2 * max_units)
+
+    def _max_failed_repair_spares_required(self, player: Player) -> int:
+        failed_item_ids = {
+            item_id
+            for item_id, units in player.capital_units.items()
+            if any(unit.status == "failed" for unit in units)
+        }
+        return max(
+            (self._capacity_units_for_item(item_id) for item_id in failed_item_ids),
+            default=0,
+        )
 
     def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
         return sum(
@@ -1067,7 +1206,7 @@ class AIStrategy:
         """Buy the cheapest ask and immediately fill richer bids when the spread is visible."""
         actions: list[str] = []
         for rtype in ResourceType:
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             offer = market.best_offer(rtype)
             bid = market.best_bid(rtype)
@@ -1169,7 +1308,7 @@ class AIStrategy:
                     pass
         return actions
 
-    def _ai_buy_health_services_for_qol(
+    def _ai_buy_medical_supplies_for_qol(
         self,
         player: Player,
         market: Market,
@@ -1178,17 +1317,19 @@ class AIStrategy:
     ) -> list[str]:
         if player.is_human:
             return []
-        if getattr(player, "_qol_observed_years", 0) <= 0:
+        stockpile_target = ceil(max(0, player.population) / 10)
+        nurse_target = player.workforce.count_profession("Nurse")
+        target_qty = max(1, stockpile_target + nurse_target)
+        have = player.inventory.get(ResourceType.MEDICAL_SUPPLIES)
+        if have >= target_qty:
             return []
-        if getattr(player, "_health_coverage", 1.0) >= AI_HEALTH_QOL_COVERAGE_THRESHOLD:
-            return []
-        target_qty = ceil(max(0, player.population) / 100)
+        target_qty -= have
         if target_qty <= 0:
             return []
-        base_price = BASE_PRICES.get(ResourceType.HEALTH_SERVICES.value, 0.0)
+        base_price = BASE_PRICES.get(ResourceType.MEDICAL_SUPPLIES.value, 0.0)
         max_price = base_price * 2
         offers = [
-            offer for offer in market.available_offers(ResourceType.HEALTH_SERVICES)
+            offer for offer in market.available_offers(ResourceType.MEDICAL_SUPPLIES)
             if offer.seller_id != player.player_id and offer.price_per_unit <= max_price
         ]
         if not offers:
@@ -1199,7 +1340,7 @@ class AIStrategy:
             return []
         try:
             bid = market.post_bid(
-                player, ResourceType.HEALTH_SERVICES, bid_price, bid_qty
+                player, ResourceType.MEDICAL_SUPPLIES, bid_price, bid_qty
             )
         except Exception:
             return []
@@ -1208,7 +1349,7 @@ class AIStrategy:
         if bought <= 0:
             return []
         return [
-            f"[AI] {player.name} bought {bought}x HealthServices "
+            f"[AI] {player.name} bought {bought}x MedicalSupplies "
             f"to improve QoL coverage ({cost:.1f} Dp)"
         ]
 
@@ -1225,6 +1366,8 @@ class AIStrategy:
         season_index: int = 0,
         loan_ledger: LoanLedger | None = None,
         training_registry=None,
+        cycle: BusinessCycleSnapshot | None = None,
+        before_production: Callable[[], None] | None = None,
     ) -> list[str]:
         actions: list[str] = []
 
@@ -1250,12 +1393,14 @@ class AIStrategy:
             )
 
         actions.extend(
-            self._ai_rollover_due_loans(player, loan_ledger, year, season_index)
+            self._ai_rollover_due_loans(
+                player, loan_ledger, year, season_index, cycle=cycle
+            )
         )
         actions.extend(
             self._ai_take_loan_if_short(
                 player, market, other_players, loan_ledger, season_name,
-                year, season_index, chosen_line,
+                year, season_index, chosen_line, cycle=cycle,
             )
         )
         actions.extend(
@@ -1279,22 +1424,44 @@ class AIStrategy:
             )
         )
         actions.extend(
-            self._ai_buy_health_services_for_qol(
+            self._ai_buy_medical_supplies_for_qol(
                 player, market, trading_engine, other_players
             )
         )
 
-        inputs_needed = self._inputs_for_ai_purchase(player, season_name, chosen_line)
+        inputs_needed = self._inputs_for_ai_purchase(
+            player,
+            season_name,
+            chosen_line,
+            banker_office_goods=self._banker_has_active_book(
+                player, other_players, loan_ledger, year, season_index,
+            ),
+        )
         for rtype, qty_needed in inputs_needed.items():
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             target_runs = (
                 1
-                if rtype in EQUIPMENT_RESOURCE_CAPITAL
+                if rtype in EQUIPMENT_RESOURCE_CAPITAL or rtype == ResourceType.SPARES
                 else AI_EQUIPMENT_INPUT_RUNS
                 if rtype in AI_EQUIPMENT_INPUTS else self.target_production_runs
             )
             target_qty = qty_needed * target_runs
+            if rtype == ResourceType.OIL:
+                target_qty += player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+            elif rtype == ResourceType.EXPERTISE:
+                production_need = player.all_required_inputs(
+                    season_name, chosen_line
+                ).get(ResourceType.EXPERTISE, 0)
+                target_qty = (
+                    production_need * self.target_production_runs
+                    + self._ce_expertise_shortfall(player)
+                )
+            elif (
+                rtype == ResourceType.GOODS
+                and any(role.name == "Banker" for role in player.roles)
+            ):
+                target_qty = qty_needed
             have = player.inventory.get(rtype)
             if have >= target_qty:
                 continue
@@ -1323,6 +1490,31 @@ class AIStrategy:
                         buy_qty -= bought
                     except Exception:
                         pass
+            if buy_qty > 0 and rtype == ResourceType.OIL:
+                floor_shortfall = max(
+                    0,
+                    player.energy_floor_oil_required(CAPITAL_CATALOGUE)
+                    - player.inventory.get(ResourceType.OIL),
+                )
+                fill_qty = min(
+                    buy_qty,
+                    floor_shortfall,
+                    market.market_maker_buy_depth(rtype),
+                )
+                if fill_qty > 0:
+                    ask = market.market_maker_ask(rtype)
+                    affordable_qty = min(fill_qty, int(player.dollops // ask))
+                    if affordable_qty > 0:
+                        try:
+                            market.post_supply(rtype, affordable_qty)
+                            paid = market.execute_buy(player, rtype, affordable_qty)
+                            actions.append(
+                                f"[AI] {player.name} imported {affordable_qty}x Oil "
+                                f"for {paid:.1f} Dp"
+                            )
+                            buy_qty -= affordable_qty
+                        except Exception:
+                            pass
             if buy_qty > 0:
                 bid_price = self._valuation_price(market, trading_engine, rtype)
                 affordable_qty = min(buy_qty, int(player.dollops // bid_price))
@@ -1335,6 +1527,9 @@ class AIStrategy:
                         )
                     except Exception:
                         pass
+
+        if before_production is not None:
+            before_production()
 
         produced_totals: dict[ResourceType, int] = {}
         missing: dict[ResourceType, int] = {}
@@ -1389,14 +1584,21 @@ class AIStrategy:
             actions.extend(
                 self._ai_offer_loans(
                     player, other_players, market, loan_ledger,
-                    season_name, year, season_index,
+                    season_name, year, season_index, cycle=cycle,
                 )
             )
 
         reserve_inputs = player.all_required_inputs(season_name, chosen_line)
+        oil_production_reserve = reserve_inputs.get(ResourceType.OIL, 0) * self.target_production_runs
+        reserve_inputs[ResourceType.OIL] = max(
+            reserve_inputs.get(ResourceType.OIL, 0),
+            oil_production_reserve + player.energy_floor_oil_required(CAPITAL_CATALOGUE),
+        )
         listable_resources = set(player.all_produced_resources()) | set(produced_totals)
+        if is_manufacturer:
+            listable_resources.add(ResourceType.SPARES)
         for rtype in listable_resources:
-            if rtype == ResourceType.FINANCE:
+            if rtype == ResourceType.FINANCE or rtype in NON_TRADABLE_RESOURCES:
                 continue
             if rtype in AI_LIST_ONLY_WITH_BID and market.best_bid(rtype) is None:
                 continue

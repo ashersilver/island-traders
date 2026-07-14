@@ -5,6 +5,11 @@ import pytest
 from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.constants import (
     BASE_PRICES,
+    MEDEVAC_FEE,
+    MEDEVAC_SEATS,
+    NURSE_UPKEEP_SUPPLIES,
+    TREATED_RECOVERY_SEASONS,
+    UNTREATED_RECOVERY_SEASONS,
     OIL_POLLUTION_SCALE,
     QOL_EMIGRATION_RATE,
     QOL_WEIGHT_FOOD,
@@ -23,9 +28,11 @@ from island_traders.engine.qol import (
     health_coverage,
     mitigated_pollution_index,
     raw_pollution_index,
+    seasonal_qol_breakdown,
 )
 from island_traders.engine.trading import TradingEngine
 from island_traders.engine.turn import TurnManager
+from island_traders.engine.workforce_events import WorkforceEventReport, resolve_medical_care
 from island_traders.models.deal import DealLedger
 from island_traders.models.market import Market
 from island_traders.models.player import Player
@@ -117,9 +124,9 @@ def test_production_and_consumer_demand_update_annual_accumulators():
     buyer.household_cash = 100.0
     market = Market()
     seller.receive_resources(ResourceType.FOOD, 1)
-    seller.receive_resources(ResourceType.HEALTH_SERVICES, 1)
+    seller.receive_resources(ResourceType.MEDICAL_SUPPLIES, 1)
     market.post_offer(seller, ResourceType.FOOD, 10.0, 1)
-    market.post_offer(seller, ResourceType.HEALTH_SERVICES, 10.0, 1)
+    market.post_offer(seller, ResourceType.MEDICAL_SUPPLIES, 10.0, 1)
     turn_manager = TurnManager(
         players=[buyer, seller],
         production_engine=ProductionEngine(),
@@ -204,7 +211,7 @@ def test_game_run_computes_qol_fields_and_resets_accumulators(tmp_path):
         assert 0.0 <= player._pollution_index <= 1.0
 
 
-def test_ai_buys_health_services_when_last_year_coverage_is_low():
+def test_ai_buys_medical_supplies_toward_stockpile_target():
     buyer = _player(1, "Banker", dollops=500.0)
     seller = _player(2, "Doctor", dollops=500.0)
     buyer.population = 250
@@ -212,11 +219,11 @@ def test_ai_buys_health_services_when_last_year_coverage_is_low():
     buyer._qol_observed_years = 1
     market = Market()
     trading = TradingEngine(market, DealLedger(), [buyer, seller])
-    seller.receive_resources(ResourceType.HEALTH_SERVICES, 5)
+    seller.receive_resources(ResourceType.MEDICAL_SUPPLIES, 5)
     market.post_offer(
         seller,
-        ResourceType.HEALTH_SERVICES,
-        BASE_PRICES[ResourceType.HEALTH_SERVICES.value],
+        ResourceType.MEDICAL_SUPPLIES,
+        BASE_PRICES[ResourceType.MEDICAL_SUPPLIES.value],
         5,
     )
 
@@ -232,5 +239,92 @@ def test_ai_buys_health_services_when_last_year_coverage_is_low():
         season_index=0,
     )
 
-    assert buyer.inventory.get(ResourceType.HEALTH_SERVICES) == 3
-    assert any("HealthServices" in action and "QoL" in action for action in actions)
+    assert buyer.inventory.get(ResourceType.MEDICAL_SUPPLIES) == 5
+    assert any("MedicalSupplies" in action and "QoL" in action for action in actions)
+
+
+def test_medical_care_consumes_supplies_and_shortens_recovery():
+    clinic = _player(1, "Doctor", dollops=500.0)
+    clinic.workforce.workers.clear()
+    clinic.workforce.add_workers(1, training_level=1, profession="Doctor")
+    clinic.receive_resources(ResourceType.MEDICAL_SUPPLIES, 1)
+    workers = clinic.workforce.add_workers(2, training_level=1, profession="MedicalOrderly")
+    injured_ids = [worker.worker_id for worker in workers]
+    clinic.workforce.mark_absent(injured_ids, UNTREATED_RECOVERY_SEASONS)
+    report = WorkforceEventReport(
+        player_id=clinic.player_id,
+        player_name=clinic.name,
+        injured_worker_ids=injured_ids,
+    )
+
+    resolve_medical_care([clinic], [report])
+
+    recovered = {worker.worker_id: worker.absent_seasons for worker in clinic.workforce.workers}
+    assert recovered[injured_ids[0]] == TREATED_RECOVERY_SEASONS
+    assert recovered[injured_ids[1]] == UNTREATED_RECOVERY_SEASONS
+    assert clinic.inventory.get(ResourceType.MEDICAL_SUPPLIES) == 0
+    assert report.local_supplies_used == 1
+    assert report.untreated_worker_ids == [injured_ids[1]]
+
+
+def test_medevac_uses_transporter_seats_doctor_supplies_and_fee():
+    patient = _player(1, "Miner", dollops=100.0)
+    doctor = _player(2, "Doctor", dollops=50.0)
+    patient.receive_resources(ResourceType.PASSENGER_SEATS, MEDEVAC_SEATS)
+    doctor.receive_resources(ResourceType.MEDICAL_SUPPLIES, 1)
+    injured = patient.workforce.active_workers[0].worker_id
+    patient.workforce.mark_absent([injured], UNTREATED_RECOVERY_SEASONS)
+    report = WorkforceEventReport(
+        player_id=patient.player_id,
+        player_name=patient.name,
+        injured_worker_ids=[injured],
+    )
+
+    resolve_medical_care([patient, doctor], [report])
+
+    worker = next(w for w in patient.workforce.workers if w.worker_id == injured)
+    assert worker.absent_seasons == TREATED_RECOVERY_SEASONS
+    assert patient.inventory.get(ResourceType.PASSENGER_SEATS) == 0
+    assert doctor.inventory.get(ResourceType.MEDICAL_SUPPLIES) == 0
+    assert patient.dollops == pytest.approx(100.0 - MEDEVAC_FEE)
+    assert doctor.dollops == pytest.approx(50.0 + MEDEVAC_FEE)
+    assert report.medevac_worker_ids == [injured]
+
+
+def test_seasonal_qol_full_components_and_starved_multiplier():
+    strong = _player(1, "Doctor", dollops=500.0)
+    strong.population = 30
+    strong.workforce.workers.clear()
+    strong.workforce.add_workers(2, training_level=1, profession="Nurse")
+    strong.receive_resources(
+        ResourceType.MEDICAL_SUPPLIES,
+        3 + 2 * NURSE_UPKEEP_SUPPLIES,
+    )
+    strong._qol_meals_needed_this_season = 3
+    strong._qol_meals_satisfied_this_season = 3
+    strong._qol_food_variety_this_season = {
+        ResourceType.GRAIN,
+        ResourceType.PRODUCE,
+        ResourceType.FISH,
+    }
+    strong._qol_active_nurses_this_season = 2
+    strong._qol_medical_insurance_active = True
+    strong._qol_goods_demanded_this_season = 2
+    strong._qol_goods_bought_this_season = 2
+
+    healthy = seasonal_qol_breakdown(strong)
+
+    assert healthy["score"] == pytest.approx(100.0)
+    assert healthy["productivity_multiplier"] == pytest.approx(1.15)
+
+    starved = _player(2, "Miner", dollops=500.0)
+    starved.population = 30
+    starved._qol_meals_needed_this_season = 4
+    starved._qol_meals_satisfied_this_season = 1
+    starved._qol_goods_demanded_this_season = 2
+    starved._qol_untreated_sidelined_this_season = 1
+
+    poor = seasonal_qol_breakdown(starved)
+
+    assert poor["score"] == pytest.approx(15.0)
+    assert poor["productivity_multiplier"] == pytest.approx(0.895)

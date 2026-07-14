@@ -150,6 +150,13 @@ class WebSocketIOAdapter(IOAdapter):
         # currently mid-action).
         self._player_ready_flags: set[int] = set()
 
+        # Per-product Produce buttons.  The engine pushes the current produce
+        # choices (via set_produce_options) before each choose_action; when the
+        # player clicks one, choose_action records the chosen option key here so
+        # _action_produce can skip the follow-up product picker.
+        self._produce_options: dict[int, list[dict]] = {}
+        self._produce_choice: dict[int, str] = {}
+
         # Thread-local "active player" — set by choose_action() at the start
         # of each player's prompt-chain so subsequent choose_resource/quantity/
         # confirm/etc. calls inside that thread route to the right player.
@@ -388,7 +395,24 @@ class WebSocketIOAdapter(IOAdapter):
                 continue
 
             # Normal prompt path — not parked, not interrupted.
-            options = [action_option_payload(a, player) for a in available]
+            # Fan the single PRODUCE action out into one "Produce <product>"
+            # button per producible product (populated by set_produce_options).
+            # When no produce options are cached (non-producer, outage, or an
+            # older client flow) we fall back to the plain Produce button, which
+            # still triggers the server-side product picker.
+            produce_opts = self._produce_options.get(player.player_id) or []
+            options = []
+            for a in available:
+                if a == TurnAction.PRODUCE and produce_opts:
+                    base = action_option_payload(a, player)
+                    for po in produce_opts:
+                        opt = dict(base)
+                        opt["value"] = f"produce::{po['key']}"
+                        opt["label"] = po["label"]
+                        opt["context"] = po.get("context") or f"up to {po['max_qty']} now"
+                        options.append(opt)
+                else:
+                    options.append(action_option_payload(a, player))
             resp = self._send_and_wait({
                 "type": "choose_action",
                 "player_id": player.player_id,
@@ -408,12 +432,26 @@ class WebSocketIOAdapter(IOAdapter):
                 # mark_player_ready (or a player Cancel from a stray
                 # dialog) lands here — loop to re-check the park flag.
                 continue
+            # A per-product Produce button ("produce::<key>") — record the
+            # chosen option so _action_produce can skip the picker, then run
+            # the normal PRODUCE action.
+            if isinstance(resp, str) and resp.startswith("produce::"):
+                self._produce_choice[player.player_id] = resp[len("produce::"):]
+                return TurnAction.PRODUCE
             try:
                 return TurnAction(resp)
             except ValueError:
                 logger.warning("Player %d (%s): invalid action '%s', ending turn",
                                player.player_id, player.name, resp)
                 return TurnAction.END_TURN
+
+    def set_produce_options(self, player_id, options: list[dict]) -> None:
+        """Cache the per-product Produce buttons for the next choose_action."""
+        self._produce_options[player_id] = list(options or [])
+
+    def take_produce_choice(self, player_id):
+        """Return (and clear) the produce option key the player clicked, if any."""
+        return self._produce_choice.pop(player_id, None)
 
     @staticmethod
     def _check_cancel(resp) -> None:
@@ -441,13 +479,18 @@ class WebSocketIOAdapter(IOAdapter):
         except ValueError:
             return available[0]
 
-    def choose_quantity(self, prompt: str, min_qty: int, max_qty: int) -> int:
-        resp = self._send_and_wait({
+    def choose_quantity(
+        self, prompt: str, min_qty: int, max_qty: int, default: int | None = None
+    ) -> int:
+        msg = {
             "type": "choose_quantity",
             "prompt": prompt,
             "min": min_qty,
             "max": max_qty,
-        })
+        }
+        if default is not None:
+            msg["prefill"] = max(min_qty, min(default, max_qty))
+        resp = self._send_and_wait(msg)
         self._check_cancel(resp)
         if resp is None:
             return min_qty

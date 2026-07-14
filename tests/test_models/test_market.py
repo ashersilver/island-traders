@@ -436,6 +436,82 @@ def test_supply_and_demand_counters_decrement_on_cancelled_orders():
     assert m.demand[ResourceType.FOOD] == 1
 
 
+def test_cancel_offer_refunds_unsold_resources_and_updates_supply():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 6)
+    offer = m.post_offer(seller, ResourceType.FOOD, 15.0, 4)
+
+    cancelled = m.cancel_offer(seller, offer.offer_id)
+
+    assert cancelled is offer
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FOOD) == 6
+    assert m.supply.get(ResourceType.FOOD, 0) == 0
+
+
+def test_reduce_offer_refunds_delta_and_updates_supply():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 6)
+    offer = m.post_offer(seller, ResourceType.FOOD, 15.0, 5)
+
+    m.reduce_offer(seller, offer.offer_id, 2)
+
+    assert offer.remaining == 2
+    assert seller.inventory.get(ResourceType.FOOD) == 4
+    assert m.supply[ResourceType.FOOD] == 2
+
+
+def test_reduce_offer_to_zero_cancels_offer():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 3)
+    offer = m.post_offer(seller, ResourceType.FOOD, 15.0, 3)
+
+    m.reduce_offer(seller, offer.offer_id, 0)
+
+    assert offer.remaining == 0
+    assert seller.inventory.get(ResourceType.FOOD) == 3
+    assert m.supply.get(ResourceType.FOOD, 0) == 0
+
+
+def test_cancel_bid_updates_demand():
+    m = Market()
+    buyer = make_player(1, "Banker", dollops=200.0)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 10.0, 5)
+
+    cancelled = m.cancel_bid(buyer, bid.bid_id)
+
+    assert cancelled is bid
+    assert bid.remaining == 0
+    assert m.demand.get(ResourceType.FOOD, 0) == 0
+
+
+def test_reduce_bid_updates_demand():
+    m = Market()
+    buyer = make_player(1, "Banker", dollops=200.0)
+    bid = m.post_bid(buyer, ResourceType.FOOD, 10.0, 5)
+
+    m.reduce_bid(buyer, bid.bid_id, 2)
+
+    assert bid.remaining == 2
+    assert m.demand[ResourceType.FOOD] == 2
+
+
+def test_cannot_cancel_or_reduce_another_players_order():
+    m = Market()
+    seller = make_player(1, "Farmer")
+    other = make_player(2, "Farmer")
+    seller.receive_resources(ResourceType.FOOD, 2)
+    offer = m.post_offer(seller, ResourceType.FOOD, 15.0, 2)
+
+    with pytest.raises(PermissionError):
+        m.cancel_offer(other, offer.offer_id)
+    with pytest.raises(PermissionError):
+        m.reduce_offer(other, offer.offer_id, 1)
+
+
 def test_expired_season_offer_refunds_unsold_resources():
     market = Market()
     seller = make_player(1, "Manufacturer")

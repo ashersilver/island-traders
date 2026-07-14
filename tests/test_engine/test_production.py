@@ -1,5 +1,5 @@
 import pytest
-from island_traders.engine.production import ProductionEngine, InsufficientInputsError
+from island_traders.engine.production import InsufficientInputsError, ProductionEngine
 from island_traders.engine.events import EventResult
 from island_traders.models.profession import Profession
 from island_traders.models.resource import ResourceType
@@ -70,17 +70,21 @@ def test_banker_produces_finance_commodity(banker, normal_event):
     assert produced[ResourceType.FINANCE] > 0
 
 
-def test_educator_expertise_runs_without_reagents(normal_event):
-    """Generic Education output is classroom-based; Reagents gate Patents and
-    science-track training, not all Expertise/Courses production."""
+def test_educator_expertise_runs_with_lab_step_inputs(normal_event):
+    """Generic Education now pays lab consumables only once it reaches the
+    10-unit step; Patents remain separately Reagents-gated."""
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
     educator = Player(10, "Professor", [ROLES["Educator"]], 100.0, is_human=False)
+    educator.receive_resources(ResourceType.REAGENTS, 1)
+    educator.receive_resources(ResourceType.OIL, 1)
     produced = ProductionEngine().produce(educator, normal_event)
 
     assert ResourceType.EXPERTISE in produced
     assert ResourceType.PATENTS not in produced
+    assert educator.inventory.get(ResourceType.REAGENTS) == 0
+    assert educator.inventory.get(ResourceType.OIL) == 0
 
 
 def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
@@ -94,7 +98,7 @@ def test_doctor_produces_reagents_from_oil_and_ore(normal_event):
     doctor.receive_resources(ResourceType.ORE, 1)
     produced = ProductionEngine().produce(doctor, normal_event)
 
-    assert ResourceType.HEALTH_SERVICES in produced
+    assert ResourceType.MEDICAL_SUPPLIES in produced
     assert ResourceType.REAGENTS in produced   # produced in-house now
 
 
@@ -112,9 +116,9 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
 
     assert produced[ResourceType.ORE] == 40
     assert produced[ResourceType.METAL] == 20
-    assert produced[ResourceType.OIL] == 40
+    assert produced[ResourceType.OIL] == 45
     assert miner.inventory.get(ResourceType.ORE) == 40
-    assert miner.inventory.get(ResourceType.OIL) == 40
+    assert miner.inventory.get(ResourceType.OIL) == 45
     assert miner.capital_count("miner.excavator") == 1
 
 
@@ -130,7 +134,7 @@ def test_miner_skips_metal_without_starting_ore_for_smelting(normal_event):
 
     assert produced[ResourceType.ORE] == 40
     assert ResourceType.METAL not in produced
-    assert produced[ResourceType.OIL] == 40
+    assert produced[ResourceType.OIL] == 45
 
 
 def test_banker_production_is_safe(banker, normal_event):
@@ -216,6 +220,93 @@ def test_manufacturer_freight_surcharge_uses_board_scale_quantity():
     )
 
 
+def test_manufacturer_goods_and_transport_equipment_are_production_options(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.add_capital("manufacturer.shipyard")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 20)
+    manufacturer.receive_resources(ResourceType.OIL, 20)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 20)
+
+    options = ProductionEngine().production_options(
+        manufacturer,
+        normal_event,
+        season_name="Spring",
+    )
+    by_line = {option["product_line"]: option for option in options}
+
+    assert by_line["Goods"]["output"] == ResourceType.GOODS
+    assert by_line["Goods"]["max_qty"] > 0
+    assert by_line["TransportEquipment"]["output"] == ResourceType.TRANSPORT_EQUIPMENT
+    assert by_line["TransportEquipment"]["max_qty"] > 0
+
+
+def test_manufacturer_durable_output_cap_and_own_capacity_bonus(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.add_capital("manufacturer.precision_workshop")
+    manufacturer.add_capital("manufacturer.shipyard")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(6, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 1000.0
+
+    engine = ProductionEngine()
+    assert engine.manufacturer_durable_allowance(manufacturer) == 10
+    manufacturer.manufacturer_durable_output_used = 8
+
+    options = engine.production_options(manufacturer, normal_event, season_name="Spring")
+    by_line = {option["product_line"]: option for option in options}
+
+    assert by_line["TransportEquipment"]["max_qty"] == 2
+
+
+def test_manufacturer_build_cost_limits_and_debits_output(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 7.0
+
+    engine = ProductionEngine()
+    options = engine.production_options(manufacturer, normal_event, season_name="Spring")
+    farm = next(option for option in options if option["product_line"] == "FarmMachinery")
+    assert farm["max_qty"] == 2
+
+    produced = engine.produce_product(
+        manufacturer,
+        normal_event,
+        "Spring",
+        "Manufacturer",
+        ResourceType.FARM_MACHINERY,
+        qty=2,
+        product_line="FarmMachinery",
+    )
+
+    assert produced == {ResourceType.FARM_MACHINERY: 2}
+    assert manufacturer.dollops == 1.0
+    assert manufacturer.manufacturer_durable_output_used == 2
+
+
+def test_manufacturer_build_cost_hides_line_when_cash_short(manufacturer, normal_event):
+    manufacturer.add_capital("manufacturer.assembly_line")
+    manufacturer.workforce.add_workers(1, training_level=1, profession=Profession.ENGINEER.value)
+    manufacturer.workforce.add_workers(2, training_level=1, profession=Profession.ASSEMBLY_WORKER.value)
+    manufacturer.receive_resources(ResourceType.METAL, 100)
+    manufacturer.receive_resources(ResourceType.OIL, 100)
+    manufacturer.receive_resources(ResourceType.FREIGHT, 100)
+    manufacturer.dollops = 2.0
+
+    options = ProductionEngine().production_options(
+        manufacturer, normal_event, season_name="Spring"
+    )
+    assert all(option["product_line"] != "FarmMachinery" for option in options)
+
+
 def test_production_options_show_per_product_current_max(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
@@ -224,6 +315,10 @@ def test_production_options_show_per_product_current_max(normal_event):
     farmer.add_capital("farmer.tractor")
     farmer.add_capital("farmer.fishing_boat")
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    farmer.workforce.add_workers(1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value)
+    farmer.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
     farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     farmer.workforce.add_workers(8, training_level=0, profession=Profession.UNSKILLED.value)
     farmer.receive_resources(ResourceType.OIL, 10)
@@ -234,6 +329,74 @@ def test_production_options_show_per_product_current_max(normal_event):
 
     assert by_output[ResourceType.GRAIN]["max_qty"] == 24
     assert by_output[ResourceType.FISH]["max_qty"] == 24
+
+
+def test_fish_yield_halves_without_marine_biologist(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    staffed = Player(201, "Biology Boat", [ROLES["Farmer"]], 100.0, is_human=True)
+    staffed.add_capital("farmer.fishing_boat")
+    staffed.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    staffed.workforce.add_workers(1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value)
+    staffed.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
+    staffed.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    staffed.receive_resources(ResourceType.OIL, 10)
+
+    no_biologist = Player(202, "Guesswork Boat", [ROLES["Farmer"]], 100.0, is_human=True)
+    no_biologist.add_capital("farmer.fishing_boat")
+    no_biologist.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+    no_biologist.workforce.add_workers(
+        2, training_level=1, profession=Profession.FISH_PROCESSING_TECHNICIAN.value
+    )
+    no_biologist.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
+    no_biologist.receive_resources(ResourceType.OIL, 10)
+
+    engine = ProductionEngine()
+    staffed_fish = next(
+        option for option in engine.production_options(staffed, normal_event, "Spring")
+        if option["output"] == ResourceType.FISH
+    )
+    no_biologist_fish = next(
+        option for option in engine.production_options(no_biologist, normal_event, "Spring")
+        if option["output"] == ResourceType.FISH
+    )
+
+    assert staffed_fish["max_qty"] == 24
+    assert no_biologist_fish["max_qty"] == 12
+
+
+def test_fish_processing_technicians_staff_two_per_boat(normal_event):
+    from island_traders.models.player import Player
+    from island_traders.models.role import ROLES
+
+    engine = ProductionEngine()
+
+    def fish_option(boats: int, techs: int) -> int:
+        farmer = Player(203 + boats + techs, "Fleet", [ROLES["Farmer"]], 100.0, is_human=True)
+        farmer.add_capital("farmer.fishing_boat", boats)
+        farmer.workforce.add_workers(1, training_level=1, profession=Profession.FARMER.value)
+        farmer.workforce.add_workers(
+            1, training_level=1, profession=Profession.MARINE_BIOLOGIST.value
+        )
+        farmer.workforce.add_workers(
+            techs,
+            training_level=1,
+            profession=Profession.FISH_PROCESSING_TECHNICIAN.value,
+        )
+        farmer.workforce.add_workers(12, profession=Profession.UNSKILLED.value)
+        farmer.receive_resources(ResourceType.OIL, 10)
+        return next(
+            option for option in engine.production_options(farmer, normal_event, "Spring")
+            if option["output"] == ResourceType.FISH
+        )["max_qty"]
+
+    assert fish_option(1, 1) == 12
+    assert fish_option(1, 2) == 24
+    assert fish_option(2, 2) == 24
+    assert fish_option(2, 4) == 48
 
 
 def test_produce_product_makes_chosen_product_and_quantity_only(normal_event):
@@ -315,7 +478,7 @@ def test_meat_line_consumes_four_grain_per_unit(normal_event):
     assert farmer.inventory.get(ResourceType.GRAIN) == 0
 
 
-def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
+def test_farmer_specialists_are_year_round_optional_bonuses(normal_event):
     from island_traders.models.player import Player
     from island_traders.models.role import ROLES
 
@@ -327,7 +490,7 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
     bare.workforce.add_workers(1, training_level=1, profession=Profession.FARMING_TECHNICIAN.value)
     bare.workforce.add_workers(2, training_level=1, profession=Profession.MECHANIC.value)
     bare.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
-    bare.receive_resources(ResourceType.GRAIN, 40)
+    bare.receive_resources(ResourceType.GRAIN, 240)
 
     staffed = Player(214, "Staffed Farm", [ROLES["Farmer"]], 100.0, is_human=True)
     staffed.receive_resources(ResourceType.FARM_MACHINERY, 1)
@@ -338,23 +501,26 @@ def test_late_season_farmer_specialists_protect_produce_and_meat(normal_event):
     staffed.workforce.add_workers(1, training_level=1, profession=Profession.HORTICULTURALIST.value)
     staffed.workforce.add_workers(1, training_level=1, profession=Profession.VETERINARIAN.value)
     staffed.workforce.add_workers(8, profession=Profession.UNSKILLED.value)
-    staffed.receive_resources(ResourceType.GRAIN, 40)
+    staffed.receive_resources(ResourceType.GRAIN, 240)
 
     engine = ProductionEngine()
-    bare_preview = engine.production_preview(bare, normal_event, "Autumn")
-    staffed_preview = engine.production_preview(staffed, normal_event, "Autumn")
+    bare_preview = engine.production_preview(bare, normal_event, "Spring")
+    staffed_preview = engine.production_preview(staffed, normal_event, "Spring")
     bare_meat = next(
-        option for option in engine.production_options(bare, normal_event, "Autumn")
+        option for option in engine.production_options(bare, normal_event, "Spring")
         if option["output"] == ResourceType.MEAT
     )
     staffed_meat = next(
-        option for option in engine.production_options(staffed, normal_event, "Autumn")
+        option for option in engine.production_options(staffed, normal_event, "Spring")
         if option["output"] == ResourceType.MEAT
     )
 
-    assert bare_preview["outputs"][ResourceType.PRODUCE] == 54
-    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 72
-    assert bare_meat["max_qty"] == int(staffed_meat["max_qty"] * 0.75)
+    assert bare_preview["outputs"][ResourceType.GRAIN] == 24
+    assert bare_preview["outputs"][ResourceType.PRODUCE] == 24
+    assert staffed_preview["outputs"][ResourceType.GRAIN] == 32
+    assert staffed_preview["outputs"][ResourceType.PRODUCE] == 32
+    assert bare_meat["max_qty"] == 40
+    assert staffed_meat["max_qty"] == 60
 
 
 def test_enhanced_crusher_smelter_increases_metal_capacity_and_reduces_oil(normal_event):

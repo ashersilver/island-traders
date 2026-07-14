@@ -20,7 +20,7 @@ def test_oil_starting_buffers_reflect_role_demand():
 
 
 def test_miner_oil_is_reduced_and_metal_is_available():
-    assert BASE_PRODUCTION["Miner"]["Oil"] == 40
+    assert BASE_PRODUCTION["Miner"]["Oil"] == 45
     assert BASE_PRODUCTION["Miner"]["Metal"] == 20
 
 

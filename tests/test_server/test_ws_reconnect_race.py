@@ -112,3 +112,16 @@ def test_thread_safe_send_uses_current_socket_after_reconnect():
     with mgr._ws_lock:
         live = mgr._ws_connections.get("R", {}).get("P")
     assert live is new, "Live lookup should return the reconnected socket"
+
+
+def test_heartbeat_ack_replies_with_pong_and_echoes_client_fields():
+    ack = GameManager.heartbeat_ack({
+        "type": "ping",
+        "client_time": 123.4,
+        "nonce": "abc",
+    })
+
+    assert ack["type"] == "pong"
+    assert ack["client_time"] == 123.4
+    assert ack["nonce"] == "abc"
+    assert isinstance(ack["server_time"], float)

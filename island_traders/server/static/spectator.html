@@ -49,6 +49,7 @@
   th { color:var(--dim); font-weight:600; }
   td.num { text-align:right; font-variant-numeric:tabular-nums; }
   .muted { color:var(--dim); }
+  .chat-ro-msg { font-size:.85rem; line-height:1.4; padding:.08rem 0; }
   ul.feed { list-style:none; margin:0; padding:0; max-height:260px; overflow:auto; }
   ul.feed li { padding:.2rem 0; border-bottom:1px solid var(--border); font-size:.84rem; color:var(--dim); }
   ul.feed li.log-mine { color:var(--text); }
@@ -236,6 +237,21 @@ function renderCapital(me) {
   return html;
 }
 
+function renderSpecChat(state) {
+  // Read-only: the public room channel + any channels the watched seat is in
+  // (the server scopes state.chat to this viewer). AI remarks render normally.
+  const chans = (state.chat || []).filter(c => c.is_room || (c.messages || []).length);
+  if (!chans.length) return '<div class="muted">No chat yet.</div>';
+  return chans.map(c => {
+    const msgs = (c.messages || []).slice(-20).map(m => {
+      const t = new Date((m.ts || 0) * 1000);
+      const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+      return `<div class="chat-ro-msg"><b>${esc(m.from)}</b> <span class="muted" style="font-size:.7rem">${hhmm}</span> ${esc(m.text)}</div>`;
+    }).join('') || '<div class="muted">—</div>';
+    return `<div style="margin-bottom:.55rem"><div style="font-weight:700">${c.is_room ? '🏛' : '🔒'} ${esc(c.topic)}</div>${msgs}</div>`;
+  }).join('');
+}
+
 function render(state, me) {
   $('hdr-phase').textContent = `· Year ${state.year ?? '?'} ${state.season ?? ''} · ${state.status||''}${state.paused?' · ⏸ PAUSED':''}`;
   const inv = Object.entries(me.inventory || {}).filter(([,v])=>v)
@@ -284,6 +300,10 @@ function render(state, me) {
     <div class="card">
       <h2>Capital equipment</h2>
       ${renderCapital(me)}
+    </div>
+    <div class="card span2">
+      <h2>💬 Chat (read-only)</h2>
+      ${renderSpecChat(state)}
     </div>
     <div class="card span2">
       <h2>Recent activity</h2>

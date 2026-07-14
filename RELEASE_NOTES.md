@@ -3,9 +3,366 @@
 Release notes are required before merging a feature/fix branch into
 `pre-release`.
 
-## Unreleased
+## 0.1.5 — 2026-07-14
 
-_Nothing yet — next dev cycle._
+Tag: `v0.1.5` · running `APP_VERSION`: `0.1.5` · package `version`: `0.1.5`.
+
+- **Feature: Trade Blotter — layered orders + executed-fills tape (#210)** — the
+  Market Board is now a tabbed **Trade Blotter** (Market · Trade · My orders ·
+  Fills) that opens in response to Market Buy / Market Sell (and from the Market
+  Board tile). It lets an island see exactly what bids and asks it has already
+  placed and capture new trades through one surface.
+  - **Layer vs. supersede.** Historically a new market order *always* superseded
+    the player's prior bid/ask on that resource (`Market.cancel_player_orders`,
+    called unconditionally by `post_offer`/`post_bid`). The blotter now defaults
+    to **layering** — a new order rests *alongside* existing ones so islands can
+    stack a strategy — with a per-row **Replace** toggle to supersede, plus a
+    prominent **Remove** control on each open order. `post_offer`/`post_bid` and
+    `execute_order_list` gain a `replace` flag (engine default stays `True`, so
+    AI turn handlers and existing callers are unchanged); the client sends
+    `replace: false` to layer.
+  - **Executed-fills ledger.** `Market` now records every fill (order-book cross,
+    tight-spread auto-exec, market-maker buy/sell, `buy_from_offers`/
+    `sell_to_bids`) once, and `Market.player_fills(player_id)` shapes it per
+    viewer (buy/sell side, counterparty, price, season). Exposed as `my_fills`
+    on every `game_state` snapshot and rendered on the Fills tab.
+  - **Capture path.** Trade entry rides the fire-and-forget `order_batch`
+    message (`trading.execute_order_list`), so the AI agent's turn-prompt flow
+    is untouched. `order_batch` now re-broadcasts fresh per-viewer state to every
+    seat, so a fill against another island's resting order reaches that island's
+    client (previously only the actor was refreshed).
+  - Self-trades are never recorded, and the existing auto-match/tight-spread
+    self-cross guards already prevent an island's own layered bid and ask from
+    trading with each other. New tests: `tests/test_models/test_market_blotter.py`,
+    `tests/test_server/test_trade_blotter.py`, plus layering cases in
+    `tests/test_engine/test_order_batch.py`.
+
+- **Fix: season header could stick on the old season until a page refresh** —
+  season transitions run on the game thread while `get_state` requests are
+  served async; an in-flight request computed just before a season boundary
+  could be delivered to the client *after* the newer `season_start`/
+  `pre_season_start` broadcast, silently reverting the header. The header
+  update is now guarded by a monotonic (year, season) ordinal — any older
+  season is ignored, so the display can only move forward (or reset on a
+  fresh room join).
+- **Fix: capital-repair failure message named the wrong resource** — repairing
+  a failed unit blocked by missing Spares (repairs need `capacity_units` worth,
+  per the manufacturer-capacity-scaling brief) showed a generic "needs enough
+  Dollops and Freight" message that predates that requirement, misleading
+  players into checking the wrong resources. Now surfaces the actual blocker
+  (e.g. "Need 1 Spares for Underwriting Desk; available 0.") computed by the
+  existing repair-quote logic. New regression tests
+  (`tests/test_server/test_capital_repair_message.py`).
+
+- **UI: continuing-education tile reconciled to the real payload** — the
+  Island Wellbeing tile's Continuing Ed. row was stubbed against a guessed
+  `{factor, covered}` shape; the merged engine emits `{managers, annual_need,
+  expertise_ytd, expertise_consumed, uncovered_fraction, penalty,
+  manager_efficiency_multiplier}`. Now reads `manager_efficiency_multiplier`
+  directly and derives "N/M managers covered" from
+  `managers x (1 - uncovered_fraction)`. This completes the economics-vision
+  UI stubs (business-cycle chip, QoL score, and now CE coverage all live on
+  real engine data).
+
+- **Continuing education Expertise upkeep (P2b)** — Manager-band workers now
+  need 1 Expertise per active manager over a rolling year. Each island tracks a
+  single four-season CE ring and one accumulated CE penalty; shortfalls add
+  `5% * uncovered_fraction` per season up to `CE_MAX = 0.20`, full coverage
+  recovers 5 points per season, and the resulting multiplier applies evenly to
+  all Manager-band workers only. AI players now buy against their annual CE
+  shortfall, the server state exposes CE coverage/factor data, and the sim
+  runner reports manager CE-factor distribution. Calibration gives the Doctor
+  one extra opening Expertise buffer and the Educator one extra opening
+  Expertise unit so the new recurring sink lands without over-penalising the
+  healthcare island. Seed-42 1000-game sim versus P2a:
+
+  | Role | Before share +/- sigma | After share +/- sigma | Delta share | Delta sigma |
+  |---|---:|---:|---:|---:|
+  | Farmer | 12.32% +/- 6.78% | 11.88% +/- 6.66% | -0.44 pts | -0.12 pts |
+  | Miner | 14.68% +/- 5.09% | 14.32% +/- 5.01% | -0.36 pts | -0.08 pts |
+  | Transporter | 12.49% +/- 4.06% | 13.01% +/- 4.29% | +0.52 pts | +0.23 pts |
+  | Educator | 15.62% +/- 3.73% | 16.62% +/- 3.72% | +1.00 pts | -0.01 pts |
+  | Banker | 14.96% +/- 4.26% | 15.64% +/- 4.34% | +0.68 pts | +0.08 pts |
+  | Manufacturer | 15.12% +/- 3.89% | 15.65% +/- 3.85% | +0.53 pts | -0.04 pts |
+  | Doctor | 14.81% +/- 4.76% | 12.92% +/- 4.53% | -1.89 pts | -0.23 pts |
+
+  Manager CE factor distribution: mean 0.973, p10 0.900, min 0.800. Expertise
+  produced/consumed/traded moved from 72,065 / 7,794 / 14 under P2a to
+  71,607 / 33,970 / 3,554. Brownouts landed at 1222/84000 island-seasons
+  (1.45%). Full pytest passed (908 tests) with dev+server extras.
+
+- **Economic dependence inputs (P2a)** — every island now has a flat seasonal
+  building-power Oil floor (`ENERGY_BASE = 1`) plus a surcharge only for owned
+  fixed, energy-intensive plant (`ENERGY_DIVISOR = 4`); mobile fuel-burners,
+  storage, offices, classrooms, kitchens, hospital wards, reagent labs, and
+  generic laboratory equipment do not double-count as grid load. Brownouts are
+  soft and prorated by unmet fraction (`-10%` capacity, `-3` QoL Stability at
+  full shortfall). Educator lab-scale Courses/Expertise consume 1 Reagents + 1
+  Oil per completed 10 output units, in-residence students count as campus
+  population for meals, and active Banker loan/policy books consume 1 Goods per
+  season. AI now reserves next-season Oil and can cover only the current floor
+  shortfall via the formula market before production; production fuel still
+  becomes ordinary bids. Calibration kept `ENERGY_DIVISOR = 4`, set Goods to
+  5 Dp, lifted Farmer/Doctor key output values by 20%, trimmed Banker Finance
+  output to `0.7 x M`, and lifted Miner Oil output to `4.5 x M`. Seed-42
+  1000-game sim versus the business-cycle baseline:
+
+  | Role | Before share +/- sigma | After share +/- sigma | Delta share | Delta sigma |
+  |---|---:|---:|---:|---:|
+  | Farmer | 13.67% +/- 6.99% | 12.30% +/- 6.80% | -1.37 pts | -0.19 pts |
+  | Miner | 12.78% +/- 4.34% | 14.70% +/- 5.10% | +1.92 pts | +0.76 pts |
+  | Transporter | 13.17% +/- 4.08% | 12.50% +/- 4.10% | -0.67 pts | +0.02 pts |
+  | Educator | 15.14% +/- 3.87% | 15.60% +/- 3.70% | +0.46 pts | -0.17 pts |
+  | Banker | 16.18% +/- 4.04% | 15.00% +/- 4.30% | -1.18 pts | +0.26 pts |
+  | Manufacturer | 14.12% +/- 3.53% | 15.10% +/- 3.90% | +0.98 pts | +0.37 pts |
+  | Doctor | 14.95% +/- 4.26% | 14.80% +/- 4.80% | -0.15 pts | +0.54 pts |
+
+  Brownouts landed at 1397/84000 island-seasons (1.66%). Oil flow rose on both
+  required axes: produced 290,161 -> 302,172 and consumed 88,284 -> 205,606;
+  Oil traded rose 834 -> 65,658. Full pytest passed (903 tests) with dev+server
+  extras.
+
+- **Business cycle and severity-scaled events** — games now own a seeded
+  `BusinessCycle` that advances Expansion -> Boom -> Contraction -> Trough,
+  feeds posted funding rates, consumer demand, QoL stability drift, event-chart
+  weight tilts, and the server `business_cycle` state used by the header chip.
+  Disaster-capable chart entries can roll Minor/Major/Catastrophic severity;
+  severe events sideline workers, multiply capital failure risk, and book a
+  two-installment rebuild levy that blocks repairs until paid. Pandemic events
+  now persist for exactly two seasons, apply severity-specific productivity
+  loss, and reduce sick-worker sidelining by vaccine coverage. Added rare
+  Energy Crisis, Harbour Blockade, and Baby Boom events. The sim runner now
+  exports bankruptcy counts alongside share ±σ. Seed-42 1000-game sim versus
+  the medical/QoL baseline:
+
+  | Role | Before share ±σ | After share ±σ | Δshare | Δσ |
+  |---|---:|---:|---:|---:|
+  | Farmer | 13.21% ± 6.85% | 13.67% ± 6.99% | +0.46 pts | +0.14 pts |
+  | Miner | 12.62% ± 4.25% | 12.78% ± 4.34% | +0.16 pts | +0.09 pts |
+  | Transporter | 13.31% ± 3.83% | 13.17% ± 4.08% | -0.14 pts | +0.25 pts |
+  | Educator | 15.28% ± 3.97% | 15.14% ± 3.87% | -0.14 pts | -0.10 pts |
+  | Banker | 17.01% ± 3.99% | 16.18% ± 4.04% | -0.83 pts | +0.05 pts |
+  | Manufacturer | 14.52% ± 3.35% | 14.12% ± 3.53% | -0.40 pts | +0.18 pts |
+  | Doctor | 14.05% ± 3.95% | 14.95% ± 4.26% | +0.90 pts | +0.31 pts |
+
+  All role wealth-share moves are within the ±2 point gate; after-run
+  bankruptcy rate was 0/7000 island-games (0.00%). Full pytest passed
+  (899 tests) with dev+server extras.
+
+- **Medical response and Quality of Life** — `HealthServices` is now the
+  tradable `MedicalSupplies` resource, with old `HealthServices` save/client
+  strings migrating to the new enum value. Workplace injuries now sideline
+  untreated workers for two seasons; local Doctor/Nurse care consumes
+  MedicalSupplies and shortens recovery to one season, while medevac consumes
+  PassengerSeats, pays the Doctor, and uses the Doctor island's supplies.
+  Seasonal QoL now tracks nutrition, medical coverage, consumer goods, and
+  stability as a 0-100 index that maps to a x0.85-x1.15 production multiplier;
+  Nurse upkeep activates the medical-coverage bonus. Seed-42 1000-game sim:
+  Doctor wealth share moved 13.8% ± 3.8% → 14.1% ± 4.0%, no other role moved
+  more than 1.6 share points, and MedicalSupplies traded 48.8 units/game.
+
+- **Economics-vision UI (capacity + financing live; QoL/cycle/CE stubbed)** —
+  the capital-order picker now shows each item's capacity-unit cost, whether
+  the Manufacturer has the stock to build it ("✓ Forge can build" / "⚠ Forge
+  short 1/4 …"), and the Manufacturer's remaining seasonal durable allowance.
+  The capital-order confirmation now spells out the +5pt capital-financing
+  premium against the posted 3-year rate ("negotiate at the Bank for better").
+  Render-when-present stubs added for the not-yet-merged features: a
+  business-cycle header chip, and an Island Wellbeing tile (Quality of Life +
+  continuing-education coverage) — invisible until the engine ships the data.
+  With the QoL engine now live, the Island Wellbeing tile's Quality-of-Life
+  score activates.
+
+- **Loan negotiation and capital-finance premium** — standard take-loan
+  requests now support one borrower counter round, with AI Bankers accepting
+  or countering against explicit spread floors and human Bankers receiving a
+  review prompt. Capital-order financing is now convenience priced at posted
+  three-year funding + 5.0 percentage points, with the ack payload carrying
+  the loan rate, posted 3-year rate, and premium for Claude's order modal.
+  Seed-42 1000-game sim: no role wealth share moved versus the Manufacturer
+  capacity baseline; the `--negotiate-loans` A/B run was also unchanged because
+  current all-AI simulations do not naturally choose borrower loan actions.
+
+- **Manufacturer capacity scaling and repair parity** — capital orders now
+  consume item-specific Manufacturer capacity units instead of a flat one
+  output token (e.g. cargo planes and shipyards are 4-unit builds), while
+  build-time cash overhead and a seasonal durable-output cap make ForgeHaven
+  invest in its own assembly capacity before flooding the archipelago with
+  equipment. Repairs now require proportional Spares kits, all owned capital
+  units stay on the per-unit failure path, and the server payload exposes
+  capacity units, Manufacturer stock, and durable allowance data for Claude's
+  order-desk UI. Seed-42 1000-game sim: Manufacturer wealth share moved
+  14.6% ± 4.1% → 14.2% ± 3.5%; no other role moved more than 0.2 share points;
+  Spares consumed rose from 0 to 153 kits.
+
+- **Sim baselining metrics (R1/R2/R7)** — the simulation runner now reports
+  per-role wealth share with a per-game stddev (and a cross-seed σ table in
+  `--seeds` mode, with the mean ± 2σ regression rule), counts any decision
+  prompt answered by `_SilentIO` degenerate defaults (fallback telemetry —
+  zero in the current baseline config), and tracks wealth concentration
+  (mean Gini + HHI) per run. Role CSV gains `share_mean_%`/`share_stddev_%`.
+  Sim-tooling only; no gameplay changes.
+
+- **Spares economy opened** — `Spares` is now a tradable, priced (12 Dp)
+  market resource with a Manufacturer product line (Metal 2 + Oil 1 → 4
+  kits, in both the product-line and capacity-recipe models), 4 starting
+  kits for the Manufacturer, and AI behaviour: capital-owning islands buy a
+  2-kit repair buffer; the Manufacturer produces kits when its own capital
+  fails with none on hand (emergency) or when the line wins the normal
+  demand/profit scoring. Spares bids are excluded from the product-line
+  ROUTING gates so the ubiquitous small buffer bids can't crowd out
+  higher-value lines — the first cut did exactly that and cratered the
+  Manufacturer's 1000-game win rate from 10.4% to 3.3%; with the gate fix
+  it lands at 10.9% (seed 42), slightly above the pre-Spares baseline,
+  with 3.6 kits/game trading. Banker over-performance (28%) predates this
+  change and is tracked by the workforce-participation rebalance brief.
+
+- **Island reports, worker transfers, manufacturer order book, and Done Trading
+  active-human hardening** — adds private season-report payloads with P&L
+  history, balance sheet, deficiencies, and manpower forecast; requester-side
+  training cancellation and cross-island worker transfer offers; a Manufacturer
+  order-book queue with promise dates and reorder support; and a server-side
+  active-human computation that falls back to authoritative engine roles when
+  lobby role metadata is stale. QoL/pollution remains on the calibrated
+  `0.50/0.25/0.20/0.05` weights already covered by tests. A 1000-game
+  calibration run (`--seed 42`) produced win rates from 9.7% to 20.3%
+  (target 14.3%, spread within the requested ±6pp band).
+
+- **Training queue, student loans, repair preview, and pending action flags** —
+  Review Training skip/cancel is now a no-op and same-season re-reviewable, while
+  queue reordering preserves every pending request. Training requests can carry
+  `student_loan_requested` / `financing`; approval draws a Bank loan for the
+  Educator fee only, falling back to cash when possible and creating no debt for
+  rejected requests. Capital repair quotes now come from
+  `Game.capital_repair_preview` and appear as `repair_cost` on failed
+  `capital_owned` entries. `game_state.pending_actions` now surfaces
+  `review_training`, `arrange_transport`, `review_staffing_requests`,
+  `review_deals`, `review_capital_order`, and `repair_capital` for the viewer.
+
+- **Chat new-chat fix** — `get_game_state` now exposes `is_human` per player (it only had
+  `is_ai`), so the "New chat" island picker (and roster cards) stop seeing zero human islands.
+  Fixes "No other islands to chat with yet" when others were clearly present.
+- **Cash on the capital order form** — the order quote now shows "Cash available" and flags
+  when the recommended total exceeds it (finance or lower the order).
+
+- **Market order cancel / reduce** — `Market.cancel_offer/reduce_offer/cancel_bid/reduce_bid`
+  let an owner cancel or reduce a resting ask/bid, refunding the escrowed units straight to
+  inventory (no buy-back, no cash). `game_state.my_market_orders` lists your live orders; a
+  "Your open orders" section with Cancel/Reduce controls appears in the Market modal
+  (`market_order_update` WS action).
+- **Capital equipment repair** — `capital_repair` WS action wires the existing repair logic
+  (`Game._attempt_capital_repair`) to a player-facing Repair button on failed capital in the
+  Build & Develop panel and capital portfolio (hidden once a repair is queued).
+
+- **Player chat (multi-channel)** — a real chat room replaces the old log-only broadcast.
+  There's an always-present room-wide channel plus **private group "conspiracy" channels**
+  (pick a topic + one or more islands). Messages support **emojis** and **@mentions**
+  (autocomplete + highlight). UI is a Chat topic-list panel (unread badges) opening **docked,
+  resizable, minimizable** chat windows; recent history backfills on reconnect. Room delivery
+  reaches human seats only; **spectators** get a read-only panel showing the public room
+  channel plus the channels the watched seat is in (AI remarks render there). The agent-side
+  "AI decides to chat" change is a deferred follow-on.
+
+- **Production schedule** — the Production Capacity panel now reads as a per-output schedule:
+  each line shows how much can be produced this season ("Produce up to N") and, when capped,
+  the limiting factor in plain English plus what to buy/train/build to lift it (e.g. "limited
+  by inputs — buy 4 Oil"). Helps the Manufacturer see what each product line can yield.
+
+- **Manufacturer producible lines (Goods + TransportEquipment)** — added a `Goods`
+  production recipe and assembly-line capacity, and put `manufacturer.shipyard` in the
+  Manufacturer's mandatory opening investment so TransportEquipment is buildable from setup.
+  Guards ensure every `MANUFACTURER_PRODUCT_LINES` output has both a recipe and a capital path.
+- **Local training needs no transport** — same-island / server-batch faculty training is
+  normalized to `self_training` with **0 PassengerSeats and 0 Educator fee**; cross-island
+  faculty training still requires PassengerSeats.
+- **App-level WebSocket heartbeat** — the server now answers `{"type":"ping"}` /
+  `{"type":"heartbeat"}` with a `pong` (echoing client timing fields), so clients/agents that
+  can't use protocol-level pings have an app-level keepalive + RTT path.
+
+- **Server errors now surface as a toast** — the client's `error` handler previously only wrote
+  the message to the activity log, so a failed action (e.g. a capital order the Manufacturer
+  can't fulfil) appeared to fail silently. Errors now also pop a toast.
+
+- **Build & Develop picker shows full status** — the capital build picker (`openCapitalPicker`)
+  now lists every island capital item with status instead of only the not-yet-owned subset:
+  buildable items and **failed units (⚠ rebuild)** are orderable, and an "Already built"
+  section shows owned/healthy ones. Fixes the playtest report where a Doctor's failed Vaccine
+  Lab was hidden and only 3 of 5 items appeared.
+
+- **Capital negotiation accept box no longer sticks (#185)** — when a Manufacturer accepts a
+  capital order, the settlement returns a `capital_order_ack`-shaped payload; the frontend
+  now clears the settled negotiation from the awaiting list **and** the push buffer on that
+  ack, so the review box disappears and a following `game_state` can't re-inject it.
+  Previously the box stayed and re-clicking returned "Capital negotiation #N is not awaiting
+  your response".
+
+- **Fishing roles overhaul** — Agriculture now has Marine Biologist
+  (Manager) and Fish Processing Technician (Technician) professions. Fish
+  output takes a 50% penalty without an active Marine Biologist, fishing boats
+  need 2 Fish Processing Technicians each and scale yield linearly when
+  staffed, and the Farmer starting workforce includes 1 Marine Biologist + 2
+  Fish Processing Technicians while keeping its starting Horticulturalist and
+  Veterinarian. Horticulturalists now provide an optional +35% Grain/Produce
+  bonus year-round, and Veterinarians provide an optional +50% Meat bonus
+  year-round; the old Autumn/Winter missing-specialist penalties are gone.
+
+- **Education self-training deadlock fix** — diagnosis: Educator faculty
+  self-training was blocked by the same `_training_capacity_status` staffing
+  gate used for external courses; once Professor/Lecturer or
+  TechnicalDirector/Instructor course capacity was fully committed,
+  self-training could not start and the island could not grow the staff needed
+  to clear the jam. Faculty self-training now has one reserved Manager lane
+  and one reserved Technician lane beyond ordinary staffing, while still
+  consuming Courses, Expertise/Reagents, and workshop seats. The turn log marks
+  when a cohort starts via the reserved lane and defers additional self-training
+  while that lane is occupied.
+
+- **Waiting-room join idempotent by name** — re-joining a waiting room with a name
+  already seated now reuses that seat instead of creating a duplicate
+  (`GameManager.join_room` tries `rejoin_room_by_name` first). Fixes the duplicate-seat
+  root cause behind the AI-lockout bug from the server side; extends the existing
+  reconnect-by-name design to the waiting-room path.
+
+- **Manufacturer spares warehouse storage (#185/#188)** — Manufacturing now has
+  Small Spares Warehouse (+10 spares) and Spares Warehouse (+12 spares) capital
+  items, and starts with one small warehouse so it can stock generic spares from
+  turn one. `Player.manufacture_spares()` clamps production to maintained
+  warehouse capacity, while `game_state` exposes `spares_held` and
+  `spares_capacity` for UI display.
+
+- **Capital negotiation fixes + log search (#185)** — a Manufacturer ordering its *own*
+  equipment (or any cash-only item) now settles immediately as a self-build instead of
+  parking a negotiation that awaited — and could never clear — the manufacturer's own
+  response, which previously jammed the awaiting queue and blocked every later order.
+  The Build & Develop review panel now hardens against mislabeling: self-build and
+  wrong-viewer payloads are never rendered as an incoming "order from another player",
+  and the pending badge counts only actionable rows. The Recent Activity / Log panel
+  gains a 🔍 text search that combines with the category filter and reaches trimmed
+  history.
+
+- **Capital order negotiation + enriched modal (#185)** — `capital_order` now creates a
+  dedicated Manufacturer-review negotiation instead of settling instantly. Manufacturers can
+  accept, counter, or decline through `capital_negotiation_respond`; buyers accept counters
+  through `capital_negotiation_accept`; accepted negotiations settle through the existing
+  delivery, financing, and 2% referral path exactly once. AI Manufacturers auto-accept offers
+  at or above the recommended total and otherwise counter at the recommendation. `game_state`
+  now exposes `capital_negotiations_awaiting_me` and `my_capital_negotiations` for Claude's
+  review/counter UI. The order modal now shows line-item pricing, per-option costs and
+  descriptions, standard terms, and info popovers while keeping the internal referral hidden
+  from the buyer-facing form.
+
+- **Capital Orders II — financing loan path + 2% manufacturer referral (#185/#188)** —
+  a financed capital order (`financing: true`) now borrows the upfront from the Bank via
+  `TurnManager.issue_capital_finance_loan` (reusing the loan reserve mechanics): the buyer's
+  treasury stays flat and they owe the loan, while the Manufacturer is paid in full plus a 2%
+  referral kickback funded by the Bank. Falls back to cash when no Banker is present or the
+  bank is at its active-loan cap; `capital_order_ack` now reports
+  `financed`/`loan_id`/`loan_repayment`/`referral_fee`. The simulation/engine AI stays on the
+  legacy warranty path (already balanced), so #188 term contracts apply to live play only.
+- **Capital order UI** — the "Purchase Equipment" action and the "＋ Build…" button now open
+  the #185/#188 order modal (via an item picker when more than one item is buildable) instead
+  of the legacy server-driven item prompt, so the term-contract + financing options are
+  reachable from the obvious control.
 
 ## 0.1.5-beta.1 — 2026-06-19 (Beta)
 

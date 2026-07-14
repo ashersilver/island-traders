@@ -125,7 +125,7 @@ def test_training_batch_ws_handler_submits_and_rejects_independent_rows():
 def test_training_batch_server_computes_technician_duration_and_settling():
     mgr, room, players = _bootstrap_game(["Farmer", "Educator"])
     farmer, educator = players
-    educator.capital_inventory.pop("educator.technical_workshop", None)
+    educator.capital_units.pop("educator.technical_workshop", None)
     ws = _WS()
 
     asyncio.run(mgr._handle_training_batch(

@@ -141,10 +141,16 @@ class TrainingRequest:
     decline_season: int = -1
     original_dollops_to_educator: float = 0.0
     decision_acknowledged: bool = False
-    # Tick at which an Educator last skipped this request without deciding.
-    # Prevents the same request from re-appearing multiple times in the same
-    # review session (it will appear again next season).
+    # Legacy saved-game field. Review-without-decision is now a no-op, so the
+    # engine no longer filters on this value.
     last_skipped_tick: int = -1
+    # When true, the requester asked the Bank to finance the Educator fee.
+    # The loan is attempted only when the request is approved/dispatched.
+    student_loan_requested: bool = False
+    # Set once the fee is actually settled: True if a Student Loan was drawn,
+    # False if paid in cash (either not requested, or the loan was
+    # unavailable and cash was used as a fallback). None until settled.
+    loan_financed: bool | None = None
 
     def describe(self, player_names: dict[int, str]) -> str:
         sym = CURRENCY_SYMBOL
@@ -300,6 +306,7 @@ class TrainingRegistry:
         engineer_specialty: str = "",
         duration_seasons: int = 0,
         settling_seasons_on_return: int = 0,
+        student_loan_requested: bool = False,
     ) -> TrainingRequest:
         count = len(worker_ids)
         if len(set(worker_ids)) != count:
@@ -348,6 +355,7 @@ class TrainingRegistry:
                 0, min(tickets_supplied_by_requester, len(worker_ids))
             ),
             original_dollops_to_educator=dollops_to_educator,
+            student_loan_requested=student_loan_requested,
         )
         self._requests.append(req)
         self._next_id += 1
