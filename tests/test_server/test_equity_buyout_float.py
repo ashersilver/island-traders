@@ -53,22 +53,23 @@ def test_owner_buys_some_float_shares():
     mgr = GameManager()
     rid = _running_room(mgr)
     p = mgr.rooms[rid].game.players[0]
-    cash0 = p.personal_cash
+    owner = mgr.rooms[rid].game.owners["h1"]
+    cash0 = owner.personal_cash
     treasury0 = p.dollops
-    money0 = round(p.personal_cash + p.dollops, 1)
+    money0 = round(owner.personal_cash + p.dollops, 1)
     price = _price(mgr, rid)
     ws = _WS()
 
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 10}, ws))
 
-    assert p.cap_table.held_by("0") == AUCTIONED_SHARES + 10
+    assert p.cap_table.held_by("h1") == AUCTIONED_SHARES + 10
     assert p.cap_table.unissued() == (100 - AUCTIONED_SHARES) - 10
     assert sum(p.cap_table.shares.values()) == 100
-    assert p.holdings["0"] == AUCTIONED_SHARES + 10
+    assert owner.holdings["0"] == AUCTIONED_SHARES + 10
     cost = round(10 * price, 1)
-    assert p.personal_cash == round(cash0 - cost, 1)
-    assert (p.dollops - treasury0) == pytest.approx(cash0 - p.personal_cash, abs=0.1)
-    assert round(p.personal_cash + p.dollops, 1) == money0
+    assert owner.personal_cash == round(cash0 - cost, 1)
+    assert (p.dollops - treasury0) == pytest.approx(cost, abs=0.1)
+    assert round(owner.personal_cash + p.dollops, 1) == money0
 
 
 def test_buy_is_clamped_to_available_float():
@@ -80,7 +81,7 @@ def test_buy_is_clamped_to_available_float():
     # Ask for way more than the 40 unissued shares -> clamped to available.
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 999}, ws))
 
-    assert p.cap_table.held_by("0") == 100
+    assert p.cap_table.held_by("h1") == 100
     assert p.cap_table.unissued() == 0
 
 
@@ -88,7 +89,7 @@ def test_cannot_buy_without_enough_cash():
     mgr = GameManager()
     rid = _running_room(mgr)
     p = mgr.rooms[rid].game.players[0]
-    p.personal_cash = 0.0
+    mgr.rooms[rid].game.owners["h1"].personal_cash = 0.0
     ws = _WS()
 
     asyncio.run(mgr._handle_buy_out_float(rid, "h1", {"shares": 5}, ws))

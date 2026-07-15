@@ -47,8 +47,9 @@ from ..models.capital_negotiation import (
 )
 from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
-    AUCTIONED_SHARES, UNISSUED_HOLDER,
+    AUCTIONED_SHARES, UNISSUED_HOLDER, CapTable,
 )
+from ..models.owner import Owner
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import (
     CAPITAL_FINANCE_PREMIUM_PTS,
@@ -429,9 +430,10 @@ class GameRoom:
     game_thread: threading.Thread | None = None
     io_adapter: WebSocketIOAdapter | None = None
     summary: GameSummary | None = None
-    # Lobby player_id (string) → engine Player.player_id (int spec idx).
+    # Lobby player_id (string) → owned engine Player.player_id values.
     # Set when the game launches; used to route WS responses + ready signals.
-    lobby_to_engine_id: dict[str, int] = field(default_factory=dict)
+    lobby_to_engine_id: dict[str, list[int]] = field(default_factory=dict)
+    acting_engine_id: dict[str, int] = field(default_factory=dict)
     # Per-season ready/active state (simultaneous-play architecture)
     season_ready_set: set[str] = field(default_factory=set)
     season_active_humans: set[str] = field(default_factory=set)
@@ -444,6 +446,8 @@ class GameRoom:
     # Sentinel to stop multiple Ready clicks queueing END_TURN responses
     # after a player's turn loop has already exited.
     season_human_done: set[str] = field(default_factory=set)
+    season_ready_engine_ids: set[int] = field(default_factory=set)
+    season_done_engine_ids: set[int] = field(default_factory=set)
     # Pre-season window state.  "pre_season" while the review window is open;
     # "action" once the action phase begins.  Cleared to "action" on game start.
     season_phase: str = "action"
@@ -1497,28 +1501,33 @@ class GameManager:
 
         specs = []
         spec_to_lobby_pid: dict[int, str] = {}   # PlayerSpec idx -> lobby player_id
+        spec_to_role: dict[int, str] = {}
+        lobby_to_specs: dict[str, list[int]] = {}
         for lp in room.players:
             roles = list(lp.role_names)
             if not roles:
                 continue
-            # Seed each engine Player's treasury at ISLAND_STARTING_CASH; the
-            # personal-cash / loan flip is applied post-setup below.
-            specs.append(PlayerSpec(
-                name=lp.name, role_names=roles, is_human=lp.is_human,
-                starting_dollops=round(ISLAND_STARTING_CASH, 1),
-            ))
-            spec_to_lobby_pid[len(specs) - 1] = lp.player_id
+            for role in roles:
+                # Seed each island business separately; the owner wallet /
+                # loan flip is applied post-setup below.
+                specs.append(PlayerSpec(
+                    name=lp.name, role_names=[role], is_human=lp.is_human,
+                    starting_dollops=round(ISLAND_STARTING_CASH, 1),
+                ))
+                spec_idx = len(specs) - 1
+                spec_to_lobby_pid[spec_idx] = lp.player_id
+                spec_to_role[spec_idx] = role
+                lobby_to_specs.setdefault(lp.player_id, []).append(spec_idx)
 
         config = GameConfig(player_specs=specs, num_years=room.num_years)
 
         player_send_fns: dict[int, object] = {}
-        lobby_order = [lp for lp in room.players if lp.role_names]
-        for idx, lp in enumerate(lobby_order):
-            def make_send(lp_id=lp.player_id):
+        for idx, lobby_pid in spec_to_lobby_pid.items():
+            def make_send(lp_id):
                 def send(msg):
                     self._thread_safe_send(room_id, lp_id, msg)
                 return send
-            player_send_fns[idx] = make_send()
+            player_send_fns[idx] = make_send(lobby_pid)
 
         def broadcast(msg):
             self._thread_safe_broadcast(room_id, msg)
@@ -1534,10 +1543,39 @@ class GameManager:
         room.game = game
         room.io_adapter = io
         room.status = "running"
-        # Map lobby (string) → engine spec idx (int) so WS responses route right
+        # Map lobby owner (string) → owned engine island ids (int).  Acting
+        # defaults to the first owned island until Task 8.2 adds a selector.
         room.lobby_to_engine_id = {
-            lobby_pid: spec_idx for spec_idx, lobby_pid in spec_to_lobby_pid.items()
+            lobby_pid: list(spec_idxs)
+            for lobby_pid, spec_idxs in lobby_to_specs.items()
         }
+        room.acting_engine_id = {
+            lobby_pid: spec_idxs[0]
+            for lobby_pid, spec_idxs in lobby_to_specs.items()
+            if spec_idxs
+        }
+        game.owners = {}
+        for lp in room.players:
+            owned = room.lobby_to_engine_id.get(lp.player_id, [])
+            if not owned:
+                continue
+            bid = float(bids.get(lp.player_id, 0.0))
+            owner = Owner(
+                owner_id=lp.player_id,
+                name=lp.name,
+                personal_cash=round(base_capital - bid, 1),
+                holdings={str(engine_id): AUCTIONED_SHARES for engine_id in owned},
+            )
+            game.owners[lp.player_id] = owner
+            for engine_id in owned:
+                if engine_id >= len(game.players):
+                    continue
+                island = game.players[engine_id]
+                island.owner_id = lp.player_id
+                island.owner = owner
+                island.personal_cash = 0.0
+                island.holdings = {}
+                island.cap_table = CapTable.new_with_majority(lp.player_id)
 
         # --- Apply the equity flip to each engine Player (post-setup) -------
         # treasury = ISLAND_STARTING_CASH − opening capital spend paid from the island
@@ -1548,17 +1586,44 @@ class GameManager:
             (p for p in game.players if any(r.name == "Banker" for r in p.roles)),
             None,
         )
+        def island_costs_for(spec_idx: int, lobby_pid: str) -> dict[str, float]:
+            role = spec_to_role.get(spec_idx)
+            costs_for_lobby = dict(capital_purchase_costs.get(lobby_pid, {}))
+            first_owned = (room.lobby_to_engine_id.get(lobby_pid) or [None])[0]
+            if not costs_for_lobby:
+                cspend = float(capital_spend.get(lobby_pid, 0.0))
+                if cspend > 0 and spec_idx == first_owned:
+                    return {"opening.aggregate_spend": cspend}
+                return {}
+            selected: dict[str, float] = {}
+            for item_id, cost in costs_for_lobby.items():
+                item = find_item(CAPITAL_CATALOGUE, item_id)
+                if item is None:
+                    continue
+                if item.role == role or (item.role == "Any" and spec_idx == first_owned):
+                    selected[item_id] = float(cost)
+            return selected
+
+        def island_purchase_items_for(spec_idx: int, lobby_pid: str) -> list[str]:
+            role = spec_to_role.get(spec_idx)
+            first_owned = (room.lobby_to_engine_id.get(lobby_pid) or [None])[0]
+            items: list[str] = []
+            for item_id in capital_purchases.get(lobby_pid, []):
+                item = find_item(CAPITAL_CATALOGUE, item_id)
+                if item is None:
+                    continue
+                if item.role == role or (item.role == "Any" and spec_idx == first_owned):
+                    items.append(item_id)
+            return items
+
         for spec_idx, lobby_pid in spec_to_lobby_pid.items():
             if spec_idx >= len(game.players):
                 continue
             p = game.players[spec_idx]
-            bid = float(bids.get(lobby_pid, 0.0))
-            cspend = float(capital_spend.get(lobby_pid, 0.0))
             remaining_treasury = ISLAND_STARTING_CASH
-            p.personal_cash = round(base_capital - bid, 1)
             p.shareholder_loans = {}
-            costs = dict(capital_purchase_costs.get(lobby_pid, {}))
-            residual_spend = round(cspend - sum(costs.values()), 1)
+            costs = island_costs_for(spec_idx, lobby_pid)
+            residual_spend = 0.0
             if residual_spend > 0:
                 costs["opening.aggregate_spend"] = residual_spend
             for item_id, cost in costs.items():
@@ -1600,10 +1665,7 @@ class GameManager:
         game.turn_manager.parallel_mode = True
 
         def _on_player_done(engine_pid: int) -> None:
-            lobby_pid = next(
-                (lp for lp, ep in room.lobby_to_engine_id.items() if ep == engine_pid),
-                None,
-            )
+            lobby_pid = self._lobby_id_for_engine_id(room, engine_pid)
             logger.info(
                 "[season-timer] player_turn_complete room=%s engine_pid=%s "
                 "lobby_pid=%s epoch=%.3f timer_end=%.3f phase=%s",
@@ -1615,7 +1677,10 @@ class GameManager:
                 room.season_phase,
             )
             if lobby_pid:
-                room.season_human_done.add(lobby_pid)
+                owned = set(self._owned_engine_ids(room, lobby_pid))
+                room.season_done_engine_ids.add(engine_pid)
+                if owned and owned <= room.season_done_engine_ids:
+                    room.season_human_done.add(lobby_pid)
                 self._broadcast_ready_update(room)
 
         game.turn_manager.on_player_turn_complete = _on_player_done
@@ -1632,10 +1697,8 @@ class GameManager:
         # even catalogue items with delivery_seasons > 0 are available
         # immediately. Mid-game purchases can still use capital_in_transit.
         if capital_purchases:
-            from ..constants_capacity import CAPITAL_CATALOGUE
-            from ..models.capacity import find_item
             for spec_idx, lobby_pid in spec_to_lobby_pid.items():
-                bought = capital_purchases.get(lobby_pid, [])
+                bought = island_purchase_items_for(spec_idx, lobby_pid)
                 if not bought or spec_idx >= len(game.players):
                     continue
                 p = game.players[spec_idx]
@@ -1645,8 +1708,6 @@ class GameManager:
                         continue
                     p.add_capital(iid, 1)
         if capital_leases:
-            from ..constants_capacity import CAPITAL_CATALOGUE
-            from ..models.capacity import find_item
             from ..models.lease import lease_quote
             banker = next(
                 (p for p in game.players if any(r.name == "Banker" for r in p.roles)),
@@ -1654,7 +1715,13 @@ class GameManager:
             )
             lessor_id = banker.player_id if banker else -1
             for spec_idx, lobby_pid in spec_to_lobby_pid.items():
-                leased = capital_leases.get(lobby_pid, [])
+                leased = []
+                for item_id in capital_leases.get(lobby_pid, []):
+                    item = find_item(CAPITAL_CATALOGUE, item_id)
+                    role = spec_to_role.get(spec_idx)
+                    first_owned = (room.lobby_to_engine_id.get(lobby_pid) or [None])[0]
+                    if item and (item.role == role or (item.role == "Any" and spec_idx == first_owned)):
+                        leased.append(item_id)
                 if not leased or spec_idx >= len(game.players):
                     continue
                 p = game.players[spec_idx]
@@ -1763,20 +1830,39 @@ class GameManager:
                     )
                     for p in game.players
                 }
-                nw_ranked = sorted(
-                    game.players,
-                    key=lambda p: p.net_worth(
-                        spi, sh_loans.receivable(books, str(p.player_id))
-                    ),
-                    reverse=True,
-                )
+                owners = list((getattr(game, "owners", {}) or {}).values())
+                if owners:
+                    nw_ranked = sorted(
+                        owners,
+                        key=lambda owner: owner.net_worth(
+                            spi, sh_loans.receivable(books, owner.owner_id)
+                        ),
+                        reverse=True,
+                    )
+                else:
+                    nw_ranked = sorted(
+                        game.players,
+                        key=lambda p: p.net_worth(
+                            spi, sh_loans.receivable(books, str(p.player_id))
+                        ),
+                        reverse=True,
+                    )
                 broadcast({
                     "type": "game_over",
                     "winner": nw_ranked[0].name if nw_ranked else summary.winner.name,
                     "rankings": [
-                        {"name": p.name, "roles": p.role_names(),
+                        {"name": p.name, "roles": (
+                            p.role_names() if hasattr(p, "role_names") else []
+                         ),
                          "wealth": round(
-                             p.net_worth(spi, sh_loans.receivable(books, str(p.player_id))), 1
+                             p.net_worth(
+                                 spi,
+                                 sh_loans.receivable(
+                                     books,
+                                     getattr(p, "owner_id", str(getattr(p, "player_id", ""))),
+                                 ),
+                             ),
+                             1,
                          )}
                         for p in nw_ranked
                     ],
@@ -2808,10 +2894,7 @@ class GameManager:
         }
 
     def _deal_lobby_id_for_engine_id(self, room, engine_player_id: int) -> str | None:
-        for lobby_id, engine_id in (room.lobby_to_engine_id or {}).items():
-            if engine_id == engine_player_id:
-                return lobby_id
-        return None
+        return self._lobby_id_for_engine_id(room, engine_player_id)
 
     def _deal_state_for_viewer(
         self,
@@ -2967,7 +3050,7 @@ class GameManager:
         try:
             engine_id = int(raw)
         except (TypeError, ValueError):
-            engine_id = (room.lobby_to_engine_id or {}).get(str(raw))
+            engine_id = self._acting_engine_id_for_lobby(room, str(raw))
         return next(
             (p for p in room.game.players if p.player_id == engine_id),
             None,
@@ -3139,7 +3222,7 @@ class GameManager:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
 
-        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
         if engine_pid is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
             return
@@ -3203,10 +3286,9 @@ class GameManager:
             req_obj = training.request_by_id(batch_id)
             if req_obj:
                 educator_lobby_id = None
-                for lp_id, ep in (room.lobby_to_engine_id or {}).items():
-                    if ep == req_obj.educator_id:
-                        educator_lobby_id = lp_id
-                        break
+                educator_lobby_id = self._lobby_id_for_engine_id(
+                    room, req_obj.educator_id
+                )
                 if educator_lobby_id:
                     self._thread_safe_send(
                         room_id, educator_lobby_id,
@@ -3458,7 +3540,7 @@ class GameManager:
             try:
                 engine_id = int(campus_id)
             except (TypeError, ValueError):
-                engine_id = (room.lobby_to_engine_id or {}).get(str(campus_id))
+                engine_id = self._acting_engine_id_for_lobby(room, str(campus_id))
             return next((p for p in room.game.players if p.player_id == engine_id), None)
         if any(role.name == "Educator" for role in requester.roles):
             return requester
@@ -3467,15 +3549,6 @@ class GameManager:
                 player for player in room.game.players
                 if any(role.name == "Educator" for role in player.roles)
             ),
-            None,
-        )
-
-    def _engine_player_for_lobby(self, room, lobby_player_id: str) -> Player | None:
-        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
-        if engine_pid is None:
-            return None
-        return next(
-            (player for player in room.game.players if player.player_id == engine_pid),
             None,
         )
 
@@ -3495,16 +3568,19 @@ class GameManager:
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
-        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
-        if engine_pid is None:
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
             return
-        player = next((p for p in room.game.players if p.player_id == engine_pid), None)
         if player is None or player.cap_table is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "No island to buy into"}))
             return
+        owner = self._owner_for_lobby(room, lobby_player_id)
+        if owner is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Owner not found"}))
+            return
 
-        owner_key = str(player.player_id)
+        owner_key = lobby_player_id
         # Only the controlling owner may buy their island's float.
         if player.cap_table.held_by(owner_key) < AUCTIONED_SHARES:
             await websocket.send_text(json.dumps({
@@ -3533,21 +3609,21 @@ class GameManager:
         liq = player.total_wealth(prices, room.game.loan_ledger, CAPITAL_CATALOGUE, tick)
         price = share_price(fair_value(liq, player.wealth_history))
         cost = round(shares * price, 1)
-        if player.personal_cash < cost:
+        if owner.personal_cash < cost:
             await websocket.send_text(json.dumps({
                 "type": "error",
                 "message": f"Need {cost:.1f} Dp for {shares} share(s); you have "
-                           f"{player.personal_cash:.1f} Dp.",
+                           f"{owner.personal_cash:.1f} Dp.",
             }))
             return
 
         # Execute primary issuance: personal cash becomes island treasury cash;
         # shares move unissued -> owner; holdings mirror the cap table.
-        total_liquid = round(player.personal_cash + player.dollops, 1)
-        player.personal_cash = round(player.personal_cash - cost, 1)
-        player.dollops = round(total_liquid - player.personal_cash, 1)
+        owner.personal_cash = round(owner.personal_cash - cost, 1)
+        player.dollops = round(player.dollops + cost, 1)
         player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
-        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+        island_key = str(player.player_id)
+        owner.holdings[island_key] = owner.holdings.get(island_key, 0) + shares
 
         await websocket.send_text(json.dumps({
             "type": "buy_out_float_ack", "shares": shares,
@@ -3573,11 +3649,8 @@ class GameManager:
         room = self.rooms.get(room_id)
         if not room or not room.game:
             await _err("Room not found"); return
-        engine_pid = (room.lobby_to_engine_id or {}).get(lobby_player_id)
-        if engine_pid is None:
-            await _err("Player not in game"); return
         game = room.game
-        buyer = next((p for p in game.players if p.player_id == engine_pid), None)
+        buyer = self._engine_player_for_lobby(room, lobby_player_id)
         if buyer is None:
             await _err("Player not found"); return
         item = find_item(CAPITAL_CATALOGUE, str(msg.get("item_id", "")))
@@ -4100,9 +4173,141 @@ class GameManager:
             offers.append(payload)
         return offers
 
+    @staticmethod
+    def _normalise_owned_ids(value) -> list[int]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            raw_values = value
+        else:
+            raw_values = [value]
+        owned: list[int] = []
+        for raw in raw_values:
+            try:
+                engine_id = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if engine_id not in owned:
+                owned.append(engine_id)
+        return owned
+
+    def _owned_engine_ids(self, room, lobby_player_id: str) -> list[int]:
+        return self._normalise_owned_ids(
+            (room.lobby_to_engine_id or {}).get(lobby_player_id)
+        )
+
+    def _engine_to_lobby_map(self, room) -> dict[int, str]:
+        result: dict[int, str] = {}
+        for lobby_id, raw_ids in (room.lobby_to_engine_id or {}).items():
+            for engine_id in self._normalise_owned_ids(raw_ids):
+                result[engine_id] = lobby_id
+        return result
+
+    def _lobby_id_for_engine_id(self, room, engine_player_id: int) -> str | None:
+        return self._engine_to_lobby_map(room).get(engine_player_id)
+
+    def _acting_engine_id_for_lobby(self, room, lobby_player_id: str) -> int | None:
+        owned = self._owned_engine_ids(room, lobby_player_id)
+        if not owned:
+            return None
+        acting = getattr(room, "acting_engine_id", {}).get(lobby_player_id)
+        if acting not in owned:
+            acting = owned[0]
+            room.acting_engine_id[lobby_player_id] = acting
+        return acting
+
+    def _engine_player_for_lobby(self, room, lobby_player_id: str) -> Player | None:
+        engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
+        if engine_pid is None:
+            return None
+        return next(
+            (player for player in room.game.players if player.player_id == engine_pid),
+            None,
+        )
+
+    def _owner_for_lobby(self, room, lobby_player_id: str) -> Owner | None:
+        game = getattr(room, "game", None)
+        owners = getattr(game, "owners", None)
+        if not owners:
+            return None
+        return owners.get(lobby_player_id)
+
+    def _owner_receivable(
+        self,
+        island_loan_books: list[dict[str, float]],
+        owner_id: str,
+    ) -> float:
+        return sh_loans.receivable(island_loan_books, owner_id)
+
+    def _owner_net_worth(
+        self,
+        owner: Owner,
+        share_price_by_island: dict[str, float],
+        island_loan_books: list[dict[str, float]],
+    ) -> float:
+        return owner.net_worth(
+            share_price_by_island,
+            self._owner_receivable(island_loan_books, owner.owner_id),
+        )
+
+    def _transfer_island_ownership(
+        self,
+        room,
+        *,
+        island_engine_id: int,
+        buyer_lobby_id: str,
+        seller_lobby_id: str,
+        price: float,
+    ) -> None:
+        """Transfer an existing island business without merging its books."""
+        if not room.game:
+            raise ValueError("Game not running")
+        buyer = self._owner_for_lobby(room, buyer_lobby_id)
+        seller = self._owner_for_lobby(room, seller_lobby_id)
+        if buyer is None or seller is None:
+            raise ValueError("Buyer and seller owners are required")
+        if buyer.personal_cash < price:
+            raise ValueError("Buyer cannot afford island acquisition")
+        island = next(
+            (p for p in room.game.players if p.player_id == island_engine_id),
+            None,
+        )
+        if island is None or island.cap_table is None:
+            raise ValueError("Island not found")
+        owned_by_seller = self._owned_engine_ids(room, seller_lobby_id)
+        if island_engine_id not in owned_by_seller:
+            raise ValueError("Seller does not control that island")
+
+        island_key = str(island_engine_id)
+        shares = seller.holdings.get(island_key, 0)
+        if shares <= 0:
+            shares = island.cap_table.held_by(seller_lobby_id)
+        if shares <= 0:
+            raise ValueError("Seller owns no shares in that island")
+
+        buyer.personal_cash = round(buyer.personal_cash - price, 1)
+        seller.personal_cash = round(seller.personal_cash + price, 1)
+        island.cap_table.transfer(seller_lobby_id, buyer_lobby_id, shares)
+        seller.holdings.pop(island_key, None)
+        buyer.holdings[island_key] = buyer.holdings.get(island_key, 0) + shares
+
+        new_seller_ids = [eid for eid in owned_by_seller if eid != island_engine_id]
+        room.lobby_to_engine_id[seller_lobby_id] = new_seller_ids
+        buyer_ids = self._owned_engine_ids(room, buyer_lobby_id)
+        if island_engine_id not in buyer_ids:
+            buyer_ids.append(island_engine_id)
+        room.lobby_to_engine_id[buyer_lobby_id] = buyer_ids
+
+        for lobby_id in (seller_lobby_id, buyer_lobby_id):
+            if self._acting_engine_id_for_lobby(room, lobby_id) is None:
+                room.acting_engine_id.pop(lobby_id, None)
+
+        island.owner_id = buyer_lobby_id
+        island.owner = buyer
+        island.personal_cash = 0.0
+
     def _active_human_lobby_ids(self, room) -> set[str]:
         humans: set[str] = set()
-        engine_by_lobby = room.lobby_to_engine_id or {}
         engine_players = {
             p.player_id: p
             for p in (room.game.players if room.game else [])
@@ -4110,9 +4315,12 @@ class GameManager:
         for lp in room.players:
             if not lp.is_human:
                 continue
-            engine_player = engine_players.get(engine_by_lobby.get(lp.player_id))
+            owned_players = [
+                engine_players.get(engine_id)
+                for engine_id in self._owned_engine_ids(room, lp.player_id)
+            ]
             has_role = bool(lp.role_names) or bool(
-                engine_player and engine_player.roles
+                any(player and player.roles for player in owned_players)
             )
             if has_role:
                 humans.add(lp.player_id)
@@ -4551,10 +4759,8 @@ class GameManager:
         game = room.game
         prices = game.market.current_prices()
 
-        # Reverse map engine player_id (int) → lobby player_id (string)
-        engine_to_lobby = {
-            ep: lp for lp, ep in (room.lobby_to_engine_id or {}).items()
-        }
+        # Reverse map engine player_id (int) → owner lobby player_id (string)
+        engine_to_lobby = self._engine_to_lobby_map(room)
         current_year_idx = getattr(room, "current_year_index", 0)
         current_season_idx = getattr(room, "current_season_index", 0)
         current_tick = current_year_idx * len(SEASONS) + current_season_idx
@@ -4565,7 +4771,7 @@ class GameManager:
             default=0.0,
         )
         viewer_engine_id = (
-            (room.lobby_to_engine_id or {}).get(player_id)
+            self._acting_engine_id_for_lobby(room, player_id)
             if player_id is not None else None
         )
 
@@ -4579,6 +4785,28 @@ class GameManager:
             share_price_by_island[str(_p.player_id)] = share_price(
                 fair_value(_liq, _p.wealth_history)
             )
+        owners_by_id: dict[str, Owner] = getattr(game, "owners", {}) or {}
+        owners_data = []
+        for owner in owners_by_id.values():
+            receivable = self._owner_receivable(island_loan_books, owner.owner_id)
+            owned_ids = self._owned_engine_ids(room, owner.owner_id)
+            owners_data.append({
+                "owner_id": owner.owner_id,
+                "lobby_player_id": owner.owner_id,
+                "name": owner.name,
+                "personal_cash": round(owner.personal_cash, 1),
+                "holdings": dict(owner.holdings),
+                "owned_player_ids": owned_ids,
+                "shareholder_loan_receivable": round(receivable, 1),
+                "consolidated_position": round(
+                    owner.net_worth(share_price_by_island, receivable),
+                    1,
+                ),
+                "net_worth": round(
+                    owner.net_worth(share_price_by_island, receivable),
+                    1,
+                ),
+            })
 
         def banker_loan_book_status(player: Player) -> dict[str, int]:
             if not any(role.name == "Banker" for role in player.roles):
@@ -4594,6 +4822,19 @@ class GameManager:
 
         players_data = []
         for p in game.players:
+            owner_id = engine_to_lobby.get(p.player_id)
+            owner = owners_by_id.get(owner_id) if owner_id else None
+            owner_receivable = (
+                self._owner_receivable(island_loan_books, owner.owner_id)
+                if owner else sh_loans.receivable(island_loan_books, str(p.player_id))
+            )
+            owner_net_worth = (
+                owner.net_worth(share_price_by_island, owner_receivable)
+                if owner else p.net_worth(
+                    share_price_by_island,
+                    sh_loans.receivable(island_loan_books, str(p.player_id)),
+                )
+            )
             loan_book = banker_loan_book_status(p)
             training_targets = self._training_targets_for_player(game, p.player_id)
             training_options = self._training_options_for_player(
@@ -4601,24 +4842,23 @@ class GameManager:
             )
             pd = {
                 "player_id": p.player_id,
-                "lobby_player_id": engine_to_lobby.get(p.player_id),
+                "lobby_player_id": owner_id,
+                "owner_id": owner_id,
+                "owner_name": owner.name if owner else None,
                 "name": p.name,
                 "roles": p.role_names(),
                 "role_names": [r.name for r in p.roles],
                 "dollops": round(p.dollops, 1),
                 # --- Equity (Phase 2b): two balance sheets + ownership ---
                 "treasury": round(p.dollops, 1),          # island operating cash (alias of dollops)
-                "personal_cash": round(p.personal_cash, 1),  # investor wallet
+                "personal_cash": round(
+                    owner.personal_cash if owner else p.personal_cash, 1
+                ),  # investor wallet
                 "household_cash": round(p.household_cash, 1),
-                "net_worth": round(
-                    p.net_worth(
-                        share_price_by_island,
-                        sh_loans.receivable(island_loan_books, str(p.player_id)),
-                    ),
-                    1,
-                ),
+                "net_worth": round(owner_net_worth, 1),
+                "owner_consolidated_position": round(owner_net_worth, 1),
                 "owns_pct": round(
-                    p.cap_table.fraction(str(p.player_id)) * 100, 1
+                    p.cap_table.fraction(owner_id or str(p.player_id)) * 100, 1
                 ) if p.cap_table else None,
                 "unissued_pct": round(
                     (p.cap_table.unissued() / 100) * 100, 1
@@ -4626,9 +4866,7 @@ class GameManager:
                 "unissued_shares": p.cap_table.unissued() if p.cap_table else 0,
                 "share_price": round(share_price_by_island.get(str(p.player_id), 0.0), 2),
                 "shareholder_loan_owed": round(sh_loans.total_owed(p.shareholder_loans), 1),
-                "shareholder_loan_receivable": round(
-                    sh_loans.receivable(island_loan_books, str(p.player_id)), 1
-                ),
+                "shareholder_loan_receivable": round(owner_receivable, 1),
                 "wealth": round(
                     p.total_wealth(prices, game.loan_ledger, CAPITAL_CATALOGUE, current_tick),
                     1,
@@ -5064,6 +5302,9 @@ class GameManager:
             # button visible on only 1 of 6 human tabs after ~10h of play).
             "season_active_humans": sorted(room.season_active_humans),
             "season_ready_set": sorted(room.season_ready_set),
+            "season_ready_engine_ids": sorted(room.season_ready_engine_ids),
+            "season_done_engine_ids": sorted(room.season_done_engine_ids),
+            "owners": owners_data,
             "business_cycle": (
                 game.current_cycle.to_dict()
                 if getattr(game, "current_cycle", None) is not None
@@ -5338,7 +5579,7 @@ class GameManager:
         if not room or not room.io_adapter:
             logger.debug("handle_player_response: room %s not found or no io_adapter", room_id)
             return
-        engine_pid = room.lobby_to_engine_id.get(lobby_player_id)
+        engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
         if engine_pid is None:
             logger.warning("handle_player_response: lobby_player_id %s has no engine mapping "
                            "(room %s, phase %s)", lobby_player_id, room_id, room.season_phase)
@@ -5554,21 +5795,22 @@ class GameManager:
             if room.game:
                 prices = room.game.market.current_prices()
                 for lobby_id in humans:
-                    engine_id = (room.lobby_to_engine_id or {}).get(lobby_id)
-                    player = next(
-                        (p for p in room.game.players if p.player_id == engine_id),
-                        None,
-                    )
-                    if player is None:
-                        continue
-                    self._thread_safe_send(room_id, lobby_id, {
-                        "type": "season_report",
-                        "season_report": room.game.island_report_for_player(
-                            player,
-                            prices,
-                            current_tick,
-                        ),
-                    })
+                    for engine_id in self._owned_engine_ids(room, lobby_id):
+                        player = next(
+                            (p for p in room.game.players if p.player_id == engine_id),
+                            None,
+                        )
+                        if player is None:
+                            continue
+                        self._thread_safe_send(room_id, lobby_id, {
+                            "type": "season_report",
+                            "player_id": player.player_id,
+                            "season_report": room.game.island_report_for_player(
+                                player,
+                                prices,
+                                current_tick,
+                            ),
+                        })
 
             # Block the game thread until everyone is Ready OR the timer
             # naturally expires.  Polled in 0.5s slices so the loop can
@@ -5594,6 +5836,8 @@ class GameManager:
         room.season_active_humans = humans
         room.season_ready_set = set()
         room.season_human_done = set()
+        room.season_ready_engine_ids = set()
+        room.season_done_engine_ids = set()
         room.all_ready_task = None   # reset any stale grace task from prior season
         secs = max(0, int(room.season_timer_seconds))
         room.season_timer_end = (time.time() + secs) if secs > 0 else 0.0
@@ -5836,6 +6080,8 @@ class GameManager:
             "type": "ready_update",
             "ready":   list(room.season_ready_set),
             "done":    list(room.season_human_done),
+            "ready_engine_ids": sorted(room.season_ready_engine_ids),
+            "done_engine_ids": sorted(room.season_done_engine_ids),
             "active":  list(room.season_active_humans),
             "phase":   room.season_phase,
             "timer_remaining": timer_rem,
@@ -5904,7 +6150,7 @@ class GameManager:
         if lobby_player_id not in room.season_active_humans:
             return {"error": "Not an active human player this season"}
 
-        engine_pid = room.lobby_to_engine_id.get(lobby_player_id)
+        owned_engine_ids = self._owned_engine_ids(room, lobby_player_id)
 
         if room.season_phase == "pre_season":
             # Pre-season: collect readies; when all in, unblock the game thread.
@@ -5923,19 +6169,25 @@ class GameManager:
 
         # ── Action phase ──────────────────────────────────────────────────────
         if ready:
-            room.season_ready_set.add(lobby_player_id)
+            room.season_ready_engine_ids.update(owned_engine_ids)
+            if owned_engine_ids and set(owned_engine_ids) <= room.season_ready_engine_ids:
+                room.season_ready_set.add(lobby_player_id)
             # Set the per-player Ready flag — even if they're mid-action
             # (e.g. inside a market buy dialog) the next choose_action will
             # return END_TURN and exit the loop.  Skip while paused so the
             # in-flight prompt isn't unblocked until the host resumes.
-            if (engine_pid is not None
+            if (owned_engine_ids
                     and lobby_player_id not in room.season_human_done
                     and not room.paused):
-                room.io_adapter.mark_player_ready(engine_pid)
+                for engine_pid in owned_engine_ids:
+                    room.io_adapter.mark_player_ready(engine_pid)
         else:
+            for engine_pid in owned_engine_ids:
+                room.season_ready_engine_ids.discard(engine_pid)
             room.season_ready_set.discard(lobby_player_id)
-            if engine_pid is not None and not room.paused:
-                room.io_adapter.unmark_player_ready(engine_pid)
+            if owned_engine_ids and not room.paused:
+                for engine_pid in owned_engine_ids:
+                    room.io_adapter.unmark_player_ready(engine_pid)
 
         self._broadcast_ready_update(room)
 
@@ -6419,9 +6671,9 @@ def create_app() -> FastAPI:
                 state = manager.get_game_state(room_id, player_id)
                 if state:
                     await websocket.send_text(json.dumps(state))
-                engine_pid = room.lobby_to_engine_id.get(player_id)
-                if room.io_adapter and engine_pid is not None:
-                    room.io_adapter.replay_pending_prompt(engine_pid)
+                if room.io_adapter:
+                    for engine_pid in manager._owned_engine_ids(room, player_id):
+                        room.io_adapter.replay_pending_prompt(engine_pid)
                 # Fresh ready_update on reconnect — otherwise the client's
                 # cached `imReady` from before disconnect persists and
                 # the "Done Trading ✓" button can appear stuck for a
@@ -6462,11 +6714,9 @@ def create_app() -> FastAPI:
                     # server to redeliver the live engine prompt so the user
                     # can continue trading instead of staring at a dead
                     # season clock.
-                    engine_pid = room.lobby_to_engine_id.get(player_id)
-                    if (room.status == "running"
-                            and room.io_adapter
-                            and engine_pid is not None):
-                        room.io_adapter.replay_pending_prompt(engine_pid)
+                    if room.status == "running" and room.io_adapter:
+                        for engine_pid in manager._owned_engine_ids(room, player_id):
+                            room.io_adapter.replay_pending_prompt(engine_pid)
                 elif msg_type == "bid":
                     result = manager.place_bid(
                         room_id, player_id,

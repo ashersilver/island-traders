@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from ..models.player import Player
 from ..models.equity import CapTable, AUCTIONED_SHARES
+from ..models.owner import Owner
 from ..models.market import Market
 from ..models.deal import DealLedger
 from ..models.capital_negotiation import (
@@ -72,7 +73,7 @@ from .qol import (
     mitigated_pollution_index,
 )
 
-SAVE_VERSION = 7
+SAVE_VERSION = 8
 
 # Renamed resources: old save inventory key -> current key (2026-06-02).
 LEGACY_RESOURCE_IDS: dict[str, str] = {
@@ -229,6 +230,7 @@ class Game:
         self.capital_negotiations = CapitalNegotiationLedger()
         self.order_book = ManufacturerOrderBook()
         self.transfer_offers = []
+        self.owners: dict[str, Owner] = {}
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
         self.training = TrainingRegistry()
@@ -279,6 +281,12 @@ class Game:
             # (treasury reseed, bid->personal cash, shareholder loans).
             player.cap_table = CapTable.new_with_majority(str(idx))
             player.holdings = {str(idx): AUCTIONED_SHARES}
+            self.owners[str(idx)] = Owner(
+                owner_id=str(idx),
+                name=player.name,
+                personal_cash=player.personal_cash,
+                holdings={str(idx): AUCTIONED_SHARES},
+            )
 
             # Production capacity = max of all assigned roles
             combined_capacity = max(
@@ -353,6 +361,9 @@ class Game:
         Loans, payroll, and player trades only move Dollops between these
         balances, so this is conserved except where the formula market mints
         (sell) or burns (buy) cash."""
+        island_cash = sum(p.dollops + p.household_cash for p in self.players)
+        if getattr(self, "owners", None) and any(p.owner_id for p in self.players):
+            return island_cash + sum(owner.personal_cash for owner in self.owners.values())
         return sum(p.dollops + p.personal_cash + p.household_cash for p in self.players)
 
     def _get_player(self, player_id: int) -> Player | None:
@@ -1472,6 +1483,7 @@ class Game:
                 ],
             },
             "players": [self._serialise_player(p) for p in self.players],
+            "owners": [owner.to_dict() for owner in self.owners.values()],
             "market": self._serialise_market(),
             "training": self._serialise_training(),
             "capital_negotiations": self._serialise_capital_negotiations(),
@@ -1516,6 +1528,7 @@ class Game:
             "personal_cash": p.personal_cash,
             "holdings": dict(p.holdings),
             "cap_table": p.cap_table.to_dict() if p.cap_table is not None else None,
+            "owner_id": p.owner_id,
             "shareholder_loans": dict(p.shareholder_loans),
             "ce_history": list(p._normalised_ce_history()),
             "ce_penalty": float(getattr(p, "ce_penalty", 0.0)),
@@ -1715,6 +1728,12 @@ class Game:
     def load(cls, path: str, io_adapter) -> "Game":
         from ..models.market import PriceShock, PriceSnapshot
         data = json.loads(Path(path).read_text())
+        save_version = int(data.get("save_version", 0))
+        if save_version < SAVE_VERSION:
+            raise ValueError(
+                f"Save version {save_version} predates per-island owner books; "
+                f"expected version {SAVE_VERSION}."
+            )
 
         cfg_data = data["config"]
         specs = [
@@ -1728,6 +1747,14 @@ class Game:
             event_charts_path=cfg_data.get("event_charts_path"),
         )
         game = cls(config, io_adapter, save_path=path)
+        game.owners = {
+            owner.owner_id: owner
+            for owner in (
+                Owner.from_dict(od) for od in data.get("owners", [])
+            )
+        }
+        if not game.owners:
+            raise ValueError("Save is missing owner records.")
 
         for pd in data["players"]:
             roles = [ROLES[rn] for rn in pd["role_names"]]
@@ -1755,10 +1782,13 @@ class Game:
                     CapTable.from_dict(pd["cap_table"])
                     if pd.get("cap_table") is not None else None
                 ),
+                owner_id=pd.get("owner_id"),
                 shareholder_loans=dict(pd.get("shareholder_loans", {})),
                 ce_history=list(pd.get("ce_history", [0.0] * len(SEASONS))),
                 ce_penalty=float(pd.get("ce_penalty", 0.0)),
             )
+            if p.owner_id and p.owner_id in game.owners:
+                p.owner = game.owners[p.owner_id]
             for r_str, qty in pd.get("inventory", {}).items():
                 # Save-migration: the consumable "LaboratoryEquipment" was
                 # renamed to "Reagents" (2026-06-02); fold legacy keys forward.

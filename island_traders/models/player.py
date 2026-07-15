@@ -342,6 +342,8 @@ class Player:
     personal_cash: float = 0.0
     holdings: dict[str, int] = field(default_factory=dict)
     cap_table: CapTable | None = None
+    owner_id: str | None = None
+    owner: object | None = field(default=None, repr=False, compare=False)
     # Shareholder loans owed by THIS island back to investors who lent it
     # personal cash (Phase 2b): lender_player_id (str) -> principal owed.
     # A senior liability: subtracted in total_wealth/liquidation value, and the

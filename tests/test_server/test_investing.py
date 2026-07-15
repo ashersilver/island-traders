@@ -298,7 +298,7 @@ def test_investing_resolution_waits_only_for_role_holding_humans():
 
     assert result["ok"] is True
     assert room.status == "running"
-    assert room.lobby_to_engine_id == {"h1": 0}
+    assert room.lobby_to_engine_id == {"h1": [0]}
 
 
 def test_opening_investment_delayed_items_are_available_immediately():
