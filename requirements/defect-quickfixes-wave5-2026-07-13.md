@@ -107,5 +107,53 @@ prints "[CAPITAL REPAIRED] … returned to service").
 
 ---
 
-Suggested order: 5.1 → 5.3 → 5.2 → 5.4 (5.2 touches the engine; do it once
-5.1/5.3's app.py churn has landed to avoid conflicts).
+## 5.5 Proposer cannot withdraw a pending deal (added 2026-07-14) — CONFIRMED GAP
+
+**Observed:** once a deal is proposed and the other player hasn't responded,
+the proposer has no way to change their mind.
+
+**Findings:** no withdraw path exists anywhere — no ledger method, no WS
+action, no UI control. The responder guard (`app.py:3000`,
+`deal.awaiting_id != actor.player_id`) structurally blocks the proposer from
+acting on their own deal, and `DealLedger.expire_for_player` is dead code
+(no caller), so pending deals never expire — an unanswered proposal persists
+forever. Nothing is escrowed at proposal time (`trading.py:349` only
+validates; goods move once, on accept, `trading.py:424-451`), so withdrawal
+is a pure state transition with zero refund logic.
+
+**Fix (mirror `cancel_training_request`, `turn.py:2891` — the only shipped
+withdraw precedent):**
+1. `models/deal.py`: add `WITHDRAWN` terminal status +
+   `DealLedger.withdraw(deal_id, proposer_id)` — `_require_active` first
+   (race guard), assert `deal.proposer_id == proposer_id`, set status and
+   clear `awaiting_id`.
+2. `engine/trading.py`: thin `withdraw_deal` wrapper (parallel to
+   `reject_deal`, `trading.py:468`).
+3. `server/app.py`: `_handle_deal_withdraw` modeled on `_handle_deal_respond`
+   (`:2976`) but authorised on `proposer_id`, requiring
+   `status ∈ ACTIVE_DEAL_STATUSES`; register `deal_withdraw` in the dispatch
+   (`:6520`); push `deal_response {result:"withdrawn"}` to the counterparty
+   via the notify block (`:3100-3110`). Re-fetch the deal after any await —
+   never trust a pre-await snapshot.
+4. `index.html`: "Withdraw" button on `_renderMyDealCard` (`:6200`) when
+   status is pending/returned → `{type:'deal_withdraw', deal_id}`; handle the
+   withdrawn result in the `deal_response` case (`:5033`).
+
+**Race:** counterparty accepts while withdraw is in flight — both mutate the
+same in-memory ledger inside the event loop, so whichever lands second hits
+`_require_active` (`deal.py:162`) and gets a clean "deal already settled"
+error. Same shape as the training guard.
+
+**Related gap (out of scope here, note for a later wave):** capital-order
+negotiations have the identical hole — the buyer cannot withdraw a `PROPOSED`
+order awaiting the manufacturer (`capital_negotiation.py` has no
+cancel/withdraw; `app.py:3739` gates on awaiting_id). Same pattern applies.
+
+**Test:** propose → withdraw → assert WITHDRAWN, counterparty notified, no
+inventory/dollops delta; withdraw-after-accept returns "already settled";
+target's respond-after-withdraw likewise.
+
+---
+
+Suggested order: 5.1 → 5.3 → 5.5 → 5.2 → 5.4 (5.2 touches the engine; do it
+once 5.1/5.3/5.5's app.py churn has landed to avoid conflicts).
