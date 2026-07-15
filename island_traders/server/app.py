@@ -272,6 +272,9 @@ class AuctionState:
     budget_spent: dict[str, float] = field(default_factory=dict)
     phase: str = "bidding"
     timer_end: float = 0.0
+    # How many times require_all_human has bounced this auction back to bidding.
+    # Capped so an unsatisfiable lobby can't re-auction forever.
+    reauction_count: int = 0
     _timer_task: Any = field(default=None, repr=False)
     # Saved auction_result payload — populated when _resolve_auction
     # broadcasts the result.  Used by the WebSocket reconnect handler to
@@ -873,7 +876,15 @@ class GameManager:
                 lp = next((p for p in room.players if p.player_id == pid), None)
                 if not lp or not lp.is_human:
                     not_human_claimed.append(role)
-            if not_human_claimed:
+            # Only re-run the auction when it can actually succeed: there must
+            # be at least as many humans as roles, and we cap retries so a lobby
+            # that simply won't bid can't loop forever.  Without this guard,
+            # require_all_human + AI players (or <7 humans) re-auctions endlessly
+            # and the auction never resolves.  Bug: "auction stuck; timer
+            # restarts on every reconnect and never progresses past the auction".
+            num_humans = sum(1 for p in room.players if p.is_human)
+            if not_human_claimed and num_humans >= len(ALL_ROLES) and auction.reauction_count < 3:
+                auction.reauction_count += 1
                 self._thread_safe_broadcast(room_id, {
                     "type": "auction_failed",
                     "message": (
@@ -891,6 +902,15 @@ class GameManager:
                     )
                     room.auction._timer_task = fut
                 return
+            elif not_human_claimed:
+                # require_all_human is unsatisfiable (not enough humans) or
+                # retries are exhausted.  Resolve normally so AI fills the
+                # unclaimed roles and the game starts, instead of hanging.
+                logger.info(
+                    "Room %s: require_all_human unsatisfiable "
+                    "(humans=%d, roles=%d, retries=%d) - resolving with AI-held roles.",
+                    room_id, num_humans, len(ALL_ROLES), auction.reauction_count,
+                )
 
         auction.assignments = {role: pid for role, pid in winners.items()}
 
