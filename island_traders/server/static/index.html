@@ -1555,6 +1555,10 @@ body.fx-off .ih-pins .pdot{animation:none}
           Inventory
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
                   onclick="showInventoryPopup()" title="Show full inventory with market values">⊕</button>
+          <button class="btn-ghost btn-sm hidden" id="btn-island-transfer"
+                  style="padding:.15rem .5rem;font-size:.7rem"
+                  onclick="openIslandTransferDialog()"
+                  title="Move stock to another island you own — deemed cost at market price, 1 Freight per transfer">⇄ Transfer…</button>
         </h3>
         <div id="s-inventory">—</div>
       </div>
@@ -3044,6 +3048,63 @@ function ownerBlockForMe() {
     : null;
 }
 
+// ---- Intra-owner island transfers (Wave 8.4) ------------------------------
+// Goods move between two islands the viewer owns at a deemed cost (market
+// reference price, treasury to treasury) plus 1 Freight from the sender.
+
+function _transferQuote() {
+  const res = document.getElementById('xfer-res')?.value;
+  const qty = Math.max(0, parseInt(document.getElementById('xfer-qty')?.value, 10) || 0);
+  const el = document.getElementById('xfer-quote');
+  if (!el) return;
+  const px = gameState.market?.[res]?.formula_price;
+  if (!res || !qty || px == null) { el.textContent = '—'; return; }
+  el.textContent = `Deemed cost ${(px * qty).toFixed(2)} Dp paid to the sender · 1 Freight consumed`;
+}
+
+function openIslandTransferDialog() {
+  const me = selectedIslandPlayer();
+  const others = ownedIslandPlayers().filter(p => p.player_id !== me?.player_id);
+  if (!me || !others.length) {
+    showToast('You need a second island to transfer stock.', { type: 'info' });
+    return;
+  }
+  const stock = Object.entries(me.inventory || {}).filter(([, q]) => q > 0);
+  if (!stock.length) {
+    showToast('No stock to transfer on this island.', { type: 'info' });
+    return;
+  }
+  const resOpts = stock.map(([r, q]) =>
+    `<option value="${esc(r)}">${esc(r)} (${q})</option>`).join('');
+  const destOpts = others.map(p =>
+    `<option value="${p.player_id}">${esc(p.name)} — ${esc(displayRoles(p.role_names || p.roles, true))}</option>`).join('');
+  showPopup(`Transfer from ${esc(me.name)}`, `
+    <div style="display:flex;flex-direction:column;gap:.6rem;min-width:280px">
+      <label>Resource
+        <select id="xfer-res" onchange="_transferQuote()">${resOpts}</select></label>
+      <label>Quantity
+        <input id="xfer-qty" type="number" min="1" value="1" oninput="_transferQuote()"/></label>
+      <label>To island
+        <select id="xfer-dest">${destOpts}</select></label>
+      <div id="xfer-quote" style="font-size:.8rem;color:var(--dim)">—</div>
+    </div>`, {
+    footerActions: `<button class="btn-ghost" onclick="closeOverlay()">Cancel</button>
+      <button class="btn-primary" onclick="submitIslandTransfer()">Transfer</button>`,
+  });
+  _transferQuote();
+}
+
+function submitIslandTransfer() {
+  const res = document.getElementById('xfer-res')?.value;
+  const qty = parseInt(document.getElementById('xfer-qty')?.value, 10) || 0;
+  const dest = parseInt(document.getElementById('xfer-dest')?.value, 10);
+  if (!res || qty <= 0 || !Number.isFinite(dest)) {
+    showToast('Pick a resource, quantity and destination.', { type: 'error' });
+    return;
+  }
+  sendWsMessage({ type: 'island_transfer', resource: res, quantity: qty, to_island_id: dest });
+}
+
 function currentIslandId() {
   if (activeTabRole === 'ALL') return null;
   if (activeTabRole == null || activeTabRole === '') return actingEnginePlayerId;
@@ -3871,7 +3932,7 @@ function sendWsMessage(obj) {
       'order_batch', 'training_batch', 'capital_order', 'deal_propose',
       'propose_deal', 'deal_respond', 'worker_transfer_offer',
       'worker_transfer_respond', 'market_order_update', 'cancel_training',
-      'capital_repair', 'training_counter_response', 'buy_out_float',
+      'capital_repair', 'island_transfer', 'training_counter_response', 'buy_out_float',
       'capital_negotiation_respond', 'capital_negotiation_accept',
       'manufacturer_reorder_queue',
     ]);
@@ -5118,6 +5179,11 @@ function handleMessage(msg) {
       addLog(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), msg.ok ? 'ok' : 'err');
       showToast(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), { type: msg.ok ? 'success' : 'error' });
       break;
+    case 'island_transfer_ack':
+      addLog(msg.message || (msg.ok ? 'Transfer complete.' : 'Transfer failed.'), msg.ok ? 'ok' : 'err');
+      showToast(msg.message || (msg.ok ? 'Transfer complete.' : 'Transfer failed.'), { type: msg.ok ? 'success' : 'error' });
+      if (msg.ok) hideOverlay();
+      break;
     case 'market_order_update_ack':
       if (msg.ok) {
         showToast(msg.action === 'cancel' ? 'Order removed.' : 'Order reduced.', { type: 'success' });
@@ -5471,6 +5537,10 @@ function renderGameState() {
 
   // Build / rebuild tabs if player's roles changed
   buildIslandTabs(gameState.players);
+
+  // Intra-owner transfer button: only with 2+ islands, never on Consolidated.
+  document.getElementById('btn-island-transfer')?.classList.toggle(
+    'hidden', isConsolidated || ownedIslandPlayers().length < 2);
 
   const roles = playerRoles(me);
   applyRoleTileDefaults(roles);

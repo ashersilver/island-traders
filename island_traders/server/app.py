@@ -4601,6 +4601,109 @@ class GameManager:
         if state:
             await websocket.send_text(json.dumps(state))
 
+    async def _handle_island_transfer(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Move resources between two islands held by the same owner.
+
+        Transfer pricing keeps both books arm's-length: the receiving island
+        pays the sending island the current market reference price, treasury
+        to treasury.  Each transfer also consumes 1 Freight from the sender —
+        goods do not teleport.  Never partial: any failed check rejects the
+        whole transfer.
+        """
+        async def _ack(ok: bool, message: str, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "island_transfer_ack",
+                "ok": ok,
+                "message": message,
+                **extra,
+            }))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await _ack(False, "Game is not running.")
+            return
+        sender, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if sender is None:
+            await _ack(False, f"{actor_error or 'Player not in game'}.")
+            return
+        game = room.game
+
+        owned = self._owned_engine_ids(room, lobby_player_id)
+        try:
+            to_id = int(msg.get("to_island_id"))
+        except (TypeError, ValueError):
+            await _ack(False, "Choose a destination island.")
+            return
+        if to_id not in owned:
+            await _ack(False, "You can only transfer between islands you own.")
+            return
+        if to_id == sender.player_id:
+            await _ack(False, "Source and destination are the same island.")
+            return
+        receiver = next((p for p in game.players if p.player_id == to_id), None)
+        if receiver is None:
+            await _ack(False, "Destination island not found.")
+            return
+
+        try:
+            rtype = ResourceType(str(msg.get("resource", "")))
+        except ValueError:
+            await _ack(False, "Unknown resource.")
+            return
+        try:
+            qty = int(msg.get("quantity", 0))
+        except (TypeError, ValueError):
+            qty = 0
+        if qty <= 0:
+            await _ack(False, "Quantity must be at least 1.")
+            return
+        if sender.inventory.get(rtype) < qty:
+            await _ack(False, f"{sender.name} only holds "
+                              f"{sender.inventory.get(rtype)} {rtype.value}.")
+            return
+        # Every transfer burns 1 Freight on the sending island; shipping
+        # Freight itself needs qty + 1 on hand.
+        freight_needed = qty + 1 if rtype == ResourceType.FREIGHT else 1
+        if sender.inventory.get(ResourceType.FREIGHT) < freight_needed:
+            await _ack(False, "Transfers need 1 Freight on the sending island"
+                              + (" beyond the amount shipped."
+                                 if rtype == ResourceType.FREIGHT else "."))
+            return
+        freight_cost = 1
+
+        deemed_price = round(game.market.current_price(rtype) * qty, 2)
+        if receiver.dollops < deemed_price:
+            await _ack(False, f"{receiver.name} cannot afford the deemed cost "
+                              f"of {deemed_price} Dp.")
+            return
+
+        # Settle atomically: goods, deemed cost, freight.
+        sender.give_resources(rtype, qty)
+        receiver.receive_resources(rtype, qty)
+        if freight_cost:
+            sender.give_resources(ResourceType.FREIGHT, freight_cost)
+        receiver.spend_dollops(deemed_price)
+        sender.receive_dollops(deemed_price)
+
+        await _ack(
+            True,
+            f"Transferred {qty} {rtype.value} to {receiver.name} — deemed "
+            f"cost {deemed_price} Dp paid to {sender.name}, 1 Freight used.",
+            quantity=qty,
+            resource=rtype.value,
+            deemed_cost=deemed_price,
+            to_island_id=to_id,
+        )
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
     async def _handle_capital_repair(
         self,
         room_id: str,
@@ -6879,6 +6982,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_repair":
                     await manager._handle_capital_repair(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "island_transfer":
+                    await manager._handle_island_transfer(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "manufacturer_reorder_queue":
