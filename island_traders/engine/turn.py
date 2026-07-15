@@ -104,6 +104,7 @@ class TurnAction(Enum):
     ROLLOVER_LOAN      = "rollover_loan"       # borrower: refinance an active loan (#6)
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
+    PAY_REBUILD_LEVY   = "pay_rebuild_levy"    # pay outstanding disaster rebuild levy to unblock repairs (5.1)
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
     REPURPOSE_WORKER         = "repurpose_worker"         # reassign a worker to a new profession
     REQUEST_MEDICAL_STAFF    = "request_medical_staff"    # any island: hire Doctor/Nurse on contract
@@ -858,6 +859,8 @@ class TurnManager:
                     self._action_view_loans(player)
                 elif action == TurnAction.PAY_LEASE:
                     self._action_pay_lease(player, result, year, season_index)
+                elif action == TurnAction.PAY_REBUILD_LEVY:
+                    self._action_pay_rebuild_levy(player, result)
                 elif action == TurnAction.APPLY_PATENT:
                     self._action_apply_patent(player, result)
                 elif action == TurnAction.REPURPOSE_WORKER:
@@ -4917,6 +4920,50 @@ class TurnManager:
             f"Treasury: {player.dollops:.1f} {sym}"
         )
         result.actions_taken.append(f"repay_shareholder_loan:{paid:.1f}")
+
+    def _action_pay_rebuild_levy(self, player: Player, result: TurnResult) -> None:
+        """Pay any/all of the outstanding disaster rebuild levy from dollops.
+
+        Wave 5.1: the levy is normally auto-collected in seasonal
+        installments, but repairs stay blocked while any of it is owed —
+        this action lets the player clear it early (clamped to balance).
+        """
+        sym = CURRENCY_SYMBOL
+        outstanding = player.rebuild_levy_outstanding()
+        if outstanding <= 0:
+            self.io.print("  No rebuild levy outstanding.")
+            return
+        if player.dollops <= 0:
+            self.io.print(
+                f"  Island treasury is empty ({player.dollops:.1f} {sym}); "
+                f"cannot pay the levy now."
+            )
+            return
+        max_pay = min(outstanding, player.dollops)
+        self.io.print(
+            f"  Rebuild levy outstanding: {outstanding:.2f} {sym} — deducted "
+            f"automatically each season; capital repairs stay blocked until "
+            f"it is cleared.  Treasury: {player.dollops:.1f} {sym} "
+            f"(max payable now: {max_pay:.2f} {sym})"
+        )
+        amount = self.io.ask_dollop_amount(
+            f"How much of the levy to pay now ({sym})?",
+            max_pay,
+        )
+        if amount <= 0:
+            self.io.print("  Cancelled.")
+            return
+        paid = player.pay_rebuild_levy(amount)
+        remaining = player.rebuild_levy_outstanding()
+        self.io.print(
+            f"  Paid {paid:.2f} {sym} toward the rebuild levy.  "
+            + (
+                "Levy cleared — capital repairs can resume."
+                if remaining <= 0
+                else f"Remaining levy: {remaining:.2f} {sym}."
+            )
+        )
+        result.actions_taken.append(f"pay_rebuild_levy:{paid:.2f}")
 
     # ------------------------------------------------------------------
     # Medical staffing contracts (2026-05-28)

@@ -960,6 +960,17 @@ class Game:
                 f"{CURRENCY_SYMBOL}{player._rebuild_levy_remaining:.2f}."
             )
 
+    def rebuild_levy_blocked_reason(self, player: Player) -> str:
+        """Repair-blocked message naming the levy amount and both payment
+        routes (Wave 5.1) — the old wording implied a payment action that
+        did not exist."""
+        remaining = getattr(player, "_rebuild_levy_remaining", 0.0)
+        return (
+            f"Rebuild levy of {CURRENCY_SYMBOL}{remaining:.2f} is outstanding — "
+            f"repairs resume once it is cleared. Pay it now with Pay Levy, or "
+            f"wait for the automatic seasonal installments."
+        )
+
     def _repair_in_progress_count(self, player: Player, item_id: str) -> int:
         return sum(
             int(entry.get("count", 1))
@@ -1215,7 +1226,7 @@ class Game:
                 "freight": 0,
                 "spares": 0,
                 "repairable": False,
-                "reason": "Rebuild levy must be paid before capital repairs resume.",
+                "reason": self.rebuild_levy_blocked_reason(player),
             }
         quote = self._capital_repair_quote(player, item, unit)
         return {

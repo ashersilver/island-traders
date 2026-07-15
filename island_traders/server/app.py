@@ -4409,7 +4409,7 @@ class GameManager:
             # that predates that requirement and can mislead the player into
             # checking the wrong resource.
             if getattr(player, "_rebuild_levy_remaining", 0.0) > 0:
-                reason = "Rebuild levy must be paid before capital repairs resume."
+                reason = game.rebuild_levy_blocked_reason(player)
             else:
                 quote = game._capital_repair_quote(player, item, unit)
                 reason = quote.get("reason") or f"Repair blocked for {item.name}."
@@ -4417,6 +4417,71 @@ class GameManager:
             return
 
         await _ack(True, f"Repair started for {item.name}.", item_id=item_id)
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_pay_rebuild_levy(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Pay any/all of the outstanding disaster rebuild levy (Wave 5.1).
+
+        The levy is normally auto-collected in seasonal installments, but
+        capital repairs stay blocked while any of it is owed — this lets
+        the player clear it early.  Omitting ``amount`` pays everything the
+        treasury can cover; the payment is clamped to balance and levy.
+        """
+        async def _ack(ok: bool, message: str, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "pay_rebuild_levy_ack",
+                "ok": ok,
+                "message": message,
+                **extra,
+            }))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await _ack(False, "Game is not running.")
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await _ack(False, "Player not in game.")
+            return
+        outstanding = player.rebuild_levy_outstanding()
+        if outstanding <= 0:
+            await _ack(False, "No rebuild levy outstanding.")
+            return
+        raw = msg.get("amount")
+        try:
+            amount = outstanding if raw is None else float(raw)
+        except (TypeError, ValueError):
+            await _ack(False, "Invalid levy amount.")
+            return
+        if amount <= 0:
+            await _ack(False, "Levy payment must be positive.")
+            return
+        paid = player.pay_rebuild_levy(amount)
+        if paid <= 0:
+            await _ack(
+                False,
+                "Island treasury is empty — the levy will keep being "
+                "deducted automatically each season.",
+            )
+            return
+        remaining = player.rebuild_levy_outstanding()
+        message = (
+            f"Paid {CURRENCY_SYMBOL}{paid:.2f} toward the rebuild levy. "
+            + (
+                "Levy cleared — capital repairs can resume."
+                if remaining <= 0
+                else f"{CURRENCY_SYMBOL}{remaining:.2f} still outstanding."
+            )
+        )
+        await _ack(True, message, paid=paid, remaining=remaining)
         state = self.get_game_state(room_id, lobby_player_id)
         if state:
             await websocket.send_text(json.dumps(state))
@@ -4649,6 +4714,13 @@ class GameManager:
                     getattr(game, "season", SEASONS[current_season_idx]),
                 ),
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
+                # Disaster rebuild levy (Wave 5.1): outstanding total + how
+                # many auto-collected seasonal installments remain, so the
+                # UI can show the amount owed and offer Pay Levy.
+                "rebuild_levy_remaining": p.rebuild_levy_outstanding(),
+                "rebuild_levy_installments": len(
+                    getattr(p, "_rebuild_levy_installments", []) or []
+                ),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
                 "banker_active_loans": loan_book["active"],
@@ -6567,6 +6639,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_repair":
                     await manager._handle_capital_repair(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "pay_rebuild_levy":
+                    await manager._handle_pay_rebuild_levy(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "manufacturer_reorder_queue":
