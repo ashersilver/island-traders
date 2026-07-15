@@ -5,9 +5,26 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.1`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.2`.
 
-(No entries yet — the 0.1.6-dev series opens here.)
+- **Feature: Loan consolidation (Wave 6.1)** — a borrower with two or more
+  active loans from the same lender can consolidate them into a single new
+  loan via the new `consolidate_loans` action. The new principal is the sum
+  of the selected loans' repayment amounts (principal + interest), re-quoted
+  at the current posted rate over a fresh 1–3 year term with the usual
+  single accept/counter/walk negotiation round. Source loans are marked
+  `ROLLED_OVER` and trace to the new loan (which records all source IDs).
+  The Banker's reserve and active-loan-cap checks run on the consolidated
+  loan, with the retired loans' committed reserve released first so
+  consolidation never fails for reserve reasons it itself cures. Loan cards
+  show a **Consolidate…** entry when eligible (`can_consolidate` in
+  `loans_detail`). Implemented by Codex (gpt-5.5) from
+  `requirements/codex-tasks/banking-loans-deposits-wave6-2026-07-13.md`;
+  verification: full suite 933 passed under the project venv. Tasks 6.2
+  (early repayment with negotiable penalty) and 6.3 (fixed deposits) follow
+  separately.
+
+Version bump: `0.1.6-dev.2026-07-14.2`
 
 ## 0.1.5 — 2026-07-14
 
