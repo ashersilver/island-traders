@@ -5,9 +5,33 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.1`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.3`.
 
-(No entries yet — the 0.1.6-dev series opens here.)
+- **Fix: rebuild levy was a dead end — repairs blocked with no way to pay
+  (Wave 5.1)** — a disaster rebuild levy blocked capital repairs with
+  "Rebuild levy must be paid before capital repairs resume." but the amount
+  owed was never serialised to the client and no payment action existed; the
+  levy only drained via automatic season-start installments. Now:
+  - `game_state` carries `rebuild_levy_remaining` and the remaining
+    installment count per player.
+  - New `pay_rebuild_levy` action (WS handler + `TurnAction`, Finance group)
+    lets the player pay any/all of the outstanding levy from dollops, clamped
+    to balance; clearing it to zero unblocks repairs the same season.
+  - The dashboard shows an amber "Rebuild levy outstanding" banner with the
+    amount, the auto-installment explanation and a **Pay levy** button, and
+    the repair-blocked reason now states the amount and both routes (pay now
+    or wait for the installments). New tests:
+    `tests/test_server/test_pay_rebuild_levy.py`.
+
+- **Fix: Manufacturer self-orders of equipment were free (Wave 5.3)** — a
+  self-order of a manufactured item settled immediately at $0 cash (only the
+  inputs were consumed). It now charges
+  `MANUFACTURER_SELF_ORDER_PRICE_FRACTION` (20%) of list price — plus spares
+  kits at cost when selected — as a sunk cash cost with no counterparty;
+  inputs are consumed exactly as before and third-party pricing is unchanged.
+  The order form shows the self-build quote (20% of list) when the buyer is
+  the Manufacturer. Tests updated/added in
+  `tests/test_server/test_capital_order.py`.
 
 ## 0.1.5 — 2026-07-14
 
