@@ -2986,9 +2986,9 @@ class GameManager:
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
-        proposer = self._engine_player_for_lobby(room, lobby_player_id)
+        proposer, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if proposer is None:
-            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
             return
         target = self._resolve_deal_target(room, msg)
         if target is None or target.player_id == proposer.player_id:
@@ -3067,9 +3067,9 @@ class GameManager:
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
-        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if actor is None:
-            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
             return
         try:
             deal_id = int(msg.get("deal_id"))
@@ -3222,10 +3222,11 @@ class GameManager:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
 
-        engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
-        if engine_pid is None:
-            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if actor is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
             return
+        engine_pid = actor.player_id
 
         training = getattr(room.game, "training", None)
         if not training:
@@ -3312,13 +3313,13 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
             await websocket.send_text(json.dumps({
                 "type": "order_batch_result",
                 "batch_ref": batch_ref,
                 "results": [],
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
         orders = msg.get("orders") or []
@@ -3352,12 +3353,12 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
             await websocket.send_text(json.dumps({
                 "type": "market_order_update_ack",
                 "ok": False,
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
 
@@ -3425,13 +3426,13 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        requester = self._engine_player_for_lobby(room, lobby_player_id)
+        requester, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if requester is None:
             await websocket.send_text(json.dumps({
                 "type": "training_batch_result",
                 "batch_ref": batch_ref,
                 "results": [],
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
 
@@ -3568,9 +3569,9 @@ class GameManager:
         if not room or not room.game:
             await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
-            await websocket.send_text(json.dumps({"type": "error", "message": "Player not in game"}))
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
             return
         if player is None or player.cap_table is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "No island to buy into"}))
@@ -3650,9 +3651,9 @@ class GameManager:
         if not room or not room.game:
             await _err("Room not found"); return
         game = room.game
-        buyer = self._engine_player_for_lobby(room, lobby_player_id)
+        buyer, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if buyer is None:
-            await _err("Player not found"); return
+            await _err(actor_error or "Player not found"); return
         item = find_item(CAPITAL_CATALOGUE, str(msg.get("item_id", "")))
         if item is None:
             await _err("Unknown capital item"); return
@@ -3798,9 +3799,9 @@ class GameManager:
         room = self.rooms.get(room_id)
         if not room or not room.game:
             await _err("Room not found"); return
-        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if actor is None:
-            await _err("Player not in game"); return
+            await _err(actor_error or "Player not in game"); return
         try:
             negotiation_id = int(msg.get("negotiation_id"))
         except (TypeError, ValueError):
@@ -4225,6 +4226,42 @@ class GameManager:
             None,
         )
 
+    def _engine_player_for_action(
+        self,
+        room,
+        lobby_player_id: str,
+        msg: dict | None,
+    ) -> tuple[Player | None, str | None]:
+        owned = self._owned_engine_ids(room, lobby_player_id)
+        if not owned:
+            return None, "Player not in game"
+
+        explicit = (
+            msg is not None
+            and "island_id" in msg
+            and msg.get("island_id") not in (None, "")
+        )
+        if explicit:
+            try:
+                engine_pid = int(msg.get("island_id"))
+            except (TypeError, ValueError):
+                return None, "Invalid island_id"
+            if engine_pid not in owned:
+                return None, f"Island {engine_pid} is not owned by this connection"
+            room.acting_engine_id[lobby_player_id] = engine_pid
+        else:
+            engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
+            if engine_pid is None:
+                return None, "Player not in game"
+
+        player = next(
+            (p for p in room.game.players if p.player_id == engine_pid),
+            None,
+        )
+        if player is None:
+            return None, "Player not in game"
+        return player, None
+
     def _owner_for_lobby(self, room, lobby_player_id: str) -> Owner | None:
         game = getattr(room, "game", None)
         owners = getattr(game, "owners", None)
@@ -4375,12 +4412,12 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
             await websocket.send_text(json.dumps({
                 "type": "cancel_training_result",
                 "ok": False,
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
         result = room.game.turn_manager.cancel_training_request(
@@ -4410,12 +4447,12 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        actor = self._engine_player_for_lobby(room, lobby_player_id)
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if actor is None:
             await websocket.send_text(json.dumps({
                 "type": "transfer_offer_sent",
                 "ok": False,
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
         try:
@@ -4497,12 +4534,12 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
             await websocket.send_text(json.dumps({
                 "type": "worker_transfer_result",
                 "ok": False,
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
         result = room.game.resolve_transfer_offer(
@@ -4533,12 +4570,12 @@ class GameManager:
                 "error": "Game is not running.",
             }))
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
             await websocket.send_text(json.dumps({
                 "type": "manufacturer_reorder_ack",
                 "ok": False,
-                "error": "Player not in game.",
+                "error": f"{actor_error or 'Player not in game'}.",
             }))
             return
         try:
@@ -4583,9 +4620,9 @@ class GameManager:
         if not room or not room.game or room.status != "running":
             await _ack(False, "Game is not running.")
             return
-        player = self._engine_player_for_lobby(room, lobby_player_id)
+        player, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
         if player is None:
-            await _ack(False, "Player not in game.")
+            await _ack(False, f"{actor_error or 'Player not in game'}.")
             return
         game = room.game
         item_id = str(msg.get("item_id", "")).strip()
@@ -5585,18 +5622,19 @@ class GameManager:
                 return True
             return False
 
-    def handle_player_response(self, room_id: str, lobby_player_id: str, value) -> None:
+    def handle_player_response(self, room_id: str, lobby_player_id: str, msg: dict) -> dict | None:
         """Route a WS response message to the right engine player's event."""
         room = self.rooms.get(room_id)
         if not room or not room.io_adapter:
             logger.debug("handle_player_response: room %s not found or no io_adapter", room_id)
-            return
-        engine_pid = self._acting_engine_id_for_lobby(room, lobby_player_id)
-        if engine_pid is None:
+            return {"type": "error", "message": "Game not running"}
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if actor is None:
             logger.warning("handle_player_response: lobby_player_id %s has no engine mapping "
                            "(room %s, phase %s)", lobby_player_id, room_id, room.season_phase)
-            return
-        room.io_adapter.receive_response(engine_pid, value)
+            return {"type": "error", "message": actor_error or "Player not in game"}
+        room.io_adapter.receive_response(actor.player_id, msg.get("value"))
+        return None
 
     # ---- Pause / Resume (Issue #1) ----
 
@@ -6712,8 +6750,20 @@ def create_app() -> FastAPI:
                 if msg_type in ("ping", "heartbeat"):
                     await websocket.send_text(json.dumps(manager.heartbeat_ack(msg)))
                 elif msg_type == "response":
-                    manager.handle_player_response(room_id, player_id, msg.get("value"))
+                    error = manager.handle_player_response(room_id, player_id, msg)
+                    if error:
+                        await websocket.send_text(json.dumps(error))
                 elif msg_type == "get_state":
+                    if "island_id" in msg and msg.get("island_id") not in (None, ""):
+                        _actor, actor_error = manager._engine_player_for_action(
+                            room, player_id, msg
+                        )
+                        if actor_error:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": actor_error,
+                            }))
+                            continue
                     state = manager.get_game_state(room_id, player_id)
                     if state:
                         await websocket.send_text(json.dumps(state))

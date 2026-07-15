@@ -343,6 +343,12 @@ button:active{transform:scale(.97)}
   cursor:pointer;border:1px solid transparent;border-bottom:none;
 }
 .tab-btn.active{background:var(--panel);color:var(--heading);border-color:var(--border)}
+.tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:1.05em;height:1.05em;
+  margin-left:.35rem;border-radius:999px;background:var(--gold);color:#111;font-size:.66rem;font-weight:900}
+.consolidated-readonly #prompt-area,
+.consolidated-readonly #s-buyfloat-row,
+.consolidated-readonly #s-lend-row{display:none!important}
+.consolidated-readonly .hint-open{display:none!important}
 
 /* Trade Blotter (#210) — tabbed overlay on the Market Board */
 .blotter-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:.6rem}
@@ -1826,6 +1832,7 @@ const API = SERVER_ORIGIN;
 let ws = null;
 let myPlayerId = null;
 let myPlayerIdx = null;
+let actingEnginePlayerId = null;
 
 // Season/year header: guarded so it never regresses. Season transitions run
 // on a separate game thread from the async WS request handlers; an in-flight
@@ -1872,6 +1879,9 @@ let lastActionPromptMsg = null;
 let appVersion = null;
 let activeTabRole = null;
 let builtTabsForRoles = null; // serialised role list used to build the current tab bar
+let activePromptPlayerId = null;
+const promptByIslandId = new Map();
+let renderingStoredPrompt = false;
 // Simultaneous-play state
 let seasonTimerEnd = 0;       // Date.now() ms; 0 = no active season timer
 let seasonTimerInterval = null;
@@ -2229,6 +2239,8 @@ function showScreen(name) {
   if (name === 'game') {
     builtTabsForRoles = null;
     activeTabRole = null;
+    actingEnginePlayerId = null;
+    activePromptPlayerId = null;
     document.getElementById('island-tabs').innerHTML = '';
     _loadColW();
     restoreLayoutPrefs();
@@ -2340,6 +2352,9 @@ function enterWaiting(room) {
   currentRoomId = room.room_id;
   currentRoom = room;
   myPlayerIdx = null;
+  actingEnginePlayerId = null;
+  activePromptPlayerId = null;
+  promptByIslandId.clear();
   // A fresh room join starts back at Year 1 Spring; reset the season-header
   // guard so it doesn't refuse to display an "earlier" season than one shown
   // in a previous room during this same page session.
@@ -2439,6 +2454,7 @@ async function _doLeaveRoom() {
   // and return to the landing screen.
   if (ws) { ws.onclose = null; try { ws.close(); } catch(_) {} ws = null; }
   currentRoomId = null; currentRoom = null; myPlayerId = null; myPlayerIdx = null;
+  actingEnginePlayerId = null; activePromptPlayerId = null; promptByIslandId.clear();
   showScreen('landing');
   refreshPublicRooms();
 }
@@ -2975,7 +2991,7 @@ function openBuyFloat() {
   if (raw === null) return;
   const n = parseInt(raw, 10);
   if (!Number.isFinite(n) || n <= 0) return;
-  ws.send(JSON.stringify({ type: 'buy_out_float', shares: n }));
+  sendWsMessage({ type: 'buy_out_float', shares: n });
 }
 
 // ==================== PRODUCTION CAPACITY PANEL ====================
@@ -3011,6 +3027,114 @@ function roleShortName(role) {
 
 function displayRoles(roles, short=false) {
   return (roles || []).map(r => short ? roleShortName(r) : roleDisplayName(r)).join(', ');
+}
+
+function ownedIslandPlayers() {
+  if (!gameState || !Array.isArray(gameState.players)) return [];
+  return gameState.players.filter(p =>
+    p && (p.lobby_player_id === myPlayerId || p.owner_id === myPlayerId));
+}
+
+function ownerBlockForMe() {
+  return (gameState && Array.isArray(gameState.owners))
+    ? gameState.owners.find(o => o.owner_id === myPlayerId || o.lobby_player_id === myPlayerId)
+    : null;
+}
+
+function currentIslandId() {
+  if (activeTabRole === 'ALL') return null;
+  if (activeTabRole == null || activeTabRole === '') return actingEnginePlayerId;
+  const n = Number(activeTabRole);
+  return Number.isFinite(n) ? n : actingEnginePlayerId;
+}
+
+function currentActionIslandId() {
+  return currentIslandId();
+}
+
+function setActiveIslandId(engineId) {
+  const id = Number(engineId);
+  if (!Number.isFinite(id)) return false;
+  const idx = (gameState?.players || []).findIndex(p => p.player_id === id);
+  if (idx < 0) return false;
+  actingEnginePlayerId = id;
+  activeTabRole = String(id);
+  myPlayerIdx = idx;
+  return true;
+}
+
+function selectedIslandPlayer() {
+  if (!gameState) return null;
+  const id = currentIslandId();
+  if (id != null) {
+    const p = gameState.players.find(x => x.player_id === id);
+    if (p) return p;
+  }
+  const owned = ownedIslandPlayers();
+  if (owned.length && setActiveIslandId(owned[0].player_id)) return owned[0];
+  return null;
+}
+
+function sumObjects(rows, key) {
+  const out = {};
+  rows.forEach(row => {
+    Object.entries(row[key] || {}).forEach(([k, v]) => {
+      if (typeof v === 'number') out[k] = (out[k] || 0) + v;
+    });
+  });
+  return out;
+}
+
+function consolidatedPlayerView(owned, owner) {
+  const first = owned[0] || {};
+  const sum = key => owned.reduce((n, p) => n + (Number(p[key]) || 0), 0);
+  const inventory = sumObjects(owned, 'inventory');
+  const wealthBreakdown = sumObjects(owned, 'wealth_breakdown');
+  return {
+    ...first,
+    __consolidated: true,
+    player_id: null,
+    name: owner?.name || first.owner_name || 'Consolidated',
+    roles: owned.flatMap(playerRoles),
+    role_names: owned.flatMap(playerRoles),
+    dollops: Math.round(sum('dollops') * 10) / 10,
+    treasury: Math.round(sum('treasury') * 10) / 10,
+    personal_cash: owner?.personal_cash ?? first.personal_cash ?? 0,
+    shareholder_loan_receivable: owner?.shareholder_loan_receivable ?? 0,
+    shareholder_loan_owed: Math.round(sum('shareholder_loan_owed') * 10) / 10,
+    net_worth: owner?.consolidated_position ?? owner?.net_worth ?? sum('net_worth'),
+    owner_consolidated_position: owner?.consolidated_position ?? owner?.net_worth ?? sum('net_worth'),
+    wealth: Math.round(sum('wealth') * 10) / 10,
+    wealth_breakdown: wealthBreakdown,
+    loans_outstanding: Math.round(sum('loans_outstanding') * 10) / 10,
+    loans_receivable: Math.round(sum('loans_receivable') * 10) / 10,
+    equipment_value: Math.round(sum('equipment_value') * 10) / 10,
+    workforce_count: sum('workforce_count'),
+    workforce_active: sum('workforce_active'),
+    workforce_bands: sumObjects(owned, 'workforce_bands'),
+    workforce_training_bands: sumObjects(owned, 'workforce_training_bands'),
+    workforce_professions: {},
+    training_decisions: [],
+    training_pipeline: [],
+    staffing_contracts: [],
+    transfer_offers: [],
+    order_book: [],
+    policies: [],
+    policies_detail: [],
+    loans_detail: [],
+    leases_detail: [],
+    inventory,
+    capacity: {},
+    decision_hints: [],
+    workforce_efficiency: '—',
+    production_capacity: '—',
+    population: sum('population'),
+    campus_load: 0,
+    visiting_staff_count: 0,
+    owns_pct: null,
+    unissued_pct: null,
+    unissued_shares: 0,
+  };
 }
 
 // Capital Equipment Order form (#185): collects order conditions and sends a
@@ -3581,11 +3705,10 @@ function showConstraintPopup() {
   if (!gameState) return;
   const me = gameState.players[myPlayerIdx];
   if (!me || !me.capacity) return;
-  const cap = filteredCapacity(me.capacity, activeTabRole);
+  const role = playerRoles(me)[0] || null;
+  const cap = filteredCapacity(me.capacity, role);
   const outputs = cap.outputs || [];
-  const roleLabel = (!activeTabRole || activeTabRole === 'ALL')
-    ? 'All Islands'
-    : roleDisplayName(activeTabRole);
+  const roleLabel = roleDisplayName(role);
 
   let body = '';
   if (!outputs.length) {
@@ -3741,7 +3864,24 @@ function ackTrainingDecision(batchId) {
 
 function sendWsMessage(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(obj));
+    const actionTypes = new Set([
+      'order_batch', 'training_batch', 'capital_order', 'deal_propose',
+      'propose_deal', 'deal_respond', 'worker_transfer_offer',
+      'worker_transfer_respond', 'market_order_update', 'cancel_training',
+      'capital_repair', 'training_counter_response', 'buy_out_float',
+      'capital_negotiation_respond', 'capital_negotiation_accept',
+      'manufacturer_reorder_queue',
+    ]);
+    const msg = {...obj};
+    if (actionTypes.has(msg.type) && msg.island_id == null) {
+      const island_id = currentActionIslandId();
+      if (island_id == null) {
+        showToast('Select an island tab before taking actions.', { type: 'error' });
+        return;
+      }
+      msg.island_id = island_id;
+    }
+    ws.send(JSON.stringify(msg));
   }
 }
 
@@ -4046,14 +4186,14 @@ function _notifyTrainingPipelineChanges(pipeline) {
         showToast(
           `✅ Training approved: ${b.worker_count} → ${b.target_profession}, `
           + `${(b.dollops_to_educator ?? 0).toFixed(1)} Dp${loanNote}.`,
-          { type: 'success', duration: 7000 }
+          { type: 'success', ms: 7000 }
         );
         addLog(`Training batch #${b.batch_id} approved by ${b.educator_name}${loanNote}.`, 'ok');
       } else if (b.status === 'rejected') {
         showToast(
           `❌ Training declined: ${b.worker_count} → ${b.target_profession}`
           + (b.counter_message ? ` — ${b.counter_message}` : ''),
-          { type: 'error', duration: 8000 }
+          { type: 'error', ms: 8000 }
         );
         addLog(`Training batch #${b.batch_id} declined by ${b.educator_name}.`, 'err');
       }
@@ -4130,9 +4270,7 @@ function _renderTrainingPipelineSection(pipeline) {
 }
 
 function cancelTrainingRequest(batchId) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'cancel_training', training_id: batchId }));
-  }
+  sendWsMessage({ type: 'cancel_training', training_id: batchId });
 }
 
 // ---- Medical staffing strip helpers ----
@@ -4318,9 +4456,7 @@ function _renderTransferOffersSection(player) {
 }
 
 function respondTransferOffer(offerId, accept) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'worker_transfer_respond', offer_id: offerId, accept }));
-  }
+  sendWsMessage({ type: 'worker_transfer_respond', offer_id: offerId, accept });
 }
 
 function openMakeTransferOfferForm() {
@@ -4367,10 +4503,10 @@ function submitTransferOffer() {
   const count      = parseInt(document.getElementById('tf-count')?.value, 10);
   const fee_per_head = parseFloat(document.getElementById('tf-fee')?.value);
   if (!direction || !to_player || !profession || count < 1 || fee_per_head < 0) {
-    showToast('Please fill in all fields.', { type: 'err' }); return;
+    showToast('Please fill in all fields.', { type: 'error' }); return;
   }
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'worker_transfer_offer', to_player_id: to_player, profession, count, fee_per_head, direction }));
+    sendWsMessage({ type: 'worker_transfer_offer', to_player_id: to_player, profession, count, fee_per_head, direction });
     closePopup();
     showToast('Transfer offer sent.');
   }
@@ -4740,7 +4876,10 @@ function connectWS() {
 
 function sendResponse(value) {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type: 'response', value}));
+    const island_id = activePromptPlayerId ?? currentActionIslandId();
+    ws.send(JSON.stringify({type: 'response', value, island_id}));
+    if (island_id != null) promptByIslandId.delete(Number(island_id));
+    builtTabsForRoles = null;
   }
   hideOverlay();
   setTimeout(requestState, 120);
@@ -4748,7 +4887,10 @@ function sendResponse(value) {
 }
 
 function requestState() {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: 'get_state'}));
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const island_id = currentActionIslandId();
+    ws.send(JSON.stringify(island_id == null ? {type: 'get_state'} : {type: 'get_state', island_id}));
+  }
 }
 
 // ==================== MESSAGE HANDLERS ====================
@@ -4762,13 +4904,88 @@ function requestState() {
 const _DIALOG_PROMPTS = new Set([
   'choose_quantity', 'choose_resource', 'choose_profession', 'choose_option',
   'choose_player', 'confirm', 'ask_dollop_amount', 'ask_text', 'market_buy_bulk']);
+const _ISLAND_PROMPTS = new Set([
+  'choose_action', 'choose_action_parked', ..._DIALOG_PROMPTS,
+]);
 let _shownPromptSig = null;
 function _promptSig(msg) {
   return [msg.type, msg.prompt || msg.player_name || '', msg.min, msg.max,
           (msg.options || []).length, msg.default || ''].join('|');
 }
 
+function _promptIslandId(msg) {
+  if (!msg || msg.player_id == null) return currentActionIslandId();
+  const id = Number(msg.player_id);
+  return Number.isFinite(id) ? id : currentActionIslandId();
+}
+
+function _displayPromptMessage(msg) {
+  switch (msg.type) {
+    case 'choose_action':
+      showActionPrompt(msg);
+      break;
+    case 'choose_action_parked':
+      showParkedBanner(msg);
+      break;
+    case 'choose_resource': case 'choose_profession': case 'choose_option':
+      showOptionPicker(msg);
+      break;
+    case 'choose_quantity':
+      showQuantityInput(msg);
+      break;
+    case 'choose_player':
+      showPlayerPicker(msg);
+      break;
+    case 'confirm':
+      showConfirm(msg);
+      break;
+    case 'ask_dollop_amount':
+      showDollopInput(msg);
+      break;
+    case 'ask_text':
+      showTextInput(msg);
+      break;
+    case 'market_buy_bulk':
+      showMarketBuyPopup(msg);
+      break;
+  }
+}
+
+function renderPromptForActiveIsland() {
+  const area = document.getElementById('prompt-area');
+  if (activeTabRole === 'ALL') {
+    if (area) area.classList.add('hidden');
+    activePromptPlayerId = null;
+    return;
+  }
+  const islandId = currentActionIslandId();
+  if (islandId == null) return;
+  const msg = promptByIslandId.get(islandId);
+  if (!msg) return;
+  activePromptPlayerId = islandId;
+  renderingStoredPrompt = true;
+  try {
+    _displayPromptMessage(msg);
+  } finally {
+    renderingStoredPrompt = false;
+  }
+}
+
 function handleMessage(msg) {
+  if (_ISLAND_PROMPTS.has(msg.type)) {
+    const pid = _promptIslandId(msg);
+    if (pid != null) {
+      promptByIslandId.set(pid, msg);
+      builtTabsForRoles = null;
+      if (pid !== currentActionIslandId()) {
+        buildIslandTabs(gameState?.players || []);
+        const island = (gameState?.players || []).find(p => p.player_id === pid);
+        showToast(`${island?.name || 'Another island'} is awaiting input.`, { type: 'info', ms: 7000 });
+        return;
+      }
+      activePromptPlayerId = pid;
+    }
+  }
   if (_DIALOG_PROMPTS.has(msg.type)) {
     const sig = _promptSig(msg);
     if (sig === _shownPromptSig
@@ -4927,7 +5144,7 @@ function handleMessage(msg) {
         const names = _playerNameLookup();
         const from = names[o.from_player] || `Player ${o.from_player}`;
         addLog(`📦 Worker transfer offer from ${from}: ${o.count} ${o.profession} @ ${o.fee_per_head} Dp/head.`, 'info');
-        showToast(`Transfer offer from ${from} — open Personnel to respond.`, { type: 'info', duration: 8000 });
+        showToast(`Transfer offer from ${from} — open Personnel to respond.`, { type: 'info', ms: 8000 });
       }
       break;
     }
@@ -5221,16 +5438,27 @@ function renderIslandWellbeing(me) {
 function renderGameState() {
   if (!gameState) return;
 
-  if (myPlayerIdx === null) {
-    myPlayerIdx = gameState.players.findIndex(p => p.lobby_player_id === myPlayerId);
-    if (myPlayerIdx < 0) {
+  const owned = ownedIslandPlayers();
+  if (!owned.length) {
       addLog('You are connected as a spectator; no island is assigned to this player.', 'info');
       return;
-    }
   }
 
-  const me = gameState.players[myPlayerIdx];
+  if (activeTabRole == null) {
+    const serverActing = gameState.players.find(p =>
+      p.lobby_player_id === myPlayerId && p.player_id === actingEnginePlayerId);
+    setActiveIslandId((serverActing || owned[0]).player_id);
+  } else if (activeTabRole !== 'ALL') {
+    const activeOwned = owned.some(p => String(p.player_id) === String(activeTabRole));
+    if (!activeOwned) setActiveIslandId(owned[0].player_id);
+  }
+
+  let me = activeTabRole === 'ALL'
+    ? consolidatedPlayerView(owned, ownerBlockForMe())
+    : selectedIslandPlayer();
   if (!me) return;
+  const isConsolidated = activeTabRole === 'ALL';
+  document.body.classList.toggle('consolidated-readonly', isConsolidated);
 
   // Season/Year header
   _updateSeasonHeader(gameState.year, gameState.season);
@@ -5243,12 +5471,11 @@ function renderGameState() {
 
   const roles = playerRoles(me);
   applyRoleTileDefaults(roles);
-  const tabRole = activeTabRole || roles[0] || null;
-  const isConsolidated = tabRole === 'ALL';
+  const tabRole = isConsolidated ? 'ALL' : (roles[0] || null);
 
   // Determine which island name to show
   const islandLabel = isConsolidated
-    ? 'All Islands (Consolidated)'
+    ? 'Consolidated'
     : (roleDisplayName(tabRole) || 'My Island');
 
   document.getElementById('tab-island-name').textContent = islandLabel;
@@ -5291,7 +5518,7 @@ function renderGameState() {
   const bfRow = document.getElementById('s-buyfloat-row');
   if (bfRow) {
     const floatShares = me.unissued_shares || 0;
-    const canBuy = (me.owns_pct || 0) >= 60 && floatShares > 0;
+    const canBuy = !isConsolidated && (me.owns_pct || 0) >= 60 && floatShares > 0;
     bfRow.style.display = canBuy ? '' : 'none';
     _buyFloatState = canBuy
       ? { shares: floatShares, price: me.share_price || 0, cash: me.personal_cash || 0 }
@@ -5456,14 +5683,14 @@ function renderGameState() {
   }
 
   // Pending actions set — used by _renderActionButton to highlight buttons
-  window._pendingActions = new Set(gameState.pending_actions || []);
+  window._pendingActions = new Set(isConsolidated ? [] : (gameState.pending_actions || []));
 
   _notifyTrainingPipelineChanges(me.training_pipeline || []);
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
-  renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
+  renderCapacityPanel(filteredCapacity(me.capacity || {}, isConsolidated ? null : tabRole));
   renderBuildDevelop(me);
-  renderDecisionHints(me, tabRole);
+  renderDecisionHints(me, isConsolidated ? null : tabRole);
   renderFundingRates();
 
   // Competitors table — with ready dot for active humans this season
@@ -5497,6 +5724,7 @@ function renderGameState() {
   renderCapitalNegotiationAlerts();
   renderTradeFinder();
   mergeChatState(gameState);
+  renderPromptForActiveIsland();
 }
 
 // ==================== TRADE FINDER (UI v2 phase 1, #114) ====================
@@ -6082,6 +6310,8 @@ function _myDealState() {
 }
 
 function _myEnginePlayerId() {
+  const id = currentIslandId();
+  if (id != null) return id;
   if (!gameState || myPlayerIdx == null) return null;
   return gameState.players?.[myPlayerIdx]?.player_id ?? null;
 }
@@ -6162,6 +6392,11 @@ function renderDealsPanel() {
   const badge = document.getElementById('deals-badge');
   if (!panel) return;
   const { awaiting, mine } = _myDealState();
+  if (activeTabRole === 'ALL') {
+    panel.innerHTML = '<span style="color:var(--dim)">Select an island tab to propose or answer deals.</span>';
+    if (badge) badge.style.display = 'none';
+    return;
+  }
   if (badge) {
     if (awaiting.length) {
       badge.textContent = awaiting.length;
@@ -6212,6 +6447,10 @@ function _renderMyDealCard(d) {
 }
 
 function openDealsDialog() {
+  if (activeTabRole === 'ALL') {
+    showToast('Select an island tab to manage deals.', { type: 'info' });
+    return;
+  }
   const { awaiting, mine } = _myDealState();
   let body = '<h4 style="margin:.2rem 0 .4rem">Awaiting your response</h4>';
   body += awaiting.length
@@ -6434,6 +6673,9 @@ function _blotterInv(res) {
 }
 
 function _renderBlotterTabBar() {
+  if (activeTabRole === 'ALL') {
+    return `<button class="tab-btn active" data-blotter-tab="market" onclick="_switchBlotterTab('market')">Market</button>`;
+  }
   const orders = (gameState && gameState.my_market_orders) || { offers: [], bids: [] };
   const orderCount = (orders.offers || []).length + (orders.bids || []).length;
   const fillCount = ((gameState && gameState.my_fills) || []).length;
@@ -6450,6 +6692,7 @@ function _renderBlotterTabBar() {
 }
 
 function _switchBlotterTab(tab) {
+  if (activeTabRole === 'ALL') tab = 'market';
   _blotterTab = tab;
   document.querySelectorAll('#blotter-tabs .tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.blotterTab === tab));
@@ -6482,6 +6725,7 @@ function _mountBlotterTab() {
 // isn't wiped out from under the player.
 function refreshOpenBlotter() {
   if (!_blotterOpen) return;
+  if (activeTabRole === 'ALL') _blotterTab = 'market';
   const pane = document.getElementById('blotter-pane');
   const overlay = document.getElementById('overlay');
   if (!pane || !overlay || !overlay.classList.contains('active')) {
@@ -6887,23 +7131,28 @@ function showDependencyMap() {
 }
 
 function buildIslandTabs(players) {
-  const me = players[myPlayerIdx];
-  if (!me) return;
+  const owned = ownedIslandPlayers();
+  if (!owned.length) return;
 
-  const roles = playerRoles(me);
-  const rolesKey = roles.join(',');
-  // Rebuild only when roles change (e.g. player wins extra roles mid-game)
-  if (builtTabsForRoles === rolesKey) return;
-  builtTabsForRoles = rolesKey;
+  const tabKey = owned.map(p => `${p.player_id}:${playerRoles(p).join('+')}`).join(',');
+  const activeKey = String(activeTabRole || '');
+  const fullKey = `${tabKey}|${activeKey}|${[...promptByIslandId.keys()].sort().join(',')}`;
+  if (builtTabsForRoles === fullKey) return;
+  builtTabsForRoles = fullKey;
 
-  // If activeTabRole is no longer in the new role list, reset it
-  if (!roles.includes(activeTabRole)) activeTabRole = roles[0] || null;
+  if (activeTabRole !== 'ALL' && !owned.some(p => String(p.player_id) === String(activeTabRole))) {
+    setActiveIslandId(owned[0].player_id);
+  }
 
   const tabs = document.getElementById('island-tabs');
-  let html = roles.map(r =>
-    `<button class="tab-btn${r === activeTabRole ? ' active' : ''}" data-role="${r}" onclick="switchTab('${r}')">${esc(roleShortName(r))}</button>`
+  let html = owned.map(p => {
+    const key = String(p.player_id);
+    const role = playerRoles(p)[0] || p.name;
+    const badge = promptByIslandId.has(Number(p.player_id)) ? '<span class="tab-badge">!</span>' : '';
+    return `<button class="tab-btn${key === String(activeTabRole) ? ' active' : ''}" data-role="${key}" onclick="switchTab('${key}')">${esc(roleShortName(role))}${badge}</button>`;
+  }
   ).join('');
-  if (roles.length > 1) {
+  if (owned.length > 1) {
     html += `<button class="tab-btn${activeTabRole === 'ALL' ? ' active' : ''}" data-role="ALL" onclick="switchTab('ALL')">Consolidated</button>`;
   }
   tabs.innerHTML = html;
@@ -6911,9 +7160,14 @@ function buildIslandTabs(players) {
 
 function switchTab(role) {
   activeTabRole = role;
+  if (role !== 'ALL') {
+    setActiveIslandId(Number(role));
+    requestState();
+  }
   document.querySelectorAll('.tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.role === role)
   );
+  builtTabsForRoles = null;
   renderGameState();
 }
 
@@ -7143,7 +7397,7 @@ function onReadyUpdate(msg) {
   // so "everyone is done — ending soon" appears as soon as the last
   // player clicks Done (without waiting for the next park-loop broadcast).
   _renderParkedBannerBody();
-  if (gameState) renderGameState();
+  if (gameState && !renderingStoredPrompt) renderGameState();
 }
 
 function _renderPreSeasonDots(active, ready) {
@@ -7672,8 +7926,10 @@ function showActionPrompt(msg) {
   document.getElementById('prompt-title').textContent = `${msg.player_name} — Choose Action`;
   // Action prompt just became active — re-render the hint sidebar so each
   // hint's "Open" button enables and the gold .recommended ring picks up
-  // any hinted action.  Cheap; gameState is already cached.
-  if (gameState) renderGameState();
+  // any hinted action.  Cheap; gameState is already cached.  Skipped while
+  // renderGameState is itself re-displaying this stored prompt, or the two
+  // calls recurse into each other until the stack overflows.
+  if (gameState && !renderingStoredPrompt) renderGameState();
 
   // Bucket options by their server-supplied group, defaulting to 'Info' for
   // any older payload that predates the Phase 1 server contract.
