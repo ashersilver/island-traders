@@ -154,6 +154,30 @@ capital-negotiation ledger).
    buy-side opportunistic when `share_price < fair_value × 0.8` and
    personal_cash allows (conservative first pass).
 
+## Task 8.4 — Intra-owner island transfers with transfer pricing (added 2026-07-15) — MEDIUM
+
+Ash: "There has to be a transfer function between mutually held islands so
+food for example can be transferred between islands with a deemed cost
+(transfer pricing) and 1 Freight unit to transfer."
+
+1. New action `island_transfer` (sender = the acting island): choose a
+   resource, quantity, and a destination island **owned by the same owner**.
+2. **Transfer pricing:** the receiving island pays the sending island the
+   deemed cost = current market reference price × qty, treasury→treasury.
+   Keeps both islands' P&L arm's-length — a transfer is a sale at market,
+   not a free merge (that would recreate the pooling this wave removes).
+3. **Freight:** each transfer consumes 1 Freight from the sending island's
+   inventory (flat per transfer, any quantity). No Freight → clear error.
+4. Validation server-side: same-owner destination, sender stock ≥ qty,
+   sender Freight ≥ 1, receiver treasury ≥ deemed cost. Never partial.
+5. UI: "Transfer to my island…" control on the inventory tile, visible only
+   when the owner holds >1 island; modal shows a live deemed-cost quote and
+   the 1-Freight requirement; result toast; both islands' panels refresh.
+6. Tests: goods+cash+freight move correctly; rejects non-owned destination,
+   missing freight, insufficient stock/funds; Consolidated position is
+   unchanged by an internal transfer (cash and goods net out at the owner
+   level minus nothing — only the Freight unit is genuinely consumed).
+
 ---
 
 ## Sequencing & gates
