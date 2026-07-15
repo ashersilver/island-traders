@@ -4595,6 +4595,13 @@ class GameManager:
         players_data = []
         for p in game.players:
             loan_book = banker_loan_book_status(p)
+            active_loans = game.loan_ledger.active_loans_for(p.player_id)
+            borrower_loan_counts_by_lender: dict[int, int] = {}
+            for loan in active_loans:
+                if loan.borrower_id == p.player_id and loan.lender_id >= 0:
+                    borrower_loan_counts_by_lender[loan.lender_id] = (
+                        borrower_loan_counts_by_lender.get(loan.lender_id, 0) + 1
+                    )
             training_targets = self._training_targets_for_player(game, p.player_id)
             training_options = self._training_options_for_player(
                 game, p, current_year_idx, current_season_idx
@@ -4714,8 +4721,13 @@ class GameManager:
                             + (l.maturity_season - current_season_idx)),
                         "counterparty_id": l.lender_id
                             if l.borrower_id == p.player_id else l.borrower_id,
+                        "can_consolidate": (
+                            l.borrower_id == p.player_id
+                            and l.lender_id >= 0
+                            and borrower_loan_counts_by_lender.get(l.lender_id, 0) >= 2
+                        ),
                     }
-                    for l in game.loan_ledger.active_loans_for(p.player_id)
+                    for l in active_loans
                 ],
                 "leases_detail": self._leases_detail_for_player(
                     game, p.player_id, current_year_idx, current_season_idx
