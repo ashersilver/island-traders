@@ -3155,6 +3155,25 @@ function updateCapOrderTotal() {
       : 'Optional';
   const _me = gameState && gameState.players && gameState.players[myPlayerIdx];
   const _cash = (_me && (_me.treasury ?? _me.dollops)) || 0;
+  // Self-order pricing (Wave 5.3): when the Manufacturer orders a manufactured
+  // item from itself there is no counterparty — it settles at 20% of list
+  // price (plus spares kits at cost) as a sunk cost; inputs are still consumed.
+  const _isSelfOrder = !capOrderItem.cash_only
+    && ((_me && (_me.role_names || _me.roles)) || []).includes('Manufacturer');
+  if (_isSelfOrder) {
+    const selfCost = Math.round(0.20 * capOrderItem.cost * 100) / 100;
+    const selfTotal = Math.round((selfCost + sparesCost) * 100) / 100;
+    const _selfShort = selfTotal > _cash;
+    document.getElementById('cap-order-total').innerHTML = `
+      <div class="cap-quote-row" style="color:${_selfShort ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_selfShort ? ' — short, lower the order' : ''}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">Self-build price (20% of list)</div><div class="cap-quote-value">${moneyDp(selfCost)}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits} (at cost)</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
+      <div class="cap-quote-row total"><div class="cap-quote-label">Self-build total</div><div class="cap-quote-value">${moneyDp(selfTotal)}</div></div>
+      <div class="cap-quote-row contingent"><div class="cap-quote-label">You build this yourself — no markup; inputs are consumed as usual</div><div class="cap-quote-value"></div></div>
+    `;
+    return;
+  }
   const _short = total > _cash;
   document.getElementById('cap-order-total').innerHTML = `
     <div class="cap-quote-row" style="color:${_short ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_short ? ' — short, finance or lower the order' : ''}</div></div>

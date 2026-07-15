@@ -64,6 +64,7 @@ from ..constants import (
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
     FLU_SEASON,
     MANUFACTURER_FINANCE_REFERRAL_RATE,
+    MANUFACTURER_SELF_ORDER_PRICE_FRACTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -3646,8 +3647,10 @@ class GameManager:
         # of parking a negotiation that awaits the manufacturer's own response.
         # Such a record can be neither meaningfully accepted (an offer from
         # yourself) nor declined, so it jams the awaiting queue and blocks every
-        # later order.  Settlement consumes the manufactured unit / cash as usual;
-        # no referral or financing applies when buyer == manufacturer.
+        # later order.  Settlement consumes the manufactured unit as usual and
+        # (Wave 5.3) charges 20% of list price plus spares kits at cost as a
+        # sunk cash cost; no referral or financing applies when buyer ==
+        # manufacturer.
         if manufacturer.player_id == buyer.player_id:
             try:
                 settlement = self._settle_capital_negotiation(
@@ -3894,6 +3897,23 @@ class GameManager:
         if agreed_total <= 0:
             raise ValueError("Agreed total must be positive.")
         pays = cash_only or manufacturer.player_id != buyer.player_id
+        # Wave 5.3: a Manufacturer self-order of a manufactured item is no
+        # longer free.  It settles at 20% of list price (no markup — the
+        # manufactured inputs are still consumed) plus any spares kits at
+        # cost, burned as a sunk cash cost with no counterparty.
+        self_build_cost = 0.0
+        if not pays:
+            self_build_cost = round(
+                MANUFACTURER_SELF_ORDER_PRICE_FRACTION * item.cost
+                + 0.15 * item.cost * negotiation.spares_kits,
+                2,
+            )
+            if buyer.dollops < self_build_cost:
+                raise ValueError(
+                    f"Need {self_build_cost:.1f} Dp to self-build {item.name} "
+                    f"(20% of list price plus spares kits at cost); you have "
+                    f"{buyer.dollops:.1f} Dp."
+                )
         cyi = getattr(room, "current_year_index", 0)
         csi = getattr(room, "current_season_index", 0)
         current_tick = cyi * len(SEASONS) + csi
@@ -3927,6 +3947,8 @@ class GameManager:
 
         if not cash_only:
             manufacturer.give_resources(manufactured_resource, required_units)
+        if not pays and self_build_cost > 0:
+            buyer.spend_dollops(self_build_cost)
         if pays:
             buyer.spend_dollops(agreed_total)
             if manufacturer.player_id != buyer.player_id:
@@ -3971,7 +3993,9 @@ class GameManager:
             "type": "capital_order_ack",
             "item_id": item.item_id,
             "name": item.name,
-            "upfront": agreed_total,
+            # Self-orders settle at the 20%-of-list sunk cost (Wave 5.3),
+            # not at the negotiated total — report what was actually charged.
+            "upfront": agreed_total if pays else self_build_cost,
             "agreed_total": agreed_total,
             "contract_cost": contract_cost,
             "spares_kits": negotiation.spares_kits,
