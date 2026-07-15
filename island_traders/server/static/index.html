@@ -727,9 +727,12 @@ button:active{transform:scale(.97)}
    so the timer keeps ticking.  A separate overlay (#msg-overlay) from the
    IO-prompt overlay (#overlay) avoids clobbering an active game prompt. */
 #toast-stack{
-  position:fixed;top:.75rem;left:50%;transform:translateX(-50%);
+  /* Bottom-right, clear of the header/island-tab bar — a toast must never
+     cover the tabs (or their attention badges) it may be pointing at. */
+  position:fixed;right:1rem;bottom:1rem;
   z-index:400;display:flex;flex-direction:column;gap:.4rem;
-  max-width:min(520px,94vw);pointer-events:none;
+  align-items:flex-end;
+  max-width:min(420px,94vw);pointer-events:none;
 }
 .toast{
   pointer-events:auto;background:var(--panel);border:1px solid var(--border);
@@ -745,8 +748,8 @@ button:active{transform:scale(.97)}
 .toast .toast-msg{flex:1;white-space:pre-line;line-height:1.35}
 .toast .toast-x{cursor:pointer;color:var(--dim);font-weight:700;line-height:1}
 .toast.leaving{animation:toast-out .2s ease-in forwards}
-@keyframes toast-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
-@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(-6px)}}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toast-out{from{opacity:1}to{opacity:0;transform:translateY(8px)}}
 
 #msg-overlay{
   display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);
