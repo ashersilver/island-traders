@@ -1509,9 +1509,16 @@ class GameManager:
                 continue
             for role in roles:
                 # Seed each island business separately; the owner wallet /
-                # loan flip is applied post-setup below.
+                # loan flip is applied post-setup below.  Multi-island owners
+                # get disambiguated island names ("Boss — Agriculture") so
+                # trades, logs, and the scoreboard name the business, not
+                # just the owner.
+                island_name = (
+                    f"{lp.name} — {ROLES[role].short_name}"
+                    if len(roles) > 1 else lp.name
+                )
                 specs.append(PlayerSpec(
-                    name=lp.name, role_names=[role], is_human=lp.is_human,
+                    name=island_name, role_names=[role], is_human=lp.is_human,
                     starting_dollops=round(ISLAND_STARTING_CASH, 1),
                 ))
                 spec_idx = len(specs) - 1
@@ -4342,6 +4349,12 @@ class GameManager:
         island.owner_id = buyer_lobby_id
         island.owner = buyer
         island.personal_cash = 0.0
+        # Rename to the acquirer's island form ("Buyer — Mining") so the
+        # business is attributable at a glance post-acquisition.
+        role_short = ROLES[island.roles[0].name].short_name if island.roles else None
+        island.name = (
+            f"{buyer.name} — {role_short}" if role_short else buyer.name
+        )
 
     def _active_human_lobby_ids(self, room) -> set[str]:
         humans: set[str] = set()

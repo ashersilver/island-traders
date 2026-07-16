@@ -44,6 +44,9 @@ def test_multi_island_owner_gets_independent_island_books():
     farmer, miner = room.game.players
     assert [r.name for r in farmer.roles] == ["Farmer"]
     assert [r.name for r in miner.roles] == ["Miner"]
+    # Multi-island owners get disambiguated island names.
+    assert farmer.name == "Owner — Agriculture"
+    assert miner.name == "Owner — Mining"
     assert farmer.dollops == ISLAND_STARTING_CASH
     assert miner.dollops == ISLAND_STARTING_CASH
 
