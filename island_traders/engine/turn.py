@@ -109,6 +109,7 @@ class TurnAction(Enum):
     REQUEST_MEDICAL_STAFF    = "request_medical_staff"    # any island: hire Doctor/Nurse on contract
     REVIEW_STAFFING_REQUESTS = "review_staffing_requests" # Doctor island: approve/reject/counter
     LEND_TO_ISLAND     = "lend_to_island"      # owner: move personal cash → island treasury
+    BUY_FLOAT          = "buy_float"           # owner: buy island's unissued shares (equity raise)
     REPAY_SHAREHOLDER_LOAN = "repay_shareholder_loan"  # owner: recover treasury → personal cash
     VIEW_MARKET        = "view_market"
     VIEW_PLAYERS       = "view_players"
@@ -868,6 +869,8 @@ class TurnManager:
                     self._action_review_staffing_requests(player, result, year, season_index)
                 elif action == TurnAction.LEND_TO_ISLAND:
                     self._action_lend_to_island(player, result)
+                elif action == TurnAction.BUY_FLOAT:
+                    self._action_buy_float(player, result, year, season_index)
                 elif action == TurnAction.REPAY_SHAREHOLDER_LOAN:
                     self._action_repay_shareholder_loan(player, result)
             except ActionCancelled:
@@ -4876,6 +4879,72 @@ class TurnManager:
             f"Loan owed: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}"
         )
         result.actions_taken.append(f"lend_to_island:{amount:.1f}")
+
+    def _action_buy_float(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        """Buy the island's unissued shares — a primary equity issuance.
+
+        Contrast with lend_to_island (a shareholder-loan liability): here the
+        owner's personal cash becomes island treasury cash and their ownership
+        rises, with no debt created.  Mirrors the dashboard `buy_out_float`
+        handler in app.py so price and side effects stay identical.
+        """
+        from ..models.equity import (
+            UNISSUED_HOLDER, AUCTIONED_SHARES, share_price, fair_value,
+        )
+        sym = CURRENCY_SYMBOL
+        cap = player.cap_table
+        if cap is None or cap.unissued() <= 0:
+            self.io.print("  No unissued float available to buy.")
+            return
+        owner_key = str(player.player_id)
+        if cap.held_by(owner_key) < AUCTIONED_SHARES:
+            self.io.print("  Only the controlling owner can buy unissued shares.")
+            return
+        if player.personal_cash <= 0:
+            self.io.print(
+                f"  No personal cash to invest (personal cash: {player.personal_cash:.1f} {sym})."
+            )
+            return
+        # Live fair value per share (= liquidation value incl. loans, through
+        # the going-concern premium) — same derivation as get_game_state.
+        prices = self.market.current_prices()
+        current_tick = year * len(SEASONS) + season_index
+        liq = player.total_wealth(prices, self.loan_ledger, CAPITAL_CATALOGUE, current_tick)
+        price = share_price(fair_value(liq, player.wealth_history))
+        available = cap.unissued()
+        max_shares = min(available, int(player.personal_cash // price)) if price > 0 else 0
+        if max_shares <= 0:
+            self.io.print(
+                f"  Cannot afford any shares at {price:.2f} {sym}/share "
+                f"(personal cash {player.personal_cash:.1f} {sym})."
+            )
+            return
+        self.io.print(
+            f"  Unissued float: {available} share(s) @ {price:.2f} {sym}  |  "
+            f"Personal cash: {player.personal_cash:.1f} {sym}  |  buy up to {max_shares}."
+        )
+        shares = int(self.io.ask_dollop_amount(
+            f"How many shares to buy? (max {max_shares})", max_shares
+        ))
+        shares = min(max(0, shares), max_shares)
+        if shares <= 0:
+            self.io.print("  Cancelled.")
+            return
+        cost = round(shares * price, 1)
+        # Primary issuance: personal cash -> island treasury; shares unissued -> owner.
+        total_liquid = round(player.personal_cash + player.dollops, 1)
+        player.personal_cash = round(player.personal_cash - cost, 1)
+        player.dollops = round(total_liquid - player.personal_cash, 1)
+        cap.transfer(UNISSUED_HOLDER, owner_key, shares)
+        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+        self.io.print(
+            f"  Bought {shares} share(s) of your island for {cost:.1f} {sym}.  "
+            f"Ownership: {cap.fraction(owner_key) * 100:.1f}%  |  "
+            f"Island treasury: {player.dollops:.1f} {sym}  |  Float left: {cap.unissued()}"
+        )
+        result.actions_taken.append(f"buy_float:{shares}")
 
     def _action_repay_shareholder_loan(self, player: Player, result: TurnResult) -> None:
         """Move treasury → personal cash, reducing the shareholder-loan principal.

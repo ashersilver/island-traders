@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -130,8 +131,19 @@ def render_game_state(msg: dict[str, Any], player_id: str) -> str:
 
 def _option_value(options: list[dict[str, Any]], raw: str) -> Any:
     raw = raw.strip()
-    if raw.isdigit():
-        idx = int(raw) - 1
+    # An LLM often echoes a whole menu line like "3. Produce Food -> produce::..."
+    # instead of a bare "3". Recover the choice from, in order of trust:
+    #   1. an explicit "-> value" suffix, matched against option values,
+    #   2. a leading option number,
+    #   3. an exact value or label match.
+    if "->" in raw:
+        tail = raw.rsplit("->", 1)[1].strip()
+        for opt in options:
+            if tail == str(opt.get("value", opt.get("id"))):
+                return opt.get("value", opt.get("id"))
+    lead = re.match(r"\s*(\d+)", raw)
+    if lead:
+        idx = int(lead.group(1)) - 1
         if 0 <= idx < len(options):
             return options[idx].get("value", options[idx].get("id"))
     for opt in options:
@@ -314,8 +326,13 @@ async def run_client(server: str, code: str, name: str) -> None:
                 raw = await _ainput("Type 'undo' to resume, blank to stay done > ")
                 if raw.strip().lower() == "undo":
                     await _send(ws, {"type": "ready", "ready": False})
-            elif msg_type in {"pre_season_start", "ready_update"}:
+            elif msg_type == "pre_season_start":
                 await _handle_ready_prompt(ws, msg)
+            elif msg_type == "ready_update":
+                # Status broadcast (who is ready + countdown ticks), not a
+                # decision point. Print it, but never re-prompt — otherwise an
+                # automated player is asked to "ready" on every tick.
+                print(f"ready_update: {json.dumps(msg, sort_keys=True)[:400]}")
             elif msg_type == "game_over":
                 print("\n=== GAME OVER ===")
                 print(json.dumps(msg, indent=2, sort_keys=True))

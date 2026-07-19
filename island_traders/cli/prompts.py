@@ -24,6 +24,7 @@ ACTION_LABEL_OVERRIDES: dict[str, str] = {
     "review_staffing_requests": "Review Staffing Requests",
     "repurpose_worker": "Repurpose Worker",
     "lend_to_island": "Lend Cash to Island",
+    "buy_float": "Buy Float",
     "repay_shareholder_loan": "Repay Shareholder Loan",
 }
 
