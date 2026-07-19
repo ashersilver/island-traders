@@ -118,6 +118,21 @@ class QwenDriver:
             if not (low.startswith("bid ") or low.startswith("withdraw ")
                     or low in {"", "skip"}):
                 answer = "skip"
+        # Numeric prompts (sell price, quantities): the value-token-trained
+        # model sometimes answers with an action token, which the server
+        # rejects ("price must be positive") and the whole sale cancels.
+        # If the answer isn't a number, fall back to the prompt's own
+        # suggested/prefill value, else its max.
+        if prompt.strip().startswith(("Dollops >", "Quantity >")):
+            if not re.fullmatch(r"-?\d+(\.\d+)?", answer.strip()):
+                m = (re.search(r"suggested=([\d.]+)", context)
+                     or re.search(r"prefill=([\d.]+)", context)
+                     or re.search(r"max=([\d.]+)", context))
+                fallback = m.group(1) if m else "0"
+                print(f"  \033[33m[auto -> {fallback!r} (non-numeric answer "
+                      f"{answer!r} at numeric prompt)]\033[0m",
+                      file=sys.stderr, flush=True)
+                answer = fallback
         if is_action_menu:
             if _ends_turn(answer):
                 self._season_actions = 0  # model ended the turn itself
