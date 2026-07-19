@@ -5022,7 +5022,12 @@ class TurnManager:
         """
         from ..models import shareholder_loans as sh_loans
         sym = CURRENCY_SYMBOL
-        cash = player.personal_cash
+        owner = getattr(player, "owner", None)
+        lender_id = str(getattr(owner, "owner_id", player.player_id))
+        cash = (
+            float(getattr(owner, "personal_cash", 0.0))
+            if owner is not None else player.personal_cash
+        )
         if cash <= 0:
             self.io.print(f"  No personal cash to lend (personal cash: {cash:.1f} {sym}).")
             return
@@ -5039,9 +5044,12 @@ class TurnManager:
             self.io.print("  Cancelled.")
             return
         amount = min(amount, cash)
-        player.personal_cash = round(player.personal_cash - amount, 1)
+        if owner is not None:
+            owner.personal_cash = round(owner.personal_cash - amount, 1)
+        else:
+            player.personal_cash = round(player.personal_cash - amount, 1)
         player.dollops = round(player.dollops + amount, 1)
-        sh_loans.lend(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        sh_loans.lend(player.shareholder_loans, lender_id, round(amount, 1))
         self.io.print(
             f"  Lent {amount:.1f} {sym} to your island treasury.  "
             f"Island treasury: {player.dollops:.1f} {sym}  |  "
@@ -5057,7 +5065,11 @@ class TurnManager:
         """
         from ..models import shareholder_loans as sh_loans
         sym = CURRENCY_SYMBOL
-        owed = sh_loans.total_owed(player.shareholder_loans)
+        owner = getattr(player, "owner", None)
+        lender_id = str(getattr(owner, "owner_id", player.player_id))
+        owed = player.shareholder_loans.get(lender_id, 0.0)
+        if owed <= 0 and owner is None:
+            owed = sh_loans.total_owed(player.shareholder_loans)
         if owed <= 0:
             self.io.print("  No shareholder loan outstanding to repay.")
             return
@@ -5080,9 +5092,12 @@ class TurnManager:
             self.io.print("  Cancelled.")
             return
         amount = min(amount, max_repay)
-        paid = sh_loans.repay(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        paid = sh_loans.repay(player.shareholder_loans, lender_id, round(amount, 1))
         player.dollops = round(player.dollops - paid, 1)
-        player.personal_cash = round(player.personal_cash + paid, 1)
+        if owner is not None:
+            owner.personal_cash = round(owner.personal_cash + paid, 1)
+        else:
+            player.personal_cash = round(player.personal_cash + paid, 1)
         self.io.print(
             f"  Repaid {paid:.1f} {sym} to personal cash.  "
             f"Remaining loan: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}  |  "
