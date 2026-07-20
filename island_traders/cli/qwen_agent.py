@@ -127,7 +127,10 @@ class QwenDriver:
             if not re.fullmatch(r"-?\d+(\.\d+)?", answer.strip()):
                 m = (re.search(r"suggested=([\d.]+)", context)
                      or re.search(r"prefill=([\d.]+)", context)
-                     or re.search(r"max=([\d.]+)", context))
+                     or re.search(r"max=([\d.]+)", context)
+                     # choose_quantity renders its range as "[1–5]" / "(max 5)"
+                     or re.search(r"\[\d+\s*[–-]\s*(\d+)\]", context)
+                     or re.search(r"\(max\s+([\d.]+)\)", context))
                 fallback = m.group(1) if m else "0"
                 print(f"  \033[33m[auto -> {fallback!r} (non-numeric answer "
                       f"{answer!r} at numeric prompt)]\033[0m",
@@ -169,9 +172,12 @@ class QwenDriver:
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "think": False,  # qwen3 thinking off; ignored by models without it
             "options": {"temperature": self.temperature},
         }
+        # Disable thinking for every model that supports it (qwen3, gemma4):
+        # left on, the whole token budget can vanish into a hidden thinking
+        # block and the visible answer arrives empty (or slow).
+        body["think"] = False
         data = json.dumps(body).encode("utf-8")
         req = request.Request(
             self.chat_url,
