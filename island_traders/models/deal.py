@@ -5,11 +5,12 @@ from .resource import ResourceType
 
 
 class DealStatus(Enum):
-    PENDING  = "pending"
-    RETURNED = "returned"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    EXPIRED  = "expired"
+    PENDING   = "pending"
+    RETURNED  = "returned"
+    ACCEPTED  = "accepted"
+    REJECTED  = "rejected"
+    EXPIRED   = "expired"
+    WITHDRAWN = "withdrawn"
 
 
 @dataclass
@@ -100,6 +101,22 @@ class DealLedger:
         deal = self._get(deal_id)
         self._require_active(deal)
         deal.status = DealStatus.EXPIRED
+        deal.awaiting_id = None
+        return deal
+
+    def withdraw(self, deal_id: int, proposer_id: int) -> DealProposal:
+        """Proposer pulls back an unanswered proposal (PENDING/RETURNED).
+
+        Guarded by _require_active first so a concurrent accept/reject wins:
+        whichever mutation lands second raises here. No escrow exists, so
+        withdrawal is a pure state transition with no resources to refund.
+        """
+        deal = self._get(deal_id)
+        self._require_active(deal)
+        if proposer_id != deal.proposer_id:
+            raise ValueError(
+                f"Player {proposer_id} did not propose deal #{deal_id}")
+        deal.status = DealStatus.WITHDRAWN
         deal.awaiting_id = None
         return deal
 

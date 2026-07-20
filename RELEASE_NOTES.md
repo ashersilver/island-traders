@@ -57,6 +57,35 @@ Release notes are required before merging a feature/fix branch into
   the Manufacturer. Tests updated/added in
   `tests/test_server/test_capital_order.py`.
 
+- **Fix: production can use your own unsold market listings (Wave 5.2)** —
+  listing a resource for sale escrows it out of inventory, so a player who
+  listed (say) all their Oil could be blocked from producing and had to buy
+  it back. Production now recalls a player's *own* unsold asks to cover an
+  input shortfall — pulling back only the shortfall through the existing
+  refund path so inventory, the market `supply` counter and each offer's
+  remaining stay consistent — and the feasibility check (`can_produce`)
+  counts listed-but-unsold stock as available. A recall emits a
+  `[MARKET RECALL]` log line. New tests:
+  `tests/test_engine/test_production_recall_listed_stock.py`.
+
+- **Fix: "back in service" cue after a repair (Wave 5.4)** — completed
+  capital repairs were only a season-log line, so a repaired unit's return
+  wasn't obvious in the equipment list. The season maintenance pass now
+  records `recently_repaired` per player (transient, refreshed each season),
+  surfaced in `game_state`; the client shows a success toast and a transient
+  green "✓ back in service this season" cue on the unit row. New tests:
+  `tests/test_engine/test_repair_completion_cue.py`.
+
+- **Fix: withdraw a proposed deal (Wave 5.5)** — a proposer had no way to
+  pull back a peer-to-peer deal the other player hadn't answered, and deals
+  never expired. New `deal_withdraw` action (new `WITHDRAWN` status +
+  `DealLedger.withdraw`) lets the proposer cancel a `pending`/`returned`
+  deal; the ledger's active-state guard means a counterparty accept/reject
+  landing first wins and the withdraw is refused. No escrow exists so it's a
+  pure state flip; the counterparty is notified. A **Withdraw** button
+  appears on the proposer's own deal cards. New tests:
+  `tests/test_server/test_deal_withdraw.py`.
+
 Version bump: `0.1.6-dev.2026-07-14.3`
 
 ## 0.1.5 — 2026-07-14

@@ -2431,6 +2431,7 @@ class GameManager:
             "capital_catalogue": capital_catalogue,
             "capital_in_transit": in_transit,
             "capital_repair_in_progress": repairs_in_progress,
+            "recently_repaired": list(getattr(p, "recently_repaired", []) or []),
             "band_counts":     band_counts,
             "engineer_specialties": specialty_payload(p),
         }
@@ -3201,6 +3202,86 @@ class GameManager:
                     "type": "deal_response",
                     "deal_id": deal.deal_id,
                     "result": result,
+                    "from": actor.name,
+                    "deal": self._deal_payload(deal, player_names, notify_engine_id),
+                })
+                self._thread_safe_send(
+                    room_id,
+                    notify_lobby_id,
+                    self.get_game_state(room_id, notify_lobby_id) or {},
+                )
+
+    async def _handle_deal_withdraw(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Proposer pulls back a deal the counterparty hasn't answered.
+
+        Authorised on the proposer (the acting island must be the one that
+        made the offer), never the awaiting party. No escrow exists, so this
+        is a pure state flip; the ledger's _require_active guard means a
+        counterparty accept/reject landing first wins and the withdraw is
+        rejected with a clean "already settled" message.
+        """
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if actor is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
+            return
+        try:
+            deal_id = int(msg.get("deal_id"))
+        except (TypeError, ValueError):
+            await websocket.send_text(json.dumps({"type": "error", "message": "Invalid deal_id"}))
+            return
+        deal = room.game.ledger.deal_by_id(deal_id)
+        if deal is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"Deal #{deal_id} not found"}))
+            return
+        if deal.proposer_id != actor.player_id:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Deal #{deal_id} was not proposed by this island",
+            }))
+            return
+        if deal.status not in ACTIVE_DEAL_STATUSES:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Deal #{deal_id} is already {deal.status.value} — cannot withdraw",
+            }))
+            return
+
+        # Whoever currently holds the ball is the party to notify.
+        notify_engine_id = deal.awaiting_id
+        try:
+            room.game.turn_manager.trading.withdraw_deal(deal, actor.player_id)
+        except ValueError as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+
+        player_names = {p.player_id: p.name for p in room.game.players}
+        await websocket.send_text(json.dumps({
+            "type": "deal_response_ack",
+            "result": "withdrawn",
+            "deal_id": deal.deal_id,
+            "deal": self._deal_payload(deal, player_names, actor.player_id),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        if notify_engine_id is not None and notify_engine_id != actor.player_id:
+            notify_lobby_id = self._deal_lobby_id_for_engine_id(room, notify_engine_id)
+            if notify_lobby_id:
+                self._thread_safe_send(room_id, notify_lobby_id, {
+                    "type": "deal_response",
+                    "deal_id": deal.deal_id,
+                    "result": "withdrawn",
                     "from": actor.name,
                     "deal": self._deal_payload(deal, player_names, notify_engine_id),
                 })
@@ -7047,6 +7128,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "deal_respond":
                     await manager._handle_deal_respond(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "deal_withdraw":
+                    await manager._handle_deal_withdraw(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "order_batch":

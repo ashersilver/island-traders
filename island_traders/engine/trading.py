@@ -468,6 +468,9 @@ class TradingEngine:
     def reject_deal(self, deal: DealProposal) -> None:
         self.ledger.reject(deal.deal_id)
 
+    def withdraw_deal(self, deal: DealProposal, proposer_id: int) -> None:
+        self.ledger.withdraw(deal.deal_id, proposer_id)
+
     def return_deal(
         self,
         deal: DealProposal,

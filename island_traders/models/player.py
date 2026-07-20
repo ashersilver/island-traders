@@ -288,6 +288,10 @@ class Player:
     # Paid ship repairs that complete on a future tick.  Each entry:
     # {"item_id": str, "count": int, "completes_at_tick": int}.
     capital_repair_in_progress: list[dict] = field(default_factory=list)
+    # Repairs that completed this season, for a one-season "back in service"
+    # cue in the UI.  Each entry: {"item_id": str, "name": str, "count": int}.
+    # Transient (not serialised); refreshed each season by the maintenance pass.
+    recently_repaired: list[dict] = field(default_factory=list)
     # Manufacturer durable equipment units produced in the current season.
     # Reset by Game._process_capital_maintenance at each season boundary.
     manufacturer_durable_output_used: int = 0

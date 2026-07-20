@@ -349,6 +349,10 @@ class Game:
         # market + production engine so the simulation runner can read it.
         self.market.telemetry = self.resource_flow
         production.telemetry = self.resource_flow
+        # Let production recall a player's own unsold asks to cover an input
+        # shortfall (Wave 5.2) rather than forcing a buy-back.
+        production.market = self.market
+        production.io = self.io
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
@@ -996,6 +1000,8 @@ class Game:
         catalogue: dict[str, object],
     ) -> None:
         remaining: list[dict] = []
+        # Fresh each season so the UI cue only reflects this season's repairs.
+        player.recently_repaired = []
         for entry in player.capital_repair_in_progress:
             if int(entry.get("completes_at_tick", 0)) > current_tick:
                 remaining.append(entry)
@@ -1009,6 +1015,11 @@ class Game:
                     f"\n[CAPITAL REPAIRED] {player.name}: {repaired} × "
                     f"{item.name} returned to service."
                 )
+                player.recently_repaired.append({
+                    "item_id": item_id,
+                    "name": item.name,
+                    "count": repaired,
+                })
         player.capital_repair_in_progress = remaining
 
     def _process_equipment_warranty_premiums(

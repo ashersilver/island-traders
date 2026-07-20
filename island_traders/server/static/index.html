@@ -3620,12 +3620,17 @@ function renderBuildDevelop(me) {
   }
   const owned = cat.filter(c => c.owned > 0);
   const avail = cat.filter(c => c.owned <= 0);
+  const repairedIds = new Set((me.recently_repaired || []).map(r => r.item_id));
   let html = '';
   if (owned.length) {
     html += '<div class="bd-head">Built</div>' + owned.map(c => {
       const failed = c.failed > 0;
       const repairable = (c.repairable_failed ?? c.failed ?? 0) > 0;
+      // A unit that came back this season, with none still failed, gets a
+      // transient green cue so the repair is visibly reflected in the list.
+      const backInService = !failed && repairedIds.has(c.item_id);
       const sub = failed ? `${c.failed} failed — needs repair`
+        : backInService ? '<span style="color:var(--green)">✓ back in service this season</span>'
         : (c.cash_only ? 'cash-only' : esc(c.role));
       return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
         <div class="bx">${failed ? '⚠' : '✓'}</div>
@@ -3985,7 +3990,7 @@ function sendWsMessage(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const actionTypes = new Set([
       'order_batch', 'training_batch', 'capital_order', 'deal_propose',
-      'propose_deal', 'deal_respond', 'worker_transfer_offer',
+      'propose_deal', 'deal_respond', 'deal_withdraw', 'worker_transfer_offer',
       'worker_transfer_respond', 'market_order_update', 'cancel_training',
       'capital_repair', 'island_transfer', 'training_counter_response', 'buy_out_float',
       'capital_negotiation_respond', 'capital_negotiation_accept',
@@ -4287,6 +4292,21 @@ function _renderTrainingStrip(pipeline) {
 // their batch — the engine only drives this via the sequential wizard and
 // doesn't push a dedicated WS event to the requester.
 let _lastTrainingPipelineStatus = {};
+// Toast once per island when a repair completes and the unit returns to
+// service. recently_repaired persists all season, so key the edge-detection
+// on a per-island signature to fire only when the set actually changes.
+const _repairNotifySig = {};
+function _notifyRepairCompletions(me) {
+  const list = me && me.recently_repaired;
+  const key = String(me && me.player_id);
+  if (!list || !list.length) { delete _repairNotifySig[key]; return; }
+  const sig = list.map(r => `${r.item_id}:${r.count}`).sort().join(',');
+  if (_repairNotifySig[key] === sig) return;
+  _repairNotifySig[key] = sig;
+  const summary = list.map(r => `${r.count}× ${r.name}`).join(', ');
+  showToast(`Repaired and back in service: ${summary}.`, { type: 'success', ms: 7000 });
+}
+
 function _notifyTrainingPipelineChanges(pipeline) {
   const prev = _lastTrainingPipelineStatus;
   const next = {};
@@ -5384,7 +5404,7 @@ function handleMessage(msg) {
       break;
     case 'deal_response_ack': {
       mergeDealMessage(msg);
-      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
+      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error', withdrawn: 'info' }[msg.result] || 'info';
       showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
       break;
     }
@@ -5818,6 +5838,7 @@ function renderGameState() {
   window._pendingActions = new Set(isConsolidated ? [] : (gameState.pending_actions || []));
 
   _notifyTrainingPipelineChanges(me.training_pipeline || []);
+  if (!isConsolidated) _notifyRepairCompletions(me);
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
   renderLevyBanner(isConsolidated ? null : me);
@@ -6571,12 +6592,23 @@ function _renderAwaitingDealCard(d) {
 }
 
 function _renderMyDealCard(d) {
-  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)' }[d.status] || 'var(--dim)';
+  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)', withdrawn: 'var(--dim)' }[d.status] || 'var(--dim)';
   const awaiting = d.awaiting_name ? ` · awaiting ${esc(d.awaiting_name)}` : '';
+  // The proposer can pull back an offer the counterparty hasn't answered yet.
+  const canWithdraw = d.status === 'pending' || d.status === 'returned';
+  const withdrawBtn = canWithdraw
+    ? `<button class="btn-ghost btn-sm" style="margin-left:auto;padding:.1rem .5rem;font-size:.68rem"
+              onclick="withdrawDeal(${d.deal_id})"
+              title="Pull back this offer before the other player responds">Withdraw</button>`
+    : '';
   return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.4rem">
     ${_dealTermsHtml(d)}
-    <div style="margin-top:.35rem;font-size:.74rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}</div>
+    <div style="margin-top:.35rem;font-size:.74rem;display:flex;align-items:center;gap:.4rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}${withdrawBtn}</div>
   </div>`;
+}
+
+function withdrawDeal(deal_id) {
+  sendWsMessage({ type: 'deal_withdraw', deal_id });
 }
 
 function openDealsDialog() {
@@ -6711,6 +6743,7 @@ const _DEAL_RESULT_TEXT = {
   returned: 'returned a counter-offer',
   rejected: 'rejected your deal',
   expired: 'deal expired (stale resources)',
+  withdrawn: 'withdrew their offer',
 };
 function onDealResponsePush(msg) {
   mergeDealMessage(msg);
