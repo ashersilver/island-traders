@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
+from itertools import combinations
 from math import ceil
 from ..models.player import Player
 from ..models.market import Market
@@ -102,6 +103,7 @@ class TurnAction(Enum):
     OFFER_LOAN         = "offer_loan"          # Banker: offer a loan to another player
     TAKE_LOAN          = "take_loan"           # any player: borrow from the Banker
     ROLLOVER_LOAN      = "rollover_loan"       # borrower: refinance an active loan (#6)
+    CONSOLIDATE_LOANS  = "consolidate_loans"   # borrower: combine 2+ active loans from one lender
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
     PAY_REBUILD_LEVY   = "pay_rebuild_levy"    # pay outstanding disaster rebuild levy to unblock repairs (5.1)
@@ -855,6 +857,8 @@ class TurnManager:
                     self._action_take_loan(player, result, year, season_index)
                 elif action == TurnAction.ROLLOVER_LOAN:
                     self._action_rollover_loan(player, result, year, season_index)
+                elif action == TurnAction.CONSOLIDATE_LOANS:
+                    self._action_consolidate_loans(player, result, year, season_index)
                 elif action == TurnAction.VIEW_LOANS:
                     self._action_view_loans(player)
                 elif action == TurnAction.PAY_LEASE:
@@ -4728,6 +4732,174 @@ class TurnManager:
             f"loan:rollover:{old.loan_id}->#{new_loan.loan_id}"
         )
 
+    def _action_consolidate_loans(self, player: Player, result: TurnResult,
+                                  year: int, season_index: int) -> None:
+        """Combine 2+ active loans from one lender into one quoted loan."""
+        sym = CURRENCY_SYMBOL
+        player_map = {p.player_id: p for p in self.players}
+        my_loans = [
+            l for l in self.loan_ledger.active_loans_for(player.player_id)
+            if l.borrower_id == player.player_id and l.lender_id >= 0
+        ]
+        groups: dict[int, list[Loan]] = {}
+        for loan in my_loans:
+            groups.setdefault(loan.lender_id, []).append(loan)
+        eligible_groups = {
+            lender_id: sorted(loans, key=lambda l: l.loan_id)
+            for lender_id, loans in groups.items()
+            if len(loans) >= 2
+        }
+        if not eligible_groups:
+            self.io.print(
+                "  No eligible loans to consolidate — you need at least two "
+                "active loans from the same lender."
+            )
+            return
+
+        options = []
+        for lender_id, loans in sorted(eligible_groups.items()):
+            lender = player_map.get(lender_id)
+            lender_name = lender.name if lender else f"Player {lender_id}"
+            for size in range(2, len(loans) + 1):
+                for combo in combinations(loans, size):
+                    principal = round(sum(l.repayment_amount for l in combo), 1)
+                    loan_labels = ", ".join(f"#{l.loan_id}" for l in combo)
+                    options.append({
+                        "value": ",".join(str(l.loan_id) for l in combo),
+                        "label": (
+                            f"{lender_name}: consolidate {loan_labels} "
+                            f"→ {principal:.1f} {sym} principal"
+                        ),
+                    })
+
+        chosen = self.io.choose_option("Consolidate which loans?", options)
+        if chosen is None:
+            self.io.print("  No selection — cancelled.")
+            return
+        try:
+            chosen_ids = [int(part) for part in str(chosen).split(",") if part]
+        except (TypeError, ValueError):
+            self.io.print(f"  Unknown selection: {chosen!r}.")
+            return
+        selected = [
+            loan for loan in my_loans
+            if loan.loan_id in set(chosen_ids)
+        ]
+        if len(selected) != len(chosen_ids) or len(selected) < 2:
+            self.io.print("  Selected loans are no longer eligible.")
+            return
+        lender_ids = {loan.lender_id for loan in selected}
+        if len(lender_ids) != 1:
+            self.io.print("  Selected loans must share one lender.")
+            return
+
+        lender_id = selected[0].lender_id
+        banker = player_map.get(lender_id)
+        if banker is None:
+            self.io.print("  Lender is no longer available.")
+            return
+        self_lending = banker.player_id == player.player_id
+        new_term_years = self.io.choose_quantity(
+            "New consolidated term in years (1-3)", 1, 3
+        )
+        new_principal = round(sum(loan.repayment_amount for loan in selected), 1)
+        funding_rate = posted_funding_rates(
+            year, season_index, cycle=self.current_cycle
+        )[new_term_years]
+        opening_rate = banker_quote_rate(
+            player,
+            self.loan_ledger,
+            new_principal,
+            new_term_years,
+            year,
+            season_index,
+            cycle=self.current_cycle,
+        )
+
+        if self_lending:
+            r = own_share = external_share = released_own = 0.0
+        else:
+            r = self._banker_reserve_ratio(banker)
+            released_own = sum(loan.own_committed for loan in selected)
+            own_share = r * new_principal
+            external_share = max(0.0, new_principal - own_share)
+            active_after_retire = self._banker_active_loan_count(banker) - len(selected)
+            cap = self._banker_active_loan_cap(banker)
+            if active_after_retire >= cap:
+                self.io.print(
+                    "  Cannot consolidate: Bank would still be at active-loan "
+                    f"cap after retiring the selected loans ({active_after_retire}/{cap})."
+                )
+                return
+            if banker.dollops + released_own < own_share:
+                mba = self._mba_banker_count(banker)
+                self.io.print(
+                    f"  Bank cannot back the consolidated loan at {r:.0%} reserve: "
+                    f"needs {own_share:.1f} {sym} own capital after releasing "
+                    f"{released_own:.1f} {sym}, but has only "
+                    f"{banker.dollops:.1f} {sym} free (MBA-qualified Banker "
+                    f"Managers: {mba}/{MBA_QUALIFIED_THRESHOLD})."
+                )
+                return
+
+        source_labels = ", ".join(f"#{loan.loan_id}" for loan in selected)
+        new_repay = round(new_principal * (1 + opening_rate), 1)
+        self.io.print(
+            f"\n  Banker quote for consolidating Loans {source_labels}: "
+            f"new principal {new_principal:.1f} {sym} (= selected repayments), "
+            f"rate {opening_rate * 100:.1f}% (cost {funding_rate*100:.1f}%), "
+            f"term {new_term_years} year(s), repay {new_repay:.1f} {sym}."
+        )
+        if not self_lending:
+            self.io.print(
+                f"  Reserve {r:.0%}: releases {released_own:.1f} {sym} from "
+                f"retired loans and locks {own_share:.1f} {sym} on the "
+                f"consolidated loan."
+            )
+            negotiated = self._negotiate_standard_loan_rate(
+                player, banker, new_principal, new_term_years, year, season_index,
+                opening_rate, funding_rate
+            )
+            if negotiated is None:
+                return
+            rate = negotiated
+        else:
+            confirm = self.io.confirm(
+                f"Consolidate Loans {source_labels} into {new_principal:.1f} {sym} "
+                f"at {opening_rate * 100:.1f}% for {new_term_years} year(s)?"
+            )
+            if not confirm:
+                self.io.print("  Consolidation cancelled.")
+                return
+            rate = opening_rate
+
+        try:
+            new_loan = self.loan_ledger.consolidate_loans(
+                loan_ids=chosen_ids,
+                new_rate=rate,
+                new_term_years=new_term_years,
+                year=year,
+                season=season_index,
+                own_committed=own_share,
+                external_funded=external_share,
+                posted_at_issue=funding_rate,
+                reserve_ratio_at_issue=r,
+            )
+        except ValueError as exc:
+            self.io.print(f"  Consolidation failed: {exc}")
+            return
+
+        if not self_lending:
+            banker.dollops += released_own - own_share
+        self.io.print(
+            f"  Loans {source_labels} consolidated → new Loan #{new_loan.loan_id} "
+            f"({new_principal:.1f} {sym} @ {rate * 100:.1f}%, "
+            f"matures Y{new_loan.maturity_year+1} S{new_loan.maturity_season+1})."
+        )
+        result.actions_taken.append(
+            f"loan:consolidate:{'+'.join(str(i) for i in chosen_ids)}->#{new_loan.loan_id}"
+        )
+
     def _action_manage_insurance(self, player: Player, result: TurnResult,
                                  year: int, season_index: int) -> None:
         """Review active insurance policies and cancel for a pro-rata refund (Issue #5).
@@ -4853,7 +5025,12 @@ class TurnManager:
         """
         from ..models import shareholder_loans as sh_loans
         sym = CURRENCY_SYMBOL
-        cash = player.personal_cash
+        owner = getattr(player, "owner", None)
+        lender_id = str(getattr(owner, "owner_id", player.player_id))
+        cash = (
+            float(getattr(owner, "personal_cash", 0.0))
+            if owner is not None else player.personal_cash
+        )
         if cash <= 0:
             self.io.print(f"  No personal cash to lend (personal cash: {cash:.1f} {sym}).")
             return
@@ -4870,9 +5047,12 @@ class TurnManager:
             self.io.print("  Cancelled.")
             return
         amount = min(amount, cash)
-        player.personal_cash = round(player.personal_cash - amount, 1)
+        if owner is not None:
+            owner.personal_cash = round(owner.personal_cash - amount, 1)
+        else:
+            player.personal_cash = round(player.personal_cash - amount, 1)
         player.dollops = round(player.dollops + amount, 1)
-        sh_loans.lend(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        sh_loans.lend(player.shareholder_loans, lender_id, round(amount, 1))
         self.io.print(
             f"  Lent {amount:.1f} {sym} to your island treasury.  "
             f"Island treasury: {player.dollops:.1f} {sym}  |  "
@@ -4888,7 +5068,11 @@ class TurnManager:
         """
         from ..models import shareholder_loans as sh_loans
         sym = CURRENCY_SYMBOL
-        owed = sh_loans.total_owed(player.shareholder_loans)
+        owner = getattr(player, "owner", None)
+        lender_id = str(getattr(owner, "owner_id", player.player_id))
+        owed = player.shareholder_loans.get(lender_id, 0.0)
+        if owed <= 0 and owner is None:
+            owed = sh_loans.total_owed(player.shareholder_loans)
         if owed <= 0:
             self.io.print("  No shareholder loan outstanding to repay.")
             return
@@ -4911,9 +5095,12 @@ class TurnManager:
             self.io.print("  Cancelled.")
             return
         amount = min(amount, max_repay)
-        paid = sh_loans.repay(player.shareholder_loans, str(player.player_id), round(amount, 1))
+        paid = sh_loans.repay(player.shareholder_loans, lender_id, round(amount, 1))
         player.dollops = round(player.dollops - paid, 1)
-        player.personal_cash = round(player.personal_cash + paid, 1)
+        if owner is not None:
+            owner.personal_cash = round(owner.personal_cash + paid, 1)
+        else:
+            player.personal_cash = round(player.personal_cash + paid, 1)
         self.io.print(
             f"  Repaid {paid:.1f} {sym} to personal cash.  "
             f"Remaining loan: {sh_loans.total_owed(player.shareholder_loans):.1f} {sym}  |  "

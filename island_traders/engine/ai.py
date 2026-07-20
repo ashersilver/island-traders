@@ -345,7 +345,12 @@ class AIStrategy:
     ) -> str | None:
         if player.cap_table is None or player.dollops >= threshold:
             return None
-        available_cash = player.personal_cash - AI_PERSONAL_CASH_RESERVE
+        owner = getattr(player, "owner", None)
+        owner_cash = (
+            float(getattr(owner, "personal_cash", 0.0))
+            if owner is not None else player.personal_cash
+        )
+        available_cash = owner_cash - AI_PERSONAL_CASH_RESERVE
         if available_cash <= 0:
             return None
         unissued = player.cap_table.unissued()
@@ -367,11 +372,18 @@ class AIStrategy:
         if shares <= 0:
             return None
         cost = round(shares * price, 1)
-        player.personal_cash = round(player.personal_cash - cost, 1)
+        if owner is not None:
+            owner.personal_cash = round(owner.personal_cash - cost, 1)
+        else:
+            player.personal_cash = round(player.personal_cash - cost, 1)
         player.dollops = round(player.dollops + cost, 1)
-        owner_key = str(player.player_id)
+        owner_key = str(getattr(owner, "owner_id", player.player_id))
         player.cap_table.transfer(UNISSUED_HOLDER, owner_key, shares)
-        player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
+        if owner is not None:
+            island_key = str(player.player_id)
+            owner.holdings[island_key] = owner.holdings.get(island_key, 0) + shares
+        else:
+            player.holdings[owner_key] = player.holdings.get(owner_key, 0) + shares
         return (
             f"[AI] {player.name} recapitalized with {shares} unissued share(s) "
             f"for {cost:.1f} Dp"

@@ -33,15 +33,17 @@ def test_treasury_seeded_and_bid_leaves_personal_cash_small_basket():
     mgr._launch_game(rid, bids={"h1": 400.0}, capital_spend={"h1": 300.0})
 
     p = mgr.rooms[rid].game.players[0]
+    owner = mgr.rooms[rid].game.owners["h1"]
     # Treasury seeded at 500, basket 300 -> ~200 left (then drifts down a little
     # as the game's first season starts charging maintenance, so assert a bound).
     assert 0.0 < p.dollops <= round(ISLAND_STARTING_CASH - 300.0, 1)
     # personal_cash and shareholder_loans are NOT touched by normal play.
-    assert p.personal_cash == round(1500.0 - 400.0, 1)           # 1100, no loan
+    assert owner.personal_cash == round(1500.0 - 400.0, 1)       # 1100, no loan
+    assert p.personal_cash == 0.0                                # wallet lives on Owner
     assert p.shareholder_loans == {}                             # nothing lent
     assert mgr.rooms[rid].game.loan_ledger.all_loans() == []
     # Owns 60% of own island.
-    assert p.cap_table.fraction("0") == 0.6
+    assert p.cap_table.fraction("h1") == 0.6
 
 
 def test_big_basket_creates_secured_bank_loan_not_owner_loan():
@@ -57,9 +59,11 @@ def test_big_basket_creates_secured_bank_loan_not_owner_loan():
     )
 
     p = mgr.rooms[rid].game.players[0]
+    owner = mgr.rooms[rid].game.owners["h1"]
     shortfall = 900.0 - ISLAND_STARTING_CASH                      # 400
     assert p.dollops == 0.0
-    assert p.personal_cash == round(1500.0 - 400.0, 1)            # owner wallet not drained
+    assert owner.personal_cash == round(1500.0 - 400.0, 1)        # owner wallet not drained
+    assert p.personal_cash == 0.0
     assert p.shareholder_loans == {}
     loans = mgr.rooms[rid].game.loan_ledger.all_loans()
     assert len(loans) == 1

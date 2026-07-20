@@ -50,6 +50,7 @@ ACTION_GROUPS: dict[TurnAction, str] = {
     TurnAction.TAKE_LOAN: "Finance",
     TurnAction.OFFER_LOAN: "Finance",
     TurnAction.ROLLOVER_LOAN: "Finance",
+    TurnAction.CONSOLIDATE_LOANS: "Finance",
     TurnAction.VIEW_LOANS: "Finance",
     TurnAction.PAY_LEASE: "Finance",
     TurnAction.PAY_REBUILD_LEVY: "Finance",

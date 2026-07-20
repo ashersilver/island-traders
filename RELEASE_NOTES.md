@@ -7,6 +7,30 @@ Release notes are required before merging a feature/fix branch into
 
 `APP_VERSION`: `0.1.6-dev.2026-07-14.3`.
 
+- **Feature: Loan consolidation (Wave 6.1)** — a borrower with two or more
+  active loans from the same lender can consolidate them into a single new
+  loan via the new `consolidate_loans` action. The new principal is the sum
+  of the selected loans' repayment amounts (principal + interest), re-quoted
+  at the current posted rate over a fresh 1–3 year term with the usual
+  single accept/counter/walk negotiation round. Source loans are marked
+  `ROLLED_OVER` and trace to the new loan (which records all source IDs).
+  The Banker's reserve and active-loan-cap checks run on the consolidated
+  loan, with the retired loans' committed reserve released first so
+  consolidation never fails for reserve reasons it itself cures. Loan cards
+  show a **Consolidate…** entry when eligible (`can_consolidate` in
+  `loans_detail`).
+
+- **Feature: Islands are separate businesses (Wave 8.1/8.2/8.4)** — a player
+  owning more than one island no longer pools their books. Each island is
+  its own engine business with its own treasury, inventory, workforce,
+  capital, loans and insurance; only the owner's `personal_cash` is
+  indivisible. An island tab bar switches the acting island (every action
+  carries a validated `island_id`), a read-only **Consolidated** tab shows
+  the owner's pooled net position, and `island_transfer` moves stock between
+  co-owned islands at a deemed market cost (treasury→treasury) plus 1
+  Freight. Multi-island owners' businesses are named "Owner — Island".
+  Save format bumped to version 8.
+
 - **Fix: rebuild levy was a dead end — repairs blocked with no way to pay
   (Wave 5.1)** — a disaster rebuild levy blocked capital repairs with
   "Rebuild levy must be paid before capital repairs resume." but the amount
@@ -32,6 +56,8 @@ Release notes are required before merging a feature/fix branch into
   The order form shows the self-build quote (20% of list) when the buyer is
   the Manufacturer. Tests updated/added in
   `tests/test_server/test_capital_order.py`.
+
+Version bump: `0.1.6-dev.2026-07-14.3`
 
 ## 0.1.5 — 2026-07-14
 
