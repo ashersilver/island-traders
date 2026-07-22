@@ -5,7 +5,16 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.2`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.4`.
+
+- **UX: the Island Dependency Map is now filterable** — the map behind the 🗺
+  button drew all 14 resource flows at once, which is dense enough to be hard
+  to read. Clicking any island node (or its legend swatch) now isolates that
+  island: only the flows it is a party to are drawn, its trading partners stay
+  lit, and unrelated islands dim to context with a "no direct flow" tooltip.
+  A caption reports the split (e.g. "Manufacturer — 5 outgoing · 1 incoming")
+  beside a **Show all flows** reset, and clicking the isolated island again
+  clears the filter. Display-only — no server or payload change.
 
 - **Feature: Loan consolidation (Wave 6.1)** — a borrower with two or more
   active loans from the same lender can consolidate them into a single new
