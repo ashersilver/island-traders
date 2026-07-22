@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-07-14.2"
+APP_VERSION: str = "0.1.6-dev.2026-07-14.3"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -662,6 +662,10 @@ EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
 # Referral kickback paid to the Manufacturer (by the Bank) when a capital order
 # is financed — origination incentive for steering the deal through financing.
 MANUFACTURER_FINANCE_REFERRAL_RATE: float = 0.02
+# A Manufacturer ordering manufactured equipment from itself pays this fraction
+# of list price as a sunk cash cost (no markup, no counterparty — Wave 5.3);
+# the manufactured inputs are still consumed.  Spares kits are added at cost.
+MANUFACTURER_SELF_ORDER_PRICE_FRACTION: float = 0.20
 
 
 # ---------------------------------------------------------------------------

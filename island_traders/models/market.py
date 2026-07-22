@@ -354,6 +354,45 @@ class Market:
             return offer
         raise ValueError("Offer not found")
 
+    def listed_quantity(self, seller_id: int, rtype: ResourceType) -> int:
+        """Total unsold units a seller has resting on the ask side for rtype."""
+        return sum(
+            o.remaining for o in self._offers
+            if o.seller_id == seller_id and o.resource == rtype and o.remaining > 0
+        )
+
+    def recall_offers(self, seller: Player, rtype: ResourceType, qty: int) -> int:
+        """Pull back up to ``qty`` unsold units of ``rtype`` from the seller's
+        own resting asks into inventory, cancelling/reducing oldest-first.
+
+        Returns the number of units actually recalled. Routes through the
+        existing reduce_offer/cancel_offer paths so inventory, the ``supply``
+        counter and each offer's ``remaining`` stay consistent — lets a player
+        feed production from stock they had listed for sale but not yet sold,
+        instead of buying it back.
+        """
+        if qty <= 0:
+            return 0
+        recalled = 0
+        # Snapshot ids first; cancel_offer/reduce_offer mutate remaining.
+        offer_ids = [
+            o.offer_id for o in self._offers
+            if o.seller_id == seller.player_id and o.resource == rtype and o.remaining > 0
+        ]
+        for offer_id in offer_ids:
+            if recalled >= qty:
+                break
+            offer = next((o for o in self._offers if o.offer_id == offer_id), None)
+            if offer is None or offer.remaining <= 0:
+                continue
+            take = min(offer.remaining, qty - recalled)
+            if take >= offer.remaining:
+                self.cancel_offer(seller, offer_id)
+            else:
+                self.reduce_offer(seller, offer_id, offer.remaining - take)
+            recalled += take
+        return recalled
+
     def cancel_bid(self, buyer: Player, bid_id: int) -> MarketBid:
         """Cancel one live bid."""
         for bid in self._bids:
