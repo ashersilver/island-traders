@@ -5,7 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.5`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.6`.
+
+- **Dependency map: derived from the rules, split into layers, and answers
+  "what does this island need?"** — the map's edges were a hand-written list in
+  the frontend that had drifted from the game. It never showed **Freight** at
+  all, even though every island burns it on trades and on equipment repairs,
+  and the role table it echoed still credited the Manufacturer with Reagents
+  long after the Doctor took that line over.
+  - Edges are now **derived server-side** from the live recipe and capital
+    tables and served from `GET /api/dependency-graph`, so the map cannot go
+    stale. Fetched once and cached by the client.
+  - **Two layers**: *Consumables* (recipe inputs plus the needs no recipe
+    lists — energy Oil, continuing-education Expertise, sustenance, Spares for
+    repairs, Freight on trade, PassengerSeats for training travel, the Banker's
+    office Goods, household demand) and *Capital* (the manufactured resource
+    each island's equipment is built from), toggled Consumables / Capital /
+    Both. Spares sit in consumables. Capital rides a wider dashed arc so it
+    never collides with the consumable line between the same pair.
+  - **Clicking an island lists everything it can need**, with a red dot and a
+    heavier edge on whatever it is short of *right now* — read from the live
+    snapshot (`inputs_short`, brownout, uncovered continuing education, blocked
+    repairs, sustenance runway). The overview keeps universal needs hidden so
+    it stays readable; the drill-down is where they appear.
+  - **Arrowheads enlarged** from 9×7 to 16×12 solid triangles with the tip
+    pulled clear of the node, so direction is legible at map zoom.
 
 - **Feature: sell part of an island for personal cash (Wave 8.3)** — the
   controlling owner can offer a named player X shares of one of their islands
