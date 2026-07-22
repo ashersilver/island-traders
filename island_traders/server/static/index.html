@@ -1575,6 +1575,9 @@ body.fx-off .ih-pins .pdot{animation:none}
           <button class="btn-ghost btn-sm" style="margin-left:auto;padding:.15rem .5rem;font-size:.7rem"
                   onclick="showConstraintPopup()" title="Show production constraints">⚠</button>
         </h3>
+        <!-- Rebuild levy banner (Wave 5.1): amber notice + Pay Levy while a
+             disaster rebuild levy is outstanding and blocking repairs. -->
+        <div id="levy-banner" style="display:none"></div>
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
       </div>
@@ -3340,6 +3343,25 @@ function updateCapOrderTotal() {
       : 'Optional';
   const _me = gameState && gameState.players && gameState.players[myPlayerIdx];
   const _cash = (_me && (_me.treasury ?? _me.dollops)) || 0;
+  // Self-order pricing (Wave 5.3): when the Manufacturer orders a manufactured
+  // item from itself there is no counterparty — it settles at 20% of list
+  // price (plus spares kits at cost) as a sunk cost; inputs are still consumed.
+  const _isSelfOrder = !capOrderItem.cash_only
+    && ((_me && (_me.role_names || _me.roles)) || []).includes('Manufacturer');
+  if (_isSelfOrder) {
+    const selfCost = Math.round(0.20 * capOrderItem.cost * 100) / 100;
+    const selfTotal = Math.round((selfCost + sparesCost) * 100) / 100;
+    const _selfShort = selfTotal > _cash;
+    document.getElementById('cap-order-total').innerHTML = `
+      <div class="cap-quote-row" style="color:${_selfShort ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_selfShort ? ' — short, lower the order' : ''}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">Self-build price (20% of list)</div><div class="cap-quote-value">${moneyDp(selfCost)}</div></div>
+      <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits} (at cost)</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
+      <div class="cap-quote-row total"><div class="cap-quote-label">Self-build total</div><div class="cap-quote-value">${moneyDp(selfTotal)}</div></div>
+      <div class="cap-quote-row contingent"><div class="cap-quote-label">You build this yourself — no markup; inputs are consumed as usual</div><div class="cap-quote-value"></div></div>
+    `;
+    return;
+  }
   const _short = total > _cash;
   document.getElementById('cap-order-total').innerHTML = `
     <div class="cap-quote-row" style="color:${_short ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_short ? ' — short, finance or lower the order' : ''}</div></div>
@@ -3555,6 +3577,39 @@ function repairCapitalItem(itemId) {
 // the island can still build (from capacity.capital_catalogue). The header
 // "＋ Build…" button launches the existing Purchase Equipment action; an
 // "Available" row opens the richer Capital Equipment Order form (#185).
+// Rebuild levy banner (Wave 5.1): while a disaster rebuild levy is
+// outstanding, capital repairs are blocked. Show the amount owed, explain the
+// automatic installment route, and offer a Pay Levy shortcut (pays as much of
+// the levy as the treasury covers; the server clamps).
+function renderLevyBanner(me) {
+  const el = document.getElementById('levy-banner');
+  if (!el) return;
+  const owed = Number(me && me.rebuild_levy_remaining) || 0;
+  if (owed <= 0) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  const n = Math.max(1, Number(me.rebuild_levy_installments) || 1);
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="margin-bottom:.5rem;padding:.45rem .55rem;border:1px solid var(--gold);border-radius:4px;background:rgba(212,175,55,.08);font-size:.75rem">
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <span style="color:var(--gold);font-weight:700">⚠ Rebuild levy outstanding: ${moneyDp(owed)}</span>
+        <button class="btn-gold btn-sm" style="margin-left:auto;padding:.15rem .55rem;font-size:.7rem"
+                onclick="payRebuildLevy()" title="Pay the outstanding levy from your treasury now (clamped to your balance)">Pay levy</button>
+      </div>
+      <div style="color:var(--dim);margin-top:.2rem">
+        Deducted automatically over the next ${n} season${n === 1 ? '' : 's'};
+        capital repairs stay blocked until it is cleared — pay now to resume repairs.
+      </div>
+    </div>`;
+}
+function payRebuildLevy() {
+  // No amount → the server pays the full outstanding levy, clamped to balance.
+  sendWsMessage({ type: 'pay_rebuild_levy' });
+}
+
 function renderBuildDevelop(me) {
   const el = document.getElementById('build-develop-list');
   if (!el) return;
@@ -3565,12 +3620,17 @@ function renderBuildDevelop(me) {
   }
   const owned = cat.filter(c => c.owned > 0);
   const avail = cat.filter(c => c.owned <= 0);
+  const repairedIds = new Set((me.recently_repaired || []).map(r => r.item_id));
   let html = '';
   if (owned.length) {
     html += '<div class="bd-head">Built</div>' + owned.map(c => {
       const failed = c.failed > 0;
       const repairable = (c.repairable_failed ?? c.failed ?? 0) > 0;
+      // A unit that came back this season, with none still failed, gets a
+      // transient green cue so the repair is visibly reflected in the list.
+      const backInService = !failed && repairedIds.has(c.item_id);
       const sub = failed ? `${c.failed} failed — needs repair`
+        : backInService ? '<span style="color:var(--green)">✓ back in service this season</span>'
         : (c.cash_only ? 'cash-only' : esc(c.role));
       return `<div class="bd-row owned${failed ? ' failed' : ''}" title="${esc(c.description || '')}">
         <div class="bx">${failed ? '⚠' : '✓'}</div>
@@ -3930,7 +3990,7 @@ function sendWsMessage(obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const actionTypes = new Set([
       'order_batch', 'training_batch', 'capital_order', 'deal_propose',
-      'propose_deal', 'deal_respond', 'worker_transfer_offer',
+      'propose_deal', 'deal_respond', 'deal_withdraw', 'worker_transfer_offer',
       'worker_transfer_respond', 'market_order_update', 'cancel_training',
       'capital_repair', 'island_transfer', 'training_counter_response', 'buy_out_float',
       'capital_negotiation_respond', 'capital_negotiation_accept',
@@ -4232,6 +4292,21 @@ function _renderTrainingStrip(pipeline) {
 // their batch — the engine only drives this via the sequential wizard and
 // doesn't push a dedicated WS event to the requester.
 let _lastTrainingPipelineStatus = {};
+// Toast once per island when a repair completes and the unit returns to
+// service. recently_repaired persists all season, so key the edge-detection
+// on a per-island signature to fire only when the set actually changes.
+const _repairNotifySig = {};
+function _notifyRepairCompletions(me) {
+  const list = me && me.recently_repaired;
+  const key = String(me && me.player_id);
+  if (!list || !list.length) { delete _repairNotifySig[key]; return; }
+  const sig = list.map(r => `${r.item_id}:${r.count}`).sort().join(',');
+  if (_repairNotifySig[key] === sig) return;
+  _repairNotifySig[key] = sig;
+  const summary = list.map(r => `${r.count}× ${r.name}`).join(', ');
+  showToast(`Repaired and back in service: ${summary}.`, { type: 'success', ms: 7000 });
+}
+
 function _notifyTrainingPipelineChanges(pipeline) {
   const prev = _lastTrainingPipelineStatus;
   const next = {};
@@ -5179,6 +5254,10 @@ function handleMessage(msg) {
       addLog(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), msg.ok ? 'ok' : 'err');
       showToast(msg.message || (msg.ok ? 'Repair started.' : 'Repair failed.'), { type: msg.ok ? 'success' : 'error' });
       break;
+    case 'pay_rebuild_levy_ack':
+      addLog(msg.message || (msg.ok ? 'Levy paid.' : 'Levy payment failed.'), msg.ok ? 'ok' : 'err');
+      showToast(msg.message || (msg.ok ? 'Levy paid.' : 'Levy payment failed.'), { type: msg.ok ? 'success' : 'error' });
+      break;
     case 'island_transfer_ack':
       addLog(msg.message || (msg.ok ? 'Transfer complete.' : 'Transfer failed.'), msg.ok ? 'ok' : 'err');
       showToast(msg.message || (msg.ok ? 'Transfer complete.' : 'Transfer failed.'), { type: msg.ok ? 'success' : 'error' });
@@ -5325,7 +5404,7 @@ function handleMessage(msg) {
       break;
     case 'deal_response_ack': {
       mergeDealMessage(msg);
-      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error' }[msg.result] || 'info';
+      const t = { accepted: 'success', rejected: 'info', returned: 'info', expired: 'error', withdrawn: 'info' }[msg.result] || 'info';
       showToast(`Deal ${msg.result || 'updated'}.`, { type: t });
       break;
     }
@@ -5759,8 +5838,10 @@ function renderGameState() {
   window._pendingActions = new Set(isConsolidated ? [] : (gameState.pending_actions || []));
 
   _notifyTrainingPipelineChanges(me.training_pipeline || []);
+  if (!isConsolidated) _notifyRepairCompletions(me);
 
   // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
+  renderLevyBanner(isConsolidated ? null : me);
   renderCapacityPanel(filteredCapacity(me.capacity || {}, isConsolidated ? null : tabRole));
   renderBuildDevelop(me);
   renderDecisionHints(me, isConsolidated ? null : tabRole);
@@ -6511,12 +6592,23 @@ function _renderAwaitingDealCard(d) {
 }
 
 function _renderMyDealCard(d) {
-  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)' }[d.status] || 'var(--dim)';
+  const statusColor = { pending: 'var(--gold)', returned: 'var(--accent)', accepted: 'var(--green)', rejected: 'var(--red)', expired: 'var(--dim)', withdrawn: 'var(--dim)' }[d.status] || 'var(--dim)';
   const awaiting = d.awaiting_name ? ` · awaiting ${esc(d.awaiting_name)}` : '';
+  // The proposer can pull back an offer the counterparty hasn't answered yet.
+  const canWithdraw = d.status === 'pending' || d.status === 'returned';
+  const withdrawBtn = canWithdraw
+    ? `<button class="btn-ghost btn-sm" style="margin-left:auto;padding:.1rem .5rem;font-size:.68rem"
+              onclick="withdrawDeal(${d.deal_id})"
+              title="Pull back this offer before the other player responds">Withdraw</button>`
+    : '';
   return `<div style="border:1px solid var(--border);border-radius:8px;padding:.55rem;margin-bottom:.4rem">
     ${_dealTermsHtml(d)}
-    <div style="margin-top:.35rem;font-size:.74rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}</div>
+    <div style="margin-top:.35rem;font-size:.74rem;display:flex;align-items:center;gap:.4rem"><span style="color:${statusColor};font-weight:700;text-transform:uppercase">${esc(d.status)}</span>${awaiting}${withdrawBtn}</div>
   </div>`;
+}
+
+function withdrawDeal(deal_id) {
+  sendWsMessage({ type: 'deal_withdraw', deal_id });
 }
 
 function openDealsDialog() {
@@ -6651,6 +6743,7 @@ const _DEAL_RESULT_TEXT = {
   returned: 'returned a counter-offer',
   rejected: 'rejected your deal',
   expired: 'deal expired (stale resources)',
+  withdrawn: 'withdrew their offer',
 };
 function onDealResponsePush(msg) {
   mergeDealMessage(msg);

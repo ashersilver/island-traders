@@ -71,6 +71,19 @@ class ProductionEngine:
     # Optional ResourceFlowTelemetry (B1/B2, #73); set by Game.setup() in
     # simulation.  None during normal play and in direct unit-test construction.
     telemetry: object | None = None
+    # Optional Market handle; set by Game.setup(). When present, production can
+    # recall a player's own unsold market asks to cover an input shortfall
+    # instead of failing (a listed-but-unsold resource is still the player's).
+    market: object | None = None
+    # Optional IO adapter (set by Game.setup()) for surfacing recall notices.
+    io: object | None = None
+
+    def _available_including_listings(self, player: Player, r: ResourceType) -> int:
+        """Inventory plus the player's own unsold asks for r (recallable)."""
+        avail = player.inventory.get(r)
+        if self.market is not None:
+            avail += self.market.listed_quantity(player.player_id, r)
+        return avail
 
     def _has_active_profession(self, player: Player, profession: str) -> bool:
         return any(w.profession == profession for w in player.workforce.active_workers)
@@ -510,10 +523,12 @@ class ProductionEngine:
             freight_needed = self._freight_surcharge(product_line, base_qty)
             if freight_needed:
                 inputs[ResourceType.FREIGHT] = inputs.get(ResourceType.FREIGHT, 0) + freight_needed
+        # Count the player's own unsold asks as available — production will
+        # recall them on execution, so feasibility must match.
         missing = {
-            r: qty - player.inventory.get(r)
+            r: qty - self._available_including_listings(player, r)
             for r, qty in inputs.items()
-            if player.inventory.get(r) < qty
+            if self._available_including_listings(player, r) < qty
         }
         return len(missing) == 0, missing
 
@@ -528,6 +543,18 @@ class ProductionEngine:
             return {}
 
         inputs = self._all_inputs(player, season_name, product_line)
+        # Recall the player's own unsold market asks to cover any shortfall —
+        # stock listed for sale but not yet sold is still theirs to consume.
+        if self.market is not None:
+            for r, qty in inputs.items():
+                short = qty - player.inventory.get(r)
+                if short > 0:
+                    recalled = self.market.recall_offers(player, r, short)
+                    if recalled > 0 and self.io is not None:
+                        self.io.print(
+                            f"[MARKET RECALL] {player.name}: pulled {recalled}x "
+                            f"{r.value} back from your market ask to feed production."
+                        )
         missing = {r: qty for r, qty in inputs.items() if player.inventory.get(r) < qty}
         if missing:
             if self.telemetry is not None:

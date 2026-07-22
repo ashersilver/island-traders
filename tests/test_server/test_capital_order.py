@@ -391,9 +391,12 @@ def test_capital_order_double_accept_settles_once():
 
 def test_capital_order_self_build_settles_immediately_without_negotiation():
     # A Manufacturer ordering its own equipment has no counterparty to review the
-    # order.  It must settle on the spot (consuming a manufactured unit, no Dp,
-    # no referral) rather than parking a negotiation that awaits — and can never
-    # clear — the manufacturer's own response, which previously jammed the queue.
+    # order.  It must settle on the spot (consuming a manufactured unit, charging
+    # the Wave-5.3 self-build cost, no referral) rather than parking a negotiation
+    # that awaits — and can never clear — the manufacturer's own response, which
+    # previously jammed the queue.
+    from island_traders.constants import MANUFACTURER_SELF_ORDER_PRICE_FRACTION
+
     mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
     manufacturer, _other = players
     item = find_item(CAPITAL_CATALOGUE, "manufacturer.foundry")
@@ -414,9 +417,11 @@ def test_capital_order_self_build_settles_immediately_without_negotiation():
         for m in ws.sent
     ), ws.sent
 
-    # Self-build: no Dp moves, proportional capacity consumed, equipment placed
-    # (foundry has 0-season delivery, so it lands directly in capital_units).
-    assert manufacturer.dollops == start_dollops
+    # Self-build: 20% of list price burned as a sunk cost (Wave 5.3),
+    # proportional capacity consumed, equipment placed (foundry has 0-season
+    # delivery, so it lands directly in capital_units).
+    self_cost = round(MANUFACTURER_SELF_ORDER_PRICE_FRACTION * item.cost, 2)
+    assert manufacturer.dollops == start_dollops - self_cost
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before - 1
     assert manufacturer.capital_units.get("manufacturer.foundry")
 
@@ -445,6 +450,64 @@ def test_capital_order_self_build_warehouse_settles_immediately():
         m.get("type") == "capital_negotiation_ack" and m.get("result") == "proposed"
         for m in ws.sent
     ), ws.sent
+
+
+def test_capital_order_self_order_charges_20pct_of_list_plus_spares_at_cost():
+    # Wave 5.3: a self-order of a manufactured item used to settle at $0 cash.
+    # It now costs 0.20 × list_price plus spares kits at cost, burned as a sunk
+    # cost (no counterparty is paid); inputs are still consumed.
+    from island_traders.constants import MANUFACTURER_SELF_ORDER_PRICE_FRACTION
+
+    mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
+    manufacturer, other = players
+    item = find_item(CAPITAL_CATALOGUE, "manufacturer.foundry")
+    manufacturer.dollops = item.cost * 5
+    start_dollops = manufacturer.dollops
+    other_start = other.dollops
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+        "item_id": "manufacturer.foundry",
+        "spares_kits": 2,
+    }, ws))
+
+    ack = next((m for m in ws.sent if m.get("type") == "capital_order_ack"), None)
+    assert ack is not None, ws.sent
+    expected = round(
+        MANUFACTURER_SELF_ORDER_PRICE_FRACTION * item.cost
+        + 0.15 * item.cost * 2,
+        2,
+    )
+    assert ack["upfront"] == expected
+    # Sunk cost: the manufacturer pays and nobody receives.
+    assert manufacturer.dollops == start_dollops - expected
+    assert other.dollops == other_start
+    # The manufactured resource is still debited.
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before - 1
+    assert manufacturer.capital_units.get("manufacturer.foundry")
+
+
+def test_capital_order_self_order_rejected_when_self_build_cost_unaffordable():
+    mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
+    manufacturer, _other = players
+    manufacturer.dollops = 1.0
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order(room.room_id, "p0", {
+        "item_id": "manufacturer.foundry",
+    }, ws))
+
+    error = next((m for m in ws.sent if m.get("type") == "error"), None)
+    assert error is not None, ws.sent
+    assert "20% of list price" in error["message"]
+    # Nothing consumed or charged.
+    assert manufacturer.dollops == 1.0
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before
+    assert not manufacturer.capital_units.get("manufacturer.foundry")
 
 
 def test_game_state_exposes_spares_held_and_capacity():

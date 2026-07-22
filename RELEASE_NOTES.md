@@ -27,13 +27,75 @@ Release notes are required before merging a feature/fix branch into
   loan, with the retired loans' committed reserve released first so
   consolidation never fails for reserve reasons it itself cures. Loan cards
   show a **Consolidate…** entry when eligible (`can_consolidate` in
-  `loans_detail`). Implemented by Codex (gpt-5.5) from
-  `requirements/codex-tasks/banking-loans-deposits-wave6-2026-07-13.md`;
-  verification: full suite 933 passed under the project venv. Tasks 6.2
-  (early repayment with negotiable penalty) and 6.3 (fixed deposits) follow
-  separately.
+  `loans_detail`).
 
-Version bump: `0.1.6-dev.2026-07-14.2`
+- **Feature: Islands are separate businesses (Wave 8.1/8.2/8.4)** — a player
+  owning more than one island no longer pools their books. Each island is
+  its own engine business with its own treasury, inventory, workforce,
+  capital, loans and insurance; only the owner's `personal_cash` is
+  indivisible. An island tab bar switches the acting island (every action
+  carries a validated `island_id`), a read-only **Consolidated** tab shows
+  the owner's pooled net position, and `island_transfer` moves stock between
+  co-owned islands at a deemed market cost (treasury→treasury) plus 1
+  Freight. Multi-island owners' businesses are named "Owner — Island".
+  Save format bumped to version 8.
+
+- **Fix: rebuild levy was a dead end — repairs blocked with no way to pay
+  (Wave 5.1)** — a disaster rebuild levy blocked capital repairs with
+  "Rebuild levy must be paid before capital repairs resume." but the amount
+  owed was never serialised to the client and no payment action existed; the
+  levy only drained via automatic season-start installments. Now:
+  - `game_state` carries `rebuild_levy_remaining` and the remaining
+    installment count per player.
+  - New `pay_rebuild_levy` action (WS handler + `TurnAction`, Finance group)
+    lets the player pay any/all of the outstanding levy from dollops, clamped
+    to balance; clearing it to zero unblocks repairs the same season.
+  - The dashboard shows an amber "Rebuild levy outstanding" banner with the
+    amount, the auto-installment explanation and a **Pay levy** button, and
+    the repair-blocked reason now states the amount and both routes (pay now
+    or wait for the installments). New tests:
+    `tests/test_server/test_pay_rebuild_levy.py`.
+
+- **Fix: Manufacturer self-orders of equipment were free (Wave 5.3)** — a
+  self-order of a manufactured item settled immediately at $0 cash (only the
+  inputs were consumed). It now charges
+  `MANUFACTURER_SELF_ORDER_PRICE_FRACTION` (20%) of list price — plus spares
+  kits at cost when selected — as a sunk cash cost with no counterparty;
+  inputs are consumed exactly as before and third-party pricing is unchanged.
+  The order form shows the self-build quote (20% of list) when the buyer is
+  the Manufacturer. Tests updated/added in
+  `tests/test_server/test_capital_order.py`.
+
+- **Fix: production can use your own unsold market listings (Wave 5.2)** —
+  listing a resource for sale escrows it out of inventory, so a player who
+  listed (say) all their Oil could be blocked from producing and had to buy
+  it back. Production now recalls a player's *own* unsold asks to cover an
+  input shortfall — pulling back only the shortfall through the existing
+  refund path so inventory, the market `supply` counter and each offer's
+  remaining stay consistent — and the feasibility check (`can_produce`)
+  counts listed-but-unsold stock as available. A recall emits a
+  `[MARKET RECALL]` log line. New tests:
+  `tests/test_engine/test_production_recall_listed_stock.py`.
+
+- **Fix: "back in service" cue after a repair (Wave 5.4)** — completed
+  capital repairs were only a season-log line, so a repaired unit's return
+  wasn't obvious in the equipment list. The season maintenance pass now
+  records `recently_repaired` per player (transient, refreshed each season),
+  surfaced in `game_state`; the client shows a success toast and a transient
+  green "✓ back in service this season" cue on the unit row. New tests:
+  `tests/test_engine/test_repair_completion_cue.py`.
+
+- **Fix: withdraw a proposed deal (Wave 5.5)** — a proposer had no way to
+  pull back a peer-to-peer deal the other player hadn't answered, and deals
+  never expired. New `deal_withdraw` action (new `WITHDRAWN` status +
+  `DealLedger.withdraw`) lets the proposer cancel a `pending`/`returned`
+  deal; the ledger's active-state guard means a counterparty accept/reject
+  landing first wins and the withdraw is refused. No escrow exists so it's a
+  pure state flip; the counterparty is notified. A **Withdraw** button
+  appears on the proposer's own deal cards. New tests:
+  `tests/test_server/test_deal_withdraw.py`.
+
+Version bump: `0.1.6-dev.2026-07-14.3`
 
 ## 0.1.5 — 2026-07-14
 

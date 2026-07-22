@@ -65,6 +65,7 @@ from ..constants import (
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
     FLU_SEASON,
     MANUFACTURER_FINANCE_REFERRAL_RATE,
+    MANUFACTURER_SELF_ORDER_PRICE_FRACTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from .ws_adapter import WebSocketIOAdapter
@@ -2430,6 +2431,7 @@ class GameManager:
             "capital_catalogue": capital_catalogue,
             "capital_in_transit": in_transit,
             "capital_repair_in_progress": repairs_in_progress,
+            "recently_repaired": list(getattr(p, "recently_repaired", []) or []),
             "band_counts":     band_counts,
             "engineer_specialties": specialty_payload(p),
         }
@@ -3209,6 +3211,86 @@ class GameManager:
                     self.get_game_state(room_id, notify_lobby_id) or {},
                 )
 
+    async def _handle_deal_withdraw(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Proposer pulls back a deal the counterparty hasn't answered.
+
+        Authorised on the proposer (the acting island must be the one that
+        made the offer), never the awaiting party. No escrow exists, so this
+        is a pure state flip; the ledger's _require_active guard means a
+        counterparty accept/reject landing first wins and the withdraw is
+        rejected with a clean "already settled" message.
+        """
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Room not found"}))
+            return
+        actor, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if actor is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": actor_error or "Player not in game"}))
+            return
+        try:
+            deal_id = int(msg.get("deal_id"))
+        except (TypeError, ValueError):
+            await websocket.send_text(json.dumps({"type": "error", "message": "Invalid deal_id"}))
+            return
+        deal = room.game.ledger.deal_by_id(deal_id)
+        if deal is None:
+            await websocket.send_text(json.dumps({"type": "error", "message": f"Deal #{deal_id} not found"}))
+            return
+        if deal.proposer_id != actor.player_id:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Deal #{deal_id} was not proposed by this island",
+            }))
+            return
+        if deal.status not in ACTIVE_DEAL_STATUSES:
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Deal #{deal_id} is already {deal.status.value} — cannot withdraw",
+            }))
+            return
+
+        # Whoever currently holds the ball is the party to notify.
+        notify_engine_id = deal.awaiting_id
+        try:
+            room.game.turn_manager.trading.withdraw_deal(deal, actor.player_id)
+        except ValueError as exc:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+            return
+
+        player_names = {p.player_id: p.name for p in room.game.players}
+        await websocket.send_text(json.dumps({
+            "type": "deal_response_ack",
+            "result": "withdrawn",
+            "deal_id": deal.deal_id,
+            "deal": self._deal_payload(deal, player_names, actor.player_id),
+        }))
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+        if notify_engine_id is not None and notify_engine_id != actor.player_id:
+            notify_lobby_id = self._deal_lobby_id_for_engine_id(room, notify_engine_id)
+            if notify_lobby_id:
+                self._thread_safe_send(room_id, notify_lobby_id, {
+                    "type": "deal_response",
+                    "deal_id": deal.deal_id,
+                    "result": "withdrawn",
+                    "from": actor.name,
+                    "deal": self._deal_payload(deal, player_names, notify_engine_id),
+                })
+                self._thread_safe_send(
+                    room_id,
+                    notify_lobby_id,
+                    self.get_game_state(room_id, notify_lobby_id) or {},
+                )
+
     async def _handle_training_counter_response(
         self,
         room_id: str,
@@ -3727,8 +3809,10 @@ class GameManager:
         # of parking a negotiation that awaits the manufacturer's own response.
         # Such a record can be neither meaningfully accepted (an offer from
         # yourself) nor declined, so it jams the awaiting queue and blocks every
-        # later order.  Settlement consumes the manufactured unit / cash as usual;
-        # no referral or financing applies when buyer == manufacturer.
+        # later order.  Settlement consumes the manufactured unit as usual and
+        # (Wave 5.3) charges 20% of list price plus spares kits at cost as a
+        # sunk cash cost; no referral or financing applies when buyer ==
+        # manufacturer.
         if manufacturer.player_id == buyer.player_id:
             try:
                 settlement = self._settle_capital_negotiation(
@@ -3975,6 +4059,23 @@ class GameManager:
         if agreed_total <= 0:
             raise ValueError("Agreed total must be positive.")
         pays = cash_only or manufacturer.player_id != buyer.player_id
+        # Wave 5.3: a Manufacturer self-order of a manufactured item is no
+        # longer free.  It settles at 20% of list price (no markup — the
+        # manufactured inputs are still consumed) plus any spares kits at
+        # cost, burned as a sunk cash cost with no counterparty.
+        self_build_cost = 0.0
+        if not pays:
+            self_build_cost = round(
+                MANUFACTURER_SELF_ORDER_PRICE_FRACTION * item.cost
+                + 0.15 * item.cost * negotiation.spares_kits,
+                2,
+            )
+            if buyer.dollops < self_build_cost:
+                raise ValueError(
+                    f"Need {self_build_cost:.1f} Dp to self-build {item.name} "
+                    f"(20% of list price plus spares kits at cost); you have "
+                    f"{buyer.dollops:.1f} Dp."
+                )
         cyi = getattr(room, "current_year_index", 0)
         csi = getattr(room, "current_season_index", 0)
         current_tick = cyi * len(SEASONS) + csi
@@ -4008,6 +4109,8 @@ class GameManager:
 
         if not cash_only:
             manufacturer.give_resources(manufactured_resource, required_units)
+        if not pays and self_build_cost > 0:
+            buyer.spend_dollops(self_build_cost)
         if pays:
             buyer.spend_dollops(agreed_total)
             if manufacturer.player_id != buyer.player_id:
@@ -4052,7 +4155,9 @@ class GameManager:
             "type": "capital_order_ack",
             "item_id": item.item_id,
             "name": item.name,
-            "upfront": agreed_total,
+            # Self-orders settle at the 20%-of-list sunk cost (Wave 5.3),
+            # not at the negotiated total — report what was actually charged.
+            "upfront": agreed_total if pays else self_build_cost,
             "agreed_total": agreed_total,
             "contract_cost": contract_cost,
             "spares_kits": negotiation.spares_kits,
@@ -4770,7 +4875,7 @@ class GameManager:
             # that predates that requirement and can mislead the player into
             # checking the wrong resource.
             if getattr(player, "_rebuild_levy_remaining", 0.0) > 0:
-                reason = "Rebuild levy must be paid before capital repairs resume."
+                reason = game.rebuild_levy_blocked_reason(player)
             else:
                 quote = game._capital_repair_quote(player, item, unit)
                 reason = quote.get("reason") or f"Repair blocked for {item.name}."
@@ -4778,6 +4883,71 @@ class GameManager:
             return
 
         await _ack(True, f"Repair started for {item.name}.", item_id=item_id)
+        state = self.get_game_state(room_id, lobby_player_id)
+        if state:
+            await websocket.send_text(json.dumps(state))
+
+    async def _handle_pay_rebuild_levy(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Pay any/all of the outstanding disaster rebuild levy (Wave 5.1).
+
+        The levy is normally auto-collected in seasonal installments, but
+        capital repairs stay blocked while any of it is owed — this lets
+        the player clear it early.  Omitting ``amount`` pays everything the
+        treasury can cover; the payment is clamped to balance and levy.
+        """
+        async def _ack(ok: bool, message: str, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "pay_rebuild_levy_ack",
+                "ok": ok,
+                "message": message,
+                **extra,
+            }))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await _ack(False, "Game is not running.")
+            return
+        player = self._engine_player_for_lobby(room, lobby_player_id)
+        if player is None:
+            await _ack(False, "Player not in game.")
+            return
+        outstanding = player.rebuild_levy_outstanding()
+        if outstanding <= 0:
+            await _ack(False, "No rebuild levy outstanding.")
+            return
+        raw = msg.get("amount")
+        try:
+            amount = outstanding if raw is None else float(raw)
+        except (TypeError, ValueError):
+            await _ack(False, "Invalid levy amount.")
+            return
+        if amount <= 0:
+            await _ack(False, "Levy payment must be positive.")
+            return
+        paid = player.pay_rebuild_levy(amount)
+        if paid <= 0:
+            await _ack(
+                False,
+                "Island treasury is empty — the levy will keep being "
+                "deducted automatically each season.",
+            )
+            return
+        remaining = player.rebuild_levy_outstanding()
+        message = (
+            f"Paid {CURRENCY_SYMBOL}{paid:.2f} toward the rebuild levy. "
+            + (
+                "Levy cleared — capital repairs can resume."
+                if remaining <= 0
+                else f"{CURRENCY_SYMBOL}{remaining:.2f} still outstanding."
+            )
+        )
+        await _ack(True, message, paid=paid, remaining=remaining)
         state = self.get_game_state(room_id, lobby_player_id)
         if state:
             await websocket.send_text(json.dumps(state))
@@ -5047,6 +5217,13 @@ class GameManager:
                     getattr(game, "season", SEASONS[current_season_idx]),
                 ),
                 "equipment_value": round(p.capital_book_value(CAPITAL_CATALOGUE, current_tick), 1),
+                # Disaster rebuild levy (Wave 5.1): outstanding total + how
+                # many auto-collected seasonal installments remain, so the
+                # UI can show the amount owed and offer Pay Levy.
+                "rebuild_levy_remaining": p.rebuild_levy_outstanding(),
+                "rebuild_levy_installments": len(
+                    getattr(p, "_rebuild_levy_installments", []) or []
+                ),
                 "loans_outstanding": round(game.loan_ledger.outstanding_debt(p.player_id), 1),
                 "loans_receivable": round(game.loan_ledger.loans_receivable(p.player_id), 1),
                 "banker_active_loans": loan_book["active"],
@@ -6953,6 +7130,10 @@ def create_app() -> FastAPI:
                     await manager._handle_deal_respond(
                         room_id, player_id, msg, websocket
                     )
+                elif msg_type == "deal_withdraw":
+                    await manager._handle_deal_withdraw(
+                        room_id, player_id, msg, websocket
+                    )
                 elif msg_type == "order_batch":
                     await manager._handle_order_batch(
                         room_id, player_id, msg, websocket
@@ -6995,6 +7176,10 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_repair":
                     await manager._handle_capital_repair(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "pay_rebuild_levy":
+                    await manager._handle_pay_rebuild_levy(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "island_transfer":
