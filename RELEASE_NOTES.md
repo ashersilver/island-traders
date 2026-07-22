@@ -5,7 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.4`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.5`.
+
+- **Feature: sell part of an island for personal cash (Wave 8.3)** — the
+  controlling owner can offer a named player X shares of one of their islands
+  at a price, with a single accept / counter / decline round. Settlement moves
+  the price from the buyer's **personal cash** to the seller's — the island
+  treasury is never touched, which is what separates this from buying out your
+  own float (primary issuance, unchanged). The cap table and both owners'
+  holdings stay mirrored, and minority stakes are marked to share price in the
+  holder's consolidated position.
+  - **Control follows the largest holder**, ties going to the incumbent. A sale
+    that flips the largest holder moves the island between owned sets, renames
+    it to the acquirer's `Owner — Island` form and surfaces it as a tab for the
+    new controller. The offer form warns before a sale that would leave the
+    seller at or below 50%.
+  - Selling a controlling stake can leave a player controlling **no** island;
+    they keep their stake (and its net-worth value) and the dashboard now says
+    so plainly instead of leaving the sold island's tabs and numbers on screen.
+  - AI participation is deliberately conservative: it sells a single share only
+    when treasury-starved while holding more than 60, and buys only at a clear
+    discount it can afford, so simulation balance barely shifts. No dividends —
+    those remain a follow-on.
 
 - **UX: the Island Dependency Map is now filterable** — the map behind the 🗺
   button drew all 14 resource flows at once, which is dense enough to be hard
