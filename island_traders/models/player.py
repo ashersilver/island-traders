@@ -288,6 +288,10 @@ class Player:
     # Paid ship repairs that complete on a future tick.  Each entry:
     # {"item_id": str, "count": int, "completes_at_tick": int}.
     capital_repair_in_progress: list[dict] = field(default_factory=list)
+    # Repairs that completed this season, for a one-season "back in service"
+    # cue in the UI.  Each entry: {"item_id": str, "name": str, "count": int}.
+    # Transient (not serialised); refreshed each season by the maintenance pass.
+    recently_repaired: list[dict] = field(default_factory=list)
     # Manufacturer durable equipment units produced in the current season.
     # Reset by Game._process_capital_maintenance at each season boundary.
     manufacturer_durable_output_used: int = 0
@@ -983,6 +987,37 @@ class Player:
     def receive_dollops(self, amount: float) -> None:
         self.dollops += amount
         self._season_revenue = round(getattr(self, "_season_revenue", 0.0) + amount, 2)
+
+    def rebuild_levy_outstanding(self) -> float:
+        """Total disaster rebuild levy still owed (sum of booked installments)."""
+        return round(sum(getattr(self, "_rebuild_levy_installments", []) or []), 2)
+
+    def pay_rebuild_levy(self, amount: float) -> float:
+        """Pay down the outstanding disaster rebuild levy from dollops (Wave 5.1).
+
+        Clamped to both the treasury balance and the amount owed.  Payments
+        retire installments front-first, so a partial payment shortens the
+        auto-collection schedule; paying the levy to zero clears the
+        capital-repair block the same tick.  Returns the amount actually paid.
+        """
+        installments = list(getattr(self, "_rebuild_levy_installments", []) or [])
+        outstanding = round(sum(installments), 2)
+        paid = round(min(max(float(amount), 0.0), outstanding, self.dollops), 2)
+        if paid <= 0:
+            return 0.0
+        self.dollops = round(self.dollops - paid, 2)
+        left = paid
+        while installments and left > 0:
+            head = installments[0]
+            if left >= head:
+                left = round(left - head, 2)
+                installments.pop(0)
+            else:
+                installments[0] = round(head - left, 2)
+                left = 0.0
+        self._rebuild_levy_installments = installments
+        self._rebuild_levy_remaining = round(sum(installments), 2)
+        return paid
 
     def count_workers(self, profession: str) -> int:
         if profession == Profession.UNSKILLED.value:
