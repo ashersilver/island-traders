@@ -293,7 +293,12 @@ async def run_client(server: str, code: str, name: str) -> None:
     ws_url = websocket_url(http_base, joined.room_id, joined.player_id)
     print(f"Connecting {ws_url}")
 
-    async with websockets.connect(ws_url) as ws:
+    # The library default ping_timeout (20s) is too tight for a slow local-LLM
+    # driver -- a single Ollama call occasionally spikes well past that (e.g.
+    # two agents alternating against the same GPU can force a model reload),
+    # which closes the connection mid-game with "keepalive ping timeout" even
+    # though the client is still making progress.
+    async with websockets.connect(ws_url, ping_interval=20, ping_timeout=90) as ws:
         await _send(ws, {"type": "get_state"})
         async for raw in ws:
             msg = json.loads(raw)
