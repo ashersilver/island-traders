@@ -193,3 +193,46 @@ def test_ai_secondary_sale_is_strictly_gated_and_sells_one_share():
         island.cap_table.held_by(owner_id) for owner_id in ("buyer", "third")
     ) == 1
     assert holdings_mirror_consistent(0, island.cap_table, room.game.owners)
+
+
+def test_settled_sale_pushes_fresh_state_to_both_parties(monkeypatch):
+    """A settled sale moves cash, ownership % and possibly island control —
+    none of which ride on the sale payload, so both sides need a snapshot."""
+    manager, room = _bootstrap()
+    ack = _offer(manager, room)
+    pushed = []
+    monkeypatch.setattr(
+        manager, "_thread_safe_send",
+        lambda rid, lid, msg: pushed.append((lid, msg)),
+    )
+    ws = _WS()
+    asyncio.run(manager._handle_equity_sale_respond(
+        room.room_id, "buyer",
+        {"sale_id": ack["sale"]["sale_id"], "action": "accept"}, ws,
+    ))
+
+    # Responder (buyer) gets the ack plus a refreshed snapshot.
+    assert ws.sent[0]["result"] == "settled"
+    assert any(m.get("type") == "game_state" for m in ws.sent[1:])
+    # Counterparty (seller) gets the sale push and a refreshed snapshot.
+    seller_msgs = [m for lid, m in pushed if lid == "seller"]
+    assert any(m.get("type") == "equity_sale" for m in seller_msgs)
+    assert any(m.get("type") == "game_state" for m in seller_msgs)
+
+
+def test_declined_sale_does_not_push_state(monkeypatch):
+    manager, room = _bootstrap()
+    ack = _offer(manager, room)
+    pushed = []
+    monkeypatch.setattr(
+        manager, "_thread_safe_send",
+        lambda rid, lid, msg: pushed.append((lid, msg)),
+    )
+    ws = _WS()
+    asyncio.run(manager._handle_equity_sale_respond(
+        room.room_id, "buyer",
+        {"sale_id": ack["sale"]["sale_id"], "action": "decline"}, ws,
+    ))
+    assert ws.sent[0]["result"] == "declined"
+    # Nothing moved, so no snapshot churn.
+    assert not any(m.get("type") == "game_state" for m in ws.sent[1:])

@@ -5674,14 +5674,32 @@ function renderIslandWellbeing(me) {
 }
 
 // ==================== GAME RENDERING ====================
+// Set while the viewer controls no island, so the notice fires once rather
+// than on every game_state broadcast.
+let _noIslandNoticed = false;
+
 function renderGameState() {
   if (!gameState) return;
 
   const owned = ownedIslandPlayers();
   if (!owned.length) {
-      addLog('You are connected as a spectator; no island is assigned to this player.', 'info');
+      // Either a spectator, or an owner who just sold their last controlling
+      // stake (Wave 8.3). Clear the island chrome: leaving the previous tabs
+      // up would advertise an island this player no longer controls, and the
+      // server would reject any action taken from them.
+      const tabs = document.getElementById('island-tabs');
+      if (tabs) tabs.innerHTML = '';
+      builtTabsForRoles = null;
+      activeTabRole = null;
+      if (!_noIslandNoticed) {
+        _noIslandNoticed = true;
+        addLog('You control no island — watching as a shareholder/spectator. '
+             + 'Any stake you still hold keeps earning toward your net worth.', 'info');
+        showToast('You no longer control an island.', { type: 'info', ms: 8000 });
+      }
       return;
   }
+  _noIslandNoticed = false;
 
   if (activeTabRole == null) {
     const serverActing = gameState.players.find(p =>
@@ -7454,7 +7472,13 @@ function showDependencyMap() {
 
 function buildIslandTabs(players) {
   const owned = ownedIslandPlayers();
-  if (!owned.length) return;
+  if (!owned.length) {
+    // Losing the last island must clear the bar, not leave the old tabs up.
+    const bar = document.getElementById('island-tabs');
+    if (bar) bar.innerHTML = '';
+    builtTabsForRoles = null;
+    return;
+  }
 
   const tabKey = owned.map(p => `${p.player_id}:${playerRoles(p).join('+')}`).join(',');
   const activeKey = String(activeTabRole || '');

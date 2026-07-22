@@ -4661,6 +4661,17 @@ class GameManager:
             await ack(False, error="Choose accept, counter, or decline."); return
         other = sale["buyer_id"] if lobby_player_id == sale["seller_id"] else sale["seller_id"]
         self._thread_safe_send(room_id, other, {"type": "equity_sale", "sale": sale})
+        # A settled sale moves personal cash, ownership percentages and — when
+        # the largest holder changes — which islands each side controls. None of
+        # that is in the sale payload, so both parties need a fresh snapshot or
+        # their dashboards (and island tabs) keep showing the pre-sale world.
+        if sale["status"] == "settled":
+            state = self.get_game_state(room_id, lobby_player_id)
+            if state:
+                await websocket.send_text(json.dumps(state))
+            self._thread_safe_send(
+                room_id, other, self.get_game_state(room_id, other) or {},
+            )
 
     def _active_human_lobby_ids(self, room) -> set[str]:
         humans: set[str] = set()
