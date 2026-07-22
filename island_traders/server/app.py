@@ -49,7 +49,7 @@ from ..models.equity import (
     ISLAND_STARTING_CASH, share_price, fair_value, liquidation_value,
     AUCTIONED_SHARES, UNISSUED_HOLDER, CapTable,
 )
-from ..models.owner import Owner
+from ..models.owner import Owner, sync_holdings_mirror
 from ..models import shareholder_loans as sh_loans
 from ..models.loan import (
     CAPITAL_FINANCE_PREMIUM_PTS,
@@ -434,6 +434,8 @@ class GameRoom:
     # Set when the game launches; used to route WS responses + ready signals.
     lobby_to_engine_id: dict[str, list[int]] = field(default_factory=dict)
     acting_engine_id: dict[str, int] = field(default_factory=dict)
+    equity_sales: dict[int, dict] = field(default_factory=dict)
+    next_equity_sale_id: int = 1
     # Per-season ready/active state (simultaneous-play architecture)
     season_ready_set: set[str] = field(default_factory=set)
     season_active_humans: set[str] = field(default_factory=set)
@@ -4356,6 +4358,205 @@ class GameManager:
             f"{buyer.name} — {role_short}" if role_short else buyer.name
         )
 
+    def _set_island_controller(self, room, island: Player, new_owner_id: str) -> None:
+        """Move operational control while preserving the island's books."""
+        old_owner_id = island.owner_id
+        if old_owner_id == new_owner_id:
+            return
+        new_owner = self._owner_for_lobby(room, new_owner_id)
+        if new_owner is None:
+            raise ValueError("New controlling owner not found")
+        island_id = island.player_id
+        if old_owner_id is not None:
+            room.lobby_to_engine_id[old_owner_id] = [
+                eid for eid in self._owned_engine_ids(room, old_owner_id)
+                if eid != island_id
+            ]
+            if room.acting_engine_id.get(old_owner_id) == island_id:
+                replacement = self._owned_engine_ids(room, old_owner_id)
+                if replacement:
+                    room.acting_engine_id[old_owner_id] = replacement[0]
+                else:
+                    room.acting_engine_id.pop(old_owner_id, None)
+        new_ids = self._owned_engine_ids(room, new_owner_id)
+        if island_id not in new_ids:
+            new_ids.append(island_id)
+        room.lobby_to_engine_id[new_owner_id] = new_ids
+        room.acting_engine_id.setdefault(new_owner_id, island_id)
+        island.owner_id = new_owner_id
+        island.owner = new_owner
+        island.personal_cash = 0.0
+        role_short = ROLES[island.roles[0].name].short_name if island.roles else None
+        island.name = f"{new_owner.name} — {role_short}" if role_short else new_owner.name
+
+    def _apply_largest_holder_control(self, room, island: Player) -> None:
+        holders = island.cap_table.player_holders() if island.cap_table else {}
+        if not holders:
+            return
+        largest = max(holders.values())
+        leaders = [owner_id for owner_id, shares in holders.items() if shares == largest]
+        incumbent = island.owner_id
+        if incumbent in leaders or len(leaders) != 1:
+            return
+        self._set_island_controller(room, island, leaders[0])
+
+    def _equity_sale_for_viewer(self, room, lobby_player_id: str) -> list[dict]:
+        return [
+            dict(sale) for sale in room.equity_sales.values()
+            if lobby_player_id in (sale["seller_id"], sale["buyer_id"])
+        ]
+
+    def _run_ai_secondary_equity(self, room) -> None:
+        """Make at most one conservative one-share AI sale per desperate island."""
+        if not room.game:
+            return
+        ai_owner_ids = {
+            lp.player_id for lp in room.players if not lp.is_human
+        }
+        if len(ai_owner_ids) < 2:
+            return
+        prices = room.game.market.current_prices()
+        for island in room.game.players:
+            seller_id = island.owner_id
+            if seller_id not in ai_owner_ids or island.cap_table is None:
+                continue
+            # Strict gates keep the simulation impact negligible: the seller
+            # must be treasury-desperate and have accumulated above its opening
+            # 60-share block. It sells only one share per season.
+            held = island.cap_table.held_by(seller_id)
+            if island.dollops >= 25.0 or held <= 60:
+                continue
+            total_fair_value = fair_value(
+                island.total_wealth(prices, room.game.loan_ledger, CAPITAL_CATALOGUE),
+                island.wealth_history,
+            )
+            price = round(share_price(total_fair_value), 1)
+            buyer_id = next((
+                oid for oid in ai_owner_ids if oid != seller_id
+                and oid in room.game.owners
+                and room.game.owners[oid].personal_cash >= price
+                and price < total_fair_value * 0.8
+            ), None)
+            if buyer_id is None:
+                continue
+            seller = room.game.owners[seller_id]
+            buyer = room.game.owners[buyer_id]
+            buyer.personal_cash = round(buyer.personal_cash - price, 1)
+            seller.personal_cash = round(seller.personal_cash + price, 1)
+            island.cap_table.transfer(seller_id, buyer_id, 1)
+            sync_holdings_mirror(island.player_id, island.cap_table, room.game.owners)
+            self._apply_largest_holder_control(room, island)
+
+    async def _handle_equity_sale_offer(
+        self, room_id: str, lobby_player_id: str, msg: dict, websocket,
+    ) -> None:
+        async def ack(ok: bool, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "equity_sale_ack", "ok": ok, **extra,
+            }))
+        room = self.rooms.get(room_id)
+        if not room or not room.game or room.status != "running":
+            await ack(False, error="Game is not running."); return
+        island, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if island is None:
+            await ack(False, error=f"{actor_error or 'Player not in game'}."); return
+        if island.owner_id != lobby_player_id:
+            await ack(False, error="Only the controlling owner may offer island shares."); return
+        target_id = str(msg.get("buyer_id", "")).strip()
+        buyer = self._owner_for_lobby(room, target_id)
+        if buyer is None or target_id == lobby_player_id:
+            await ack(False, error="Choose a named player in this game."); return
+        try:
+            shares = int(msg.get("shares", 0))
+            price = round(float(msg.get("price", 0)), 1)
+        except (TypeError, ValueError):
+            await ack(False, error="Shares and price must be numbers."); return
+        held = island.cap_table.held_by(lobby_player_id) if island.cap_table else 0
+        if shares <= 0 or shares > held:
+            await ack(False, error=f"You can offer between 1 and {held} shares."); return
+        if price <= 0:
+            await ack(False, error="Price must be greater than zero."); return
+        if buyer.personal_cash < price:
+            await ack(False, error=f"{buyer.name} cannot afford {price:.1f} Dp."); return
+        sale_id = room.next_equity_sale_id
+        room.next_equity_sale_id += 1
+        sale = {
+            "sale_id": sale_id, "island_id": island.player_id,
+            "island_name": island.name, "seller_id": lobby_player_id,
+            "seller_name": island.owner.name, "buyer_id": target_id,
+            "buyer_name": buyer.name, "shares": shares, "price": price,
+            "status": "pending", "awaiting_owner_id": target_id,
+            "countered": False,
+        }
+        room.equity_sales[sale_id] = sale
+        await ack(True, result="offered", sale=sale)
+        self._thread_safe_send(room_id, target_id, {"type": "equity_sale", "sale": sale})
+
+    async def _handle_equity_sale_respond(
+        self, room_id: str, lobby_player_id: str, msg: dict, websocket,
+    ) -> None:
+        async def ack(ok: bool, **extra) -> None:
+            await websocket.send_text(json.dumps({
+                "type": "equity_sale_ack", "ok": ok, **extra,
+            }))
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await ack(False, error="Game is not running."); return
+        try:
+            sale_id = int(msg.get("sale_id"))
+        except (TypeError, ValueError):
+            await ack(False, error="Unknown equity offer."); return
+        sale = room.equity_sales.get(sale_id)
+        if not sale or sale["status"] not in ("pending", "countered"):
+            await ack(False, error="That equity offer is no longer active."); return
+        # Owner-level authorization is deliberate: responding never depends on
+        # which island tab the human currently has selected.
+        if sale["awaiting_owner_id"] != lobby_player_id:
+            await ack(False, error="This equity offer is not awaiting you."); return
+        action = str(msg.get("action", "")).lower()
+        if action == "decline":
+            sale["status"] = "declined"
+            sale["awaiting_owner_id"] = None
+            await ack(True, result="declined", sale=sale)
+        elif action == "counter":
+            if sale["countered"] or lobby_player_id != sale["buyer_id"]:
+                await ack(False, error="Only the buyer may make the single counter-offer."); return
+            try:
+                price = round(float(msg.get("price", 0)), 1)
+            except (TypeError, ValueError):
+                price = 0
+            buyer = self._owner_for_lobby(room, sale["buyer_id"])
+            if price <= 0 or buyer is None or buyer.personal_cash < price:
+                await ack(False, error="Counter price must be positive and affordable."); return
+            sale.update({
+                "price": price, "status": "countered", "countered": True,
+                "awaiting_owner_id": sale["seller_id"],
+            })
+            await ack(True, result="countered", sale=sale)
+        elif action == "accept":
+            seller = self._owner_for_lobby(room, sale["seller_id"])
+            buyer = self._owner_for_lobby(room, sale["buyer_id"])
+            island = next((p for p in room.game.players
+                           if p.player_id == sale["island_id"]), None)
+            if seller is None or buyer is None or island is None or island.cap_table is None:
+                await ack(False, error="Equity offer is stale."); return
+            if buyer.personal_cash < sale["price"]:
+                await ack(False, error="Buyer can no longer afford this offer."); return
+            if island.cap_table.held_by(sale["seller_id"]) < sale["shares"]:
+                await ack(False, error="Seller no longer holds the offered shares."); return
+            buyer.personal_cash = round(buyer.personal_cash - sale["price"], 1)
+            seller.personal_cash = round(seller.personal_cash + sale["price"], 1)
+            island.cap_table.transfer(sale["seller_id"], sale["buyer_id"], sale["shares"])
+            sync_holdings_mirror(island.player_id, island.cap_table, room.game.owners)
+            self._apply_largest_holder_control(room, island)
+            sale["status"] = "settled"
+            sale["awaiting_owner_id"] = None
+            await ack(True, result="settled", sale=sale)
+        else:
+            await ack(False, error="Choose accept, counter, or decline."); return
+        other = sale["buyer_id"] if lobby_player_id == sale["seller_id"] else sale["seller_id"]
+        self._thread_safe_send(room_id, other, {"type": "equity_sale", "sale": sale})
+
     def _active_human_lobby_ids(self, room) -> set[str]:
         humans: set[str] = set()
         engine_players = {
@@ -5470,6 +5671,10 @@ class GameManager:
             "season_ready_engine_ids": sorted(room.season_ready_engine_ids),
             "season_done_engine_ids": sorted(room.season_done_engine_ids),
             "owners": owners_data,
+            "equity_sales": (
+                self._equity_sale_for_viewer(room, player_id)
+                if player_id is not None else []
+            ),
             "business_cycle": (
                 game.current_cycle.to_dict()
                 if getattr(game, "current_cycle", None) is not None
@@ -5930,6 +6135,7 @@ class GameManager:
         season_name = SEASONS[season_index] if season_index < len(SEASONS) else str(season_index)
         room.current_year_index = year
         room.current_season_index = season_index
+        self._run_ai_secondary_equity(room)
         current_tick = year * len(SEASONS) + season_index
         if room.game:
             for player in room.game.players:
@@ -6979,6 +7185,14 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "buy_out_float":
                     await manager._handle_buy_out_float(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "equity_sale_offer":
+                    await manager._handle_equity_sale_offer(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "equity_sale_respond":
+                    await manager._handle_equity_sale_respond(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "capital_order":

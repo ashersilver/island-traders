@@ -1526,6 +1526,11 @@ body.fx-off .ih-pins .pdot{animation:none}
         </div>
         <div class="stat"><span class="lbl">🏦 Island Treasury</span><span class="val gold" id="s-dollops" title="Your island's operating cash (buys inputs, pays wages & maintenance)">—</span></div>
         <div class="stat"><span class="lbl">Ownership</span><span class="val" id="s-ownership" title="Your equity stake in this island vs. authorized unissued shares">—</span></div>
+        <div class="stat" id="s-equity-sale-row" style="display:none">
+          <span class="lbl">Secondary equity</span>
+          <span class="val"><button class="btn-ghost btn-sm" onclick="openEquitySaleOffer()">Offer shares…</button></span>
+        </div>
+        <div id="s-equity-sales"></div>
         <div class="stat" id="s-buyfloat-row" style="display:none">
           <span class="lbl">Issue shares</span>
           <span class="val">
@@ -3001,6 +3006,66 @@ function openBuyFloat() {
   sendWsMessage({ type: 'buy_out_float', shares: n });
 }
 
+function openEquitySaleOffer() {
+  const island = selectedIslandPlayer();
+  const others = (gameState?.owners || []).filter(o => o.owner_id !== myPlayerId);
+  if (!island || !others.length) {
+    showToast('No named buyer is available.', { type: 'info' }); return;
+  }
+  showPromptModal('Offer island shares', {
+    intro: `Sell shares in ${island.name}. Payment goes to your personal cash, not the island treasury. Buyers: ${others.map(o => `${o.name} (${o.owner_id})`).join(', ')}.`,
+    fields: [
+      {name:'buyer_id', label:'Buyer', value:others[0].owner_id,
+       validate:v => others.some(o => o.owner_id === v) ? null : 'Enter a player ID from the ownership list.'},
+      {name:'shares', label:'Shares', type:'number', value:'1',
+       validate:v => (+v > 0 && +v <= island.owns_pct) ? null : `Enter 1–${island.owns_pct} shares.`},
+      {name:'price', label:'Total price (Dp)', type:'number', value:String(island.share_price || 0),
+       validate:v => +v > 0 ? null : 'Enter a positive total price.'},
+    ],
+    submitLabel:'Send offer',
+    onSubmit: vals => {
+      const shares = parseInt(vals.shares, 10);
+      const send = () => sendWsMessage({type:'equity_sale_offer', island_id:island.player_id,
+        buyer_id:vals.buyer_id, shares, price:parseFloat(vals.price)});
+      if ((island.owns_pct - shares) <= 50) {
+        showConfirmModal('Control warning',
+          `This sale leaves you with ${island.owns_pct - shares}% and may transfer operational control to the largest holder.`,
+          {confirmLabel:'Send anyway', danger:true, onConfirm:send});
+      } else send();
+    },
+  });
+}
+
+function renderEquitySales() {
+  const wrap = document.getElementById('s-equity-sales');
+  if (!wrap) return;
+  const active = (gameState?.equity_sales || []).filter(s =>
+    s.status === 'pending' || s.status === 'countered');
+  wrap.innerHTML = active.map(s => {
+    const awaitingMe = s.awaiting_owner_id === myPlayerId;
+    const canCounter = awaitingMe && s.buyer_id === myPlayerId && !s.countered;
+    const actions = awaitingMe ? `<div style="display:flex;gap:.25rem;margin-top:.35rem">
+      <button class="btn-gold btn-sm" onclick="respondEquitySale(${s.sale_id},'accept')">Accept</button>
+      ${canCounter ? `<button class="btn-ghost btn-sm" onclick="counterEquitySale(${s.sale_id},${s.price})">Counter…</button>` : ''}
+      <button class="btn-ghost btn-sm" onclick="respondEquitySale(${s.sale_id},'decline')">Decline</button>
+    </div>` : '<div style="color:var(--dim);font-size:.75rem">Awaiting response</div>';
+    return `<div class="deal-card" style="margin-top:.45rem;font-size:.8rem">
+      <b>${esc(s.island_name)}</b>: ${s.shares} shares for ${s.price} Dp<br>
+      ${esc(s.seller_name)} → ${esc(s.buyer_name)}${actions}</div>`;
+  }).join('');
+}
+
+function respondEquitySale(sale_id, action, price=null) {
+  const msg = {type:'equity_sale_respond', sale_id, action};
+  if (price != null) msg.price = price;
+  sendWsMessage(msg);
+}
+function counterEquitySale(sale_id, currentPrice) {
+  showPromptModal('Counter-offer', {fields:[{name:'price', label:'Total price (Dp)',
+    type:'number', value:String(currentPrice), validate:v => +v > 0 ? null : 'Enter a positive price.'}],
+    submitLabel:'Send counter', onSubmit:v => respondEquitySale(sale_id,'counter',parseFloat(v.price))});
+}
+
 // ==================== PRODUCTION CAPACITY PANEL ====================
 // Return a capacity object filtered to a single role's outputs + capital.
 // When role is null / 'ALL', returns the original unfiltered object.
@@ -3933,6 +3998,7 @@ function sendWsMessage(obj) {
       'propose_deal', 'deal_respond', 'worker_transfer_offer',
       'worker_transfer_respond', 'market_order_update', 'cancel_training',
       'capital_repair', 'island_transfer', 'training_counter_response', 'buy_out_float',
+      'equity_sale_offer',
       'capital_negotiation_respond', 'capital_negotiation_accept',
       'manufacturer_reorder_queue',
     ]);
@@ -5138,6 +5204,31 @@ function handleMessage(msg) {
       addLog(`🏦 Bought ${msg.shares} share(s) of your island for `
         + `${msg.cost} Dp (${msg.price_per_share} Dp/share).`, 'ok');
       break;
+    case 'equity_sale':
+      if (msg.sale && gameState) {
+        const list = gameState.equity_sales || [];
+        gameState.equity_sales = [msg.sale, ...list.filter(s => s.sale_id !== msg.sale.sale_id)];
+        renderEquitySales();
+        const settled = msg.sale.status === 'settled';
+        const declined = msg.sale.status === 'declined';
+        showToast(settled ? 'Equity sale settled.' : declined ? 'Equity offer declined.' : 'Equity offer updated.',
+          {type:settled ? 'success' : 'info'});
+      }
+      break;
+    case 'equity_sale_ack':
+      if (!msg.ok) showToast(msg.error || 'Equity offer failed.', {type:'error'});
+      else {
+        if (msg.sale && gameState) {
+          const list = gameState.equity_sales || [];
+          gameState.equity_sales = [msg.sale, ...list.filter(s => s.sale_id !== msg.sale.sale_id)];
+          renderEquitySales();
+        }
+        showToast(msg.result === 'settled' ? 'Equity sale settled.'
+          : msg.result === 'declined' ? 'Equity offer declined.'
+          : msg.result === 'countered' ? 'Counter-offer sent.' : 'Equity offer sent.',
+          {type:msg.result === 'settled' ? 'success' : 'info'});
+      }
+      break;
     case 'capital_order_ack':
       let financeNote = '';
       if (msg.financed) {
@@ -5574,6 +5665,9 @@ function renderGameState() {
   const ownEl = document.getElementById('s-ownership');
   if (ownEl && me.owns_pct != null)
     ownEl.textContent = `You ${me.owns_pct}% · Unissued ${me.unissued_pct ?? 0}%`;
+  const equitySaleRow = document.getElementById('s-equity-sale-row');
+  if (equitySaleRow) equitySaleRow.style.display = (!isConsolidated && me.owner_id === myPlayerId) ? '' : 'none';
+  renderEquitySales();
   // Phase 3: offer "Buy shares" when you control the island and unissued
   // authorized shares remain. Stash the live figures for the prompt.
   // Lend / repay row — shown when you're in-game and have cash or a loan

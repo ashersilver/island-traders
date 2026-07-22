@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .equity import CapTable
+
 
 @dataclass
 class Owner:
@@ -38,3 +40,31 @@ class Owner:
             personal_cash=float(data.get("personal_cash", 0.0)),
             holdings={str(k): int(v) for k, v in data.get("holdings", {}).items()},
         )
+
+
+def sync_holdings_mirror(
+    island_id: int | str,
+    cap_table: CapTable,
+    owners: dict[str, Owner],
+) -> None:
+    """Make every owner's holding for one island mirror its cap table stake."""
+    island_key = str(island_id)
+    for owner_id, owner in owners.items():
+        shares = cap_table.held_by(owner_id)
+        if shares:
+            owner.holdings[island_key] = shares
+        else:
+            owner.holdings.pop(island_key, None)
+
+
+def holdings_mirror_consistent(
+    island_id: int | str,
+    cap_table: CapTable,
+    owners: dict[str, Owner],
+) -> bool:
+    """Return whether issued cap-table stakes equal all owner mirrors."""
+    island_key = str(island_id)
+    return set(cap_table.player_holders()).issubset(owners) and all(
+        owner.holdings.get(island_key, 0) == cap_table.held_by(owner_id)
+        for owner_id, owner in owners.items()
+    )
