@@ -139,3 +139,102 @@ def test_manufacturer_reorder_queue_updates_only_that_manufacturer():
     assert [
         e.negotiation_id for e in room.game.order_book.for_manufacturer(maker.player_id)
     ] == [second, first]
+
+
+def test_delivered_order_leaves_the_book():
+    """Landmine 1: order_book.remove() had no callers, so delivered entries
+    piled up locked at the head of every queue and permanently blocked both
+    manual reordering and any price-based priority."""
+    mgr, room, buyer, maker = _bootstrap()
+    ack = _propose(mgr, room)
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker",
+        {"negotiation_id": ack["negotiation_id"], "action": "accept"}, ws,
+    ))
+    assert len(room.game.order_book.for_manufacturer(maker.player_id)) == 1
+
+    # cargo_plane has delivery_seasons > 0, so it rides capital_in_transit.
+    plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    assert plane.delivery_seasons > 0
+    assert buyer.capital_in_transit, "expected the unit to be in transit"
+
+    buyer.deliver_in_transit(
+        current_tick=999, order_book=room.game.order_book,
+    )
+
+    assert not buyer.capital_in_transit
+    assert room.game.order_book.for_manufacturer(maker.player_id) == [], \
+        "a delivered order must leave the manufacturer's book"
+
+
+def test_backorder_drain_never_double_spends_manufactured_units():
+    """Landmine 2: several queued orders can each pass an independent stock
+    check against the same units. Only the ordered drain may consume them."""
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    per_order = plane.capacity_units
+
+    # Empty the shop so BOTH orders are backordered and land in the queue.
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    if held:
+        maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+
+    first = _propose(mgr, room)["negotiation_id"]
+    second = _propose(mgr, room)["negotiation_id"]
+    for nid in (first, second):
+        ws = _WS()
+        asyncio.run(mgr._handle_capital_negotiation_respond(
+            room.room_id, "maker",
+            {"negotiation_id": nid, "action": "accept"}, ws,
+        ))
+    ledger = room.game.capital_negotiations
+    assert ledger.get(first).status is CapitalNegotiationStatus.QUEUED
+    assert ledger.get(second).status is CapitalNegotiationStatus.QUEUED
+
+    # Enough equipment for exactly ONE of the two queued orders.
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, per_order)
+    before = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+
+    fulfilled = mgr._drain_capital_order_books(room, 0, 0)
+    consumed = before - maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+
+    # Exactly one settles, units are conserved, and the loser stays queued
+    # at the head rather than being skipped or double-filled.
+    assert fulfilled == [first]
+    assert consumed == per_order
+    assert ledger.get(second).status is CapitalNegotiationStatus.QUEUED
+
+
+def test_unaffordable_head_order_does_not_freeze_the_whole_queue():
+    """Units-short must block the queue (it is a build order), but a buyer who
+    simply cannot pay must not stall everyone behind them indefinitely."""
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    if held:
+        maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+
+    first = _propose(mgr, room)["negotiation_id"]
+    second = _propose(mgr, room)["negotiation_id"]
+    for nid in (first, second):
+        ws = _WS()
+        asyncio.run(mgr._handle_capital_negotiation_respond(
+            room.room_id, "maker",
+            {"negotiation_id": nid, "action": "accept"}, ws,
+        ))
+
+    # Plenty of equipment for both, but the buyer is broke for the first.
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, plane.capacity_units * 2)
+    ledger = room.game.capital_negotiations
+    ledger.get(first).buyer_offer = 10_000_000.0
+    ledger.get(first).counter_total = None
+
+    fulfilled = mgr._drain_capital_order_books(room, 0, 0)
+
+    assert second in fulfilled, "a payable order behind a broke one must settle"
+    assert ledger.get(first).status is CapitalNegotiationStatus.QUEUED

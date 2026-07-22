@@ -1547,6 +1547,7 @@ body.fx-off .ih-pins .pdot{animation:none}
         <div class="stat" id="s-order-book-row" style="display:none;cursor:pointer" onclick="showOrderBookPopup()" title="Click to review and reorder your production queue">
           <span class="lbl">Order Book</span><span class="val" id="s-order-book-count">—</span>
         </div>
+        <div id="s-capital-orders" style="display:none"></div>
         <div id="s-training-decisions"></div>
         <div id="s-training-strip"></div>
         <div id="s-staffing-strip"></div>
@@ -5678,6 +5679,43 @@ function renderIslandWellbeing(me) {
 // than on every game_state broadcast.
 let _noIslandNoticed = false;
 
+function renderMyCapitalOrders(me) {
+  const panel = document.getElementById('s-capital-orders');
+  if (!panel) return;
+  const liveStatuses = new Set(['proposed', 'countered', 'queued']);
+  const orders = ((gameState && gameState.my_capital_negotiations) || [])
+    .filter(order => String(order.buyer_id) === String(me.player_id)
+      && liveStatuses.has(order.status));
+  panel.style.display = orders.length ? '' : 'none';
+  if (!orders.length) {
+    panel.innerHTML = '';
+    return;
+  }
+  panel.innerHTML = '<div class="lbl" style="margin-top:.55rem">Pending capital orders</div>'
+    + orders.map(order => {
+      let detail = order.status;
+      const missing = Math.max(0, order.units_short ?? order.units_required ?? 0);
+      const resource = order.manufactured_resource || 'capacity units';
+      if (order.status === 'queued') {
+        const position = order.queue_position == null ? '—' : order.queue_position + 1;
+        detail = `backordered — waiting on ${missing} × ${esc(resource)}`
+          + ` · queued at position ${position}`;
+        if (order.promised_year != null && order.promised_season != null) {
+          detail += ` · promised Year ${order.promised_year} ${esc(String(order.promised_season))}`;
+        }
+      } else if (order.status === 'countered') {
+        detail = `countered at ${Number(order.counter_total || 0).toFixed(1)} Dp`;
+      } else if (missing > 0) {
+        // The order ack already told the buyer "backordered"; without this the
+        // panel then flatly says "proposed" and the wait becomes invisible.
+        detail = `proposed — backordered, waiting on ${missing} × ${esc(resource)}`;
+      }
+      return `<div style="margin-top:.3rem;padding:.4rem;border:1px solid var(--border);border-radius:4px">`
+        + `<strong>${esc(order.name || order.item_id)}</strong>`
+        + `<div style="font-size:.7rem;color:var(--dim);margin-top:.15rem">${detail}</div></div>`;
+    }).join('');
+}
+
 function renderGameState() {
   if (!gameState) return;
 
@@ -5868,6 +5906,7 @@ function renderGameState() {
       ? `${orderBook.length} order${orderBook.length !== 1 ? 's' : ''} queued`
       : 'No orders queued';
   }
+  renderMyCapitalOrders(me);
   document.getElementById('hdr-wealth').textContent =
     'Net Worth ' + (me.net_worth ?? me.wealth) + ' Dp';
 

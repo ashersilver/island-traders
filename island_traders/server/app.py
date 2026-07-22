@@ -3762,6 +3762,8 @@ class GameManager:
         cash_only = bool(item.effects.get("cash_only", False))
         manufacturer = buyer if cash_only else None
         manufactured_resource = None
+        required_units = 0
+        units_short_at_order = 0
         if not cash_only:
             manufacturer = next(
                 (p for p in game.players if any(r.name == "Manufacturer" for r in p.roles)),
@@ -3772,11 +3774,7 @@ class GameManager:
             manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
             required_units = max(1, int(getattr(item, "capacity_units", 1)))
             on_hand = manufacturer.inventory.get(manufactured_resource)
-            if on_hand < required_units:
-                await _err(
-                    f"{manufacturer.name} needs {required_units} × "
-                    f"{manufactured_resource.value} to build {item.name}, has {on_hand}."
-                ); return
+            units_short_at_order = max(0, required_units - on_hand)
 
         from ..models.player import maintenance_contract_cost
         contract_cost = maintenance_contract_cost(item.cost, term, predictive)
@@ -3803,6 +3801,8 @@ class GameManager:
             list_price=item.cost,
             recommended_total=recommended_total,
             buyer_offer=buyer_offer,
+            units_required=required_units,
+            units_short_at_order=units_short_at_order,
         )
 
         # Self-build: the Manufacturer is its own buyer (it ordered equipment it
@@ -3816,6 +3816,31 @@ class GameManager:
         # sunk cash cost; no referral or financing applies when buyer ==
         # manufacturer.
         if manufacturer.player_id == buyer.player_id:
+            if units_short_at_order:
+                negotiation.status = CapitalNegotiationStatus.QUEUED
+                negotiation.awaiting_id = None
+                game.enqueue_capital_negotiation(
+                    negotiation,
+                    getattr(room, "current_year_index", 0),
+                    getattr(room, "current_season_index", 0),
+                    locked=False,
+                )
+                await websocket.send_text(json.dumps({
+                    "type": "capital_negotiation_ack",
+                    "result": "backordered",
+                    "message": (
+                        f"BACKORDERED — waiting on {units_short_at_order} × "
+                        f"{manufactured_resource.value}."
+                    ),
+                    "negotiation_id": negotiation.negotiation_id,
+                    "negotiation": self._capital_negotiation_payload(
+                        negotiation, game, buyer.player_id
+                    ),
+                }))
+                state = self.get_game_state(room_id, lobby_player_id)
+                if state:
+                    await websocket.send_text(json.dumps(state))
+                return
             try:
                 settlement = self._settle_capital_negotiation(
                     room, negotiation, negotiation.buyer_offer
@@ -3833,7 +3858,12 @@ class GameManager:
 
         await websocket.send_text(json.dumps({
             "type": "capital_negotiation_ack",
-            "result": "proposed",
+            "result": "backordered" if units_short_at_order else "proposed",
+            "message": (
+                f"BACKORDERED — waiting on {units_short_at_order} × "
+                f"{manufactured_resource.value}."
+                if units_short_at_order else "Capital order proposed."
+            ),
             "negotiation_id": negotiation.negotiation_id,
             "negotiation": self._capital_negotiation_payload(
                 negotiation, game, buyer.player_id
@@ -3925,10 +3955,22 @@ class GameManager:
                     if negotiation.status == CapitalNegotiationStatus.COUNTERED
                     else negotiation.buyer_offer
                 )
-                settlement = self._settle_capital_negotiation(
-                    room, negotiation, float(total)
-                )
-                result = "accepted"
+                if self._capital_negotiation_units_short(room.game, negotiation) > 0:
+                    negotiation.status = CapitalNegotiationStatus.QUEUED
+                    negotiation.awaiting_id = None
+                    room.game.enqueue_capital_negotiation(
+                        negotiation,
+                        getattr(room, "current_year_index", 0),
+                        getattr(room, "current_season_index", 0),
+                        locked=False,
+                    )
+                    settlement = None
+                    result = "backordered"
+                else:
+                    settlement = self._settle_capital_negotiation(
+                        room, negotiation, float(total)
+                    )
+                    result = "accepted"
             elif action == "counter":
                 if negotiation.status != CapitalNegotiationStatus.PROPOSED:
                     raise ValueError("Only proposed capital orders can be countered.")
@@ -3945,6 +3987,7 @@ class GameManager:
                     raise ValueError("Only proposed capital orders can be declined.")
                 negotiation.status = CapitalNegotiationStatus.DECLINED
                 negotiation.awaiting_id = None
+                room.game.order_book.remove(negotiation.negotiation_id)
                 settlement = None
                 result = "declined"
             else:
@@ -3989,14 +4032,26 @@ class GameManager:
         if not room or not room.game:
             return
         if negotiation.buyer_offer >= negotiation.recommended_total:
-            try:
-                settlement = self._settle_capital_negotiation(
-                    room, negotiation, negotiation.buyer_offer
+            if self._capital_negotiation_units_short(room.game, negotiation) > 0:
+                negotiation.status = CapitalNegotiationStatus.QUEUED
+                negotiation.awaiting_id = None
+                room.game.enqueue_capital_negotiation(
+                    negotiation,
+                    getattr(room, "current_year_index", 0),
+                    getattr(room, "current_season_index", 0),
+                    locked=False,
                 )
-            except (CapitalFinanceError, ValueError) as exc:
-                await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
-                return
-            result = "accepted"
+                settlement = None
+                result = "backordered"
+            else:
+                try:
+                    settlement = self._settle_capital_negotiation(
+                        room, negotiation, negotiation.buyer_offer
+                    )
+                except (CapitalFinanceError, ValueError) as exc:
+                    await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
+                    return
+                result = "accepted"
         else:
             negotiation.counter_total = negotiation.recommended_total
             negotiation.status = CapitalNegotiationStatus.COUNTERED
@@ -4039,11 +4094,13 @@ class GameManager:
         if buyer is None or manufacturer is None:
             negotiation.status = CapitalNegotiationStatus.EXPIRED
             negotiation.awaiting_id = None
+            game.order_book.remove(negotiation.negotiation_id)
             raise ValueError("Capital negotiation party no longer exists.")
         item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
         if item is None:
             negotiation.status = CapitalNegotiationStatus.EXPIRED
             negotiation.awaiting_id = None
+            game.order_book.remove(negotiation.negotiation_id)
             raise ValueError("Capital item no longer exists.")
 
         cash_only = bool(item.effects.get("cash_only", False))
@@ -4141,6 +4198,7 @@ class GameManager:
             "expedited_eligible": negotiation.expedited_eligible,
             "financing": negotiation.financing,
             "purchase_value": item.cost,
+            "negotiation_id": negotiation.negotiation_id,
         }
         arrives_at = buyer.place_capital_order(
             item.item_id, order, current_tick, item.delivery_seasons
@@ -4153,6 +4211,8 @@ class GameManager:
             csi,
             locked=True,
         )
+        if arrives_at <= current_tick:
+            game.order_book.remove(negotiation.negotiation_id)
         return {
             "type": "capital_order_ack",
             "item_id": item.item_id,
@@ -4209,6 +4269,11 @@ class GameManager:
             ),
             "item_id": negotiation.item_id,
             "name": item.name if item else negotiation.item_id,
+            "manufactured_resource": (
+                game.turn_manager._manufactured_resource_for_capital_item(item).value
+                if item is not None and not item.effects.get("cash_only", False)
+                else None
+            ),
             "maintenance_term_years": negotiation.maintenance_term_years,
             "predictive_maintenance": negotiation.predictive_maintenance,
             "spares_kits": negotiation.spares_kits,
@@ -4218,7 +4283,57 @@ class GameManager:
             "recommended_total": negotiation.recommended_total,
             "buyer_offer": negotiation.buyer_offer,
             "counter_total": negotiation.counter_total,
+            "units_required": negotiation.units_required,
+            "units_short_at_order": negotiation.units_short_at_order,
+            "units_short": self._capital_negotiation_units_short(
+                game, negotiation
+            ),
+            **self._capital_order_book_payload(game, negotiation.negotiation_id),
         }
+
+    @staticmethod
+    def _capital_order_book_payload(game: Game, negotiation_id: int) -> dict:
+        entry = game.order_book.get(negotiation_id)
+        if entry is None:
+            return {
+                "queue_position": None,
+                "promised_year": None,
+                "promised_season": None,
+                "locked": None,
+            }
+        return {
+            "queue_position": entry.queue_position,
+            "promised_year": (
+                entry.promised_year + 1 if entry.promised_year is not None else None
+            ),
+            "promised_season": (
+                SEASONS[entry.promised_season]
+                if entry.promised_season is not None
+                and 0 <= entry.promised_season < len(SEASONS)
+                else entry.promised_season
+            ),
+            "locked": entry.locked,
+        }
+
+    @staticmethod
+    def _capital_negotiation_units_short(
+        game: Game,
+        negotiation: CapitalOrderNegotiation,
+    ) -> int:
+        from ..models.capacity import find_item
+
+        item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
+        if item is None or bool(item.effects.get("cash_only", False)):
+            return 0
+        manufacturer = next(
+            (p for p in game.players if p.player_id == negotiation.manufacturer_id),
+            None,
+        )
+        if manufacturer is None:
+            return max(1, negotiation.units_required)
+        resource = game.turn_manager._manufactured_resource_for_capital_item(item)
+        required = max(1, int(getattr(item, "capacity_units", 1)))
+        return max(0, required - manufacturer.inventory.get(resource))
 
     def _capital_negotiation_state_for_viewer(
         self,
@@ -6327,12 +6442,15 @@ class GameManager:
         current_tick = year * len(SEASONS) + season_index
         if room.game:
             for player in room.game.players:
-                delivered = player.deliver_in_transit(current_tick)
+                delivered = player.deliver_in_transit(
+                    current_tick, room.game.order_book
+                )
                 if delivered:
                     names = ", ".join(delivered)
                     room.io_adapter.print(
                         f"  {player.name}'s ordered capital arrived: {names}"
                     )
+            self._drain_capital_order_books(room, year, season_index)
         humans = self._active_human_lobby_ids(room)
 
         # ── Pre-season review window ──────────────────────────────────────────
@@ -6479,6 +6597,77 @@ class GameManager:
                 self._season_timer(room_id, secs), self._loop,
             )
             room.season_timer_task = fut
+
+    def _drain_capital_order_books(
+        self,
+        room: GameRoom,
+        year: int,
+        season_index: int,
+    ) -> list[int]:
+        """Settle fillable queued capital orders without skipping queue heads."""
+        game = room.game
+        ledger = getattr(game, "capital_negotiations", None) if game else None
+        if game is None or ledger is None:
+            return []
+        fulfilled: list[int] = []
+        manufacturers = {
+            entry.manufacturer_id for entry in game.order_book.entries
+        }
+        for manufacturer_id in manufacturers:
+            for entry in game.order_book.for_manufacturer(manufacturer_id):
+                negotiation = ledger.get(entry.negotiation_id)
+                if (
+                    negotiation is None
+                    or entry.locked
+                    or negotiation.status != CapitalNegotiationStatus.QUEUED
+                ):
+                    continue
+                # Head-of-line blocking is deliberate ONLY when the shop simply
+                # cannot build yet: the queue is a build order, so a later
+                # cheap order must not jump the one in front of it.
+                if self._capital_negotiation_units_short(game, negotiation) > 0:
+                    break
+                agreed_total = (
+                    negotiation.counter_total
+                    if negotiation.counter_total is not None
+                    else negotiation.buyer_offer
+                )
+                try:
+                    settlement = self._settle_capital_negotiation(
+                        room, negotiation, float(agreed_total)
+                    )
+                except (CapitalFinanceError, ValueError):
+                    # The units exist; this particular buyer just cannot pay.
+                    # Skip them rather than break, or one broke buyer freezes
+                    # the manufacturer's whole book indefinitely.
+                    continue
+                entry.locked = True
+                fulfilled.append(negotiation.negotiation_id)
+                manufacturer = next(
+                    p for p in game.players if p.player_id == manufacturer_id
+                )
+                buyer = next(
+                    p for p in game.players if p.player_id == negotiation.buyer_id
+                )
+                self._send_capital_negotiation_push(
+                    room,
+                    buyer.player_id,
+                    "accepted",
+                    negotiation,
+                    from_name=manufacturer.name,
+                    settlement=settlement,
+                )
+                self._send_capital_negotiation_push(
+                    room,
+                    manufacturer.player_id,
+                    "accepted",
+                    negotiation,
+                    from_name=buyer.name,
+                    settlement=settlement,
+                )
+        for manufacturer_id in manufacturers:
+            game.refresh_order_promises(manufacturer_id, year, season_index)
+        return fulfilled
 
     def _on_season_end(self, room_id: str, year: int, season_index: int) -> None:
         """Clear the season timer + broadcast resolution."""

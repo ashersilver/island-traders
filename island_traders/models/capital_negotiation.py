@@ -7,6 +7,7 @@ from enum import Enum
 class CapitalNegotiationStatus(Enum):
     PROPOSED = "proposed"
     COUNTERED = "countered"
+    QUEUED = "queued"
     ACCEPTED = "accepted"
     DECLINED = "declined"
     EXPIRED = "expired"
@@ -15,6 +16,7 @@ class CapitalNegotiationStatus(Enum):
 ACTIVE_CAPITAL_NEGOTIATION_STATUSES = {
     CapitalNegotiationStatus.PROPOSED,
     CapitalNegotiationStatus.COUNTERED,
+    CapitalNegotiationStatus.QUEUED,
 }
 
 
@@ -32,12 +34,17 @@ class CapitalOrderNegotiation:
     list_price: float
     recommended_total: float
     buyer_offer: float
+    units_required: int = 0
+    units_short_at_order: int = 0
     counter_total: float | None = None
     status: CapitalNegotiationStatus = CapitalNegotiationStatus.PROPOSED
     awaiting_id: int | None = None
 
     def __post_init__(self) -> None:
-        if self.awaiting_id is None and self.status in ACTIVE_CAPITAL_NEGOTIATION_STATUSES:
+        if self.awaiting_id is None and self.status in {
+            CapitalNegotiationStatus.PROPOSED,
+            CapitalNegotiationStatus.COUNTERED,
+        }:
             self.awaiting_id = self.manufacturer_id
 
     @property
@@ -66,6 +73,8 @@ class CapitalNegotiationLedger:
         list_price: float,
         recommended_total: float,
         buyer_offer: float,
+        units_required: int = 0,
+        units_short_at_order: int = 0,
     ) -> CapitalOrderNegotiation:
         negotiation = CapitalOrderNegotiation(
             negotiation_id=self._next_id,
@@ -80,6 +89,8 @@ class CapitalNegotiationLedger:
             list_price=round(float(list_price), 2),
             recommended_total=round(float(recommended_total), 2),
             buyer_offer=round(float(buyer_offer), 2),
+            units_required=max(0, int(units_required)),
+            units_short_at_order=max(0, int(units_short_at_order)),
             awaiting_id=manufacturer_id,
         )
         self.negotiations.append(negotiation)

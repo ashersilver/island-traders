@@ -472,8 +472,10 @@ class Game:
     ) -> None:
         manufacturer = self._get_player(manufacturer_id)
         slots = 1
-        if manufacturer is not None:
-            slots = max(1, int(round(max(1.0, manufacturer.production_capacity))))
+        if manufacturer is not None and self.turn_manager is not None:
+            slots = self.turn_manager.production.manufacturer_durable_allowance(
+                manufacturer
+            )
         compute_promise_dates(
             self.order_book,
             manufacturer_id,
@@ -1611,6 +1613,8 @@ class Game:
                     "list_price": n.list_price,
                     "recommended_total": n.recommended_total,
                     "buyer_offer": n.buyer_offer,
+                    "units_required": n.units_required,
+                    "units_short_at_order": n.units_short_at_order,
                     "counter_total": n.counter_total,
                     "status": n.status.value,
                     "awaiting_id": n.awaiting_id,
@@ -1990,6 +1994,8 @@ class Game:
                 list_price=nd.get("list_price", 0.0),
                 recommended_total=nd.get("recommended_total", 0.0),
                 buyer_offer=nd.get("buyer_offer", 0.0),
+                units_required=nd.get("units_required", 0),
+                units_short_at_order=nd.get("units_short_at_order", 0),
                 counter_total=nd.get("counter_total"),
                 status=CapitalNegotiationStatus(nd.get(
                     "status", CapitalNegotiationStatus.PROPOSED.value

@@ -136,7 +136,10 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert entry["order"]["purchase_value"] == item.cost
 
     # ...and land on the delivered unit.
-    buyer.deliver_in_transit(current_tick=item.delivery_seasons)
+    buyer.deliver_in_transit(
+        current_tick=item.delivery_seasons, order_book=room.game.order_book
+    )
+    assert room.game.order_book.get(negotiation_id) is None
     unit = buyer.capital_units["transporter.cargo_plane"][0]
     assert unit.spares_attached == 2
     assert unit.maintenance_term_years == 3
@@ -146,7 +149,7 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert unit.purchase_value == item.cost
 
 
-def test_capital_order_rejects_when_manufacturer_capacity_units_short():
+def test_capital_order_backorders_when_manufacturer_capacity_units_short():
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
     buyer, manufacturer = players
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
@@ -159,11 +162,69 @@ def test_capital_order_rejects_when_manufacturer_capacity_units_short():
         "item_id": "transporter.cargo_plane",
     }, ws))
 
-    error = next((m for m in ws.sent if m.get("type") == "error"), None)
-    assert error is not None, ws.sent
-    assert "needs 4 × TransportEquipment" in error["message"]
-    assert "has 3" in error["message"]
+    ack = next(
+        (m for m in ws.sent if m.get("type") == "capital_negotiation_ack"),
+        None,
+    )
+    assert ack is not None, ws.sent
+    assert ack["result"] == "backordered"
+    assert "BACKORDERED" in ack["message"]
+    negotiation = room.game.capital_negotiations.get(ack["negotiation_id"])
+    assert negotiation.units_required == 4
+    assert negotiation.units_short_at_order == 1
+
+    response = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation.negotiation_id,
+        "action": "accept",
+    })
+    queued = next(
+        m for m in response.sent if m.get("type") == "capital_negotiation_ack"
+    )
+    assert queued["result"] == "backordered"
+    assert negotiation.status.value == "queued"
+    entry = room.game.order_book.get(negotiation.negotiation_id)
+    assert entry is not None and entry.locked is False
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == 3
+
+
+def test_capital_backorder_drain_stops_at_first_unfillable_and_settles_in_order():
+    mgr, room, players = _bootstrap(["Transporter", "Transporter", "Manufacturer"])
+    first_buyer, second_buyer, manufacturer = players
+    first_buyer.dollops = second_buyer.dollops = 10_000
+
+    _, first_id = _propose(mgr, room, "p0", {"item_id": "transporter.cargo_plane"})
+    _respond(mgr, room, "p2", {"negotiation_id": first_id, "action": "accept"})
+    _, second_id = _propose(mgr, room, "p1", {"item_id": "transporter.cargo_ship"})
+    _respond(mgr, room, "p2", {"negotiation_id": second_id, "action": "accept"})
+    assert [e.negotiation_id for e in room.game.order_book.for_manufacturer(
+        manufacturer.player_id
+    )] == [first_id, second_id]
+
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
+    assert mgr._drain_capital_order_books(room, 0, 0) == []
+    assert room.game.capital_negotiations.get(second_id).status.value == "queued"
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == 3
+
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 1)
+    assert mgr._drain_capital_order_books(room, 0, 0) == [first_id]
+    assert room.game.capital_negotiations.get(first_id).status.value == "accepted"
+    assert room.game.capital_negotiations.get(second_id).status.value == "queued"
+    assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == 0
+
+
+def test_order_promises_use_manufacturer_durable_throughput():
+    _, room, players = _bootstrap(["Manufacturer"])
+    manufacturer = players[0]
+    game = room.game
+    slots = game.turn_manager.production.manufacturer_durable_allowance(manufacturer)
+    assert slots > 1
+    for negotiation_id in range(slots + 1):
+        game.order_book.add(negotiation_id, manufacturer.player_id)
+
+    game.refresh_order_promises(manufacturer.player_id, 2, 1)
+    entries = game.order_book.for_manufacturer(manufacturer.player_id)
+    assert all((e.promised_year, e.promised_season) == (2, 1) for e in entries[:slots])
+    assert (entries[slots].promised_year, entries[slots].promised_season) == (2, 2)
 
 
 def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
