@@ -43,6 +43,7 @@ from island_traders.cli.agent_client import (
     normalise_http_base,
     render_game_state,
     websocket_url,
+    _get_json,
     _option_value,
 )
 
@@ -68,6 +69,8 @@ class GameBridge:
     def __init__(self) -> None:
         self.ws = None
         self.joined = None
+        self.http_base: str | None = None
+        self.room_id: str | None = None
         self._recv_task: asyncio.Task | None = None
         self._narrative: list[str] = []
         self._pending: dict[str, Any] | None = None
@@ -84,8 +87,10 @@ class GameBridge:
         import websockets  # local import: only needed when actually joining
 
         http_base = normalise_http_base(server)
+        self.http_base = http_base
         # Blocking urllib join off the event loop.
         self.joined = await asyncio.to_thread(join_room_by_code, http_base, code, name)
+        self.room_id = self.joined.room_id
         ws_url = websocket_url(http_base, self.joined.room_id, self.joined.player_id)
         # Match the driver's relaxed keepalive: a slow agent turn can exceed the
         # 20s library default and drop the connection mid-game.
@@ -215,6 +220,30 @@ class GameBridge:
             "connected": self.connected,
         }
 
+    async def _poll_finished(self) -> None:
+        """Authoritatively detect end-of-game via room status.
+
+        For short (e.g. 1-year) games the terminal signal arrives as the room
+        flipping to status "finished" after the season-timer/year-end
+        resolution, which can lag the WS `game_over` frame past a client's
+        patience window. If there is no pending decision and we haven't already
+        recorded game_over, confirm termination out-of-band over HTTP so an
+        agent gets a definitive end instead of an ambiguous stall. The final
+        leaderboard is already in the narrative buffer (the server broadcasts
+        it as print text before finishing)."""
+        if self._game_over or self._pending or not self.room_id:
+            return
+        try:
+            data = await asyncio.to_thread(_get_json, self.http_base, f"/api/rooms/{self.room_id}")
+        except Exception:  # noqa: BLE001 -- a transient poll failure is not terminal
+            return
+        if data.get("status") == "finished":
+            self._game_over = {
+                "status": "finished",
+                "note": "Room reports finished; the End-of-Year leaderboard is in "
+                        "the narrative from get_game_state.",
+            }
+
     async def submit(self, value: Any) -> dict[str, Any]:
         """Answer the current pending decision, then wait until play advances to
         the next decision (or the game ends), and return the fresh state."""
@@ -231,12 +260,24 @@ class GameBridge:
         self._advanced.clear()
         await self._send(envelope["payload"])
         # Wait for the receive loop to surface the next decision / game_over.
-        # A quiet timeout still returns whatever narrative accrued (e.g. the
-        # season is resolving and the next prompt just hasn't arrived yet).
-        try:
-            await asyncio.wait_for(self._advanced.wait(), timeout=120)
-        except asyncio.TimeoutError:
-            pass
+        # Poll room status periodically during the wait so end-of-game (which
+        # may arrive as a status flip rather than a timely WS game_over frame)
+        # is detected promptly instead of after a long hang. A quiet timeout
+        # still returns whatever narrative accrued (e.g. the season is resolving
+        # and the next prompt just hasn't arrived yet).
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 150
+        while not self._advanced.is_set():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(self._advanced.wait(), timeout=min(10, remaining))
+            except asyncio.TimeoutError:
+                if not self._pending and not self._game_over:
+                    await self._poll_finished()
+                    if self._game_over:
+                        break
         return self.state()
 
     def _build_envelope(self, pending: dict[str, Any], value: Any) -> dict[str, Any]:
@@ -369,6 +410,8 @@ async def _dispatch_tool(bridge: GameBridge, name: str, args: dict[str, Any]) ->
     if not bridge.connected and name in {"get_game_state", "submit_action"}:
         return _content({"error": "not joined -- call join_game first"})
     if name == "get_game_state":
+        if not bridge._pending and not bridge._game_over:
+            await bridge._poll_finished()
         return _content(bridge.state())
     if name == "submit_action":
         return _content(await bridge.submit(args.get("value")))
