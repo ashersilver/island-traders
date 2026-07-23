@@ -135,10 +135,15 @@ class GameBridge:
                 elif mtype == "choose_action_parked":
                     self._narrative.append("You are marked done for this season.")
                 elif mtype == "game_over":
+                    # Record it as a CANDIDATE end, but do NOT tear down the
+                    # receive loop: a spurious/early game_over frame (observed
+                    # when the room host is removed mid-setup) would otherwise
+                    # permanently stop surfacing decisions and wedge a live
+                    # game. The room status is the source of truth (checked in
+                    # submit()/get_game_state); keep draining so later decisions
+                    # still reach the agent if the game is in fact running.
                     self._game_over = msg
-                    self._pending = None
                     self._advanced.set()
-                    return
                 elif mtype == "error":
                     self._narrative.append(f"ERROR: {msg.get('message')}")
                 elif mtype.endswith("_ack"):
@@ -220,6 +225,27 @@ class GameBridge:
             "connected": self.connected,
         }
 
+    async def _still_running(self) -> bool:
+        """True if the room authoritatively reports the game is NOT finished.
+        Used to reject a spurious/stale game_over so it can't wedge live play.
+        On any query failure, assume running (do not manufacture an end)."""
+        if not self.room_id:
+            return False
+        try:
+            data = await asyncio.to_thread(_get_json, self.http_base, f"/api/rooms/{self.room_id}")
+        except Exception:  # noqa: BLE001
+            return True
+        return data.get("status") != "finished"
+
+    async def _reconcile_over(self) -> None:
+        """If a game_over candidate is latched but the room is still running,
+        it was spurious -- clear it so the agent can keep playing."""
+        if self._game_over and await self._still_running():
+            self._game_over = None
+            self._narrative.append(
+                "[note: a premature game_over was ignored; the game is still running]"
+            )
+
     async def _poll_finished(self) -> None:
         """Authoritatively detect end-of-game via room status.
 
@@ -248,7 +274,11 @@ class GameBridge:
         """Answer the current pending decision, then wait until play advances to
         the next decision (or the game ends), and return the fresh state."""
         if self._game_over:
-            return {"error": "game is over", "game_over": self._game_over}
+            # Don't trust a latched game_over blindly -- verify against the
+            # room. A spurious frame would otherwise refuse every action.
+            await self._reconcile_over()
+            if self._game_over:
+                return {"error": "game is over", "game_over": self._game_over}
         p = self._pending
         if not p:
             return {"error": "no pending decision -- call get_game_state first"}
@@ -410,6 +440,8 @@ async def _dispatch_tool(bridge: GameBridge, name: str, args: dict[str, Any]) ->
     if not bridge.connected and name in {"get_game_state", "submit_action"}:
         return _content({"error": "not joined -- call join_game first"})
     if name == "get_game_state":
+        if bridge._game_over:
+            await bridge._reconcile_over()
         if not bridge._pending and not bridge._game_over:
             await bridge._poll_finished()
         return _content(bridge.state())
