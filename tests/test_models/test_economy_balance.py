@@ -9,10 +9,12 @@ from island_traders.constants_capacity import CAPITAL_CATALOGUE
 def test_oil_starting_buffers_reflect_role_demand():
     """Oil-consuming islands start with at least 2 seasons of Oil.
 
-    Miner carries a larger Oil buffer (8) per economy-lifecycle Phase A.
+    Miner carries a larger Oil buffer (20) per the 2026-07 bootstrap-seeding
+    balance pass — big enough that its own building power never browns out
+    while it establishes production.
     """
     assert STARTING_INVENTORY["Farmer"]["Oil"] == 2
-    assert STARTING_INVENTORY["Miner"]["Oil"] == 8
+    assert STARTING_INVENTORY["Miner"]["Oil"] == 20
     assert STARTING_INVENTORY["Transporter"]["Oil"] == 4
     assert STARTING_INVENTORY["Manufacturer"]["Oil"] == 2
     assert STARTING_INVENTORY["Miner"]["Metal"] == 2

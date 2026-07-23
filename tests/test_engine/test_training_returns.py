@@ -286,7 +286,7 @@ def test_dispatched_trainees_eat_on_campus_not_at_home():
     # farmer's residents are away at training, so the farmer feeds 40. Campus
     # trainees are counted as 10 in-residence people on the Education island,
     # so its basket demand is ceil((50 + 10) / 10) = 6 meals.
-    assert farmer.inventory.get(ResourceType.FOOD) == 31  # 35 - ceil((50 - 10) / 10)
+    assert farmer.inventory.get(ResourceType.FOOD) == 46  # 50 - ceil((50 - 10) / 10)
     assert educator.inventory.get(ResourceType.FOOD) == 14  # 20 - ceil((50 + 10) / 10)
 
 
