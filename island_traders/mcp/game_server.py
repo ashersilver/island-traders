@@ -105,6 +105,28 @@ class GameBridge:
             "name": name,
         }
 
+    async def reset(self) -> None:
+        """Tear down any existing connection and clear all per-game state so
+        this process can bind to a fresh room. Used when the previous game has
+        ended -- the MCP server process is long-lived and reused across games,
+        so join_game must be able to rebind rather than staying stuck on a
+        finished room."""
+        if self._recv_task and not self._recv_task.done():
+            self._recv_task.cancel()
+        if self.ws is not None:
+            try:
+                await self.ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self.ws = None
+        self.joined = None
+        self.room_id = None
+        self._recv_task = None
+        self._narrative = []
+        self._pending = None
+        self._game_over = None
+        self._advanced = asyncio.Event()
+
     async def _send(self, payload: dict[str, Any]) -> None:
         await self.ws.send(json.dumps(payload))
 
@@ -424,8 +446,16 @@ def _content(obj: Any) -> dict[str, Any]:
 
 async def _dispatch_tool(bridge: GameBridge, name: str, args: dict[str, Any]) -> dict[str, Any]:
     if name == "join_game":
-        if bridge.connected:
-            return _content({"error": "already joined; one room per server process"})
+        # The MCP server process is long-lived and reused across games. Refuse
+        # only if we're in a genuinely ACTIVE game; otherwise (fresh process,
+        # finished game, or a stale/latched game_over) tear down and rebind to
+        # the requested room so a new game can start without restarting the
+        # harness.
+        if bridge.connected and not bridge._game_over and await bridge._still_running():
+            prev = bridge.joined.join_code if bridge.joined else "?"
+            return _content({"error": f"already in an active game (room {prev}); "
+                             "finish or leave it before joining another"})
+        await bridge.reset()
         info = await bridge.join(
             server=args.get("server") or "http://127.0.0.1:8001",
             code=args["code"],
