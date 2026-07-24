@@ -208,9 +208,10 @@ def test_backorder_drain_never_double_spends_manufactured_units():
     assert ledger.get(second).status is CapitalNegotiationStatus.QUEUED
 
 
-def test_unaffordable_head_order_does_not_freeze_the_whole_queue():
-    """Units-short must block the queue (it is a build order), but a buyer who
-    simply cannot pay must not stall everyone behind them indefinitely."""
+def test_unpayable_head_order_defaults_forfeits_deposit_and_frees_the_queue():
+    """Wave 9 deposit rule: a buyer who cannot pay the balance once the build
+    is ready forfeits their 50% deposit to the Manufacturer, who keeps the
+    goods to resell. The order leaves the queue instead of freezing it."""
     from island_traders.models.capital_negotiation import CapitalNegotiationStatus
 
     mgr, room, buyer, maker = _bootstrap()
@@ -228,13 +229,42 @@ def test_unaffordable_head_order_does_not_freeze_the_whole_queue():
             {"negotiation_id": nid, "action": "accept"}, ws,
         ))
 
-    # Plenty of equipment for both, but the buyer is broke for the first.
-    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, plane.capacity_units * 2)
     ledger = room.game.capital_negotiations
+    deposit = ledger.get(first).deposit_paid
+    assert deposit > 0, "ordering should have taken a deposit"
+
+    # Equipment for both, but the head buyer cannot cover the balance.
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, plane.capacity_units * 2)
     ledger.get(first).buyer_offer = 10_000_000.0
     ledger.get(first).counter_total = None
+    maker_cash = maker.dollops
 
     fulfilled = mgr._drain_capital_order_books(room, 0, 0)
 
-    assert second in fulfilled, "a payable order behind a broke one must settle"
-    assert ledger.get(first).status is CapitalNegotiationStatus.QUEUED
+    assert ledger.get(first).status is CapitalNegotiationStatus.DEFAULTED
+    assert room.game.order_book.get(first) is None, "defaulted order must leave the queue"
+    assert maker.dollops >= maker_cash + deposit, "deposit forfeits to the builder"
+    assert second in fulfilled, "the next buyer is not blocked by the default"
+
+
+def test_deposit_is_refunded_when_the_order_ends_without_a_build():
+    """The deposit secures payment on delivery. If nothing is ever built —
+    here the Manufacturer declines — the buyer is made whole."""
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    before = buyer.dollops
+    nid = _propose(mgr, room)["negotiation_id"]
+    deposit = room.game.capital_negotiations.get(nid).deposit_paid
+    assert deposit > 0
+    assert buyer.dollops == pytest.approx(before - deposit)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker",
+        {"negotiation_id": nid, "action": "decline"}, ws,
+    ))
+
+    assert room.game.capital_negotiations.get(nid).status \
+        is CapitalNegotiationStatus.DECLINED
+    assert buyer.dollops == pytest.approx(before), "deposit must come back"

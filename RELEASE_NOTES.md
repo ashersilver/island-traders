@@ -28,6 +28,13 @@ Release notes are required before merging a feature/fix branch into
     and its promised date.
   - Promise dates now use the manufacturer's real durable throughput rather
     than a 0-1 multiplier that made every queue "one order per season, forever".
+  - **Orders take a 50% deposit up front.** It is applied against the balance
+    on delivery; a buyer who cannot pay the balance once the build is ready
+    **forfeits the deposit** to the Manufacturer, who keeps the finished goods
+    on their island to resell at list price. The deposit is refunded in full if
+    nothing is ever built (the Manufacturer declines, or the order expires),
+    and self-builds are exempt. Financing now covers only the balance — the
+    deposit is real money down and is never re-lent.
   - Amend, cancel and price-sweetened priority follow in Wave 9.2/9.3.
 
 - **Feature: sell part of an island for personal cash (Wave 8.3)** — the

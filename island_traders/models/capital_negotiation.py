@@ -11,6 +11,9 @@ class CapitalNegotiationStatus(Enum):
     ACCEPTED = "accepted"
     DECLINED = "declined"
     EXPIRED = "expired"
+    # Buyer could not pay the balance once the build was ready: the deposit is
+    # forfeit to the manufacturer, who keeps the goods to resell at list price.
+    DEFAULTED = "defaulted"
 
 
 ACTIVE_CAPITAL_NEGOTIATION_STATUSES = {
@@ -36,6 +39,10 @@ class CapitalOrderNegotiation:
     buyer_offer: float
     units_required: int = 0
     units_short_at_order: int = 0
+    # Cash the buyer put down when the order was placed. Applied against the
+    # total on settlement; forfeit to the manufacturer if the buyer cannot pay
+    # the balance on delivery; refunded if the order ends without a build.
+    deposit_paid: float = 0.0
     counter_total: float | None = None
     status: CapitalNegotiationStatus = CapitalNegotiationStatus.PROPOSED
     awaiting_id: int | None = None

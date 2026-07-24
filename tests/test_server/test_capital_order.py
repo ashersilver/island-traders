@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from island_traders.cli.prompts import FakeIOAdapter
+from island_traders.constants import CAPITAL_ORDER_DEPOSIT_FRACTION
 from island_traders.constants_capacity import CAPITAL_CATALOGUE
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.models.capacity import find_item
@@ -107,7 +108,9 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
         "spares_kits": 2,
         "expedited_eligible": True,
     })
-    assert buyer.dollops == buyer_start
+    # Wave 9: 50% goes down at order time; the manufacturer is paid on delivery.
+    deposit = round(CAPITAL_ORDER_DEPOSIT_FRACTION * upfront, 2)
+    assert buyer.dollops == buyer_start - deposit
     assert manufacturer.dollops == mfr_start
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == (
         te_before + item.capacity_units
@@ -125,8 +128,8 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert ack["arrives_at_tick"] == item.delivery_seasons
 
     # Cash settled and proportional manufactured capacity consumed.
-    assert buyer.dollops == buyer_start - upfront
-    assert manufacturer.dollops == mfr_start + upfront
+    assert buyer.dollops == pytest.approx(buyer_start - upfront)
+    assert manufacturer.dollops == pytest.approx(mfr_start + upfront)
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == te_before
 
     # Order conditions ride on the transit entry...
@@ -235,7 +238,7 @@ def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     upfront = round(item.cost, 2)  # no term, no spares
     # Buyer is too poor to pay cash — financing must carry the deal.
-    buyer.dollops = 5.0
+    buyer.dollops = round(CAPITAL_ORDER_DEPOSIT_FRACTION * item.cost, 2) + 5.0
     buyer_start = buyer.dollops
     mfr_start = manufacturer.dollops
     banker_start = banker.dollops
@@ -276,11 +279,13 @@ def test_capital_order_counter_then_buyer_accept_finances_and_pays_referral():
     fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * upfront, 2)
     assert ack["referral_fee"] == fee
 
-    # Buyer treasury is flat (loan financed it); buyer now owes the loan.
-    assert buyer.dollops == buyer_start
+    # Financing carries the balance, so the only cash the buyer is out of
+    # pocket is the deposit put down at order time — that is never re-lent.
+    deposit = round(CAPITAL_ORDER_DEPOSIT_FRACTION * (upfront - 25), 2)
+    assert buyer.dollops == pytest.approx(buyer_start - deposit)
     assert room.game.loan_ledger.outstanding_debt(buyer.player_id) > 0
     # Manufacturer received full price plus the 2% referral kickback.
-    assert manufacturer.dollops == mfr_start + upfront + fee
+    assert manufacturer.dollops == pytest.approx(mfr_start + upfront + fee)
     # Banker funded the principal (less its reserve) and paid the referral.
     assert banker.dollops < banker_start
     # The order still delivers with the right purchase value.
@@ -310,7 +315,7 @@ def test_capital_order_financing_falls_back_to_cash_without_banker():
     # No Bank → financing flag is honoured as cash.
     assert ack["financed"] is False
     assert ack["loan_id"] is None
-    assert buyer.dollops == buyer_start - upfront
+    assert buyer.dollops == pytest.approx(buyer_start - upfront)
 
 
 def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
@@ -330,7 +335,9 @@ def test_capital_order_financing_rejected_when_bank_at_cap_and_buyer_broke():
         )
     assert not tm._banker_can_issue_loan(banker)[0]
 
-    buyer.dollops = 1.0  # also can't pay cash
+    # Enough for the deposit so the order is placed, but nowhere near
+    # the balance once the bank refuses to finance it.
+    buyer.dollops = round(CAPITAL_ORDER_DEPOSIT_FRACTION * item.cost, 2) + 1.0
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 
@@ -359,7 +366,8 @@ def test_capital_order_rejects_when_unaffordable():
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
     buyer, manufacturer = players
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
-    buyer.dollops = 5.0
+    # Enough for the 50% deposit, nowhere near the balance.
+    buyer.dollops = round(CAPITAL_ORDER_DEPOSIT_FRACTION * item.cost, 2) + 5.0
     te_before = manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
 

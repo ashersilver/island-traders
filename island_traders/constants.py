@@ -666,6 +666,13 @@ MANUFACTURER_FINANCE_REFERRAL_RATE: float = 0.02
 # of list price as a sunk cash cost (no markup, no counterparty — Wave 5.3);
 # the manufactured inputs are still consumed.  Spares kits are added at cost.
 MANUFACTURER_SELF_ORDER_PRICE_FRACTION: float = 0.20
+# Capital orders take a deposit up front (Wave 9): the buyer puts this fraction
+# of the agreed total down when ordering, which is applied against the balance
+# on delivery.  A buyer who cannot pay the balance forfeits the deposit to the
+# Manufacturer, who keeps the finished goods and may resell them at list price.
+# The deposit is refunded in full if the order ends without a build (the
+# Manufacturer declines, or the buyer cancels before production starts).
+CAPITAL_ORDER_DEPOSIT_FRACTION: float = 0.50
 
 
 # ---------------------------------------------------------------------------

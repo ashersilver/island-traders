@@ -5705,6 +5705,8 @@ function renderMyCapitalOrders(me) {
         }
       } else if (order.status === 'countered') {
         detail = `countered at ${Number(order.counter_total || 0).toFixed(1)} Dp`;
+      } else if (order.status === 'defaulted') {
+        detail = 'defaulted — deposit forfeited, builder kept the goods';
       } else if (missing > 0) {
         // The order ack already told the buyer "backordered"; without this the
         // panel then flatly says "proposed" and the wait becomes invisible.
@@ -5712,7 +5714,13 @@ function renderMyCapitalOrders(me) {
       }
       return `<div style="margin-top:.3rem;padding:.4rem;border:1px solid var(--border);border-radius:4px">`
         + `<strong>${esc(order.name || order.item_id)}</strong>`
-        + `<div style="font-size:.7rem;color:var(--dim);margin-top:.15rem">${detail}</div></div>`;
+        + `<div style="font-size:.7rem;color:var(--dim);margin-top:.15rem">${detail}</div>`
+        + (order.deposit_paid > 0
+            ? `<div style="font-size:.68rem;color:var(--gold);margin-top:.1rem">`
+              + `deposit ${Number(order.deposit_paid).toFixed(1)} Dp down · `
+              + `balance due on delivery</div>`
+            : '')
+        + `</div>`;
     }).join('');
 }
 

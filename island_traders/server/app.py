@@ -65,6 +65,7 @@ from ..constants import (
     STAFFING_FOOD_PER_STAFF_PER_SEASON,
     FLU_SEASON,
     MANUFACTURER_FINANCE_REFERRAL_RATE,
+    CAPITAL_ORDER_DEPOSIT_FRACTION,
     MANUFACTURER_SELF_ORDER_PRICE_FRACTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
@@ -3787,6 +3788,23 @@ class GameManager:
         if buyer_offer <= 0:
             await _err("Offer total must be positive."); return
 
+        # Deposit (Wave 9): a real order costs the buyer 50% up front, applied
+        # against the balance on delivery and forfeit if they cannot pay it.
+        # Without it a buyer could queue orders they can never afford and hold
+        # a manufacturer's build slots for free.  Checked before the ledger row
+        # exists so a failure leaves nothing to unwind.  Self-builds are exempt
+        # — there is no counterparty to secure.
+        deposit = 0.0
+        if manufacturer.player_id != buyer.player_id:
+            deposit = round(CAPITAL_ORDER_DEPOSIT_FRACTION * buyer_offer, 2)
+            if buyer.dollops < deposit:
+                await _err(
+                    f"A {int(CAPITAL_ORDER_DEPOSIT_FRACTION * 100)}% deposit of "
+                    f"{deposit:.1f} Dp is due when ordering {item.name}; you "
+                    f"have {buyer.dollops:.1f} Dp."
+                )
+                return
+
         if not getattr(game, "capital_negotiations", None):
             game.capital_negotiations = CapitalNegotiationLedger()
         negotiation = game.capital_negotiations.create(
@@ -3804,6 +3822,10 @@ class GameManager:
             units_required=required_units,
             units_short_at_order=units_short_at_order,
         )
+
+        if deposit > 0:
+            buyer.spend_dollops(deposit)
+            negotiation.deposit_paid = deposit
 
         # Self-build: the Manufacturer is its own buyer (it ordered equipment it
         # manufactures, or a cash_only item with no separate manufacturer).  There
@@ -3987,6 +4009,8 @@ class GameManager:
                     raise ValueError("Only proposed capital orders can be declined.")
                 negotiation.status = CapitalNegotiationStatus.DECLINED
                 negotiation.awaiting_id = None
+                # Nothing was built, so the deposit goes back to the buyer.
+                self._refund_capital_deposit(room.game, negotiation)
                 room.game.order_book.remove(negotiation.negotiation_id)
                 settlement = None
                 result = "declined"
@@ -4094,12 +4118,14 @@ class GameManager:
         if buyer is None or manufacturer is None:
             negotiation.status = CapitalNegotiationStatus.EXPIRED
             negotiation.awaiting_id = None
+            self._refund_capital_deposit(game, negotiation)
             game.order_book.remove(negotiation.negotiation_id)
             raise ValueError("Capital negotiation party no longer exists.")
         item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
         if item is None:
             negotiation.status = CapitalNegotiationStatus.EXPIRED
             negotiation.awaiting_id = None
+            self._refund_capital_deposit(game, negotiation)
             game.order_book.remove(negotiation.negotiation_id)
             raise ValueError("Capital item no longer exists.")
 
@@ -4142,28 +4168,31 @@ class GameManager:
         loan = None
         financed = False
         referral_fee = 0.0
+        # The deposit left the buyer's treasury at order time, so only the
+        # balance is due now — and only the balance needs financing.
+        balance_due = max(0.0, round(agreed_total - negotiation.deposit_paid, 2))
         if pays:
             want_finance = (
                 negotiation.financing
                 and game.turn_manager._find_banker() is not None
             )
-            if want_finance:
+            if want_finance and balance_due > 0:
                 loan_term = (
                     min(3, max(1, negotiation.maintenance_term_years))
                     if negotiation.maintenance_term_years else 2
                 )
                 try:
                     loan = game.turn_manager.issue_capital_finance_loan(
-                        buyer, agreed_total, loan_term, cyi, csi
+                        buyer, balance_due, loan_term, cyi, csi
                     )
                     financed = True
                 except CapitalFinanceError as exc:
-                    if buyer.dollops < agreed_total:
+                    if buyer.dollops < balance_due:
                         raise CapitalFinanceError(str(exc))
-            if not financed and buyer.dollops < agreed_total:
+            if not financed and buyer.dollops < balance_due:
                 raise ValueError(
-                    f"Need {agreed_total:.1f} Dp for this order; you have "
-                    f"{buyer.dollops:.1f} Dp."
+                    f"Need {balance_due:.1f} Dp to settle the balance on this "
+                    f"order; you have {buyer.dollops:.1f} Dp."
                 )
 
         if not cash_only:
@@ -4171,7 +4200,10 @@ class GameManager:
         if not pays and self_build_cost > 0:
             buyer.spend_dollops(self_build_cost)
         if pays:
-            buyer.spend_dollops(agreed_total)
+            # Deposit already left the buyer's treasury at order time; charge
+            # only the balance, but pay the manufacturer the full agreed total
+            # (deposit included) now that the goods are handed over.
+            buyer.spend_dollops(balance_due)
             if manufacturer.player_id != buyer.player_id:
                 manufacturer.receive_dollops(agreed_total)
             if financed:
@@ -4285,6 +4317,7 @@ class GameManager:
             "counter_total": negotiation.counter_total,
             "units_required": negotiation.units_required,
             "units_short_at_order": negotiation.units_short_at_order,
+            "deposit_paid": negotiation.deposit_paid,
             "units_short": self._capital_negotiation_units_short(
                 game, negotiation
             ),
@@ -6598,6 +6631,71 @@ class GameManager:
             )
             room.season_timer_task = fut
 
+    def _refund_capital_deposit(self, game, negotiation) -> float:
+        """Give the deposit back when an order ends without a build.
+
+        The deposit secures payment on delivery; if nothing is ever built
+        (the Manufacturer declines, or the order expires) the buyer is made
+        whole. Only a buyer who cannot pay for finished goods forfeits it.
+        """
+        refund = round(float(getattr(negotiation, "deposit_paid", 0.0) or 0.0), 2)
+        if refund <= 0:
+            return 0.0
+        buyer = next(
+            (p for p in game.players if p.player_id == negotiation.buyer_id), None,
+        )
+        if buyer is not None:
+            buyer.receive_dollops(refund)
+        negotiation.deposit_paid = 0.0
+        return refund
+
+    def _default_capital_order(self, room, negotiation, entry) -> None:
+        """Buyer could not pay the balance once the build was ready.
+
+        The deposit is forfeit to the Manufacturer, who also keeps the goods —
+        the manufactured units were never consumed, so they stay on its island
+        and can be sold at list price (any other island ordering that item now
+        settles immediately against them). The order leaves the queue so it
+        cannot block the build slots it failed to pay for.
+        """
+        game = room.game
+        manufacturer = next(
+            (p for p in game.players if p.player_id == negotiation.manufacturer_id),
+            None,
+        )
+        buyer = next(
+            (p for p in game.players if p.player_id == negotiation.buyer_id), None,
+        )
+        forfeited = round(float(negotiation.deposit_paid or 0.0), 2)
+        if forfeited > 0 and manufacturer is not None:
+            manufacturer.receive_dollops(forfeited)
+        negotiation.deposit_paid = 0.0
+        negotiation.status = CapitalNegotiationStatus.DEFAULTED
+        negotiation.awaiting_id = None
+        if entry is not None:
+            game.order_book.remove(negotiation.negotiation_id)
+        item = find_item(CAPITAL_CATALOGUE, negotiation.item_id)
+        item_name = item.name if item else negotiation.item_id
+        for player, other in ((buyer, manufacturer), (manufacturer, buyer)):
+            if player is None:
+                continue
+            self._send_capital_negotiation_push(
+                room,
+                player.player_id,
+                "defaulted",
+                negotiation,
+                from_name=(other.name if other else ""),
+                settlement={
+                    "message": (
+                        f"Order for {item_name} defaulted — balance unpaid. "
+                        f"Deposit of {forfeited:.1f} Dp forfeited to "
+                        f"{manufacturer.name if manufacturer else 'the builder'}, "
+                        f"who keeps the goods to resell at list price."
+                    ),
+                    "deposit_forfeited": forfeited,
+                },
+            )
+
     def _drain_capital_order_books(
         self,
         room: GameRoom,
@@ -6637,9 +6735,12 @@ class GameManager:
                         room, negotiation, float(agreed_total)
                     )
                 except (CapitalFinanceError, ValueError):
-                    # The units exist; this particular buyer just cannot pay.
-                    # Skip them rather than break, or one broke buyer freezes
-                    # the manufacturer's whole book indefinitely.
+                    # The build is ready but the buyer cannot pay the balance:
+                    # they forfeit the deposit, the Manufacturer keeps both the
+                    # cash and the goods (which stay on its island to resell at
+                    # list price), and the queue moves on rather than being
+                    # frozen by one insolvent buyer.
+                    self._default_capital_order(room, negotiation, entry)
                     continue
                 entry.locked = True
                 fulfilled.append(negotiation.negotiation_id)
