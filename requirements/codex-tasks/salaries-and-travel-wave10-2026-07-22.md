@@ -40,7 +40,7 @@ Rules:
   island** — trainees away and contracted-out staff are excluded, exactly as
   the existing payroll pass already excludes them.
 - The override replaces the band wage for that worker; do not pay both.
-- Surface it: the payroll line in the season report and the wellbeing/финance
+- Surface it: the payroll line in the season report and the wellbeing/finance
   panel should show the premium-salary component separately from ordinary
   payroll so the Banker can see what its desk actually costs.
 
