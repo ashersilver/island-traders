@@ -68,6 +68,7 @@ from ..constants import (
     MANUFACTURER_SELF_ORDER_PRICE_FRACTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
+from ..dependency_graph import build_dependency_graph
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -6816,6 +6817,20 @@ def create_app() -> FastAPI:
     @app.get("/version", tags=["Reference"], summary="Get server version")
     async def _get_version():
         return {"version": APP_VERSION}
+
+    @app.get(
+        "/api/dependency-graph",
+        tags=["Reference"],
+        summary="Island dependency graph derived from the live rules",
+    )
+    async def _get_dependency_graph():
+        """Static per-role dependency model for the Island Dependency Map.
+
+        Derived from the recipe and capital tables rather than hand-listed, so
+        the map cannot drift from the rules. Static for a given build, so the
+        client fetches it once and caches it.
+        """
+        return build_dependency_graph()
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
