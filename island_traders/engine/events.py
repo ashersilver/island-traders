@@ -153,6 +153,25 @@ class EventChart:
             return EventResult("Normal Operations")
         return result
 
+    def draw_avoiding_disaster(
+        self,
+        rng: random.Random,
+        max_tries: int = 5,
+        cycle: BusinessCycleSnapshot | None = None,
+    ) -> EventResult:
+        """Draw, re-rolling up to ``max_tries`` times to avoid a natural
+        disaster.  Falls back to Normal Operations if every roll is a disaster.
+        Used for the early-game grace period (first two seasons of Year 1)
+        so every island can establish before the weather turns."""
+        result = self.draw(rng, cycle=cycle)
+        tries = 0
+        while result.natural_disaster and tries < max_tries:
+            result = self.draw(rng, cycle=cycle)
+            tries += 1
+        if result.natural_disaster:
+            return EventResult("Normal Operations")
+        return result
+
     @classmethod
     def from_entries(cls, role_name: str, entries: list[dict]) -> EventChart:
         chart = cls(role_name=role_name)
@@ -258,8 +277,22 @@ class SeasonEventResolver:
         players: list,
         damage_counters: dict[int, int],
         year: int | None = None,
+        season_index: int | None = None,
     ) -> dict[int, EventResult]:
-        from ..constants import HALT_EVENTS_PER_PLAYER_PER_YEAR
+        from ..constants import (
+            HALT_EVENTS_PER_PLAYER_PER_YEAR,
+            DISASTER_GRACE_SEASONS,
+        )
+
+        # Early-game grace: no natural disasters in the first
+        # DISASTER_GRACE_SEASONS seasons of Year 1, so every island can
+        # establish trade/production before the weather turns.  Year is
+        # 0-indexed (year 0 == "Year 1"); season_index 0 == Spring.
+        in_disaster_grace = (
+            year == 0
+            and season_index is not None
+            and season_index < DISASTER_GRACE_SEASONS
+        )
 
         # Reset the per-year halt budget when the year rolls over.  When
         # `year` is None (legacy callers / tests that don't pass it) the
@@ -294,6 +327,13 @@ class SeasonEventResolver:
                 continue
 
             result = chart.draw(self.rng, cycle=getattr(self, "current_cycle", None))
+
+            # Early-game grace: re-draw away from natural disasters in the
+            # opening seasons so nobody is wiped out before establishing.
+            if in_disaster_grace and result.natural_disaster:
+                result = chart.draw_avoiding_disaster(
+                    self.rng, cycle=getattr(self, "current_cycle", None),
+                )
 
             # Per-year halt cap: if this draw is a halt and the player has
             # already used their yearly halt budget, re-draw avoiding

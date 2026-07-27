@@ -152,6 +152,9 @@ def test_capital_order_rejects_when_manufacturer_capacity_units_short():
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     assert item.capacity_units == 4
     buyer.dollops = item.cost * 5
+    # Clear the bootstrap-seeded equipment so this test controls the exact
+    # on-hand count (needs 4, has 3 → short).
+    manufacturer.inventory.amounts[ResourceType.TRANSPORT_EQUIPMENT] = 0
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
     ws = _WS()
 

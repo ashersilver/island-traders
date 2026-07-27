@@ -152,7 +152,7 @@ def test_game_state_includes_sustenance_runway_alert_basket():
     substitution) — see Player.meals_available."""
     mgr = GameManager()
     room, banker, farmer = _bootstrap_game(mgr)
-    farmer.population = 120  # 12 meals / season under PEOPLE_PER_MEAL=10
+    farmer.population = 400  # 40 meals/season: short runway vs the seeded basket, so the alert fires
     state = mgr.get_game_state(room.room_id, "p2")
     alerts = state["sustenance_alerts"][str(farmer.player_id)]
     meals = next(alert for alert in alerts if alert["resource"] == "Meals")
