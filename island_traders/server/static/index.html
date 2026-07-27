@@ -1585,6 +1585,18 @@ body.fx-off .ih-pins .pdot{animation:none}
         <div id="levy-banner" style="display:none"></div>
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
+        <!-- #4 What-If: interactive "to make N of X, what do I need vs hold?" -->
+        <details id="whatif-box" style="margin-top:.6rem;font-size:.78rem">
+          <summary style="cursor:pointer;color:var(--gold);font-weight:600">What-If planner</summary>
+          <div style="display:flex;gap:.4rem;align-items:center;margin:.45rem 0 .3rem;flex-wrap:wrap">
+            <select id="whatif-output" onchange="renderWhatIf()"
+                    style="flex:1;min-width:9rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.25rem"></select>
+            <label style="color:var(--dim)">make</label>
+            <input id="whatif-qty" type="number" min="0" step="1" oninput="renderWhatIf()"
+                   style="width:5rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.25rem">
+          </div>
+          <div id="whatif-result"></div>
+        </details>
       </div>
       <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -1612,6 +1624,27 @@ body.fx-off .ih-pins .pdot{animation:none}
                   onclick="showLoansPopup()" title="Show all loans in a detail view">⊕</button>
         </h3>
         <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
+      </div>
+
+      <!-- #3 User-defined action alerts (client-only, localStorage) -->
+      <div class="section" data-tile="alerts" data-tile-label="My alerts">
+        <h3>My Alerts</h3>
+        <div style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;font-size:.74rem;margin-bottom:.35rem">
+          <select id="alert-type" onchange="onAlertTypeChange()"
+                  style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem">
+            <option value="price_below">Price below</option>
+            <option value="price_above">Price above</option>
+            <option value="stock_below">My stock below</option>
+            <option value="bid_appears">Bid appears for</option>
+            <option value="treasury_below">Treasury below</option>
+          </select>
+          <select id="alert-res"
+                  style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem"></select>
+          <input id="alert-thresh" type="number" step="1" placeholder="value"
+                 style="width:5rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem">
+          <button class="btn-ghost btn-sm" onclick="addAlert()">+ Add</button>
+        </div>
+        <div id="alert-list" style="font-size:.75rem;color:var(--dim)">No alerts set.</div>
       </div>
     </div>
 
@@ -3804,6 +3837,175 @@ function renderCapacityPanel(capacity) {
               ${note ? `<div class="psr-note">${esc(note)}</div>` : ''}
             </div>`;
   }).join('');
+
+  // #4 What-If planner: populate the output picker from the lines that carry
+  // per-unit recipe data (recipe-driven lines only; Farmer seasonal
+  // conversions have per_unit=null and are skipped).
+  _whatifOutputs = outputs.filter(o => o.per_unit);
+  const me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  _whatifInventory = (me && me.inventory) || {};
+  const box = document.getElementById('whatif-box');
+  const sel = document.getElementById('whatif-output');
+  if (box && sel) {
+    if (!_whatifOutputs.length) {
+      box.style.display = 'none';
+    } else {
+      box.style.display = '';
+      const prev = sel.value;
+      sel.innerHTML = _whatifOutputs
+        .map(o => `<option value="${esc(o.output)}">${esc(o.output)}</option>`).join('');
+      if (_whatifOutputs.some(o => o.output === prev)) sel.value = prev;
+      renderWhatIf();
+    }
+  }
+}
+
+// #4 What-If: multiply the selected line's per-unit recipe by a target
+// quantity and compare against inventory / workforce cap / equipment cap —
+// all client-side off the state payload, no round-trip. Display only; it
+// never submits a produce action (same rule as the decision-hint cards).
+let _whatifOutputs = [];
+let _whatifInventory = {};
+function renderWhatIf() {
+  const sel = document.getElementById('whatif-output');
+  const qtyEl = document.getElementById('whatif-qty');
+  const out = document.getElementById('whatif-result');
+  if (!sel || !qtyEl || !out) return;
+  const o = _whatifOutputs.find(x => x.output === sel.value);
+  if (!o) { out.innerHTML = ''; return; }
+  // Prefill the quantity with the current max the first time a line is shown.
+  if (qtyEl.value === '' || qtyEl.dataset.forOutput !== o.output) {
+    qtyEl.value = (o.max_producible != null) ? Math.max(0, Math.round(o.max_producible)) : 1;
+    qtyEl.dataset.forOutput = o.output;
+  }
+  const qty = Math.max(0, Number(qtyEl.value) || 0);
+  const rows = [];
+  let feasible = true;
+
+  const inputs = o.per_unit.inputs || {};
+  for (const [res, per] of Object.entries(inputs)) {
+    const need = per * qty;
+    const have = Number(_whatifInventory[res] || 0);
+    const short = need - have;
+    const ok = short <= 1e-9;
+    if (!ok) feasible = false;
+    rows.push(`<tr><td>${esc(res)}</td><td style="text-align:right">${fmtQty(need)}</td>
+      <td style="text-align:right;color:var(--dim)">${fmtQty(have)}</td>
+      <td style="text-align:right;color:${ok ? 'var(--green)' : '#ff8a8a'}">${ok ? '✓' : 'buy ' + fmtQty(short)}</td></tr>`);
+  }
+  const labour = o.per_unit.labour || {};
+  for (const [title, per] of Object.entries(labour)) {
+    rows.push(`<tr><td>${esc(title)}</td><td style="text-align:right">${fmtQty(Math.ceil(per * qty))} wk</td>
+      <td colspan="2" style="text-align:right;color:var(--dim)">workforce cap ${o.workforce_cap == null ? '∞' : fmtQty(o.workforce_cap)}</td></tr>`);
+  }
+  // Cap checks that aren't per-resource: workforce & equipment ceilings.
+  const wfCap = o.workforce_cap;
+  const eqCap = o.equipment_cap;
+  const capMsgs = [];
+  if (wfCap != null && qty > wfCap + 1e-9) { feasible = false; capMsgs.push(`staffing caps this at ${fmtQty(wfCap)} (train more workers)`); }
+  if (eqCap != null && qty > eqCap + 1e-9) { feasible = false; capMsgs.push(`equipment caps this at ${fmtQty(eqCap)} (order more capital)`); }
+
+  const verdict = feasible
+    ? `<span style="color:var(--green)">✓ You can produce ${fmtQty(qty)} ${esc(o.output)} now.</span>`
+    : `<span style="color:#ff8a8a">✗ Short for ${fmtQty(qty)} ${esc(o.output)}:</span> ${capMsgs.join('; ') || 'buy the inputs listed above'}.`;
+
+  out.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.74rem">
+      <thead><tr style="color:var(--dim);text-align:left">
+        <th>need</th><th style="text-align:right">for ${fmtQty(qty)}</th>
+        <th style="text-align:right">have</th><th style="text-align:right">gap</th></tr></thead>
+      <tbody>${rows.join('') || '<tr><td colspan="4" style="color:var(--dim)">No inputs required.</td></tr>'}</tbody>
+    </table>
+    <div style="margin-top:.35rem">${verdict}</div>`;
+}
+
+// ===== #3 User-defined action alerts (client-only) =====================
+// Alerts live in localStorage keyed by room+player so they survive refresh
+// but never touch the server (no balance/sim impact). Each is evaluated off
+// the game_state the client already receives; a firing alert surfaces once
+// per rising edge (tracked in _alertFiring) as a toast + hint-style card.
+let _alertFiring = {};   // id -> bool (was-firing last tick), for edge detection
+function _alertKey() { return `it-alerts:${currentRoomId || 'x'}:${myPlayerId || 'x'}`; }
+function _loadAlerts() {
+  try { return JSON.parse(localStorage.getItem(_alertKey()) || '[]'); }
+  catch (e) { return []; }
+}
+function _saveAlerts(a) { try { localStorage.setItem(_alertKey(), JSON.stringify(a)); } catch (e) {} }
+
+const _ALERT_LABEL = {
+  price_below: 'Price below', price_above: 'Price above',
+  stock_below: 'My stock below', bid_appears: 'Bid appears for',
+  treasury_below: 'Treasury below',
+};
+function onAlertTypeChange() {
+  // The resource picker is irrelevant for treasury alerts.
+  const t = document.getElementById('alert-type').value;
+  const resEl = document.getElementById('alert-res');
+  if (resEl) resEl.style.display = (t === 'treasury_below') ? 'none' : '';
+}
+function _populateAlertResources() {
+  const resEl = document.getElementById('alert-res');
+  if (!resEl || !gameState) return;
+  const names = Object.keys(gameState.market || {}).sort();
+  if (!names.length) return;
+  const prev = resEl.value;
+  resEl.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if (names.includes(prev)) resEl.value = prev;
+}
+function addAlert() {
+  const type = document.getElementById('alert-type').value;
+  const res = document.getElementById('alert-res').value;
+  const thresh = Number(document.getElementById('alert-thresh').value);
+  if (type !== 'bid_appears' && !Number.isFinite(thresh)) { showToast('Enter a threshold value.'); return; }
+  const a = _loadAlerts();
+  a.push({ id: `${type}:${res}:${thresh}:${a.length}`, type, res, thresh });
+  _saveAlerts(a);
+  renderAlertList();
+}
+function removeAlert(id) {
+  _saveAlerts(_loadAlerts().filter(a => a.id !== id));
+  delete _alertFiring[id];
+  renderAlertList();
+}
+function _alertText(a) {
+  if (a.type === 'treasury_below') return `Treasury below ${fmtQty(a.thresh)} Dp`;
+  if (a.type === 'bid_appears')   return `Bid appears for ${esc(a.res)}`;
+  return `${_ALERT_LABEL[a.type]} — ${esc(a.res)} ${fmtQty(a.thresh)}`;
+}
+function renderAlertList() {
+  const el = document.getElementById('alert-list');
+  if (!el) return;
+  const a = _loadAlerts();
+  el.innerHTML = a.length
+    ? a.map(x => `<div class="mkt-row"><span class="res">${_alertText(x)}</span>
+        <button class="btn-ghost btn-sm" onclick="removeAlert('${esc(x.id)}')">✕</button></div>`).join('')
+    : 'No alerts set.';
+}
+// Evaluate one alert against current state → true when its condition holds.
+function _alertHolds(a) {
+  const me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  const mk = (gameState && gameState.market && gameState.market[a.res]) || null;
+  switch (a.type) {
+    case 'price_below':   return mk && mk.formula_price != null && mk.formula_price < a.thresh;
+    case 'price_above':   return mk && mk.formula_price != null && mk.formula_price > a.thresh;
+    case 'stock_below':   return me && Number((me.inventory || {})[a.res] || 0) < a.thresh;
+    case 'bid_appears':   return mk && mk.bid_quantity > 0;
+    case 'treasury_below':return me && Number(me.dollops != null ? me.dollops : me.treasury) < a.thresh;
+    default: return false;
+  }
+}
+function evaluateAlerts() {
+  _populateAlertResources();
+  const alerts = _loadAlerts();
+  for (const a of alerts) {
+    const holds = _alertHolds(a);
+    if (holds && !_alertFiring[a.id]) {
+      // Rising edge — fire once.
+      showToast(`🔔 Alert: ${_alertText(a).replace(/<[^>]+>/g,'')}`, { type: 'info', ms: 8000 });
+    }
+    _alertFiring[a.id] = holds;
+  }
+  renderAlertList();
 }
 
 function formatArrival(item) {
@@ -5989,6 +6191,7 @@ function renderGameState() {
   renderDealsPanel();
   renderCapitalNegotiationAlerts();
   renderTradeFinder();
+  evaluateAlerts();   // #3 user-defined alerts, off the fresh game_state
   mergeChatState(gameState);
   renderPromptForActiveIsland();
 }
@@ -7270,8 +7473,14 @@ function _renderBlotterFillsTab() {
 
 // ---- Dependency flowchart popup ----
 // ==================== ISLAND DEPENDENCY MAP ====================
-// Click a node (or a legend swatch) to isolate that island's trade flows;
-// click it again — or "Show all flows" — to restore the full picture.
+// The node layout is fixed, but every EDGE is derived server-side from the
+// live recipe and capital tables (/api/dependency-graph).  The old map was a
+// hand-written edge list that had drifted from the rules — it never showed
+// Freight at all, even though every island burns it on trades and repairs.
+//
+// Two layers are kept separate: "consumable" (recipe inputs, sustenance,
+// energy, spares, freight…) and "capital" (the manufactured resource each
+// island's equipment is built from).
 const _DEP_W = 680, _DEP_H = 430;
 const _DEP_NW = 92, _DEP_NH = 30;
 
@@ -7286,42 +7495,90 @@ const _DEP_NODES = [
     { id:'Doctor',       x:320, y:388,  label:'Doctor',       color:'#2471a3' },
   ];
 
-// Edges — curve: perpendicular offset in px (positive = left of travel direction)
-// Bidirectional pairs use opposite-sign curves so lines don't overlap.
-const _DEP_EDGES = [
-    // Raw materials
-    { from:'Miner',        to:'Manufacturer',  label:'Metal · Oil',    color:'#9b59b6', curve: 20 },
-    { from:'Miner',        to:'Farmer',        label:'Oil',            color:'#8e44ad', curve:-22 },
-    { from:'Miner',        to:'Transporter',   label:'Oil',            color:'#8e44ad', curve: 22 },
-    { from:'Transporter',  to:'Miner',         label:'Freight',        color:'#2980b9', curve: 22 },
-    // Equipment from Manufacturer
-    { from:'Manufacturer', to:'Farmer',        label:'FarmMachinery',  color:'#e67e22', curve:-25 },
-    { from:'Manufacturer', to:'Miner',         label:'MiningEquip',    color:'#e67e22', curve: 18 },
-    { from:'Manufacturer', to:'Educator',      label:'LabEquipment',   color:'#e67e22', curve:-18 },
-    { from:'Manufacturer', to:'Transporter',   label:'TransportEquip', color:'#e67e22', curve: 22 },
-    { from:'Manufacturer', to:'Doctor',        label:'MedDevices',     color:'#e67e22', curve: 20 },
-    // Education & finance
-    { from:'Educator',     to:'Doctor',        label:'Expertise',      color:'#16a085', curve: 28 },
-    { from:'Educator',     to:'Banker',        label:'Expertise',      color:'#1abc9c', curve:-22 },
-    { from:'Banker',       to:'Educator',      label:'Finance',        color:'#e74c3c', curve:-22 },
-    // Sustenance & health
-    { from:'Farmer',       to:'Transporter',   label:'Food',           color:'#27ae60', curve: 25 },
-    { from:'Doctor',       to:'Farmer',        label:'HealthSvcs',     color:'#2471a3', curve: 28 },
-  ];
+let _depGraph = null;             // cached /api/dependency-graph payload
+let _depMapSelected = null;       // isolated role id, or null for the overview
+let _depMapLayer = 'consumable';  // 'consumable' | 'capital' | 'both'
 
-// Currently isolated role id, or null for "all flows".
-let _depMapSelected = null;
+async function _depLoadGraph() {
+  if (_depGraph) return _depGraph;
+  try {
+    const res = await fetch(`${API}/api/dependency-graph`);
+    _depGraph = await res.json();
+  } catch (e) {
+    _depGraph = { needs: [], producers: {}, roles: [] };
+    showToast('Could not load the dependency data.', { type: 'error' });
+  }
+  return _depGraph;
+}
+
+// Which island object backs a role on the board (prefer one the viewer owns).
+function _depPlayerForRole(role) {
+  const all = gameState?.players || [];
+  const roleOf = p => p.role_names || p.roles || [];
+  return all.find(p => roleOf(p).includes(role)
+                    && (p.lobby_player_id === myPlayerId || p.owner_id === myPlayerId))
+      || all.find(p => roleOf(p).includes(role))
+      || null;
+}
+
+// Resources this island is short of RIGHT NOW, read from the live snapshot.
+// Everything else in the panel is a "might need" from the static rules.
+function _depCurrentNeeds(role) {
+  const need = new Map();
+  const p = _depPlayerForRole(role);
+  if (!p) return need;
+  (p.capacity?.outputs || []).forEach(o => {
+    Object.entries(o.inputs_short || {}).forEach(([res, qty]) => {
+      if (+qty > 0) need.set(res, `short ${(+qty).toFixed(1)} for ${o.output}`);
+    });
+  });
+  if (p.energy?.brownout) need.set('Oil', 'brownout — energy floor unmet');
+  if ((p.continuing_education?.uncovered_fraction || 0) > 0) {
+    need.set('Expertise', 'continuing education uncovered');
+  }
+  (p.capacity?.capital_owned || []).forEach(c => {
+    if ((c.repairable_failed || 0) > 0 && c.repair_cost) {
+      if (c.repair_cost.spares) need.set('Spares', `repair needs ${c.repair_cost.spares}`);
+      if (c.repair_cost.freight) need.set('Freight', `repair needs ${c.repair_cost.freight}`);
+    }
+  });
+  const alerts = (gameState?.sustenance_alerts || {})[String(p.player_id)] || [];
+  if (alerts.length) need.set('Food', 'sustenance runway low');
+  return need;
+}
+
+function _depLayerOk(n) {
+  return _depMapLayer === 'both' || n.layer === _depMapLayer;
+}
+
+// Needs for the current layer/selection, merged into producer → consumer edges.
+function _depEdges(selected) {
+  if (!_depGraph) return [];
+  let needs = (_depGraph.needs || []).filter(_depLayerOk);
+  // The overview hides universal needs (every island needs Oil/Food/Freight…)
+  // or the picture becomes an unreadable hairball; selecting an island shows
+  // them, which is the whole point of the drill-down.
+  needs = selected ? needs.filter(n => n.role === selected)
+                   : needs.filter(n => n.recipe);
+  const merged = new Map();
+  needs.forEach(n => (n.from_roles || []).forEach(src => {
+    if (src === n.role) return;              // own production — panel only
+    const key = `${src}>${n.role}|${n.layer}`;
+    if (!merged.has(key)) {
+      merged.set(key, { from: src, to: n.role, layer: n.layer, resources: [] });
+    }
+    const e = merged.get(key);
+    if (!e.resources.includes(n.resource)) e.resources.push(n.resource);
+  }));
+  return [...merged.values()];
+}
 
 function _depMapSvg(selected) {
-  const W = _DEP_W, H = _DEP_H;
-  const NW = _DEP_NW, NH = _DEP_NH;
+  const W = _DEP_W, H = _DEP_H, NW = _DEP_NW, NH = _DEP_NH;
   const nodes = _DEP_NODES;
-  // Isolating an island keeps only the flows it is a party to.
-  const edges = selected
-    ? _DEP_EDGES.filter(e => e.from === selected || e.to === selected)
-    : _DEP_EDGES;
-  // The island itself plus its trading partners stay lit; the rest dim to
-  // context so the layout doesn't jump around between selections.
+  const edges = _depEdges(selected);
+  const nowNeeds = selected ? _depCurrentNeeds(selected) : new Map();
+
   const lit = new Set();
   if (selected) {
     lit.add(selected);
@@ -7330,20 +7587,15 @@ function _depMapSvg(selected) {
 
   const nodeMap = {};
   nodes.forEach(n => { nodeMap[n.id] = n; });
+  const hw = NW / 2, hh = NH / 2;
 
-  const hw = NW/2, hh = NH/2;
-
-  // Return the point on the node boundary in the direction (dx,dy) FROM the center
   function boundaryPt(cx, cy, dx, dy) {
     const len = Math.hypot(dx, dy) || 1;
-    const ux = dx/len, uy = dy/len;
-    const tx = hw / (Math.abs(ux) || 1e-9);
-    const ty = hh / (Math.abs(uy) || 1e-9);
-    const t = Math.min(tx, ty);
-    return [cx + ux*t, cy + uy*t];
+    const ux = dx / len, uy = dy / len;
+    const t = Math.min(hw / (Math.abs(ux) || 1e-9), hh / (Math.abs(uy) || 1e-9));
+    return [cx + ux * t, cy + uy * t];
   }
 
-  // Collect SVG pieces — edges first, then nodes on top
   const defs = [];
   const edgeParts = [];
   const nodeParts = [];
@@ -7351,47 +7603,49 @@ function _depMapSvg(selected) {
   edges.forEach((e, i) => {
     const src = nodeMap[e.from], dst = nodeMap[e.to];
     if (!src || !dst) return;
+    const capital = e.layer === 'capital';
+    const colour = capital ? '#f0932b' : src.color;
+    // Deterministic curve so a bidirectional pair never draws on top of itself.
+    // Capital rides a much wider arc than the consumable line between the
+    // same pair, or the two labels collide (FarmMachinery over Spares·Goods).
+    const curve = (e.from < e.to ? 22 : -22) + (capital ? (e.from < e.to ? 34 : -34) : 0);
 
-    // Control point offset perpendicular to the straight-line midpoint
-    const midX = (src.x + dst.x) / 2;
-    const midY = (src.y + dst.y) / 2;
+    const midX = (src.x + dst.x) / 2, midY = (src.y + dst.y) / 2;
     const ddx = dst.x - src.x, ddy = dst.y - src.y;
     const dLen = Math.hypot(ddx, ddy) || 1;
-    // Perpendicular unit vector (rotate 90° CCW)
-    const px = -ddy/dLen, py = ddx/dLen;
-    const cpX = midX + px * e.curve;
-    const cpY = midY + py * e.curve;
+    const px = -ddy / dLen, py = ddx / dLen;
+    const cpX = midX + px * curve, cpY = midY + py * curve;
 
-    // Departure from src: direction src→cp, clipped to src boundary
-    const depDx = cpX - src.x, depDy = cpY - src.y;
-    const [sx, sy] = boundaryPt(src.x, src.y, depDx, depDy);
-
-    // Arrival at dst: direction cp→dst, pull back slightly from dst boundary
+    const [sx, sy] = boundaryPt(src.x, src.y, cpX - src.x, cpY - src.y);
     const arrDx = dst.x - cpX, arrDy = dst.y - cpY;
-    const [ex0, ey0] = boundaryPt(dst.x, dst.y, -arrDx, -arrDy); // boundary toward cp
-    // Pull 4px further inside so arrowhead tip is clearly visible
+    const [ex0, ey0] = boundaryPt(dst.x, dst.y, -arrDx, -arrDy);
     const aLen = Math.hypot(arrDx, arrDy) || 1;
-    const ex = ex0 + (arrDx/aLen)*4;
-    const ey = ey0 + (arrDy/aLen)*4;
+    // Pull the tip back so the (now much larger) arrowhead sits clear of the box.
+    const ex = ex0 + (arrDx / aLen) * 9;
+    const ey = ey0 + (arrDy / aLen) * 9;
 
-    // Bezier label position at t=0.5, offset perp outward
-    const lx = 0.25*sx + 0.5*cpX + 0.25*ex;
-    const ly = 0.25*sy + 0.5*cpY + 0.25*ey;
-    const lo = e.curve >= 0 ? 11 : -11;
-    const labX = (lx + px*lo).toFixed(1);
-    const labY = (ly + py*lo - 1).toFixed(1);
+    const label = e.resources.join(' · ');
+    const urgent = e.resources.some(r => nowNeeds.has(r));
 
-    const mid = `id="arr${i}"`;
+    // Arrowheads: large solid triangles. The old 9x7 markers were nearly
+    // invisible against the curves at this zoom.
     defs.push(
-      `<marker ${mid} markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">` +
-      `<path d="M0,0 L9,3.5 L0,7 Z" fill="${e.color}" opacity=".9"/></marker>`
+      `<marker id="arr${i}" markerWidth="16" markerHeight="12" refX="15" refY="6"` +
+      ` orient="auto" markerUnits="userSpaceOnUse">` +
+      `<path d="M0,0 L16,6 L0,12 Z" fill="${colour}"/></marker>`
     );
 
-    const pathD = `M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${cpX.toFixed(1)},${cpY.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}`;
+    const lx = 0.25 * sx + 0.5 * cpX + 0.25 * ex;
+    const ly = 0.25 * sy + 0.5 * cpY + 0.25 * ey;
+    const lo = curve >= 0 ? 12 : -12;
     edgeParts.push(
-      `<path d="${pathD}" fill="none" stroke="${e.color}" stroke-width="1.7" opacity=".72" marker-end="url(#arr${i})"/>`,
-      `<text x="${labX}" y="${labY}" text-anchor="middle" font-size="8.5" font-weight="700"` +
-        ` fill="${e.color}" paint-order="stroke" stroke="#04090f" stroke-width="3" stroke-linejoin="round">${e.label}</text>`
+      `<path d="M ${sx.toFixed(1)},${sy.toFixed(1)} Q ${cpX.toFixed(1)},${cpY.toFixed(1)} ${ex.toFixed(1)},${ey.toFixed(1)}"` +
+        ` fill="none" stroke="${colour}" stroke-width="${urgent ? 3.4 : 2.2}"` +
+        `${capital ? ' stroke-dasharray="7 4"' : ''} opacity="${urgent ? 1 : .85}"` +
+        ` marker-end="url(#arr${i})"><title>${esc(e.from)} → ${esc(e.to)}: ${esc(label)}</title></path>`,
+      `<text x="${(lx + px * lo).toFixed(1)}" y="${(ly + py * lo - 1).toFixed(1)}" text-anchor="middle"` +
+        ` font-size="9" font-weight="700" fill="${colour}" paint-order="stroke"` +
+        ` stroke="#04090f" stroke-width="3" stroke-linejoin="round">${esc(label)}</text>`
     );
   });
 
@@ -7401,10 +7655,10 @@ function _depMapSvg(selected) {
     const isSel = selected === n.id;
     nodeParts.push(
       `<g style="cursor:pointer" opacity="${dim ? '.28' : '1'}" onclick="depMapSelect('${n.id}')">` +
-      `<title>${dim ? `${n.label} — no direct flow` : `Show only ${n.label} flows`}</title>` +
+      `<title>${dim ? `${n.label} — no direct flow` : `Show what ${n.label} needs`}</title>` +
       `<rect x="${rx}" y="${ry}" width="${NW}" height="${NH}" rx="6" fill="${isSel ? '#0d2233' : '#07131e'}"` +
         ` stroke="${n.color}" stroke-width="${isSel ? 3.2 : 2}"/>` +
-      `<text x="${n.x}" y="${n.y+5}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ecf0f1">${n.label}</text>` +
+      `<text x="${n.x}" y="${n.y + 5}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ecf0f1">${n.label}</text>` +
       `</g>`
     );
   });
@@ -7418,17 +7672,62 @@ function _depMapSvg(selected) {
 </svg>`;
 }
 
-function _depMapCaption(selected) {
+// Everything the selected island might need, flagged with what it needs now.
+function _depNeedsPanel(selected) {
   if (!selected) {
-    return `<span style="color:var(--dim)">Showing all flows — click an island to isolate it.</span>`;
+    return `<div style="margin-top:.5rem;font-size:.72rem;color:var(--dim)">
+      Showing production flows only. Click an island to see everything it can
+      need — including the universal ones (Oil, Food, Freight, Spares…) that no
+      recipe lists.</div>`;
+  }
+  if (!_depGraph) return '';
+  const nowNeeds = _depCurrentNeeds(selected);
+  const rows = (_depGraph.needs || [])
+    .filter(n => n.role === selected && _depLayerOk(n))
+    .sort((a, b) => (a.layer.localeCompare(b.layer))
+                 || (nowNeeds.has(b.resource) - nowNeeds.has(a.resource))
+                 || a.resource.localeCompare(b.resource));
+  if (!rows.length) return '';
+  const body = rows.map(n => {
+    const now = nowNeeds.get(n.resource);
+    const from = (n.from_roles || []).length
+      ? (n.from_roles.includes(selected) ? 'own production' : n.from_roles.join(', '))
+      : '—';
+    return `<tr${now ? ' style="background:rgba(231,76,60,.12)"' : ''}>
+      <td style="padding:.15rem .4rem">${now ? '<span title="Needed now" style="color:var(--red)">●</span> ' : ''}${esc(n.resource)}</td>
+      <td style="padding:.15rem .4rem;color:var(--dim)">${n.layer === 'capital' ? 'capital' : 'consumable'}${n.universal ? ' · always' : ''}</td>
+      <td style="padding:.15rem .4rem;color:var(--dim)">${esc(from)}</td>
+      <td style="padding:.15rem .4rem;color:${now ? 'var(--red)' : 'var(--dim)'}">${esc(now || n.reasons[0] || '')}</td>
+    </tr>`;
+  }).join('');
+  const nowCount = rows.filter(n => nowNeeds.has(n.resource)).length;
+  return `<div style="margin-top:.6rem;max-height:24vh;overflow:auto">
+    <div style="font-size:.72rem;margin-bottom:.25rem">
+      <b>${esc(selected)} needs</b> — ${rows.length} possible,
+      <span style="color:${nowCount ? 'var(--red)' : 'var(--dim)'}">${nowCount} needed now</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:.71rem">
+      <thead><tr style="color:var(--dim);text-align:left">
+        <th style="padding:.15rem .4rem">Resource</th><th style="padding:.15rem .4rem">Layer</th>
+        <th style="padding:.15rem .4rem">From</th><th style="padding:.15rem .4rem">Why</th>
+      </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function _depMapCaption(selected) {
+  const layerBtn = (key, label) =>
+    `<button class="btn-ghost btn-sm" style="padding:.1rem .45rem;font-size:.66rem;${
+      _depMapLayer === key ? 'border-color:var(--gold);color:var(--gold)' : ''}"
+      onclick="depMapSetLayer('${key}')">${label}</button>`;
+  const layers = `<span style="display:flex;gap:.25rem;margin-left:auto">
+      ${layerBtn('consumable', 'Consumables')}${layerBtn('capital', 'Capital')}${layerBtn('both', 'Both')}
+    </span>`;
+  if (!selected) {
+    return `<span style="color:var(--dim)">Showing all production flows — click an island for its full needs.</span>${layers}`;
   }
   const node = _DEP_NODES.find(n => n.id === selected);
-  const inbound  = _DEP_EDGES.filter(e => e.to === selected).length;
-  const outbound = _DEP_EDGES.filter(e => e.from === selected).length;
   return `<span style="color:${node ? node.color : 'var(--gold)'};font-weight:700">${esc(node ? node.label : selected)}</span>`
-    + `<span style="color:var(--dim)"> — ${outbound} outgoing · ${inbound} incoming</span>`
-    + `<button class="btn-ghost btn-sm" style="margin-left:auto;padding:.1rem .5rem;font-size:.68rem"
-              onclick="depMapShowAll()">Show all flows</button>`;
+    + `<button class="btn-ghost btn-sm" style="padding:.1rem .45rem;font-size:.66rem"
+              onclick="depMapShowAll()">Show all</button>${layers}`;
 }
 
 function _depMapRefresh() {
@@ -7436,13 +7735,14 @@ function _depMapRefresh() {
   if (canvas) canvas.innerHTML = _depMapSvg(_depMapSelected);
   const cap = document.getElementById('depmap-caption');
   if (cap) cap.innerHTML = _depMapCaption(_depMapSelected);
+  const panel = document.getElementById('depmap-needs');
+  if (panel) panel.innerHTML = _depNeedsPanel(_depMapSelected);
   document.querySelectorAll('#depmap-legend [data-dep-role]').forEach(el => {
     el.style.opacity = (!_depMapSelected || el.dataset.depRole === _depMapSelected) ? '1' : '.4';
   });
 }
 
 function depMapSelect(role) {
-  // Clicking the isolated island again clears the filter.
   _depMapSelected = (_depMapSelected === role) ? null : role;
   _depMapRefresh();
 }
@@ -7452,22 +7752,32 @@ function depMapShowAll() {
   _depMapRefresh();
 }
 
-function showDependencyMap() {
+function depMapSetLayer(layer) {
+  _depMapLayer = layer;
+  _depMapRefresh();
+}
+
+async function showDependencyMap() {
   _depMapSelected = null;
+  _depMapLayer = 'consumable';
   const legend = `
-    <div id="depmap-legend" style="margin-top:.7rem;display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.73rem">
+    <div id="depmap-legend" style="margin-top:.6rem;display:flex;flex-wrap:wrap;gap:.35rem .8rem;font-size:.73rem">
       ${_DEP_NODES.map(n =>
         `<span data-dep-role="${n.id}" style="cursor:pointer" onclick="depMapSelect('${n.id}')"
-               title="Show only ${n.label} flows"><span style="color:${n.color}">■</span> ${n.label}</span>`
+               title="Show what ${n.label} needs"><span style="color:${n.color}">■</span> ${n.label}</span>`
       ).join('')}
     </div>
     <div style="margin-top:.3rem;font-size:.7rem;color:var(--dim)">
-      Arrows show resource flows from producer → consumer. Curved lines separate
-      bidirectional routes (e.g. Miner ↔ Transporter trade Oil for Freight).
+      Arrows point producer → consumer. Solid = consumables, dashed amber =
+      capital equipment. A red dot marks something the island is short of right
+      now. Derived from the live recipe and capital tables.
     </div>`;
   showPopup('Island Dependency Map', `
-    <div id="depmap-caption" style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.75rem">${_depMapCaption(null)}</div>
-    <div class="depflow-wrap" id="depmap-canvas">${_depMapSvg(null)}</div>${legend}`);
+    <div id="depmap-caption" style="display:flex;align-items:center;gap:.4rem;margin-bottom:.5rem;font-size:.75rem">Loading…</div>
+    <div class="depflow-wrap" id="depmap-canvas"></div>
+    <div id="depmap-needs"></div>${legend}`);
+  await _depLoadGraph();
+  _depMapRefresh();
 }
 
 function buildIslandTabs(players) {
