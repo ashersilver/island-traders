@@ -92,3 +92,59 @@ def test_collect_snapshot_reads_repo_files_without_git(tmp_path: Path):
     assert snapshot.package_version == "0.1.5"
     assert snapshot.release_notes_version == "0.2.0-dev.2026-07-27.1"
     assert snapshot.git.branch == "(detached)"
+
+
+def _git(repo: Path, *args: str) -> None:
+    import subprocess
+    subprocess.run(["git", *args], cwd=repo, check=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _seed_repo_files(repo: Path) -> None:
+    (repo / "island_traders").mkdir(exist_ok=True)
+    (repo / "island_traders" / "constants.py").write_text(
+        'APP_VERSION: str = "0.1.6-dev.2026-07-14.6"\n', encoding="utf-8")
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "island-traders"\nversion = "0.1.5"\n', encoding="utf-8")
+    (repo / "RELEASE_NOTES.md").write_text(
+        "# Notes\n\n## Unreleased\n\n`APP_VERSION`: `0.1.6-dev.2026-07-14.6`.\n",
+        encoding="utf-8")
+
+
+def test_latest_tag_reports_the_newest_repo_tag_even_when_cut_on_another_branch(
+    tmp_path: Path,
+):
+    """Release tags are cut on master, which is not an ancestor of
+    pre-release. `git describe` would therefore report the older tag that
+    happens to sit on this line of history — precisely the wrong answer for a
+    release dashboard."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "master")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "Test")
+    _seed_repo_files(repo)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "base")
+    # An older tag ON this line of history...
+    _git(repo, "tag", "v0.1.5-beta.1")
+
+    # ...then the real release, tagged on a master-only commit.
+    _git(repo, "checkout", "-qb", "pre-release")
+    (repo / "feature.txt").write_text("work\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "feature work")
+    _git(repo, "checkout", "-q", "master")
+    (repo / "release.txt").write_text("cut\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "release cut")
+    _git(repo, "tag", "v0.1.5")
+    _git(repo, "checkout", "-q", "pre-release")
+
+    snapshot = collect_snapshot(repo)
+
+    assert snapshot.git.latest_tag == "v0.1.5", (
+        "should report the repo's newest tag, not the newest reachable one"
+    )
+    assert snapshot.git.latest_tag_reachable is False
+    assert "not on this branch" in render_html(snapshot)

@@ -20,6 +20,10 @@ class GitSnapshot:
     upstream: str
     short_status: tuple[str, ...]
     latest_tag: str
+    # False when the newest tag in the repo is not an ancestor of HEAD — the
+    # normal state on a pre-release branch, because release tags are cut on
+    # master. Surfaced so the page cannot imply the tag is on this branch.
+    latest_tag_reachable: bool = True
 
     @property
     def dirty_count(self) -> int:
@@ -58,6 +62,19 @@ def _run_git(repo: Path, args: Sequence[str]) -> str:
         return ""
 
 
+def _git_succeeds(repo: Path, args: Sequence[str]) -> bool:
+    """Run a git query that answers via exit status rather than output."""
+    try:
+        return subprocess.call(
+            ["git", *args],
+            cwd=repo,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ) == 0
+    except FileNotFoundError:
+        return False
+
+
 def collect_snapshot(repo: Path) -> ReleaseSnapshot:
     constants_text = _read(repo / "island_traders" / "constants.py")
     pyproject_text = _read(repo / "pyproject.toml")
@@ -68,7 +85,20 @@ def collect_snapshot(repo: Path) -> ReleaseSnapshot:
     short_status = tuple(
         line for line in _run_git(repo, ["status", "--short"]).splitlines() if line
     )
-    latest_tag = _run_git(repo, ["describe", "--tags", "--abbrev=0"]) or "(none)"
+    # `git describe` only sees tags reachable from HEAD, so on a pre-release
+    # branch it reports the last tag on THIS line of history — which skips the
+    # real release tag, because releases are tagged on the master merge commit.
+    # Ask for the newest tag in the repo instead, then say whether it is on
+    # this branch.
+    latest_tag = _run_git(
+        repo,
+        ["for-each-ref", "--sort=-creatordate", "--count=1",
+         "--format=%(refname:short)", "refs/tags"],
+    ) or "(none)"
+    latest_tag_reachable = (
+        latest_tag != "(none)"
+        and _git_succeeds(repo, ["merge-base", "--is-ancestor", latest_tag, "HEAD"])
+    )
 
     return ReleaseSnapshot(
         app_version=_extract(APP_VERSION_RE, constants_text, "APP_VERSION"),
@@ -82,6 +112,7 @@ def collect_snapshot(repo: Path) -> ReleaseSnapshot:
             upstream=upstream or "(none)",
             short_status=short_status,
             latest_tag=latest_tag,
+            latest_tag_reachable=latest_tag_reachable,
         ),
     )
 
@@ -194,6 +225,13 @@ def render_html(snapshot: ReleaseSnapshot) -> str:
         for status, title, detail in checks
     )
 
+    tag_note = (
+        ""
+        if snapshot.git.latest_tag_reachable
+        else '<span style="display:block;color:#f3b83f;font-size:11px;'
+             'margin-top:3px">not on this branch</span>'
+    )
+
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
@@ -255,7 +293,7 @@ ul{{margin:0;padding-left:20px;color:var(--muted)}} li{{margin:.35rem 0}}
             <div class=\"metric\"><label>APP_VERSION</label><strong>{html.escape(snapshot.app_version)}</strong></div>
             <div class=\"metric\"><label>Package Version</label><strong>{html.escape(snapshot.package_version)}</strong></div>
             <div class=\"metric\"><label>Release Notes</label><strong>{html.escape(snapshot.release_notes_version)}</strong></div>
-            <div class=\"metric\"><label>Latest Tag</label><strong>{html.escape(snapshot.git.latest_tag)}</strong></div>
+            <div class=\"metric\"><label>Latest Tag</label><strong>{html.escape(snapshot.git.latest_tag)}</strong>{tag_note}</div>
           </div>
           <div class=\"metrics\">
             <div class=\"metric\"><label>Branch</label><strong>{html.escape(snapshot.git.branch)}</strong></div>
