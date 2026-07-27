@@ -2140,6 +2140,25 @@ class GameManager:
                     "workforce": workforce_cap,
                     "inputs": input_cap,
                 }
+                # Per-unit recipe requirements for the What-If panel (#4): the
+                # client multiplies these by a chosen quantity and compares to
+                # inventory / workforce / equipment_cap, all client-side. Only
+                # meaningful for recipe-driven lines — the Farmer's seasonal
+                # conversion (farmer_raw_output) uses whole-season input totals,
+                # not per-unit, so per_unit is null there and the panel falls
+                # back to the passive max display.
+                per_unit = None
+                if not farmer_raw_output:
+                    pu_inputs = {
+                        r.value if hasattr(r, "value") else str(r): round(q, 4)
+                        for r, q in boosted.inputs.items() if q > 0
+                    }
+                    pu_labour: dict[str, float] = {}
+                    for band in WorkerBand:
+                        lpu = boosted.labour_per_unit(band)
+                        if lpu > 0:
+                            pu_labour[primary_title(recipe.role, band)] = round(lpu, 4)
+                    per_unit = {"inputs": pu_inputs, "labour": pu_labour}
                 max_producible = cap.max_producible
                 blockers = [
                     name for name, value in caps.items()
@@ -2161,6 +2180,7 @@ class GameManager:
                     "inputs_short":   inputs_short,
                     "workforce_short": workforce_short,
                     "equipment_short": equipment_short,
+                    "per_unit":       per_unit,
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
                     # Graceful-degradation floor (2026-05-27 brief, GitHub

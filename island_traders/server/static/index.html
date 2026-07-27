@@ -1585,6 +1585,18 @@ body.fx-off .ih-pins .pdot{animation:none}
         <div id="levy-banner" style="display:none"></div>
         <div id="s-capital-portfolio" style="font-size:.8rem;color:var(--dim)">No capital</div>
         <div id="s-capacity-outputs" style="margin-top:.5rem;font-size:.8rem"></div>
+        <!-- #4 What-If: interactive "to make N of X, what do I need vs hold?" -->
+        <details id="whatif-box" style="margin-top:.6rem;font-size:.78rem">
+          <summary style="cursor:pointer;color:var(--gold);font-weight:600">What-If planner</summary>
+          <div style="display:flex;gap:.4rem;align-items:center;margin:.45rem 0 .3rem;flex-wrap:wrap">
+            <select id="whatif-output" onchange="renderWhatIf()"
+                    style="flex:1;min-width:9rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.25rem"></select>
+            <label style="color:var(--dim)">make</label>
+            <input id="whatif-qty" type="number" min="0" step="1" oninput="renderWhatIf()"
+                   style="width:5rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.25rem">
+          </div>
+          <div id="whatif-result"></div>
+        </details>
       </div>
       <div class="section" data-tile="build" data-tile-label="Build &amp; Develop">
         <h3 style="display:flex;align-items:center;gap:.4rem">
@@ -1612,6 +1624,27 @@ body.fx-off .ih-pins .pdot{animation:none}
                   onclick="showLoansPopup()" title="Show all loans in a detail view">⊕</button>
         </h3>
         <div id="s-loans-detail" style="font-size:.8rem;color:var(--dim)">No active loans</div>
+      </div>
+
+      <!-- #3 User-defined action alerts (client-only, localStorage) -->
+      <div class="section" data-tile="alerts" data-tile-label="My alerts">
+        <h3>My Alerts</h3>
+        <div style="display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;font-size:.74rem;margin-bottom:.35rem">
+          <select id="alert-type" onchange="onAlertTypeChange()"
+                  style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem">
+            <option value="price_below">Price below</option>
+            <option value="price_above">Price above</option>
+            <option value="stock_below">My stock below</option>
+            <option value="bid_appears">Bid appears for</option>
+            <option value="treasury_below">Treasury below</option>
+          </select>
+          <select id="alert-res"
+                  style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem"></select>
+          <input id="alert-thresh" type="number" step="1" placeholder="value"
+                 style="width:5rem;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:.3rem;padding:.2rem">
+          <button class="btn-ghost btn-sm" onclick="addAlert()">+ Add</button>
+        </div>
+        <div id="alert-list" style="font-size:.75rem;color:var(--dim)">No alerts set.</div>
       </div>
     </div>
 
@@ -3804,6 +3837,175 @@ function renderCapacityPanel(capacity) {
               ${note ? `<div class="psr-note">${esc(note)}</div>` : ''}
             </div>`;
   }).join('');
+
+  // #4 What-If planner: populate the output picker from the lines that carry
+  // per-unit recipe data (recipe-driven lines only; Farmer seasonal
+  // conversions have per_unit=null and are skipped).
+  _whatifOutputs = outputs.filter(o => o.per_unit);
+  const me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  _whatifInventory = (me && me.inventory) || {};
+  const box = document.getElementById('whatif-box');
+  const sel = document.getElementById('whatif-output');
+  if (box && sel) {
+    if (!_whatifOutputs.length) {
+      box.style.display = 'none';
+    } else {
+      box.style.display = '';
+      const prev = sel.value;
+      sel.innerHTML = _whatifOutputs
+        .map(o => `<option value="${esc(o.output)}">${esc(o.output)}</option>`).join('');
+      if (_whatifOutputs.some(o => o.output === prev)) sel.value = prev;
+      renderWhatIf();
+    }
+  }
+}
+
+// #4 What-If: multiply the selected line's per-unit recipe by a target
+// quantity and compare against inventory / workforce cap / equipment cap —
+// all client-side off the state payload, no round-trip. Display only; it
+// never submits a produce action (same rule as the decision-hint cards).
+let _whatifOutputs = [];
+let _whatifInventory = {};
+function renderWhatIf() {
+  const sel = document.getElementById('whatif-output');
+  const qtyEl = document.getElementById('whatif-qty');
+  const out = document.getElementById('whatif-result');
+  if (!sel || !qtyEl || !out) return;
+  const o = _whatifOutputs.find(x => x.output === sel.value);
+  if (!o) { out.innerHTML = ''; return; }
+  // Prefill the quantity with the current max the first time a line is shown.
+  if (qtyEl.value === '' || qtyEl.dataset.forOutput !== o.output) {
+    qtyEl.value = (o.max_producible != null) ? Math.max(0, Math.round(o.max_producible)) : 1;
+    qtyEl.dataset.forOutput = o.output;
+  }
+  const qty = Math.max(0, Number(qtyEl.value) || 0);
+  const rows = [];
+  let feasible = true;
+
+  const inputs = o.per_unit.inputs || {};
+  for (const [res, per] of Object.entries(inputs)) {
+    const need = per * qty;
+    const have = Number(_whatifInventory[res] || 0);
+    const short = need - have;
+    const ok = short <= 1e-9;
+    if (!ok) feasible = false;
+    rows.push(`<tr><td>${esc(res)}</td><td style="text-align:right">${fmtQty(need)}</td>
+      <td style="text-align:right;color:var(--dim)">${fmtQty(have)}</td>
+      <td style="text-align:right;color:${ok ? 'var(--green)' : '#ff8a8a'}">${ok ? '✓' : 'buy ' + fmtQty(short)}</td></tr>`);
+  }
+  const labour = o.per_unit.labour || {};
+  for (const [title, per] of Object.entries(labour)) {
+    rows.push(`<tr><td>${esc(title)}</td><td style="text-align:right">${fmtQty(Math.ceil(per * qty))} wk</td>
+      <td colspan="2" style="text-align:right;color:var(--dim)">workforce cap ${o.workforce_cap == null ? '∞' : fmtQty(o.workforce_cap)}</td></tr>`);
+  }
+  // Cap checks that aren't per-resource: workforce & equipment ceilings.
+  const wfCap = o.workforce_cap;
+  const eqCap = o.equipment_cap;
+  const capMsgs = [];
+  if (wfCap != null && qty > wfCap + 1e-9) { feasible = false; capMsgs.push(`staffing caps this at ${fmtQty(wfCap)} (train more workers)`); }
+  if (eqCap != null && qty > eqCap + 1e-9) { feasible = false; capMsgs.push(`equipment caps this at ${fmtQty(eqCap)} (order more capital)`); }
+
+  const verdict = feasible
+    ? `<span style="color:var(--green)">✓ You can produce ${fmtQty(qty)} ${esc(o.output)} now.</span>`
+    : `<span style="color:#ff8a8a">✗ Short for ${fmtQty(qty)} ${esc(o.output)}:</span> ${capMsgs.join('; ') || 'buy the inputs listed above'}.`;
+
+  out.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.74rem">
+      <thead><tr style="color:var(--dim);text-align:left">
+        <th>need</th><th style="text-align:right">for ${fmtQty(qty)}</th>
+        <th style="text-align:right">have</th><th style="text-align:right">gap</th></tr></thead>
+      <tbody>${rows.join('') || '<tr><td colspan="4" style="color:var(--dim)">No inputs required.</td></tr>'}</tbody>
+    </table>
+    <div style="margin-top:.35rem">${verdict}</div>`;
+}
+
+// ===== #3 User-defined action alerts (client-only) =====================
+// Alerts live in localStorage keyed by room+player so they survive refresh
+// but never touch the server (no balance/sim impact). Each is evaluated off
+// the game_state the client already receives; a firing alert surfaces once
+// per rising edge (tracked in _alertFiring) as a toast + hint-style card.
+let _alertFiring = {};   // id -> bool (was-firing last tick), for edge detection
+function _alertKey() { return `it-alerts:${currentRoomId || 'x'}:${myPlayerId || 'x'}`; }
+function _loadAlerts() {
+  try { return JSON.parse(localStorage.getItem(_alertKey()) || '[]'); }
+  catch (e) { return []; }
+}
+function _saveAlerts(a) { try { localStorage.setItem(_alertKey(), JSON.stringify(a)); } catch (e) {} }
+
+const _ALERT_LABEL = {
+  price_below: 'Price below', price_above: 'Price above',
+  stock_below: 'My stock below', bid_appears: 'Bid appears for',
+  treasury_below: 'Treasury below',
+};
+function onAlertTypeChange() {
+  // The resource picker is irrelevant for treasury alerts.
+  const t = document.getElementById('alert-type').value;
+  const resEl = document.getElementById('alert-res');
+  if (resEl) resEl.style.display = (t === 'treasury_below') ? 'none' : '';
+}
+function _populateAlertResources() {
+  const resEl = document.getElementById('alert-res');
+  if (!resEl || !gameState) return;
+  const names = Object.keys(gameState.market || {}).sort();
+  if (!names.length) return;
+  const prev = resEl.value;
+  resEl.innerHTML = names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if (names.includes(prev)) resEl.value = prev;
+}
+function addAlert() {
+  const type = document.getElementById('alert-type').value;
+  const res = document.getElementById('alert-res').value;
+  const thresh = Number(document.getElementById('alert-thresh').value);
+  if (type !== 'bid_appears' && !Number.isFinite(thresh)) { showToast('Enter a threshold value.'); return; }
+  const a = _loadAlerts();
+  a.push({ id: `${type}:${res}:${thresh}:${a.length}`, type, res, thresh });
+  _saveAlerts(a);
+  renderAlertList();
+}
+function removeAlert(id) {
+  _saveAlerts(_loadAlerts().filter(a => a.id !== id));
+  delete _alertFiring[id];
+  renderAlertList();
+}
+function _alertText(a) {
+  if (a.type === 'treasury_below') return `Treasury below ${fmtQty(a.thresh)} Dp`;
+  if (a.type === 'bid_appears')   return `Bid appears for ${esc(a.res)}`;
+  return `${_ALERT_LABEL[a.type]} — ${esc(a.res)} ${fmtQty(a.thresh)}`;
+}
+function renderAlertList() {
+  const el = document.getElementById('alert-list');
+  if (!el) return;
+  const a = _loadAlerts();
+  el.innerHTML = a.length
+    ? a.map(x => `<div class="mkt-row"><span class="res">${_alertText(x)}</span>
+        <button class="btn-ghost btn-sm" onclick="removeAlert('${esc(x.id)}')">✕</button></div>`).join('')
+    : 'No alerts set.';
+}
+// Evaluate one alert against current state → true when its condition holds.
+function _alertHolds(a) {
+  const me = gameState && gameState.players && gameState.players[myPlayerIdx];
+  const mk = (gameState && gameState.market && gameState.market[a.res]) || null;
+  switch (a.type) {
+    case 'price_below':   return mk && mk.formula_price != null && mk.formula_price < a.thresh;
+    case 'price_above':   return mk && mk.formula_price != null && mk.formula_price > a.thresh;
+    case 'stock_below':   return me && Number((me.inventory || {})[a.res] || 0) < a.thresh;
+    case 'bid_appears':   return mk && mk.bid_quantity > 0;
+    case 'treasury_below':return me && Number(me.dollops != null ? me.dollops : me.treasury) < a.thresh;
+    default: return false;
+  }
+}
+function evaluateAlerts() {
+  _populateAlertResources();
+  const alerts = _loadAlerts();
+  for (const a of alerts) {
+    const holds = _alertHolds(a);
+    if (holds && !_alertFiring[a.id]) {
+      // Rising edge — fire once.
+      showToast(`🔔 Alert: ${_alertText(a).replace(/<[^>]+>/g,'')}`, { type: 'info', ms: 8000 });
+    }
+    _alertFiring[a.id] = holds;
+  }
+  renderAlertList();
 }
 
 function formatArrival(item) {
@@ -5989,6 +6191,7 @@ function renderGameState() {
   renderDealsPanel();
   renderCapitalNegotiationAlerts();
   renderTradeFinder();
+  evaluateAlerts();   // #3 user-defined alerts, off the fresh game_state
   mergeChatState(gameState);
   renderPromptForActiveIsland();
 }
