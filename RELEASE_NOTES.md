@@ -7,6 +7,15 @@ Release notes are required before merging a feature/fix branch into
 
 `APP_VERSION`: `0.1.6-dev.2026-07-14.5`.
 
+- **Developer tooling: release command center V0.1** — new
+  `island-traders-release-center` command renders a local, read-only HTML
+  status page for release prep. It inspects `APP_VERSION`, `pyproject.toml`,
+  `RELEASE_NOTES.md`, git branch/upstream, latest tag, and dirty-worktree
+  state; explains the documented dev-cycle version split; and lists the manual
+  verification commands. It deliberately does not merge, tag, push, or mutate
+  git state. Tests cover the release-state checks and generated HTML safety
+  posture.
+
 - **Feature: sell part of an island for personal cash (Wave 8.3)** — the
   controlling owner can offer a named player X shares of one of their islands
   at a price, with a single accept / counter / decline round. Settlement moves
