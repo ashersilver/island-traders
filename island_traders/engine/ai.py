@@ -488,6 +488,15 @@ class AIStrategy:
             return actions
         purchased_tick = year * 4 + season_index
         expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
+        # #196: one Actuary per line of business. The AI Banker is bound by the
+        # same rule a human is, or it simply underwrites around the constraint.
+        actuaries = banker.workforce.count_profession(Profession.ACTUARY.value)
+        open_lines = {
+            policy.policy_type
+            for holder in [banker, *other_players]
+            for policy in holder.active_policies(year, season_index)
+            if policy.banker_player_id == banker.player_id
+        }
         for target in other_players:
             if target.player_id == banker.player_id or target.is_human:
                 continue
@@ -499,6 +508,10 @@ class AIStrategy:
                     continue
                 for policy_type in ("life", "medical"):
                     if target.has_active_insurance(policy_type, year, season_index):
+                        continue
+                    # Opening a new line needs a spare Actuary; adding to a
+                    # line already running does not.
+                    if policy_type not in open_lines and len(open_lines) >= actuaries:
                         continue
                     premium = INSURANCE_BASE_PREMIUM[policy_type]
                     if target.dollops < premium or banker.dollops < ACTUARIAL_EVALUATION_COST:
@@ -516,6 +529,7 @@ class AIStrategy:
                         expires_at_tick=expires_at,
                     )
                     target.add_insurance_policy(policy)
+                    open_lines.add(policy_type)
                     actions.append(
                         f"[AI] {banker.name} issued {policy_type} insurance to "
                         f"{target.name} for {premium:.0f} Dp"

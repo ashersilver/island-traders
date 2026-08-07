@@ -777,6 +777,13 @@ season, or restructure a stack of small loans into one longer-dated one.
 The Banker sells two products: **Life Insurance** and **Medical Insurance**.
 Both are **annual policies** valid for 4 seasons from purchase.
 
+> **One Actuary per line of business.** The Bank needs a qualified **Actuary**
+> on staff for each *line* it writes — Life and Medical are separate lines.
+> The Banking island starts with a single Actuary, so it can open only one
+> line until it trains a second at the Education island. Writing more policies
+> in a line it already runs costs nothing extra, and a line that lapses
+> entirely frees its Actuary for something else.
+
 | Product | Base Premium | What it covers |
 |---|---|---|
 | Life Insurance | 25 Dp / worker | Pays a 60 Dp death benefit per fatality on the covered island |

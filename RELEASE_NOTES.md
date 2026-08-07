@@ -5,7 +5,28 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.2`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.3`.
+
+- **One Actuary per line of insurance business (#196)** — the Bank needed *an*
+  Actuary to underwrite at all; now it needs one **per line**. Life and Medical
+  are separate lines, and the Banking island starts with a single Actuary, so
+  it opens one line and must train a second Actuary at the Education island to
+  write the other.
+  - Writing more policies in a line already running costs nothing extra — that
+    Actuary is already on it. Only *opening* a line needs a spare.
+  - A line that lapses entirely frees its Actuary again, so a Bank that runs
+    off its Life book can redeploy into Medical.
+  - Another Bank's policies don't occupy your Actuaries.
+  - The **AI Banker is bound by the same rule**, which matters — it issues
+    policies directly and would otherwise have underwritten around the
+    constraint.
+  - Both human paths are gated (the Banker's *Sell Insurance* and a buyer's
+    *Buy Insurance*), and the check runs **after** the line is chosen, so
+    adding to an open line is never refused.
+  - Calibration: 200 games × 3 seeds, every role within ±2 pp (Doctor −1.5 pp
+    mean; a −3.0 pp reading on one seed did not repeat).
+  - This is the first of #196's three rules. The Insurance Adjuster profession
+    and equipment/industrial policies are still open.
 
 - **Event-log action alerts (#3)** — a 🔔 **Alerts** button on the event-log
   filter bar pops a toast when a tracked kind of entry appears, so a player
