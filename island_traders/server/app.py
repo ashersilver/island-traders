@@ -1738,6 +1738,16 @@ class GameManager:
                 if not leased or spec_idx >= len(game.players):
                     continue
                 p = game.players[spec_idx]
+                # #44 deliberately does NOT gate the investing phase on a
+                # Lawyer.  Nobody has had a turn to train one yet, and the
+                # only lease-eligible item in CAPITAL_CATALOGUE today is
+                # `educator.technical_workshop` — Educator-only, and the
+                # Educator starts with no Lawyer.  Gating here would remove
+                # the opening lease path entirely rather than gate it.
+                # Opening leases are standard-form contracts drawn by the
+                # Bank's own counsel; the lessee needs counsel only once it
+                # starts writing its own leases mid-game (_action_lease_capital).
+                # Revisit if the lease catalogue grows beyond one item.
                 for iid in leased:
                     item = find_item(CAPITAL_CATALOGUE, iid)
                     if not item or not item.lease_terms:

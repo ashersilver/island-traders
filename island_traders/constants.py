@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-06.7"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -565,6 +565,7 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
+        ("Lawyer", 1),               # Manager — in-house counsel (#44 lease gate)
         ("Actuary", 1),              # Technician — insurance underwriting
         ("BankingAnalyst", 1),       # Technician
         ("BankingClerk", 1),         # Technician
@@ -731,20 +732,20 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
     "Farmer":       [
         "Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian",
-        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef",
+        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef", "Lawyer",
     ],
     "Miner":        [
         "Miner", "MiningTechnician", "MiningForeman",
-        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
+        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef", "Lawyer",
     ],
     "Transporter":  [
         "LogisticsManager", "Engineer",
-        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef", "Lawyer",
     ],
-    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
-    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef"],
-    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef"],
+    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef", "Lawyer"],
+    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef", "Lawyer"],
+    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef", "Lawyer"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef", "Lawyer"],
 }
 
 # ---------------------------------------------------------------------------
@@ -906,6 +907,8 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "WarehouseManager":     6,
     # Cross-island sustenance support
     "Chef":                 7,
+    # Cross-island legal counsel (#44) — required to write a new equipment lease
+    "Lawyer":               2,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).

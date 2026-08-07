@@ -5,7 +5,7 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-06.7`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.1`.
 
 - **Insured islands lose no productivity to injuries, and the death benefit
   pays replacement cost (#19).** Two of the issue's three mechanics; the third
@@ -58,6 +58,8 @@ Release notes are required before merging a feature/fix branch into
     handlers, the presence of a briefing per role, and that **every
     `ROLE_ART` path resolves to a file that actually exists on disk**.
 
+`APP_VERSION`: `0.1.6-dev.2026-08-06.5`.
+
 - **Quality of Life is explained, and its breakdown actually displays (#227)** —
   a player could see a QoL number but had no way to learn what moved it or why
   it mattered.
@@ -90,6 +92,28 @@ Release notes are required before merging a feature/fix branch into
   `ROLES` while the frontend keeps its own copies: the landing-page island map
   label, `ROLE_DISPLAY_NAMES`, `ROLE_SHORT_NAMES`, the `ROLE_ART` island title,
   and the board island list. All now read Medical & Laboratory.
+
+- **Lawyers (#44)** — a new Manager-tier profession, trainable from every
+  island through the existing Educator Manager-course pipeline (2 seasons,
+  university capacity 2/year), and required to write a new equipment lease.
+  - **The Banker starts with 1 Lawyer** (in-house counsel), taken from its
+    Unskilled remainder rather than added on top — the Banking island's total
+    headcount is unchanged. No other island gets a free Lawyer; they train one.
+  - **Mid-game `Lease capital` refuses cleanly** when the island has no active
+    Lawyer, telling the player to train one at the Education island. The check
+    runs before the lease catalogue is shown, so you are never asked to pick
+    equipment you can't sign for. A Lawyer away at law school doesn't count.
+  - **Certification is one-shot at inception.** A lease already running is
+    unaffected if the Lawyer later retires or is retrained, and leases written
+    before this change are grandfathered.
+  - **The investing phase is deliberately exempt.** No island has had a turn to
+    train a Lawyer at opening, and the only lease-eligible item in the
+    catalogue today (`educator.technical_workshop`) is Educator-only — gating
+    there would have removed the opening lease path rather than gated it.
+    Opening leases are standard-form contracts drawn by the Bank's own counsel.
+    Worth revisiting once the lease catalogue grows past one item.
+  - Calibration: 200 games × seed 42 moves every role ≤1 pp against
+    `pre-release` (Banker −0.5 pp) — inside the noise band at that sample size.
 
 - **The Healthcare island is now the Medical & Laboratory Island (#26)** — the
   rename that has been sitting on the Phase A checklist in

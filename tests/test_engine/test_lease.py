@@ -13,6 +13,7 @@ from island_traders.models.lease import LeaseLedger, LeaseStatus, lease_quote
 from island_traders.models.loan import LoanLedger, LoanStatus, posted_funding_rates, banker_quote_rate
 from island_traders.models.market import Market
 from island_traders.models.player import Player
+from island_traders.models.profession import Profession
 from island_traders.models.role import ROLES
 
 
@@ -83,6 +84,10 @@ class LeaseIO(FakeIOAdapter):
 def test_lease_creation_mid_game_via_lease_capital_action():
     educator = _player(0, "Educator", "Educator", dollops=100.0)
     banker = _player(1, "Banker", "Banker", dollops=50.0)
+    # Writing a new lease mid-game needs counsel on the roster (#44); this
+    # test is about rate locking, so give the Educator a Lawyer and let it
+    # through.  The gate itself is covered in test_lease_lawyer_gate.py.
+    educator.workforce.add_workers(1, profession=Profession.LAWYER.value)
     leases = LeaseLedger()
     tm = _tm([educator, banker], leases, io=LeaseIO())
 
