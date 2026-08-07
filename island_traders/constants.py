@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.8"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.9"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -1077,6 +1077,12 @@ WORKPLACE_RISK: dict[str, dict[str, float]] = {
 # Bank is stuck at its single seeded Actuary and can never write more than one
 # line, which would quietly halve insurance coverage across the archipelago.
 AI_BANKER_TARGET_ACTUARIES: int = 3
+
+# #19: an annual physical halves life/medical premiums.  The physical is a
+# "Health Certificate" Lab Test bought from the Medical & Laboratory Island and
+# consumed when the policy is written.  Policies run a year, so renewal IS the
+# anniversary — miss the certificate then and the full rate returns.
+PHYSICAL_PREMIUM_DISCOUNT: float = 0.5
 
 # Seasons a policy stays valid after purchase (4 = one full year).
 INSURANCE_DURATION_SEASONS: int = 4
