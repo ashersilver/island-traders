@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.7"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.8"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -115,27 +115,33 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
 }
 
-# Dollops per unit at balanced supply/demand
+# Dollops per unit at balanced supply/demand.
+#
+# RE-TUNED 2026-08-07 for #213.  These are calibrated together — changing one
+# in isolation will move role balance.  After any edit, re-run:
+#     python -m island_traders.simulation.runner --games 200 --seed 42
+# across several seeds and check wealth share stays inside roughly 12-16%
+# per role (tests/test_simulation/test_role_balance_regression.py gates this).
 BASE_PRICES: dict[str, float] = {
-    "Food":                26.4,
+    "Food":                24.5,
     "Fish":                14.4,
-    "Grain":               12.0,
+    "Grain":               13.0,
     "Produce":             14.4,
     "Meat":                16.2,
     "Ore":                  4.5,
-    "Metal":                8.0,
+    "Metal":                9.0,
     "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # MedicalSupplies/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
     "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
-    "Expertise":           17.1,
-    "Courses":             23.75,  # classroom slots; gated by Expertise consumption
+    "Expertise":           18.0,
+    "Courses":             25.0,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":                5.0,
+    "Goods":                9.5,
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
-    "MedicalSupplies":      30.0,
-    "Vaccine":             40.2,
+    "MedicalSupplies":      23.0,
+    "Vaccine":             32.0,
     "LaboratoryTests":     10.0,   # routine assay: cheap and repeat-purchased, not a premium product
     "Finance":             22.0,
     # ForgeHaven product lines
@@ -177,7 +183,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
     # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
-    "Banker":        {"Finance": 0.7 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 0.58 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
