@@ -54,8 +54,16 @@ def _island(role: str = "Miner", professions: list[str] | None = None) -> Player
     return player
 
 
-def _banker(dollops: float = 10_000.0) -> Player:
-    return Player(9, "Bank", [ROLES["Banker"]], dollops, is_human=False)
+def _banker(dollops: float = 10_000.0, adjusters: int = 1) -> Player:
+    banker = Player(9, "Bank", [ROLES["Banker"]], dollops, is_human=False)
+    # #196: settling a claim needs an Insurance Adjuster. These tests are about
+    # the payout amount, so staff the claims desk; the Adjuster rule itself is
+    # covered in test_insurance_adjuster.py.
+    if adjusters:
+        banker.workforce.add_workers(
+            adjusters, profession=Profession.INSURANCE_ADJUSTER.value
+        )
+    return banker
 
 
 def _insure(player: Player, kind: str) -> None:

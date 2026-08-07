@@ -18,6 +18,7 @@ from ..constants import (
     UNTREATED_RECOVERY_SEASONS,
     SKILLED_PROFESSIONS,
 )
+from ..models.insurance import banker_can_process_claims
 from ..models.profession import band_of
 from ..models.resource import ResourceType
 
@@ -214,7 +215,13 @@ def apply_workplace_risks(
             player.workforce.remove_workers(deceased_ids)
             report.fatality_worker_ids = deceased_ids
 
-            if has_life and banker_players:
+            # #196: a death benefit is a claim, so it needs an Insurance
+            # Adjuster to process it. Only Banks that can actually settle are
+            # considered; the Banking island starts with one, so this bites
+            # only if the Adjuster is lost or retrained away.
+            claims_bankers = [b for b in banker_players if banker_can_process_claims(b)]
+            if has_life and claims_bankers:
+                banker_players = claims_bankers
                 # #19: pay the cost of replacing each worker, which depends on
                 # how long they took to train — not one flat figure per body.
                 benefit = sum(

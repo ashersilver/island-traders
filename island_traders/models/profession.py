@@ -41,6 +41,7 @@ class Profession(str, Enum):
     REFINERY_SPECIALIST  = "RefinerySpecialist"
     BANKER               = "Banker"
     ACTUARY              = "Actuary"
+    INSURANCE_ADJUSTER   = "InsuranceAdjuster"  # Technician (Banker) — claims
     PROFESSOR            = "Professor"
     TECHNICAL_DIRECTOR   = "TechnicalDirector"
     MECHANIC             = "Mechanic"          # Technician band, multi-island
@@ -106,6 +107,7 @@ PROFESSION_BAND: dict[Profession, WorkerBand] = {
     Profession.REFINERY_SPECIALIST: WorkerBand.TECHNICIAN,
     Profession.BANKER:              WorkerBand.MANAGER,
     Profession.ACTUARY:             WorkerBand.TECHNICIAN,
+    Profession.INSURANCE_ADJUSTER:  WorkerBand.TECHNICIAN,
     Profession.PROFESSOR:           WorkerBand.MANAGER,
     Profession.TECHNICAL_DIRECTOR:  WorkerBand.MANAGER,
     Profession.MECHANIC:            WorkerBand.TECHNICIAN,
@@ -171,7 +173,7 @@ BAND_TITLES: dict[str, dict[WorkerBand, list[str]]] = {
     },
     "Banker": {
         WorkerBand.MANAGER:    ["Banker", "Lawyer"],
-        WorkerBand.TECHNICIAN: ["Banking Analyst", "Actuary", "Banking Clerk", "Chef"],
+        WorkerBand.TECHNICIAN: ["Banking Analyst", "Actuary", "Insurance Adjuster", "Banking Clerk", "Chef"],
         WorkerBand.WORKER:     ["Receptionist"],
     },
     "Manufacturer": {
@@ -242,6 +244,7 @@ APPRENTICESHIP_SEASONS: dict[Profession, int] = {
     Profession.BANKING_ANALYST:     1,
     Profession.BANKING_CLERK:       1,
     Profession.ACTUARY:             1,
+    Profession.INSURANCE_ADJUSTER:  1,
     Profession.TRADESMAN:           1,
     # Doctor technicians
     Profession.MEDICAL_ORDERLY:     1,
@@ -292,7 +295,8 @@ ROLE_PROFESSIONS: dict[str, list[Profession]] = {
         Profession.INSTRUCTOR,
         Profession.CHEF, Profession.LAWYER,
     ],
-    "Banker":        [Profession.BANKER, Profession.ACTUARY, Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF, Profession.LAWYER],
+    "Banker":        [Profession.BANKER, Profession.ACTUARY, Profession.INSURANCE_ADJUSTER,
+                      Profession.BANKING_ANALYST, Profession.BANKING_CLERK, Profession.CHEF, Profession.LAWYER],
     "Manufacturer":  [
         Profession.FACTORY_FOREMAN,
         Profession.TRADESMAN,
@@ -348,6 +352,7 @@ PROFESSION_LABEL: dict[Profession, str] = {
     Profession.REFINERY_SPECIALIST: "Refiner",
     Profession.BANKER:              "Banker (specialist)",
     Profession.ACTUARY:             "Actuary",
+    Profession.INSURANCE_ADJUSTER:  "Insurance Adjuster",
     Profession.PROFESSOR:           "Professor",
     Profession.TECHNICAL_DIRECTOR:  "Technical Director",
     Profession.MECHANIC:            "Mechanic",

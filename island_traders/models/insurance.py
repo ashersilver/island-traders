@@ -111,3 +111,16 @@ def equipment_insurance_quote(item_cost: float, age_seasons: int = 0) -> dict:
         "expected_loss": round(expected_loss, 2),
         "loss_ratio": round(expected_loss / premium, 4) if premium else 0.0,
     }
+
+
+def banker_can_process_claims(banker) -> bool:
+    """#196: a claim needs an Insurance Adjuster on the Bank's staff.
+
+    Underwriting and claims are different jobs — an Actuary prices the risk,
+    an Adjuster settles the loss — so holding one does not cover the other.
+    A Bank with no Adjuster cannot pay out until it hires or trains one; the
+    policy stays in force in the meantime rather than lapsing.
+    """
+    from .profession import Profession
+
+    return banker.workforce.count_profession(Profession.INSURANCE_ADJUSTER.value) >= 1

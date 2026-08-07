@@ -27,6 +27,7 @@ from island_traders.models.insurance import (
     equipment_insurance_quote,
 )
 from island_traders.models.player import Player
+from island_traders.models.profession import Profession
 from island_traders.models.role import ROLES
 
 
@@ -96,6 +97,9 @@ def _game_with_policy(banker_cash: float = 5_000.0, insured_value: float = 54.0)
     game = Game(GameConfig([]), FakeIOAdapter())
     farmer = Player(0, "Farm", [ROLES["Farmer"]], 100.0, is_human=False)
     banker = Player(1, "Bank", [ROLES["Banker"]], banker_cash, is_human=False)
+    # #196: settling needs an Insurance Adjuster; the adjuster rule itself is
+    # covered in test_insurance_adjuster.py.
+    banker.workforce.add_workers(1, profession=Profession.INSURANCE_ADJUSTER.value)
     game.players = [farmer, banker]
     farmer.add_insurance_policy(InsurancePolicy(
         policy_id=1,
