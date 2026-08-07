@@ -17,6 +17,7 @@ from ..models.order_book import ManufacturerOrderBook, compute_promise_dates
 from ..models.worker_transfer import WorkerTransferOffer
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
+from ..models.insurance import banker_can_process_claims
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
@@ -1147,8 +1148,20 @@ class Game:
             (p for p in self.players if p.player_id == policy.banker_player_id),
             None,
         )
-        payout = round(min(policy.insured_value, getattr(banker, "dollops", 0.0)), 2)
-        if banker is None or payout <= 0:
+        if banker is None:
+            return 0.0
+        # #196: "For claims to be processed there needs to be an Insurance
+        # Adjuster to process the claim." No adjuster, no settlement — the
+        # policy stays open, so cover is not lost while the Bank rehires.
+        if not banker_can_process_claims(banker):
+            self.io.print(
+                f"[CLAIM] {player.name}'s {item.name} claim cannot be settled: "
+                f"{banker.name} has no Insurance Adjuster on staff. The policy "
+                f"remains in force."
+            )
+            return 0.0
+        payout = round(min(policy.insured_value, banker.dollops), 2)
+        if payout <= 0:
             return 0.0
         banker.spend_dollops(payout)
         player.receive_dollops(payout)

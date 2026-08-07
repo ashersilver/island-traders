@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.4"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.5"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -567,6 +567,7 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
         ("Banker", 1),               # Manager
         ("Lawyer", 1),               # Manager — in-house counsel (#44 lease gate)
         ("Actuary", 1),              # Technician — insurance underwriting
+        ("InsuranceAdjuster", 1),    # Technician — claims handling (#196)
         ("BankingAnalyst", 1),       # Technician
         ("BankingClerk", 1),         # Technician
     ],
@@ -750,7 +751,7 @@ SKILLED_PROFESSIONS: dict[str, list[str]] = {
         "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef", "Lawyer",
     ],
     "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef", "Lawyer"],
-    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef", "Lawyer"],
+    "Banker":       ["Banker", "Actuary", "InsuranceAdjuster", "BankingAnalyst", "BankingClerk", "Chef", "Lawyer"],
     "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef", "Lawyer"],
     "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef", "Lawyer"],
 }
@@ -900,6 +901,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Banking
     "Banker":               2,
     "Actuary":              4,
+    "InsuranceAdjuster":    4,
     "BankingAnalyst":       4,
     "BankingClerk":         6,
     # Education

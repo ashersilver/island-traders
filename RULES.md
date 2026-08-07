@@ -808,6 +808,18 @@ cash toward replacement, not a repair service. One policy per machine.
 > Equipment is a **third line of business**, so a Bank needs a third Actuary
 > before it can write it alongside Life and Medical.
 
+### Processing Claims
+
+Selling cover and paying out are different jobs. An **Actuary** prices the
+risk; an **Insurance Adjuster** settles the loss. A Bank with no Adjuster on
+staff **cannot pay any claim** — neither a life death benefit nor an equipment
+payout — until it hires or trains one.
+
+The Banking island starts with one Adjuster, so this only bites if that
+Adjuster is lost or retrained away. A claim that cannot be settled leaves the
+**policy in force**: the buyer paid for cover, and a staffing gap at the Bank
+does not void it. Hire an Adjuster and the claim settles.
+
 ### Buying and Selling
 
 - **Sell Insurance** *(Banker only)*: Pick a buyer, set a premium (default =

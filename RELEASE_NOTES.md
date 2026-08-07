@@ -5,7 +5,25 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.4`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.5`.
+
+- **Insurance Adjusters process claims (#196 — completes the issue)** — a new
+  Banker Technician profession. Selling cover and paying out are different
+  jobs: an **Actuary prices the risk, an Adjuster settles the loss**, and
+  holding one does not cover the other.
+  - A Bank with no Adjuster **cannot pay any claim** — neither a life death
+    benefit nor an equipment payout.
+  - An unsettled claim leaves the **policy in force**. The buyer paid for
+    cover; a staffing gap at the Bank must not void it. Hire an Adjuster and
+    the same claim settles.
+  - The Banking island **starts with one Adjuster** (taken from its Unskilled
+    remainder, so headcount is unchanged), which is why this is
+    balance-neutral rather than silently switching off every existing death
+    benefit: 200 games × 2 seeds move every role by ≤1 pp.
+  - Trainable in 1 season from the Banking island, university capacity 4/year.
+  - This closes #196. All three of its rules are now in: one Actuary per line
+    (`.3`), equipment policies priced off the #188 curve (`.4`), and claims
+    processing (`.5`).
 
 - **Equipment ("industrial") insurance (#196)** — a third insurance line,
   written on **one named machine** rather than on the island.
