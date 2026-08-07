@@ -1117,7 +1117,48 @@ class Game:
                         f"\n[CAPITAL FAILURE] {player.name}: 1 × {item.name} "
                         f"failed and is down until repaired."
                     )
+                    self._settle_equipment_claim(
+                        player, item_id, item, current_tick
+                    )
                     self._attempt_capital_repair(player, item, current_tick, unit=unit)
+
+    def _settle_equipment_claim(
+        self, player, item_id: str, item, current_tick: int
+    ) -> float:
+        """Pay out an equipment policy when the insured unit fails (#196).
+
+        A total-loss settlement: the Bank pays the agreed 90% of value and the
+        policy is spent.  Repair still proceeds as normal — the payout is cash
+        toward replacing the unit, not a repair service.
+        """
+        year, season_index = divmod(current_tick, len(SEASONS))
+        policy = next(
+            (
+                p for p in player.insurance_policies
+                if p.policy_type == "equipment"
+                and p.item_id == item_id
+                and p.is_valid(year, season_index)
+            ),
+            None,
+        )
+        if policy is None:
+            return 0.0
+        banker = next(
+            (p for p in self.players if p.player_id == policy.banker_player_id),
+            None,
+        )
+        payout = round(min(policy.insured_value, getattr(banker, "dollops", 0.0)), 2)
+        if banker is None or payout <= 0:
+            return 0.0
+        banker.spend_dollops(payout)
+        player.receive_dollops(payout)
+        policy.active = False          # total loss — the cover is spent
+        self.io.print(
+            f"[CLAIM] {banker.name} paid {player.name} "
+            f"{CURRENCY_SYMBOL}{payout:.2f} for the failed {item.name}; "
+            f"that equipment policy is now closed."
+        )
+        return payout
 
     def _attempt_pending_capital_repairs(
         self,

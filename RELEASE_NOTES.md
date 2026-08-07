@@ -5,7 +5,34 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.3`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.4`.
+
+- **Equipment ("industrial") insurance (#196)** — a third insurance line,
+  written on **one named machine** rather than on the island.
+  - **Priced off the #188 actuarial table the engine already uses.**
+    `EQUIPMENT_FAILURE_PROB_BY_QUARTER` is the Weibull curve failures are
+    rolled against each season; the premium compounds four quarters of it into
+    an annual failure probability, multiplies by the payout, and loads the
+    result by a **20% markup**. So the premium tracks the hazard that causes
+    the claim instead of being a separate hand-tuned number, and the Bank
+    keeps a consistent margin (loss ratio 1/1.2) at every age.
+  - **Pays 90% of the machine's value**, as the issue specifies. A claim is a
+    **total-loss settlement**: it pays and the policy closes. Repair proceeds
+    as normal — the payout is cash toward replacement, not a repair service.
+  - The rate is **struck at inception and held flat**: the unit ages, the
+    premium does not.
+  - One policy per machine, so a buyer cannot stack payouts on one failure,
+    and a Bank short of cash pays what it has.
+  - Equipment is a third **line**, so under the rule shipped in
+    `0.1.6-dev.2026-08-07.3` a Bank needs a **third Actuary** to write it
+    alongside Life and Medical.
+  - **The AI Banker does not sell this line.** Deliberate for now — it is a new
+    product with real payouts, and leaving the AI out keeps it balance-neutral
+    (200 games × 2 seeds are identical to baseline on every role) while the
+    pricing is proven in human play. Wiring the AI is the natural follow-up
+    and is what would let #235 be re-measured.
+  - Still open on #196: the **Insurance Adjuster** profession for claims
+    processing.
 
 - **One Actuary per line of insurance business (#196)** — the Bank needed *an*
   Actuary to underwrite at all; now it needs one **per line**. Life and Medical

@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.3"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.4"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -657,6 +657,13 @@ EQUIPMENT_MAINTENANCE_CONTRACT_PER_100: dict[int, tuple[float, float]] = {
     4: (55.29, 34.88),
     5: (78.23, 47.91),
 }
+# Equipment ("industrial") insurance — #196.  Cover on ONE named capital unit,
+# priced off the #188 failure curve above so the premium tracks the same hazard
+# that triggers the claim.  A claim is a total-loss settlement: it pays out and
+# the policy is done.
+EQUIPMENT_INSURANCE_PAYOUT_FRACTION: float = 0.90   # "pay out 90% of the value"
+EQUIPMENT_INSURANCE_MARKUP: float = 0.20            # "a flat rate with a 20% markup"
+
 EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
 EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
 EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
