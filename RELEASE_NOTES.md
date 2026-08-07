@@ -5,7 +5,33 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.5`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.6`.
+
+- **The AI Bank runs a real insurance book — and a per-line leak is fixed.**
+  - **Bug fix: the #196 per-line Actuary rule only reached one of the two AI
+    paths.** `_ai_offer_insurance` was gated in `.3`, but
+    `_ai_buy_workplace_insurance` — where the AI *buyer* initiates — mints
+    policies directly and was not. A one-Actuary Bank was writing both life
+    and medical, so `.3`'s calibration measured a world where the rule barely
+    applied to the AI. Both paths now share one capacity check.
+  - **The AI Bank can grow its actuarial capacity.** "Banker" was missing from
+    `AI_REPLACEMENT_TRAINING_ROLES` entirely, so the AI Bank never trained
+    anything — it could not even rehire a lost Actuary, and one probe run
+    ended with **zero**, its insurance business dead for good. It now
+    maintains its staffing and grows to `AI_BANKER_TARGET_ACTUARIES` (3), one
+    per line.
+  - **The AI Bank sells equipment cover**, writing the client's most valuable
+    uninsured machine, one per season — matching how the human action works
+    and keeping exposure growing gradually. Priced by the same
+    `equipment_insurance_quote` as the human path.
+  - Across 4 probe games all three lines are now live (life 36 / medical 25 /
+    **equipment 28**), against **zero** equipment policies before.
+  - **Balance moves, deliberately.** Over 200 games × 3 seeds the Banker gains
+    ~**+3.5 pp** (it now runs a three-line book) with Miner ~−3.5 pp and
+    Transporter ~+2.0 pp. This is the intended consequence of switching the
+    line on, and it is the new baseline the #213 re-tune will work from —
+    which is why the re-tune is being done *after* this and the Lab Tests
+    change rather than before.
 
 - **Insurance Adjusters process claims (#196 — completes the issue)** — a new
   Banker Technician profession. Selling cover and paying out are different

@@ -11,7 +11,7 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
 from ..engine.flu import vaccine_doses_needed
-from ..models.insurance import InsurancePolicy
+from ..models.insurance import InsurancePolicy, equipment_insurance_quote
 from ..models.training import (
     TrainingCapacityError,
     campus_has_technical_workshop,
@@ -24,6 +24,7 @@ from ..models.equity import UNISSUED_HOLDER, fair_value, share_price
 from ..constants import (
     BASE_PRICES, MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     PRODUCTION_INPUTS,
+    AI_BANKER_TARGET_ACTUARIES,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
     MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
@@ -59,7 +60,13 @@ AI_LIST_ONLY_WITH_BID = {
     ResourceType.PATENTS,
     ResourceType.PASSENGER_SEATS,
 }
-AI_REPLACEMENT_TRAINING_ROLES = {"Farmer", "Miner", "Transporter", "Manufacturer"}
+# #196: the Banker joins the roles that train replacements.  Without it the
+# AI Bank never rehires a lost Actuary or Adjuster — its insurance business
+# could die permanently mid-game — and it can never grow past its single
+# seeded Actuary to open a second or third line.
+AI_REPLACEMENT_TRAINING_ROLES = {
+    "Farmer", "Miner", "Transporter", "Manufacturer", "Banker",
+}
 AI_TRAINING_CASH_RESERVE = 75.0
 AI_INSURANCE_CASH_RESERVE = 125.0
 AI_INSURANCE_MIN_INJURY_RATE = 0.02
@@ -534,6 +541,79 @@ class AIStrategy:
                         f"[AI] {banker.name} issued {policy_type} insurance to "
                         f"{target.name} for {premium:.0f} Dp"
                     )
+            actions.extend(self._ai_offer_equipment_cover(
+                banker, target, open_lines, purchased_tick, expires_at,
+                year, season_index,
+            ))
+        return actions
+
+    def _ai_offer_equipment_cover(
+        self,
+        banker: Player,
+        target: Player,
+        open_lines: set[str],
+        purchased_tick: int,
+        expires_at: int,
+        year: int,
+        season_index: int,
+    ) -> list[str]:
+        """Write equipment cover on the target's most valuable uninsured machine.
+
+        One machine per season keeps the Bank's exposure growing gradually
+        rather than insuring a whole island in one turn, and matches how the
+        human action works (one policy, one machine).
+        """
+        actions: list[str] = []
+        if not self._ai_can_write_line(banker, "equipment", open_lines):
+            return actions
+        if banker.dollops < ACTUARIAL_EVALUATION_COST:
+            return actions
+        covered = {
+            policy.item_id for policy in target.insurance_policies
+            if policy.policy_type == "equipment" and policy.active and policy.item_id
+        }
+        best = None
+        for item_id, units in getattr(target, "capital_units", {}).items():
+            if item_id in covered:
+                continue
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            if item is None:
+                continue
+            in_service = [u for u in units if getattr(u, "status", "") == "in_service"]
+            if not in_service:
+                continue
+            age = min(
+                max(0, purchased_tick - getattr(u, "acquired_tick", 0))
+                for u in in_service
+            )
+            if best is None or item.cost > best[1].cost:
+                best = (item_id, item, age)
+        if best is None:
+            return actions
+        item_id, item, age = best
+        quote = equipment_insurance_quote(item.cost, age)
+        premium = quote["annual_premium"]
+        if premium <= 0 or target.dollops < premium + AI_INSURANCE_CASH_RESERVE:
+            return actions
+        target.spend_dollops(premium)
+        banker.receive_dollops(premium)
+        banker.spend_dollops(ACTUARIAL_EVALUATION_COST)
+        target.add_insurance_policy(InsurancePolicy(
+            policy_id=len(target.insurance_policies) + 1,
+            policy_type="equipment",
+            holder_player_id=target.player_id,
+            banker_player_id=banker.player_id,
+            premium_paid=premium,
+            purchased_tick=purchased_tick,
+            expires_at_tick=expires_at,
+            item_id=item_id,
+            insured_value=quote["payout"],
+        ))
+        open_lines.add("equipment")
+        actions.append(
+            f"[AI] {banker.name} insured {target.name}'s {item.name} "
+            f"for {premium:.1f} Dp (pays {quote['payout']:.0f} Dp)"
+        )
         return actions
 
     def _risk_is_insurable_for_ai(self, risk: dict[str, float]) -> bool:
@@ -547,6 +627,24 @@ class AIStrategy:
             self._risk_is_insurable_for_ai(WORKPLACE_RISK.get(role.name, {}))
             for role in player.roles
         )
+
+    def _ai_open_lines(self, banker: Player, players, year: int, season_index: int) -> set[str]:
+        """Insurance lines this AI Bank currently has in force (#196)."""
+        return {
+            policy.policy_type
+            for holder in players
+            for policy in holder.active_policies(year, season_index)
+            if policy.banker_player_id == banker.player_id
+        }
+
+    def _ai_can_write_line(
+        self, banker: Player, policy_type: str, open_lines: set[str]
+    ) -> bool:
+        """One Actuary per line (#196). Adding to an open line is always fine."""
+        if policy_type in open_lines:
+            return True
+        actuaries = banker.workforce.count_profession(Profession.ACTUARY.value)
+        return len(open_lines) < actuaries
 
     def _ai_buy_workplace_insurance(
         self,
@@ -575,8 +673,17 @@ class AIStrategy:
         actions: list[str] = []
         purchased_tick = year * 4 + season_index
         expires_at = purchased_tick + INSURANCE_DURATION_SEASONS
+        # #196: the per-line Actuary rule applies however the policy is
+        # initiated.  This path mints policies directly, so without the check
+        # a buyer could walk a Bank into a line it has no Actuary for — which
+        # is exactly what was happening.
+        open_lines = self._ai_open_lines(
+            banker, [player, *other_players, banker], year, season_index
+        )
         for policy_type in ("life", "medical"):
             if player.has_active_insurance(policy_type, year, season_index):
+                continue
+            if not self._ai_can_write_line(banker, policy_type, open_lines):
                 continue
             premium = INSURANCE_BASE_PREMIUM[policy_type]
             if player.dollops < premium + AI_INSURANCE_CASH_RESERVE:
@@ -596,6 +703,7 @@ class AIStrategy:
                 expires_at_tick=expires_at,
             )
             player.add_insurance_policy(policy)
+            open_lines.add(policy_type)
             actions.append(
                 f"[AI] {player.name} bought {policy_type} insurance from "
                 f"{banker.name} for {premium:.0f} Dp"
@@ -609,6 +717,13 @@ class AIStrategy:
                 continue
             for profession, count in STARTING_WORKERS_BY_PROFESSION.get(role.name, []):
                 required[profession] = required.get(profession, 0) + count
+            # #196: the Bank needs one Actuary per line it wants to write, so
+            # it must grow past its seeded one rather than only replacing it.
+            if role.name == "Banker":
+                required[Profession.ACTUARY.value] = max(
+                    required.get(Profession.ACTUARY.value, 0),
+                    AI_BANKER_TARGET_ACTUARIES,
+                )
         if not required:
             return {}
 
