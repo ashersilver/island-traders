@@ -172,3 +172,15 @@ def test_an_uninsured_island_claims_nothing():
 
     assert game._settle_equipment_claim(farmer, ITEM_ID, _Item(), 1) == 0.0
     assert farmer.dollops == pytest.approx(100.0)
+
+
+def test_a_partial_payout_never_exceeds_the_banks_balance():
+    """Regression: rounding the payout UP past a float balance raised
+    InsufficientFundsError("has 16.15 but needs 16.15") and killed the game
+    once the AI Bank started selling equipment cover."""
+    game, farmer, banker = _game_with_policy(banker_cash=16.149999)
+
+    paid = game._settle_equipment_claim(farmer, ITEM_ID, _Item(), current_tick=1)
+
+    assert paid <= 16.149999
+    assert banker.dollops >= 0.0

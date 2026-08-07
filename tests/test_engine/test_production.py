@@ -111,6 +111,9 @@ def test_miner_produces_larger_ore_and_oil_quantities(normal_event):
     miner.receive_resources(ResourceType.OIL, 2)
     miner.receive_resources(ResourceType.FREIGHT, 1)
     miner.receive_resources(ResourceType.MINING_EQUIPMENT, 1)
+    # Metal is assayed (#26); stock Lab Tests so this measures production
+    # quantities rather than the un-assayed yield penalty.
+    miner.receive_resources(ResourceType.LABORATORY_TESTS, 4)
 
     produced = ProductionEngine().produce(miner, normal_event, season_name="Spring")
 
@@ -543,6 +546,9 @@ def test_enhanced_crusher_smelter_increases_metal_capacity_and_reduces_oil(norma
     assert metal_option["preview_qty"] == 60
     assert metal_option["capacity_limit"] >= 40
 
+    # Metal is assayed (#26); stock Lab Tests so this measures the enhanced
+    # smelter's capacity and Oil relief, not the un-assayed yield penalty.
+    miner.receive_resources(ResourceType.LABORATORY_TESTS, 8)
     produced = engine.produce_product(
         miner,
         normal_event,

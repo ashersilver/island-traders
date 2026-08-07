@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.6"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.7"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -111,6 +111,7 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
+                      "LaboratoryTests": 4,                           # opening assay stock (#26)
                       "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
 }
 
@@ -135,6 +136,7 @@ BASE_PRICES: dict[str, float] = {
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
     "MedicalSupplies":      30.0,
     "Vaccine":             40.2,
+    "LaboratoryTests":     10.0,   # routine assay: cheap and repeat-purchased, not a premium product
     "Finance":             22.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
@@ -181,7 +183,11 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
     "Doctor":        {"MedicalSupplies": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Reagents": 6},
+                      "Reagents": 6,
+                      # Lab Tests (#26).  Gated on doctor.pathology_lab capacity;
+                      # sized to cover the archipelago's assay demand with a
+                      # little spare so the market can clear.
+                      "LaboratoryTests": 3},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -223,6 +229,47 @@ OUTPUT_PRODUCTION_INPUT_STEPS: dict[str, dict[str, dict]] = {
         "Expertise": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
     },
 }
+
+# ---------------------------------------------------------------------------
+# Laboratory assays (#26)
+# ---------------------------------------------------------------------------
+# Outputs whose quality depends on a Lab Test from the Medical & Laboratory
+# Island: the Miner's metal assay, the Farmer's soil analysis.
+#
+# Deliberately a SOFT gate, not an entry in OUTPUT_PRODUCTION_INPUT_STEPS.
+# That table skips the output entirely when an input is short, which is exactly
+# the cascading-collapse dynamic #47 / PR #212 removed — no Pathology Lab
+# anywhere would mean no Metal at all, and the Manufacturer starves behind it.
+# Instead an uncovered batch still produces, at a reduced yield:
+#
+#   coverage  = min(1, lab_tests_on_hand / assays_needed)
+#   yield x   = floor + (1 - floor) * coverage
+#
+# so a fully-supplied island produces at 100%, a completely unsupplied one at
+# `floor`, and partial supply scales between. Tests are consumed up to what is
+# available, which is what creates real demand for the line.
+# Floors are deliberately shallow.  A first cut used 0.75 on Metal and 0.85 on
+# BOTH Grain and Produce; that compounded through the kitchen recipe (2 Grain +
+# 1 Produce + 1 protein per run) and collapsed Food production — Grain
+# consumption went to zero against a 1,880-unit baseline.  Soil analysis now
+# touches Grain only, which is both gentler and truer to what a soil test is
+# for, and the floors are shallower.
+ASSAY_REQUIREMENTS: dict[str, dict[str, dict]] = {
+    # per_units is in BOARD-SCALE units: output is multiplied by
+    # PRODUCER_PRODUCTIVITY_MULTIPLIER (10), so a season yields ~60 Metal.
+    # One assay per production run is the right granularity.  A first cut used
+    # per_units=10, demanding ~6 assays a season from the Miner alone against a
+    # Doctor supply of 5 — every consumer sat permanently at the floor while
+    # draining cash chasing tests that did not exist.
+    #
+    # Only the Miner is assayed for now.  The Farmer's soil analysis (also
+    # named in #26) is deferred: attaching an assay to Grain collapsed Food
+    # production from 1,880 to 60 units over 40 games, and did so at EVERY
+    # floor from 0.85 to 0.96 — the food chain runs on a fixed kitchen recipe
+    # and does not degrade gracefully.  See RELEASE_NOTES for the measurements.
+    "Miner":  {"Metal": {"per_units": 60, "floor": 0.98}},   # metal assay
+}
+ASSAY_RESOURCE: str = "LaboratoryTests"
 
 # Economic dependence P2a: all islands draw a flat building-power base, plus a
 # surcharge for owned fixed, grid-powered heavy plant.

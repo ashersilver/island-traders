@@ -99,9 +99,16 @@ ROLES: dict[str, Role] = {
         display_name="Medical & Laboratory",
         short_name="Medical & Laboratory",
         island="Medical & Laboratory Island",
-        produces=(ResourceType.MEDICAL_SUPPLIES, ResourceType.VACCINE),
+        produces=(
+            ResourceType.MEDICAL_SUPPLIES,
+            ResourceType.VACCINE,
+            ResourceType.LABORATORY_TESTS,
+        ),
         needs=(ResourceType.EXPERTISE, ResourceType.REAGENTS),
-        description="Provides medical supplies and vaccines, keeping the workforce productive.",
+        description=(
+            "Provides medical supplies, vaccines and laboratory tests, "
+            "keeping the workforce productive."
+        ),
     ),
 }
 

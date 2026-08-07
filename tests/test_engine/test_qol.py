@@ -106,6 +106,9 @@ def test_production_and_consumer_demand_update_annual_accumulators():
     producer.workforce.add_workers(10, training_level=0, profession=Profession.UNSKILLED.value)
     producer.receive_resources(ResourceType.ORE, 20)
     producer.receive_resources(ResourceType.OIL, 20)
+    # Metal is assayed (#26); stock Lab Tests so this measures the accumulators
+    # rather than the un-assayed yield penalty.
+    producer.receive_resources(ResourceType.LABORATORY_TESTS, 8)
     produced = ProductionEngine().produce_product(
         producer,
         EventResult("Normal Operations"),
