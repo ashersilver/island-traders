@@ -5,7 +5,42 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.6`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.7`.
+
+- **Laboratory Tests exist and are actually consumed (#26 Phase B).** The
+  Medical & Laboratory Island's third line, bought by the Miner as a metal
+  assay. Supply is capped near real demand: **430 produced / 266 consumed**
+  over 40 games, against the earlier prototype's **2,318 produced / 0
+  consumed**. The wealth faucet is gone.
+  - **Soft gate, not a hard one.** An unassayed smelt still runs at a reduced
+    yield (`assay_plan`), so no Pathology Lab anywhere can never mean no Metal
+    at all — the cascade #47 / PR #212 removed.
+  - **Bug: the first cut only hooked one of two production paths.** Assay
+    logic lived in `produce_product`, but the AI produces through the bulk
+    `produce()` — so assays were **never consumed in simulation**. Both paths
+    now route through one `apply_assay`, and a test asserts they keep doing so.
+  - **Crash fix (live in `.4`/`.6`).** `_settle_equipment_claim` rounded a
+    partial payout *up* past the Bank's float balance, raising
+    `InsufficientFundsError: has 16.15 Dp but needs 16.15` and killing the
+    game. Latent until `.6` let the AI sell equipment cover; it then killed a
+    200-game sweep outright. Payouts now round down.
+  - **The Farmer's soil analysis is deferred, with evidence.** Assaying Grain
+    collapsed Food from **1,880 to 60** units over 40 games — and did so at
+    *every* floor from 0.85 to 0.96, so it is structural, not tuning. The food
+    chain runs on a fixed kitchen recipe (2 Grain + 1 Produce + 1 protein) and
+    does not degrade gracefully. Miner-only keeps Food at 1,660.
+  - **Assays are scaled to production runs.** `per_units` is board-scale;
+    output is x10, so a first cut at `per_units=10` demanded ~6 assays a
+    season from the Miner against a supply of 5, pinning every consumer at the
+    floor while draining cash chasing tests that did not exist.
+  - **Lab Tests are priced as a routine assay (10 Dp), not a premium product.**
+    At the spec's suggested 35 Dp the *cash* cost — not the yield penalty —
+    was what hurt: ~840 Dp over a game against a 1,500 Dp start. Repricing
+    moved the Doctor from 33% back to 24% and is what made the line viable.
+  - **Balance, for the #213 re-tune to absorb.** Against `.6`: Miner
+    **−13.5 pp**, Banker **+11 pp**, Educator +4, Manufacturer +2, Doctor
+    −1.5. The economy is coherent — no crash, no collapse, every resource
+    flowing — but it is not balanced, and rebalancing is the next task.
 
 - **The AI Bank runs a real insurance book — and a per-line leak is fixed.**
   - **Bug fix: the #196 per-line Actuary rule only reached one of the two AI

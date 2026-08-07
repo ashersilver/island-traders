@@ -25,6 +25,9 @@ from ..constants import (
     BASE_PRICES, MANUFACTURER_PRODUCT_LINES, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     PRODUCTION_INPUTS,
     AI_BANKER_TARGET_ACTUARIES,
+    ASSAY_REQUIREMENTS,
+    FARMER_SEASONAL_CONVERSION,
+    BASE_PRODUCTION,
     WORKPLACE_RISK, INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED,
     MBA_QUALIFIED_THRESHOLD, ACTUARIAL_EVALUATION_COST,
@@ -1157,7 +1160,36 @@ class AIStrategy:
             inputs[ResourceType.EXPERTISE] = max(
                 inputs.get(ResourceType.EXPERTISE, 0), ce_shortfall
             )
+        assays = self._assay_shortfall(player)
+        if assays > 0:
+            inputs[ResourceType.LABORATORY_TESTS] = max(
+                inputs.get(ResourceType.LABORATORY_TESTS, 0), assays
+            )
         return inputs
+
+    def _assay_shortfall(self, player: Player) -> int:
+        """Lab Tests this island should hold to assay next season's run (#26).
+
+        Assays are a soft gate — production continues without them at a reduced
+        yield — so they never appear in PRODUCTION_INPUTS and the AI would
+        otherwise never buy any, leaving the Doctor's line with no demand at
+        all.  Sized off each assayed output's base run.
+        """
+        needed = 0
+        for role in player.roles:
+            specs = ASSAY_REQUIREMENTS.get(role.name, {})
+            for output, spec in specs.items():
+                if role.name == "Farmer":
+                    per_season = max(
+                        (season["outputs"].get(output, 0)
+                         for season in FARMER_SEASONAL_CONVERSION.values()),
+                        default=0,
+                    )
+                else:
+                    per_season = BASE_PRODUCTION.get(role.name, {}).get(output, 0)
+                if per_season > 0:
+                    needed += ceil(per_season / max(1, int(spec.get("per_units", 10))))
+        return max(0, needed - player.inventory.get(ResourceType.LABORATORY_TESTS))
 
     def _ce_expertise_shortfall(self, player: Player) -> int:
         managers = player.ce_manager_count()

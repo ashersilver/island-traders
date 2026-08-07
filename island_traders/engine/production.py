@@ -11,6 +11,7 @@ from ..constants import (
     OUTPUT_PRODUCTION_INPUTS, OUTPUT_PRODUCTION_INPUT_STEPS,
     LABOUR_REQUIREMENTS, SKILLED_PROFESSIONS, PRODUCER_PRODUCTIVITY_MULTIPLIER,
     KITCHEN_SPECS,
+    ASSAY_REQUIREMENTS,
     EXPERTISE_DEGRADATION_FLOORS, EXPERTISE_DEGRADATION_ROLE_OVERRIDES,
     EXPERTISE_DEGRADATION_ENABLED, UNIQUE_SPECIALIST_PROFESSION,
     FARMER_HORTICULTURALIST_BONUS_MULTIPLIER,
@@ -497,6 +498,54 @@ class ProductionEngine:
                 consumed[resource] = consumed.get(resource, 0) + amount
         return consumed, skipped
 
+    @staticmethod
+    def assay_plan(role_name: str, output: ResourceType, qty: int, on_hand: int) -> dict:
+        """How a Lab Test shortfall affects one production run (#26).
+
+        Returns `{needed, used, coverage, yield_multiplier}`.  A soft gate: an
+        unassayed batch still produces, just at a reduced yield down to the
+        configured floor.  Never blocks — see ASSAY_REQUIREMENTS for why.
+        """
+        spec = ASSAY_REQUIREMENTS.get(role_name, {}).get(output.value)
+        if not spec or qty <= 0:
+            return {"needed": 0, "used": 0, "coverage": 1.0, "yield_multiplier": 1.0}
+        per_units = max(1, int(spec.get("per_units", 10)))
+        floor = float(spec.get("floor", 1.0))
+        needed = ceil(qty / per_units)
+        used = max(0, min(int(on_hand), needed))
+        coverage = used / needed if needed else 1.0
+        return {
+            "needed": needed,
+            "used": used,
+            "coverage": coverage,
+            "yield_multiplier": floor + (1.0 - floor) * coverage,
+        }
+
+    def apply_assay(self, player: Player, role_name: str, output: ResourceType, qty: int) -> int:
+        """Consume available Lab Tests and return the (possibly thinned) qty.
+
+        Must be called from EVERY production path.  The first cut of this only
+        hooked `produce_product`, but the AI produces through the bulk
+        `produce()` — so assays were never consumed in simulation at all and
+        Lab Tests piled up as a pure wealth faucet.
+        """
+        assay = self.assay_plan(
+            role_name, output, qty, player.inventory.get(ResourceType.LABORATORY_TESTS)
+        )
+        if not assay["needed"]:
+            return qty
+        if assay["used"]:
+            player.give_resources(ResourceType.LABORATORY_TESTS, assay["used"])
+            if self.telemetry is not None:
+                self.telemetry.record_consumed(
+                    ResourceType.LABORATORY_TESTS, assay["used"]
+                )
+        player._last_assay = {"output": output.value, **assay}
+        if assay["yield_multiplier"] < 1.0:
+            # A thinned run is not a failed run — keep at least one unit.
+            return max(1, int(qty * assay["yield_multiplier"]))
+        return qty
+
     def _freight_surcharge(self, product_line: str | None, qty: int) -> int:
         """Return Freight units consumed to ship produced goods (Manufacturer only)."""
         if not product_line or product_line not in MANUFACTURER_PRODUCT_LINES:
@@ -598,6 +647,7 @@ class ProductionEngine:
                         if player.inventory.get(ResourceType.FREIGHT) >= freight:
                             player.give_resources(ResourceType.FREIGHT, freight)
                         # If not enough freight, ship anyway (partial loss already modelled by can_produce check)
+                    qty = self.apply_assay(player, role.name, r, qty)   # #26
                     player.receive_resources(r, qty)
                     produced[r] = produced.get(r, 0) + qty
                     if self.telemetry is not None:
@@ -1116,6 +1166,11 @@ class ProductionEngine:
             getattr(player, "_oil_consumed_this_year", 0)
             + inputs.get(ResourceType.OIL, 0)
         )
+        # #26: consume whatever assays are available and scale the yield by the
+        # coverage achieved.  Deliberately after the input check — a missing Lab
+        # Test must never block a run, only thin it.
+        qty = self.apply_assay(player, role_name, output, qty)
+
         player.receive_resources(output, qty)
         if role_name == "Manufacturer" and output.value in MANUFACTURER_DURABLE_OUTPUTS:
             player.manufacturer_durable_output_used = (

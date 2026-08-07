@@ -148,6 +148,9 @@ def test_ai_produces_multiple_runs_when_inputs_available():
     miner.receive_resources(ResourceType.OIL, 5)
     miner.receive_resources(ResourceType.FREIGHT, 2)
     miner.receive_resources(ResourceType.MINING_EQUIPMENT, 2)
+    # Metal is assayed (#26); stock Lab Tests so this measures production
+    # quantities rather than the un-assayed yield penalty.
+    miner.receive_resources(ResourceType.LABORATORY_TESTS, 4)
 
     actions = ai.take_turn(
         miner,

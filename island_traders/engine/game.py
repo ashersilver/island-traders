@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -1160,7 +1161,10 @@ class Game:
                 f"remains in force."
             )
             return 0.0
-        payout = round(min(policy.insured_value, banker.dollops), 2)
+        # Round DOWN, never up: rounding a float balance up by a fraction of a
+        # Dollop made spend_dollops raise "has 16.15 but needs 16.15" and killed
+        # the game. A partial settlement must never exceed what the Bank holds.
+        payout = math.floor(min(policy.insured_value, banker.dollops) * 100) / 100
         if payout <= 0:
             return 0.0
         banker.spend_dollops(payout)
