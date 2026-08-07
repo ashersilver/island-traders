@@ -4110,6 +4110,7 @@ class GameManager:
         # Deposit changes are funded before replacing any negotiated terms, so
         # an unaffordable amendment leaves the live order exactly as it was.
         self._true_up_capital_deposit(game, negotiation, quote["buyer_offer"])
+        previous_offer = round(float(negotiation.buyer_offer), 2)
         negotiation.item_id = quote["item"].item_id
         negotiation.maintenance_term_years = quote["maintenance_term_years"]
         negotiation.predictive_maintenance = quote["predictive_maintenance"]
@@ -4123,9 +4124,22 @@ class GameManager:
         negotiation.counter_total = None
         negotiation.status = CapitalNegotiationStatus.PROPOSED
         negotiation.awaiting_id = negotiation.manufacturer_id
-        # A queued order has gone back to review, so it must stop consuming a
-        # build slot until the Manufacturer accepts its new terms.
-        game.order_book.remove(negotiation.negotiation_id)
+        # An amendment goes back to the Manufacturer for review either way, but
+        # only a DOWNGRADE costs the buyer their slot: paying the same or more
+        # should never send you to the back of the queue. The entry left in the
+        # book is skipped by the drain (it is no longer QUEUED), so holding the
+        # slot cannot block the orders behind it, and a raised premium
+        # re-places by the usual priority rule.
+        if round(float(negotiation.buyer_offer), 2) >= previous_offer:
+            entry = game.order_book.get(negotiation.negotiation_id)
+            if entry is not None and not entry.locked:
+                game.order_book.place_by_premium(
+                    negotiation.negotiation_id,
+                    negotiation.manufacturer_id,
+                    round(negotiation.buyer_offer - negotiation.recommended_total, 2),
+                )
+        else:
+            game.order_book.remove(negotiation.negotiation_id)
         game.refresh_order_promises(
             negotiation.manufacturer_id,
             getattr(room, "current_year_index", 0),

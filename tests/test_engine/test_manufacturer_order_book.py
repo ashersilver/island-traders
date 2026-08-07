@@ -480,3 +480,91 @@ def test_amendment_is_refused_when_buyer_cannot_fund_larger_deposit():
                for m in ws.sent)
     assert negotiation.buyer_offer == original_offer
     assert negotiation.deposit_paid == original_deposit
+
+
+def _queue_two_orders(mgr, room, maker):
+    """Two accepted-but-unbuildable orders, so both sit unlocked in the book."""
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    if held:
+        maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+    ids = []
+    for _ in range(2):
+        nid = _propose(mgr, room)["negotiation_id"]
+        ws = _WS()
+        asyncio.run(mgr._handle_capital_negotiation_respond(
+            room.room_id, "maker",
+            {"negotiation_id": nid, "action": "accept"}, ws,
+        ))
+        ids.append(nid)
+    return ids
+
+
+def test_upgrading_an_amendment_keeps_the_queue_position():
+    """Amending to the same or a higher total must not send the buyer to the
+    back of the queue — only a downgrade forfeits the slot."""
+    mgr, room, buyer, maker = _bootstrap()
+    buyer.dollops = 100_000.0
+    first, second = _queue_two_orders(mgr, room, maker)
+    book = room.game.order_book
+    assert [e.negotiation_id for e in book.for_manufacturer(maker.player_id)] == [first, second]
+
+    negotiation = room.game.capital_negotiations.get(first)
+    higher = round(negotiation.buyer_offer + 50.0, 2)
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer",
+        {"negotiation_id": first, "item_id": negotiation.item_id,
+         "buyer_offer": higher}, ws,
+    ))
+
+    assert not any(m.get("type") == "error" for m in ws.sent), ws.sent
+    entry = book.get(first)
+    assert entry is not None, "an upgrade must keep its slot in the book"
+    assert entry.queue_position == 0
+    assert room.game.capital_negotiations.get(first).buyer_offer == higher
+
+
+def test_downgrading_an_amendment_forfeits_the_queue_position():
+    mgr, room, buyer, maker = _bootstrap()
+    buyer.dollops = 100_000.0
+    first, _second = _queue_two_orders(mgr, room, maker)
+    negotiation = room.game.capital_negotiations.get(first)
+    lower = round(negotiation.buyer_offer - 20.0, 2)
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer",
+        {"negotiation_id": first, "item_id": negotiation.item_id,
+         "buyer_offer": lower}, ws,
+    ))
+
+    assert not any(m.get("type") == "error" for m in ws.sent), ws.sent
+    assert room.game.order_book.get(first) is None, \
+        "a downgrade gives up the slot"
+
+
+def test_slot_held_during_re_review_does_not_block_the_drain():
+    """The held entry is no longer QUEUED, so the drain must skip past it and
+    still settle the order behind it."""
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    buyer.dollops = 100_000.0
+    first, second = _queue_two_orders(mgr, room, maker)
+    negotiation = room.game.capital_negotiations.get(first)
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer",
+        {"negotiation_id": first, "item_id": negotiation.item_id,
+         "buyer_offer": round(negotiation.buyer_offer + 50.0, 2)}, ws,
+    ))
+    assert room.game.order_book.get(first).queue_position == 0
+
+    plane = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, plane.capacity_units)
+
+    fulfilled = mgr._drain_capital_order_books(room, 0, 0)
+
+    assert second in fulfilled, "the queued order behind must still settle"
+    assert room.game.capital_negotiations.get(first).status \
+        is CapitalNegotiationStatus.PROPOSED

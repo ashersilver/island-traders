@@ -12,9 +12,11 @@ Release notes are required before merging a feature/fix branch into
   been built:
   - **Amend** swaps the item or terms on a live order. It re-quotes, resets the
     order to *proposed* and hands it back to the Manufacturer for review — so a
-    buyer cannot swap a cheap item onto an agreed expensive price — and drops it
-    out of the build queue until those new terms are accepted, so an unapproved
-    amendment never holds a build slot.
+    buyer cannot swap a cheap item onto an agreed expensive price. **Upgrading
+    keeps your queue position**: amending to the same or a higher total holds
+    the slot (and re-places by premium if the offer rose), while a downgrade
+    forfeits it. A slot held during re-review never blocks the orders behind
+    it — the drain skips anything not currently queued.
   - **Cancel** withdraws an unbuilt order and refunds the deposit in full.
   - **Sweeten** raises the offer to buy queue priority: an order carrying a
     larger premium is placed ahead of unlocked orders offering less. Orders
