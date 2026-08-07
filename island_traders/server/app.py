@@ -4175,6 +4175,19 @@ class GameManager:
         agreed_total = round(float(agreed_total), 2)
         if agreed_total <= 0:
             raise ValueError("Agreed total must be positive.")
+
+        # Bundled kits are stock, not a free order-form attribute.  Work out
+        # what can leave the Manufacturer before collecting the buyer's final
+        # balance: held kits go first, then a shortfall can be manufactured
+        # only from the Spares recipe inputs and currently free warehouse room.
+        requested_spares = max(0, int(negotiation.spares_kits))
+        held_spares = min(requested_spares, manufacturer.inventory.get(ResourceType.SPARES))
+        shortfall = requested_spares - held_spares
+        auto_manufactured_spares = manufacturer._spares_manufacturing_capacity(shortfall)
+        delivered_spares = held_spares + auto_manufactured_spares
+        missing_spares = requested_spares - delivered_spares
+        spares_price_reduction = round(0.15 * item.cost * missing_spares, 2)
+        settled_total = round(max(0.0, agreed_total - spares_price_reduction), 2)
         pays = cash_only or manufacturer.player_id != buyer.player_id
         # Wave 5.3: a Manufacturer self-order of a manufactured item is no
         # longer free.  It settles at 20% of list price (no markup — the
@@ -4184,7 +4197,7 @@ class GameManager:
         if not pays:
             self_build_cost = round(
                 MANUFACTURER_SELF_ORDER_PRICE_FRACTION * item.cost
-                + 0.15 * item.cost * negotiation.spares_kits,
+                + 0.15 * item.cost * delivered_spares,
                 2,
             )
             if buyer.dollops < self_build_cost:
@@ -4202,7 +4215,9 @@ class GameManager:
         referral_fee = 0.0
         # The deposit left the buyer's treasury at order time, so only the
         # balance is due now — and only the balance needs financing.
-        balance_due = max(0.0, round(agreed_total - negotiation.deposit_paid, 2))
+        balance_after_deposit = round(settled_total - negotiation.deposit_paid, 2)
+        balance_due = max(0.0, balance_after_deposit)
+        deposit_refund = max(0.0, -balance_after_deposit)
         if pays:
             want_finance = (
                 negotiation.financing
@@ -4229,6 +4244,15 @@ class GameManager:
 
         if not cash_only:
             manufacturer.give_resources(manufactured_resource, required_units)
+        if auto_manufactured_spares:
+            made = manufacturer.manufacture_spares(shortfall, consume_inputs=True)
+            # The capacity calculation above is deliberately side-effect-free;
+            # no inventory changes occur between it and this call.  Keep the
+            # order safe if a future caller changes that assumption.
+            delivered_spares = held_spares + made
+            missing_spares = requested_spares - delivered_spares
+        if delivered_spares:
+            manufacturer.give_resources(ResourceType.SPARES, delivered_spares)
         if not pays and self_build_cost > 0:
             buyer.spend_dollops(self_build_cost)
         if pays:
@@ -4236,11 +4260,13 @@ class GameManager:
             # only the balance, but pay the manufacturer the full agreed total
             # (deposit included) now that the goods are handed over.
             buyer.spend_dollops(balance_due)
+            if deposit_refund:
+                buyer.receive_dollops(deposit_refund)
             if manufacturer.player_id != buyer.player_id:
-                manufacturer.receive_dollops(agreed_total)
+                manufacturer.receive_dollops(settled_total)
             if financed:
                 banker = game.turn_manager._find_banker()
-                fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * agreed_total, 2)
+                fee = round(MANUFACTURER_FINANCE_REFERRAL_RATE * settled_total, 2)
                 if (banker is not None
                         and banker.player_id != manufacturer.player_id
                         and banker.dollops >= fee):
@@ -4258,7 +4284,7 @@ class GameManager:
             "predictive_maintenance": negotiation.predictive_maintenance,
             "guarantee_seasons": 1,
             "warranty": negotiation.maintenance_term_years > 0,
-            "spares_kits": negotiation.spares_kits,
+            "spares_kits": delivered_spares,
             "expedited_eligible": negotiation.expedited_eligible,
             "financing": negotiation.financing,
             "purchase_value": item.cost,
@@ -4283,10 +4309,24 @@ class GameManager:
             "name": item.name,
             # Self-orders settle at the 20%-of-list sunk cost (Wave 5.3),
             # not at the negotiated total — report what was actually charged.
-            "upfront": agreed_total if pays else self_build_cost,
-            "agreed_total": agreed_total,
+            "upfront": settled_total if pays else self_build_cost,
+            "agreed_total": settled_total,
             "contract_cost": contract_cost,
-            "spares_kits": negotiation.spares_kits,
+            "spares_kits": delivered_spares,
+            "requested_spares_kits": requested_spares,
+            "spares_auto_manufactured": auto_manufactured_spares,
+            "spares_unavailable": missing_spares,
+            "spares_price_reduction": spares_price_reduction,
+            "deposit_refund": deposit_refund,
+            "message": (
+                f"{item.name} settled with {delivered_spares} of "
+                f"{requested_spares} requested Spares kit(s)."
+                + (
+                    f" {missing_spares} kit(s) could not be built; "
+                    f"price reduced by {spares_price_reduction:.1f} Dp."
+                    if missing_spares else ""
+                )
+            ),
             "financing": negotiation.financing,
             "financed": financed,
             "loan_id": loan.loan_id if loan is not None else None,

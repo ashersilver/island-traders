@@ -152,6 +152,149 @@ def test_capital_order_propose_then_manufacturer_accept_delivers():
     assert unit.purchase_value == item.cost
 
 
+def test_accepting_capital_order_debits_held_spares_and_frees_warehouse_room():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
+    held_before = manufacturer.inventory.get(ResourceType.SPARES)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": item.item_id,
+        "spares_kits": 2,
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+
+    ack = next(m for m in ws.sent if m.get("type") == "capital_order_ack")
+    assert ack["spares_kits"] == 2
+    assert manufacturer.inventory.get(ResourceType.SPARES) == held_before - 2
+    # The dispatched kits no longer occupy the Manufacturer's warehouse.
+    assert manufacturer.manufacture_spares(8) == 8
+
+    buyer.deliver_in_transit(item.delivery_seasons, room.game.order_book)
+    assert buyer.capital_units[item.item_id][0].spares_attached == 2
+
+
+def test_backorder_drain_debits_held_spares_when_it_settles():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    held_before = manufacturer.inventory.get(ResourceType.SPARES)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": item.item_id,
+        "spares_kits": 2,
+    })
+    _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+    assert room.game.capital_negotiations.get(negotiation_id).status.value == "queued"
+
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
+    assert mgr._drain_capital_order_books(room, 0, 0) == [negotiation_id]
+    assert manufacturer.inventory.get(ResourceType.SPARES) == held_before - 2
+
+    buyer.deliver_in_transit(item.delivery_seasons, room.game.order_book)
+    assert buyer.capital_units[item.item_id][0].spares_attached == 2
+
+
+def test_spares_shortfall_is_manufactured_from_inputs_before_settlement():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    _buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
+    metal_before = manufacturer.inventory.get(ResourceType.METAL)
+    oil_before = manufacturer.inventory.get(ResourceType.OIL)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": item.item_id,
+        "spares_kits": 6,
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+
+    ack = next(m for m in ws.sent if m.get("type") == "capital_order_ack")
+    assert ack["spares_auto_manufactured"] == 2
+    assert ack["spares_kits"] == 6
+    assert manufacturer.inventory.get(ResourceType.SPARES) == 0
+    assert manufacturer.inventory.get(ResourceType.METAL) == metal_before - 1
+    assert manufacturer.inventory.get(ResourceType.OIL) == oil_before - 1
+
+
+def test_unbuildable_spares_reduce_price_and_reconcile_deposit():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
+    for resource in (ResourceType.SPARES, ResourceType.METAL, ResourceType.OIL):
+        held = manufacturer.inventory.get(resource)
+        if held:
+            manufacturer.give_resources(resource, held)
+    buyer.dollops = item.cost * 5
+    buyer_start = buyer.dollops
+    manufacturer_start = manufacturer.dollops
+    requested_kits = 6
+    kit_charge = round(0.15 * item.cost * requested_kits, 2)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": item.item_id,
+        "spares_kits": requested_kits,
+    })
+    ws = _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+
+    ack = next(m for m in ws.sent if m.get("type") == "capital_order_ack")
+    deposit = round(CAPITAL_ORDER_DEPOSIT_FRACTION * (item.cost + kit_charge), 2)
+    assert ack["spares_kits"] == 0
+    assert ack["spares_unavailable"] == requested_kits
+    assert ack["spares_price_reduction"] == kit_charge
+    assert ack["agreed_total"] == item.cost
+    # A refund is only due when the deposit EXCEEDS the reduced total; here it
+    # does not (123.5 down against a 130.0 total), so the buyer simply owes a
+    # smaller balance and nothing comes back.
+    assert deposit < item.cost
+    assert ack["deposit_refund"] == max(0.0, round(deposit - item.cost, 2))
+    assert ack["deposit_refund"] == 0.0
+    assert buyer.dollops == pytest.approx(buyer_start - item.cost)
+    assert manufacturer.dollops == pytest.approx(manufacturer_start + item.cost)
+
+    buyer.deliver_in_transit(item.delivery_seasons, room.game.order_book)
+    assert buyer.capital_units[item.item_id][0].spares_attached == 0
+
+
+def test_capital_order_spares_conservation_includes_attached_kits():
+    mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
+    buyer, manufacturer = players
+    item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
+    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, item.capacity_units)
+    held_before = manufacturer.inventory.get(ResourceType.SPARES)
+
+    _, negotiation_id = _propose(mgr, room, "p0", {
+        "item_id": item.item_id,
+        "spares_kits": 6,
+    })
+    _respond(mgr, room, "p1", {
+        "negotiation_id": negotiation_id,
+        "action": "accept",
+    })
+    buyer.deliver_in_transit(item.delivery_seasons, room.game.order_book)
+
+    attached = buyer.capital_units[item.item_id][0].spares_attached
+    manufactured = attached - held_before
+    assert manufacturer.inventory.get(ResourceType.SPARES) + attached == (
+        held_before + manufactured
+    )
+    assert attached == 6
+
+
 def test_capital_order_backorders_when_manufacturer_capacity_units_short():
     mgr, room, players = _bootstrap(["Transporter", "Manufacturer"])
     buyer, manufacturer = players
