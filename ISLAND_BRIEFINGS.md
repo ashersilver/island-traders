@@ -230,7 +230,7 @@ need next."
 Your responsibilities are to secure **Metal**, **Oil**, and often
 **Container Freight**, then decide which customers deserve your scarce factory
 time.  Agriculture without machinery, Mining without equipment, Education
-without labs, Healthcare without devices, and Transport without fleet upgrades
+without labs, Medical & Laboratory without devices, and Transport without fleet upgrades
 all eventually knock on your door.
 
 Your workforce is the hinge between ambition and delivery.  Engineers,
@@ -254,10 +254,10 @@ architect of everyone else's expansion.
 
 ---
 
-## Healthcare and Health Research Island
+## Medical & Laboratory Island
 
 You have bought the island that keeps productivity from collapsing when human
-bodies refuse to behave like tidy economic abstractions.  Healthcare produces
+bodies refuse to behave like tidy economic abstractions.  The island produces
 **HealthServices** and **Vaccine**.  It also deploys medical staff — Doctors
 and Nurses — to other islands under **Staffing Contracts**.
 
@@ -304,7 +304,7 @@ Your priorities:
 6. Use Vaccines and HealthServices to become preventive infrastructure, not
    merely emergency response.
 
-Best strategy: be the island that sells resilience.  Healthcare wins when
+Best strategy: be the island that sells resilience.  This island wins when
 other governors realise that avoiding a productivity collapse is cheaper than
 enduring one.  Your strongest deals — and your most profitable staffing
 contracts — happen before the patient is already on the floor.
