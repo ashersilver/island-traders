@@ -69,6 +69,7 @@ from ..constants import (
     MANUFACTURER_SELF_ORDER_PRICE_FRACTION,
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
+from ..dependency_graph import build_dependency_graph
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -2140,6 +2141,25 @@ class GameManager:
                     "workforce": workforce_cap,
                     "inputs": input_cap,
                 }
+                # Per-unit recipe requirements for the What-If panel (#4): the
+                # client multiplies these by a chosen quantity and compares to
+                # inventory / workforce / equipment_cap, all client-side. Only
+                # meaningful for recipe-driven lines — the Farmer's seasonal
+                # conversion (farmer_raw_output) uses whole-season input totals,
+                # not per-unit, so per_unit is null there and the panel falls
+                # back to the passive max display.
+                per_unit = None
+                if not farmer_raw_output:
+                    pu_inputs = {
+                        r.value if hasattr(r, "value") else str(r): round(q, 4)
+                        for r, q in boosted.inputs.items() if q > 0
+                    }
+                    pu_labour: dict[str, float] = {}
+                    for band in WorkerBand:
+                        lpu = boosted.labour_per_unit(band)
+                        if lpu > 0:
+                            pu_labour[primary_title(recipe.role, band)] = round(lpu, 4)
+                    per_unit = {"inputs": pu_inputs, "labour": pu_labour}
                 max_producible = cap.max_producible
                 blockers = [
                     name for name, value in caps.items()
@@ -2161,6 +2181,7 @@ class GameManager:
                     "inputs_short":   inputs_short,
                     "workforce_short": workforce_short,
                     "equipment_short": equipment_short,
+                    "per_unit":       per_unit,
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
                     # Graceful-degradation floor (2026-05-27 brief, GitHub
@@ -7106,6 +7127,20 @@ def create_app() -> FastAPI:
     @app.get("/version", tags=["Reference"], summary="Get server version")
     async def _get_version():
         return {"version": APP_VERSION}
+
+    @app.get(
+        "/api/dependency-graph",
+        tags=["Reference"],
+        summary="Island dependency graph derived from the live rules",
+    )
+    async def _get_dependency_graph():
+        """Static per-role dependency model for the Island Dependency Map.
+
+        Derived from the recipe and capital tables rather than hand-listed, so
+        the map cannot drift from the rules. Static for a given build, so the
+        client fetches it once and caches it.
+        """
+        return build_dependency_graph()
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():

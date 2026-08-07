@@ -121,3 +121,35 @@ def test_banker_shortage_uses_banker_specific_titles():
         assert labels_seen.issubset({
             "Banker", "Banking Analyst", "Banking Clerk", "Receptionist",
         }), f"unexpected Banker-island shortage labels: {labels_seen}"
+
+
+def test_capacity_outputs_expose_per_unit_recipe_for_whatif():
+    """#4 What-If panel: each recipe-driven output must carry a `per_unit`
+    block with `inputs` (resource → qty/unit) and `labour` (profession →
+    workers/unit) so the client can compute needs for any target quantity
+    without a round-trip. Farmer seasonal-conversion lines legitimately
+    have per_unit=None (whole-season totals, not per-unit)."""
+    mgr = GameManager()
+    room, game = _bootstrap_running_game(mgr, role_names=("Manufacturer",))
+
+    state = mgr.get_game_state(room.room_id, "p0")
+    assert state is not None
+    data = next(p for p in state["players"] if p["lobby_player_id"] == "p0")
+    outputs = (data.get("capacity") or {}).get("outputs") or []
+    assert outputs, "Manufacturer should have production lines"
+
+    # At least one line exposes a usable per_unit block, and every non-null
+    # per_unit has the expected shape.
+    saw_usable = False
+    for out in outputs:
+        pu = out.get("per_unit")
+        if pu is None:
+            continue
+        assert set(pu.keys()) == {"inputs", "labour"}
+        assert isinstance(pu["inputs"], dict) and isinstance(pu["labour"], dict)
+        # Values are positive per-unit quantities.
+        for v in list(pu["inputs"].values()) + list(pu["labour"].values()):
+            assert v > 0
+        if pu["inputs"] or pu["labour"]:
+            saw_usable = True
+    assert saw_usable, "expected at least one output with per_unit inputs/labour"
