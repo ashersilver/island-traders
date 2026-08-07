@@ -5,6 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+`APP_VERSION`: `0.1.6-dev.2026-08-07.2`.
+
+- **Event-log action alerts (#3)** — a 🔔 **Alerts** button on the event-log
+  filter bar pops a toast when a tracked kind of entry appears, so a player
+  reading the board doesn't miss a disaster or a deal.
+  - Alert on any of four categories — **Events & disasters, Trades & deals,
+    Training, Anything about my island** — and/or on **free-text keywords**
+    (case-insensitive substrings, e.g. `Drought, Oil`).
+  - Rules persist per browser and survive a reload.
+  - **Rejoining a long game does not spray toasts.** The first log sync
+    back-fills history, so alerts are suppressed for that batch only; the very
+    next live line still alerts.
+  - The sidebar **My Alerts** panel already covered the *numeric* half of #3
+    (price / stock / treasury thresholds). The two are now presented as one
+    feature: they share a toast style, and the numeric panel points at the log
+    alerts for the event-driven half.
+
 `APP_VERSION`: `0.1.6-dev.2026-08-07.1`.
 
 - **Insured islands lose no productivity to injuries, and the death benefit
