@@ -226,6 +226,20 @@ calibration pass before each version bump.
   [`requirements/release-process.md`](requirements/release-process.md).
 - Feature specs and design discussions live in [`requirements/`](requirements/).
 
+### Release command center
+
+For local release prep, generate a read-only HTML status page from the current
+checkout:
+
+```bash
+island-traders-release-center --output ./release-command-center.html
+```
+
+The command center explains the current `APP_VERSION` / package-version split,
+checks `RELEASE_NOTES.md`, shows branch and dirty-worktree state, and lists the
+manual verification commands to run before opening a PR. V0.1 is deliberately
+inspect-only: it does not merge branches, create tags, or push anything.
+
 ---
 
 ## License
