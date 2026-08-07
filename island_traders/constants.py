@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-06.6"
+APP_VERSION: str = "0.1.6-dev.2026-08-06.7"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -1035,8 +1035,45 @@ ACTUARIAL_EVALUATION_COST: float = 5.0
 # the bereaved island.
 LIFE_INSURANCE_DEATH_BENEFIT: float = 120.0
 
+# #19: the death benefit should cover the cost of *replacing* the worker, so
+# it tracks how long that worker took to train rather than being one flat
+# figure.  Managers are university-trained (2-4 seasons, EDUCATION_SEASONS),
+# Technicians apprenticed (1-2 seasons, APPRENTICESHIP_SEASONS), and Workers
+# are hired straight from the population with no course to repeat — they still
+# earn a recruitment payment, because "(if applicable)" in the issue refers to
+# the training component, not to leaving the island with nothing.
+# Calibrated to keep the *mean* payout near the previous flat 120 Dp, so total
+# expected Banker liability is roughly unchanged; see
+# LIFE_INSURANCE_DEATH_BENEFIT above for why that level matters.
+#
+# Calibrate against the ACTUAL band mix, not an intuitive one.  A first pass
+# used 200/120/60, reasoning from a 20/30/50 Manager/Technician/Worker split.
+# Real islands are roughly 80% Worker / 15% Technician / 5% Manager (a 25-head
+# workforce seeded with only a handful of named professions — see
+# STARTING_WORKERS_BY_PROFESSION), and unskilled workers carry 2x the risk
+# multiplier so fatalities skew further toward the Worker band still.  Mean
+# payout came out near 75 Dp instead of 120, cutting Banker liability ~40% and
+# moving Banker +5.8 pp / Transporter -4.5 pp across three seeds.  These
+# values put the mean back at ~118 Dp against the real mix.
+LIFE_INSURANCE_DEATH_BENEFIT_BY_BAND: dict[str, float] = {
+    "Manager":    280.0,
+    "Technician": 160.0,
+    "Worker":     100.0,
+}
+
 # Medical insurance reduces the effective injury_rate by this fraction.
+# NOTE (#19): no longer applied to the injury roll — an insured island now
+# takes injuries at the base rate but loses no productivity to them (see
+# INSURED_INJURY_RECOVERY_SEASONS).  Kept because the action-menu copy still
+# quotes it and older saves reference it; remove once that copy is reworked.
 MEDICAL_INSURANCE_INJURY_REDUCTION: float = 0.5
+
+# #19: "if they are insured they have no loss of productivity".  An injured
+# worker on an island holding medical insurance is treated immediately at the
+# insurer's expense and is never sidelined — mark_absent(…, 0) is a no-op.
+# This replaces the old rate reduction: the injury still happens (and still
+# shows in the season report), it just costs the island nothing in output.
+INSURED_INJURY_RECOVERY_SEASONS: int = 0
 
 # Life insurance reduces the effective fatality_rate by this fraction
 # (mirroring the medical-injury reduction).  Before this constant
