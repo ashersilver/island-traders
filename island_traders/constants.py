@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.5"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.6"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -1018,6 +1018,12 @@ WORKPLACE_RISK: dict[str, dict[str, float]] = {
     "Banker":       {"injury_rate": 0.005, "fatality_rate": 0.001},
     "Doctor":       {"injury_rate": 0.005, "fatality_rate": 0.001},
 }
+
+# How many Actuaries an AI Bank aims to employ (#196 follow-up).  One per line
+# of business it wants open — life, medical, equipment.  Without this the AI
+# Bank is stuck at its single seeded Actuary and can never write more than one
+# line, which would quietly halve insurance coverage across the archipelago.
+AI_BANKER_TARGET_ACTUARIES: int = 3
 
 # Seasons a policy stays valid after purchase (4 = one full year).
 INSURANCE_DURATION_SEASONS: int = 4
