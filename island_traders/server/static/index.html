@@ -312,7 +312,24 @@ button:active{transform:scale(.97)}
   display:flex;align-items:center;justify-content:space-between;padding:0 1rem;
   gap:.5rem;min-height:48px;
 }
-.g-hdr .title{font-size:1rem;font-weight:700;color:var(--gold);white-space:nowrap}
+/* Wordmark (#23): was 1rem/700 gold on a dark bar, which read as thin and
+   washed out. Heavier weight, a size bump, positive tracking and a dark halo
+   lift it clear of the header; the anchor is split out so it doesn't inherit
+   the letter-spacing and drift away from the text. */
+.g-hdr .title{font-size:1.16rem;font-weight:800;color:var(--gold);white-space:nowrap;
+  letter-spacing:.03em;text-shadow:0 1px 3px rgba(0,0,0,.55);display:inline-flex;
+  align-items:center;gap:.38rem}
+.g-hdr .title .anchor{letter-spacing:0;font-size:1.05em;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+:root[data-theme="day"] .g-hdr .title{text-shadow:0 1px 2px rgba(255,255,255,.65)}
+/* Island map nodes are clickable (#23): make that discoverable on hover and
+   keyboard-focusable for anyone not using a mouse. */
+.map-island{cursor:pointer;transition:opacity .15s ease,transform .15s ease;transform-origin:center}
+.map-island:hover ellipse,.map-island:focus-visible ellipse{fill-opacity:.55;stroke-width:2.5}
+.map-island:focus{outline:none}
+.map-island:focus-visible ellipse{stroke-dasharray:3,2}
+/* Island briefing artwork (#23) */
+.briefing-art{margin:0 0 .85rem;border:1px solid;border-radius:10px;overflow:hidden;line-height:0}
+.briefing-art img{width:100%;height:auto;max-height:210px;object-fit:cover;display:block}
 .season-badge{
   display:flex;align-items:center;gap:.5rem;
   background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);
@@ -1418,7 +1435,7 @@ body.fx-off .ih-pins .pdot{animation:none}
 <div id="screen-game" class="hidden">
   <div class="game-grid">
     <div class="g-hdr">
-      <span class="title">⚓ Island Traders</span>
+      <span class="title"><span class="anchor">⚓</span>Island Traders</span>
       <div class="season-badge" id="season-badge">
         <span class="season-year" id="hdr-year">Year 1</span>
         <span class="season-name" id="hdr-season">Spring</span>
@@ -2730,7 +2747,21 @@ function renderAuctionBriefingCard(role) {
 function showIslandBriefing(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return;
-  const body = `<p style="line-height:1.5">${b.full}</p>
+  // #23: lead with the island's artwork, matched to the current season's
+  // time of day so the briefing looks like the island the player is seeing.
+  const art = ROLE_ART[role];
+  let hero = '';
+  if (art) {
+    const season = (gameState && gameState.season) || '';
+    const url = art[artTimeOfDay(season)] || art.day || art.night;
+    if (url) {
+      const color = ROLE_COLORS[role] || '#aaa';
+      hero = `<div class="briefing-art" style="border-color:${color}55">`
+        + `<img src="${esc(url)}" alt="${esc(b.title)}"/></div>`;
+    }
+  }
+  const body = `${hero}
+    <p style="line-height:1.5">${b.full}</p>
     ${complexityLine(b)}
     <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
@@ -8409,23 +8440,36 @@ function onGameResumed(msg) {
 function buildIslandMap() {
   const container = document.getElementById('island-map-svg');
   if (container.querySelector('svg')) return;
+  // #23: each node carries its engine role key so clicking it can open the
+  // island briefing. Names stay short — they have to fit inside the ellipse.
   const islands = [
-    {name:'Transport',  cx:225, cy:165, color:'#3498db'},
-    {name:'Mining',     cx:134, cy:110, color:'#e67e22'},
-    {name:'Agriculture',cx:225, cy:58,  color:'#27ae60'},
-    {name:'Medical & Lab', cx:316, cy:110, color:'#e74c3c'},
-    {name:'Banking',    cx:316, cy:215, color:'#f1c40f'},
-    {name:'Education',  cx:225, cy:268, color:'#9b59b6'},
-    {name:'Manufacturing',cx:134,cy:215,color:'#1abc9c'},
+    {name:'Transport',  role:'Transporter',  cx:225, cy:165, color:'#3498db'},
+    {name:'Mining',     role:'Miner',        cx:134, cy:110, color:'#e67e22'},
+    {name:'Agriculture',role:'Farmer',       cx:225, cy:58,  color:'#27ae60'},
+    {name:'Medical & Lab', role:'Doctor',    cx:316, cy:110, color:'#e74c3c'},
+    {name:'Banking',    role:'Banker',       cx:316, cy:215, color:'#f1c40f'},
+    {name:'Education',  role:'Educator',     cx:225, cy:268, color:'#9b59b6'},
+    {name:'Manufacturing',role:'Manufacturer',cx:134,cy:215,color:'#1abc9c'},
   ];
   const lines = islands.slice(1).map(i =>
     `<line x1="225" y1="165" x2="${i.cx}" y2="${i.cy}" stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="4,4"/>`
   ).join('');
   const nodes = islands.map(i => `
-    <ellipse cx="${i.cx}" cy="${i.cy}" rx="40" ry="32" fill="${i.color}22" stroke="${i.color}" stroke-width="1.5"/>
-    <text x="${i.cx}" y="${i.cy+4}" text-anchor="middle" fill="${i.color}" font-size="9" font-weight="700">${i.name}</text>
+    <g class="map-island" role="button" tabindex="0" data-role="${i.role}"
+       aria-label="${esc(i.name)} island — open briefing">
+      <title>${esc(i.name)} — click for the island briefing</title>
+      <ellipse cx="${i.cx}" cy="${i.cy}" rx="40" ry="32" fill="${i.color}22" stroke="${i.color}" stroke-width="1.5"/>
+      <text x="${i.cx}" y="${i.cy+4}" text-anchor="middle" fill="${i.color}" font-size="9" font-weight="700">${i.name}</text>
+    </g>
   `).join('');
   container.innerHTML = `<svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">${lines}${nodes}</svg>`;
+  container.querySelectorAll('.map-island').forEach(node => {
+    const role = node.getAttribute('data-role');
+    node.addEventListener('click', () => showIslandBriefing(role));
+    node.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showIslandBriefing(role); }
+    });
+  });
 }
 
 // ==================== INPUT PROMPTS ====================

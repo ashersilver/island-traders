@@ -6,7 +6,9 @@ from ..models.player import Player
 from ..constants import (
     DOCTOR_TREATMENTS_PER_SEASON,
     WORKPLACE_RISK, LIFE_INSURANCE_DEATH_BENEFIT,
+    LIFE_INSURANCE_DEATH_BENEFIT_BY_BAND,
     LIFE_INSURANCE_FATALITY_REDUCTION,
+    INSURED_INJURY_RECOVERY_SEASONS,
     MAX_WORKFORCE_LOSS_PER_TICK_FRACTION,
     MEDEVAC_FEE,
     MEDEVAC_SEATS,
@@ -16,6 +18,7 @@ from ..constants import (
     UNTREATED_RECOVERY_SEASONS,
     SKILLED_PROFESSIONS,
 )
+from ..models.profession import band_of
 from ..models.resource import ResourceType
 
 
@@ -134,15 +137,21 @@ def apply_workplace_risks(
             is_unskilled = worker.profession not in skilled_prof_names
             multiplier = _worker_risk_multiplier(worker, is_unskilled)
             effective_rate = base_injury * multiplier
-            if has_medical:
-                effective_rate *= (1.0 - MEDICAL_INSURANCE_INJURY_REDUCTION)
-                report.insurance_reduced_injuries = True
             if rng.random() < effective_rate:
                 injured_ids.append(worker.worker_id)
 
         if injured_ids:
-            player.workforce.mark_absent(injured_ids, UNTREATED_RECOVERY_SEASONS)
+            # #19: medical insurance no longer suppresses the injury roll — the
+            # injury happens and is reported — but the insurer treats the
+            # worker immediately, so the island loses no productivity to it.
+            # mark_absent is a no-op at 0 seasons.
+            recovery = (
+                INSURED_INJURY_RECOVERY_SEASONS if has_medical
+                else UNTREATED_RECOVERY_SEASONS
+            )
+            player.workforce.mark_absent(injured_ids, recovery)
             report.injured_worker_ids = injured_ids
+            report.insurance_reduced_injuries = has_medical
 
         # --- Fatalities ---
         # Re-check active workers (some may now be dispatched as injured)
@@ -206,7 +215,14 @@ def apply_workplace_risks(
             report.fatality_worker_ids = deceased_ids
 
             if has_life and banker_players:
-                benefit = LIFE_INSURANCE_DEATH_BENEFIT * len(deceased)
+                # #19: pay the cost of replacing each worker, which depends on
+                # how long they took to train — not one flat figure per body.
+                benefit = sum(
+                    LIFE_INSURANCE_DEATH_BENEFIT_BY_BAND.get(
+                        band_of(w.profession).value, LIFE_INSURANCE_DEATH_BENEFIT
+                    )
+                    for w in deceased
+                )
                 # Find the insuring Banker (first with enough funds, else split)
                 paid = 0.0
                 for banker in banker_players:

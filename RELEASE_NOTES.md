@@ -5,6 +5,59 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+`APP_VERSION`: `0.1.6-dev.2026-08-07.1`.
+
+- **Insured islands lose no productivity to injuries, and the death benefit
+  pays replacement cost (#19).** Two of the issue's three mechanics; the third
+  (an annual physical halving the premium) is gated on Laboratory Tests and
+  waits for Phase B of `requirements/medical-laboratory.md`.
+  - **Medical insurance no longer suppresses the injury roll.** The injury
+    happens and is still reported — but the insurer treats the worker at once,
+    so they are never sidelined (`INSURED_INJURY_RECOVERY_SEASONS = 0`), which
+    is what the issue actually asks for. Previously the policy halved the
+    *chance* of injury and the worker still lost two seasons when unlucky.
+    Brownouts across a 200-game sweep more than halved, 534 -> 245
+    island-seasons.
+  - **The life-insurance death benefit is now per band** — Manager 280,
+    Technician 160, Worker 100 Dp — because the payout is meant to cover
+    retraining a replacement, and a Manager is 2-4 seasons of university where
+    a Worker was hired off the dock.
+  - **Note a behavioural side effect:** because insured injured workers stay in
+    the active pool, they remain exposed to that tick's fatality roll. Under
+    the old model being injured effectively shielded a worker from dying that
+    season, which was an artefact rather than a design.
+  - **Balance.** First-pass band values (200/120/60) assumed a 20/30/50 band
+    mix; real islands are ~80% Worker, and unskilled workers carry 2x the risk
+    multiplier, so mean payout landed near 75 Dp instead of 120 and cut Banker
+    liability ~40% — worth +5.8 pp to Banker and -4.5 pp to Transporter across
+    three seeds. Recalibrated against the real mix, Banker is back in band
+    (-1.3 pp). A residual remains and is **structural, not a tuning miss**:
+    Transporter -3.3 pp / Farmer +3.2 pp, because making insurance more
+    valuable rewards roles in proportion to their injury rate and Transporter
+    has the lowest (0.030) of the insurable roles. Risk-differentiated premiums
+    are the fix; that is #196's territory and a follow-up issue tracks it.
+  - Also fixes a **vacuous test**: the existing death-benefit assertion in
+    `test_workforce_events.py` sat inside `if report.fatality_worker_ids:` and
+    never ran, because an always-fires RNG injures every worker first and
+    empties the active pool before the fatality roll. The new tests script the
+    two phases separately.
+
+- **Islands on the map are clickable, and the wordmark reads properly (#23).**
+  - **Clicking any island on the in-game map opens its briefing** — title,
+    full description, activity index and priorities — now led by the island's
+    **artwork**, picked day or night to match the current season. The briefing
+    content and the renders both already existed; the map simply had no way to
+    reach them, and `showIslandBriefing` never showed a picture. Nodes are
+    keyboard-reachable (Tab, then Enter or Space) and highlight on hover, so
+    it's discoverable that they do something.
+  - **The top-left wordmark** was 1rem at weight 700 in gold on a dark bar,
+    which read as thin and washed out. Now 1.16rem at weight 800 with positive
+    tracking and a dark halo (a light halo under the day theme); the anchor
+    glyph is split out so it doesn't inherit the tracking and drift.
+  - Regression tests pin the map-to-role mapping, the click and keyboard
+    handlers, the presence of a briefing per role, and that **every
+    `ROLE_ART` path resolves to a file that actually exists on disk**.
+
 `APP_VERSION`: `0.1.6-dev.2026-08-06.5`.
 
 - **Quality of Life is explained, and its breakdown actually displays (#227)** —
