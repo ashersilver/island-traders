@@ -5,6 +5,37 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+`APP_VERSION`: `0.1.6-dev.2026-07-14.7`.
+
+- **Capital orders are backordered instead of refused (Wave 9.1/9.4/9.5)** — a
+  capital order the Manufacturer could not fill was rejected *before anything
+  was stored*: no ledger row, no order-book entry, nothing to wait on, retry or
+  cancel. Order a Tractor needing 2 FarmMachinery the shop hasn't got and the
+  order simply vanished.
+  - Short-stocked orders are now **recorded and backordered**. Accepting one
+    queues it (new `QUEUED` status) in the manufacturer's order book, unlocked.
+  - A **per-season drain** walks each manufacturer's queue in position order and
+    settles whatever it can now build. It deliberately blocks at the head when
+    the shop is short — the queue is a build order, so a later cheap order must
+    not jump the one in front — but skips a buyer who simply cannot pay, so one
+    broke buyer can't freeze the whole book.
+  - **Delivered orders now leave the book.** `order_book.remove()` previously
+    had no callers, so completed orders accumulated locked at the head of every
+    queue and permanently blocked reordering. Fixing this is what makes the
+    manufacturer's existing move-up/move-down controls work at all.
+  - Buyers get a **pending capital orders panel** showing proposed, countered
+    and backordered orders — with what each is waiting on, its queue position
+    and its promised date.
+  - Promise dates now use the manufacturer's real durable throughput rather
+    than a 0-1 multiplier that made every queue "one order per season, forever".
+  - **Orders take a 50% deposit up front.** It is applied against the balance
+    on delivery; a buyer who cannot pay the balance once the build is ready
+    **forfeits the deposit** to the Manufacturer, who keeps the finished goods
+    on their island to resell at list price. The deposit is refunded in full if
+    nothing is ever built (the Manufacturer declines, or the order expires),
+    and self-builds are exempt. Financing now covers only the balance — the
+    deposit is real money down and is never re-lent.
+  - Amend, cancel and price-sweetened priority follow in Wave 9.2/9.3.
 `APP_VERSION`: `0.1.6-dev.2026-07-14.6`.
 
 - **Dependency map: derived from the rules, split into layers, and answers

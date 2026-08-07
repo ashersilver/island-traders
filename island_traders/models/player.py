@@ -596,7 +596,7 @@ class Player:
         self.capital_in_transit.append(entry)
         return arrives_at
 
-    def deliver_in_transit(self, current_tick: int) -> list[str]:
+    def deliver_in_transit(self, current_tick: int, order_book=None) -> list[str]:
         """Move items whose arrival tick has passed into capital_inventory.
         Returns the list of delivered item_ids (for UI / log purposes)."""
         delivered: list[str] = []
@@ -612,6 +612,9 @@ class Player:
                 else:
                     self.add_capital(entry["item_id"], 1, acquired_tick=current_tick)
                 delivered.append(entry["item_id"])
+                negotiation_id = (order or {}).get("negotiation_id")
+                if order_book is not None and negotiation_id is not None:
+                    order_book.remove(int(negotiation_id))
             else:
                 remaining.append(entry)
         self.capital_in_transit = remaining
