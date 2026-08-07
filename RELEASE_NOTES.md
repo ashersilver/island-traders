@@ -5,7 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-06.4`.
+`APP_VERSION`: `0.1.6-dev.2026-08-06.6`.
+
+- **Islands on the map are clickable, and the wordmark reads properly (#23).**
+  - **Clicking any island on the in-game map opens its briefing** — title,
+    full description, activity index and priorities — now led by the island's
+    **artwork**, picked day or night to match the current season. The briefing
+    content and the renders both already existed; the map simply had no way to
+    reach them, and `showIslandBriefing` never showed a picture. Nodes are
+    keyboard-reachable (Tab, then Enter or Space) and highlight on hover, so
+    it's discoverable that they do something.
+  - **The top-left wordmark** was 1rem at weight 700 in gold on a dark bar,
+    which read as thin and washed out. Now 1.16rem at weight 800 with positive
+    tracking and a dark halo (a light halo under the day theme); the anchor
+    glyph is split out so it doesn't inherit the tracking and drift.
+  - Regression tests pin the map-to-role mapping, the click and keyboard
+    handlers, the presence of a briefing per role, and that **every
+    `ROLE_ART` path resolves to a file that actually exists on disk**.
 
 - **Quality of Life is explained, and its breakdown actually displays (#227)** —
   a player could see a QoL number but had no way to learn what moved it or why
