@@ -29,7 +29,13 @@ from ..models.loan import (
     loan_counter_floor_rate,
     posted_funding_rates,
 )
-from ..models.lease import LeaseLedger, LeaseStatus, lease_quote
+from ..models.lease import (
+    NO_LAWYER_MESSAGE,
+    LeaseLedger,
+    LeaseStatus,
+    lease_quote,
+    lessee_has_lawyer,
+)
 from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
     WorkerBand, EngineerSpecialty, band_of,
@@ -1155,6 +1161,12 @@ class TurnManager:
     ) -> None:
         """Lease an eligible capital item from the Bank."""
         sym = CURRENCY_SYMBOL
+        # #44: writing a new lease needs counsel on the lessee's roster.
+        # Checked before the catalogue is shown so the player isn't asked to
+        # pick an item they can't sign for.  Existing leases are unaffected.
+        if not lessee_has_lawyer(player):
+            self.io.print(f"  {NO_LAWYER_MESSAGE}")
+            return
         seen: set[str] = set()
         available = []
         for role in player.roles:
