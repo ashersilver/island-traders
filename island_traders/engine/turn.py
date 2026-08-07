@@ -3376,6 +3376,15 @@ class TurnManager:
 
         choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
         policy_type = "life" if choice == 1 else "medical"
+        # #196: one Actuary per line of business. Checked after the line is
+        # chosen — writing more of an already-open line is always fine, so
+        # refusing before the player picks would be wrong.
+        allowed, reason = self._banker_can_write_line(
+            player, policy_type, year, season_index
+        )
+        if not allowed:
+            self.io.print(reason)
+            return
         base = INSURANCE_BASE_PREMIUM[policy_type]
 
         # Medical policies are sized + priced per covered head (2026-06-02).
@@ -3463,6 +3472,45 @@ class TurnManager:
     def _banker_can_underwrite_insurance(banker: Player) -> bool:
         return banker.workforce.count_profession(Profession.ACTUARY.value) > 0
 
+    def _banker_open_lines(self, banker: Player, year: int, season_index: int) -> set[str]:
+        """Insurance lines this Banker currently has live business in (#196).
+
+        A "line" is a policy type — life, medical — not an individual policy.
+        Only in-force policies count: a line the Banker has run off lapses, and
+        the Actuary it occupied is freed for something else.
+        """
+        lines: set[str] = set()
+        for holder in self.players:
+            for policy in holder.active_policies(year, season_index):
+                if policy.banker_player_id == banker.player_id:
+                    lines.add(policy.policy_type)
+        return lines
+
+    def _banker_can_write_line(
+        self, banker: Player, policy_type: str, year: int, season_index: int
+    ) -> tuple[bool, str]:
+        """#196: the bank needs one Actuary per line of insurance business.
+
+        Writing more of a line already open costs nothing extra — the Actuary
+        for that line is already on it. Opening a *new* line needs a spare.
+        Returns (allowed, reason-if-not).
+        """
+        actuaries = banker.workforce.count_profession(Profession.ACTUARY.value)
+        if actuaries <= 0:
+            return False, "Cannot issue policy: no Actuary on staff."
+        open_lines = self._banker_open_lines(banker, year, season_index)
+        if policy_type in open_lines:
+            return True, ""
+        if len(open_lines) >= actuaries:
+            busy = ", ".join(sorted(open_lines))
+            return False, (
+                f"  Cannot open a new {policy_type} line: your "
+                f"{actuaries} Actuary/Actuaries are committed to {busy}. "
+                f"Train another Actuary at the Education island to write a "
+                f"second line."
+            )
+        return True, ""
+
     def _action_buy_insurance(
         self, player: Player, result: TurnResult, year: int, season_index: int
     ) -> None:
@@ -3514,6 +3562,13 @@ class TurnManager:
 
         choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
         policy_type = "life" if choice == 1 else "medical"
+        # #196: the Banker needs a free Actuary to open a new line.
+        allowed, reason = self._banker_can_write_line(
+            banker, policy_type, year, season_index
+        )
+        if not allowed:
+            self.io.print(reason)
+            return
         base = INSURANCE_BASE_PREMIUM[policy_type]
 
         premium = self.io.ask_dollop_amount(
