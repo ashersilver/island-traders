@@ -226,19 +226,101 @@ If an insured worker dies (workplace fatality event):
 Phased so each piece is independently mergeable:
 
 ### Phase A — Role rename + Lab Tests resource (smallest)
-1. Display rename `Healthcare → Medical & Laboratory`.
-2. Add `ResourceType.LABORATORY_TESTS`.
-3. Add the Lab Test production recipe.
+1. Display rename `Healthcare → Medical & Laboratory`.  **Shipped
+   2026-08-06** (`Refs #26`) — engine `ROLES["Doctor"]` display fields plus
+   RULES.md / ISLAND_BRIEFINGS.md.  `ROLE_INFO` in `server/app.py` derives
+   from `ROLES`, so the client picked it up with no frontend change.
+2. Add `ResourceType.LABORATORY_TESTS`.  **Deferred to Phase B — see below.**
+3. Add the Lab Test production recipe.  **Deferred to Phase B.**
 4. Update STARTING_INVENTORY so the Doctor opens with a small Lab Test
-   stockpile.
+   stockpile.  **Deferred to Phase B.**
 
-Zero behavioural impact on other islands yet — Lab Tests just exists as a
-tradeable.
+> ~~Zero behavioural impact on other islands yet — Lab Tests just exists as a
+> tradeable.~~
+>
+> **This premise does not hold, measured 2026-08-06.**  A prototype of steps
+> 2–4 (Lab Tests at 35 Dp, a `doctor.pathology_lab` capacity item deliberately
+> left out of `MANDATORY_MINIMUM_INVESTMENT`, `BASE_PRODUCTION` 6/season) moved
+> the Doctor from **24.0% → 34.0%** win rate and **17.0% → 18.7%** wealth share
+> over 200 games at seed 42.  Supply-chain liveness showed **614 Lab Tests
+> produced, 0 consumed, 0 traded**.
+>
+> The cause is structural, not a tuning error: scoring is on net worth, so an
+> output with no consumers is a pure wealth faucet — the AI buys the plant,
+> produces, and banks inventory nothing ever draws down.  Gating production
+> behind an opt-in capital item does **not** avoid this, because the AI buys
+> the item.
+>
+> **Therefore supply and demand must land together.**  Fold steps 2–4 into
+> Phase B so the Mining assay and Agricultural soil-analysis consumers exist
+> in the same branch that starts producing Lab Tests.  Phase A reduces to the
+> display rename, which is genuinely inert.
+>
+> Note for whoever picks up Phase B: adding Lab Tests as a *hard* input to
+> Metal smelting and Farmer production risks re-creating the cascading-collapse
+> dynamic that #47 / PR #212 removed (no Pathology Lab anywhere → no Metal →
+> Manufacturer starves).  Prefer a soft gate — a yield penalty or a
+> graceful-degradation floor in the style of `EXPERTISE_DEGRADATION_*` — over a
+> hard stop, and re-run the calibration sweep before merging.
 
 ### Phase B — Mining / Agriculture Lab Test consumers
 1. Mining's Ore → Metal smelting requires 1 Lab Test per batch.
 2. Farmer's seasonal production requires 1 "Soil Analysis" Lab Test.
 3. RULES.md updated.
+
+> **Attempted 2026-08-07 and NOT merged.** Working prototype on branch
+> `feature/lab-tests-phase-b` (commit `5717766`). Read this before trying
+> again — the mechanism works; the *demand* side is the hard part.
+>
+> **What the prototype got right, and is worth reusing verbatim:**
+>
+> - `ProductionEngine.assay_plan()` — a **soft** gate. Coverage-scaled yield:
+>   `coverage = min(1, on_hand / needed)`, `yield x = floor + (1-floor) *
+>   coverage`. Verified: Metal 40 with 0 tests → ×0.75, with 2 → ×0.875, with
+>   4 → ×1.0. It never blocks, so it avoids the cascade that putting Lab Tests
+>   into `OUTPUT_PRODUCTION_INPUT_STEPS` would cause — **that table skips the
+>   output entirely when an input is short**, which is the exact
+>   Manny-Fracture dynamic #47 / PR #212 removed. Do not use it for assays.
+> - The `ASSAY_REQUIREMENTS` table shape, `doctor.pathology_lab` capacity
+>   item, and the `LaboratoryTests` recipe.
+>
+> **Why it was not merged.** Over 40 games at seed 42:
+> **2,318 Lab Tests produced, 0 consumed, 289 traded** — and the Doctor went
+> to **43.5%** win rate (from ~24%). The same wealth-faucet failure the
+> Phase A note above describes, and for a subtler reason:
+>
+> **A soft gate creates only *optional* demand.** Skipping the assay costs a
+> Miner 25% of one Metal run — perhaps 60-80 Dp — while a Lab Test lists at
+> 35 Dp. The margin is thin, it is a second-order effect the AI's purchase
+> logic does not weigh, and so the AI barely buys (289 traded ≈ 0.09 per
+> island-season) and holds none at the moment it produces (0 consumed). The
+> Doctor meanwhile produces on every tick and banks the unsold stock as net
+> worth. Adding `AIStrategy._assay_shortfall()` to
+> `_inputs_for_ai_purchase` was not enough to close it.
+>
+> **This is the structural tension to solve first:** a *hard* gate creates
+> real demand but risks the cascade; a *soft* gate is safe but creates demand
+> too weak for the AI to act on, so supply outruns it and the faucet returns.
+>
+> Options, roughly in order of promise:
+>
+> 1. **Cap supply to demand.** Make the Doctor's Lab Test capacity track
+>    actual archipelago assay demand rather than a flat 12/season, so
+>    unsold stock cannot accumulate no matter how weak demand is. Cheapest
+>    fix and it removes the faucet directly.
+> 2. **Make the penalty bite harder** (floor ~0.5 on Metal) so skipping the
+>    assay is clearly worse than the 35 Dp, then re-check that the AI
+>    actually buys. Needs the flow table to show non-zero *consumed*.
+> 3. **Price Lab Tests well below the yield they protect** — the demand has
+>    to be obviously profitable, not marginally so.
+> 4. **Ship Phase B without the Doctor producing to stock**: make Lab Tests
+>    produced *on order* only (a service the consumer requests), which
+>    sidesteps inventory-as-wealth entirely. Biggest change, cleanest model.
+>
+> **Acceptance criterion for the next attempt:** the supply-chain liveness
+> table must show LaboratoryTests **consumed > 0 and roughly tracking
+> produced**, and no role may move more than ±2 pp across three seeds. If
+> consumed is 0, the faucet is back regardless of what the win rates say.
 
 ### Phase C — Ecologist profession + Environmental Assessment gate
 1. Add `Profession.ECOLOGIST` (Technician, 2-season apprenticeship).

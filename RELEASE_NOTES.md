@@ -5,7 +5,7 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.8`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.11`.
 
 - **Buyers can amend, cancel and sweeten capital orders (Wave 9.2/9.3)** —
   completes the order book. A buyer can now change their mind while nothing has
@@ -33,6 +33,338 @@ Release notes are required before merging a feature/fix branch into
     offer, so an order cannot be amended upward while secured at the old price.
   - Amend and cancel are refused once an order is locked in production or
     settled — there is no unwind path for consumed units and issued finance.
+
+- **The annual physical halves insurance premiums (#19, third mechanic).**
+  Blocked until Lab Tests shipped in `.7`; now unblocked.
+  - Hand over a **Health Certificate** (a Lab Test) when a Life or Medical
+    policy is written and the premium is **halved**. The certificate is
+    consumed.
+  - Policies run a year, so **renewal is the anniversary** — produce another
+    certificate and the half rate continues, turn up without one and the full
+    premium returns. That is the reversion #19 describes, with no separate
+    anniversary bookkeeping to drift out of sync.
+  - **All four policy-minting paths honour it** — the Banker's *Sell
+    Insurance*, a buyer's *Buy Insurance*, and both AI paths — with a test
+    that asserts none of them can quietly stop doing so. Getting this wrong
+    once already (the #196 per-line rule reached only one of two AI paths) is
+    why that test exists.
+  - Balance holds: 200 games × 3 seeds keep wealth share at **12.9–15.0%**,
+    unchanged from the `.8` re-tune.
+  - **Known limitation:** AI islands don't stock Health Certificates, because
+    nothing tells them to — only the Miner holds Lab Tests, and then for
+    assays. So the discount is exercised mainly in human play for now. Giving
+    the AI a reason to buy certificates is a follow-up, and would raise Lab
+    Test demand along with it.
+
+- **Role economics re-tuned (#213 — closes the issue).** Wealth share was
+  spread 12.6–16.9% with win rates from **1.8% (Manufacturer) to 24.3%
+  (Doctor)**. After three tuning passes:
+
+  | Role | win% before | win% after | share before | share after |
+  |---|---|---|---|---|
+  | Farmer | 18.0 | 16.7 | 13.0 | 12.9 |
+  | Miner | 14.0 | 17.3 | 13.2 | 13.5 |
+  | Transporter | 13.2 | 17.5 | 13.9 | 14.7 |
+  | Educator | **5.3** | **10.3** | 13.7 | 14.5 |
+  | Banker | **23.3** | **12.8** | 16.8 | 14.9 |
+  | Manufacturer | **1.8** | **9.2** | 12.6 | 14.8 |
+  | Doctor | **24.3** | **16.2** | 16.9 | 14.7 |
+
+  Wealth-share spread closes from **4.3 points to 2.0** (12.9–14.9 against an
+  even split of 14.3), and win rates from a 22.5-point range to 8.3.
+  - **Validated on held-out seeds.** Tuned on 42/7/99, then checked on
+    123/2024/555 which were never used for tuning: spread **13.2–15.0**,
+    essentially identical. The result is not overfitted.
+  - Levers: MedicalSupplies 30→23 and Vaccine 40.2→32 (the Doctor was the
+    biggest single outlier), Banker Finance output 0.7→0.58, Goods 5.0→9.5
+    (the Manufacturer's margin was too thin to ever win), Expertise 17.1→18.0
+    and Courses 23.75→25.0, Metal 8.0→9.0, Grain 12.0→13.0, Food 26.4→24.5.
+  - **A regression gate now guards this** —
+    `tests/test_simulation/test_role_balance_regression.py` runs a short
+    simulation and fails if any role drifts outside 10–19% share, the spread
+    exceeds 6 points, or mean deviation from an even split exceeds 2 points.
+    A brittle test that pinned exact Course/Expertise prices was rewritten to
+    assert the relationship that must hold (a Course is made from Expertise,
+    so it is worth more) rather than frozen numbers.
+  - `BASE_PRICES` now carries a note that these values are calibrated together
+    and how to re-check after editing.
+
+- **Laboratory Tests exist and are actually consumed (#26 Phase B).** The
+  Medical & Laboratory Island's third line, bought by the Miner as a metal
+  assay. Supply is capped near real demand: **430 produced / 266 consumed**
+  over 40 games, against the earlier prototype's **2,318 produced / 0
+  consumed**. The wealth faucet is gone.
+  - **Soft gate, not a hard one.** An unassayed smelt still runs at a reduced
+    yield (`assay_plan`), so no Pathology Lab anywhere can never mean no Metal
+    at all — the cascade #47 / PR #212 removed.
+  - **Bug: the first cut only hooked one of two production paths.** Assay
+    logic lived in `produce_product`, but the AI produces through the bulk
+    `produce()` — so assays were **never consumed in simulation**. Both paths
+    now route through one `apply_assay`, and a test asserts they keep doing so.
+  - **Crash fix (live in `.4`/`.6`).** `_settle_equipment_claim` rounded a
+    partial payout *up* past the Bank's float balance, raising
+    `InsufficientFundsError: has 16.15 Dp but needs 16.15` and killing the
+    game. Latent until `.6` let the AI sell equipment cover; it then killed a
+    200-game sweep outright. Payouts now round down.
+  - **The Farmer's soil analysis is deferred, with evidence.** Assaying Grain
+    collapsed Food from **1,880 to 60** units over 40 games — and did so at
+    *every* floor from 0.85 to 0.96, so it is structural, not tuning. The food
+    chain runs on a fixed kitchen recipe (2 Grain + 1 Produce + 1 protein) and
+    does not degrade gracefully. Miner-only keeps Food at 1,660.
+  - **Assays are scaled to production runs.** `per_units` is board-scale;
+    output is x10, so a first cut at `per_units=10` demanded ~6 assays a
+    season from the Miner against a supply of 5, pinning every consumer at the
+    floor while draining cash chasing tests that did not exist.
+  - **Lab Tests are priced as a routine assay (10 Dp), not a premium product.**
+    At the spec's suggested 35 Dp the *cash* cost — not the yield penalty —
+    was what hurt: ~840 Dp over a game against a 1,500 Dp start. Repricing
+    moved the Doctor from 33% back to 24% and is what made the line viable.
+  - **Balance, for the #213 re-tune to absorb.** Against `.6`: Miner
+    **−13.5 pp**, Banker **+11 pp**, Educator +4, Manufacturer +2, Doctor
+    −1.5. The economy is coherent — no crash, no collapse, every resource
+    flowing — but it is not balanced, and rebalancing is the next task.
+
+- **The AI Bank runs a real insurance book — and a per-line leak is fixed.**
+  - **Bug fix: the #196 per-line Actuary rule only reached one of the two AI
+    paths.** `_ai_offer_insurance` was gated in `.3`, but
+    `_ai_buy_workplace_insurance` — where the AI *buyer* initiates — mints
+    policies directly and was not. A one-Actuary Bank was writing both life
+    and medical, so `.3`'s calibration measured a world where the rule barely
+    applied to the AI. Both paths now share one capacity check.
+  - **The AI Bank can grow its actuarial capacity.** "Banker" was missing from
+    `AI_REPLACEMENT_TRAINING_ROLES` entirely, so the AI Bank never trained
+    anything — it could not even rehire a lost Actuary, and one probe run
+    ended with **zero**, its insurance business dead for good. It now
+    maintains its staffing and grows to `AI_BANKER_TARGET_ACTUARIES` (3), one
+    per line.
+  - **The AI Bank sells equipment cover**, writing the client's most valuable
+    uninsured machine, one per season — matching how the human action works
+    and keeping exposure growing gradually. Priced by the same
+    `equipment_insurance_quote` as the human path.
+  - Across 4 probe games all three lines are now live (life 36 / medical 25 /
+    **equipment 28**), against **zero** equipment policies before.
+  - **Balance moves, deliberately.** Over 200 games × 3 seeds the Banker gains
+    ~**+3.5 pp** (it now runs a three-line book) with Miner ~−3.5 pp and
+    Transporter ~+2.0 pp. This is the intended consequence of switching the
+    line on, and it is the new baseline the #213 re-tune will work from —
+    which is why the re-tune is being done *after* this and the Lab Tests
+    change rather than before.
+
+- **Insurance Adjusters process claims (#196 — completes the issue)** — a new
+  Banker Technician profession. Selling cover and paying out are different
+  jobs: an **Actuary prices the risk, an Adjuster settles the loss**, and
+  holding one does not cover the other.
+  - A Bank with no Adjuster **cannot pay any claim** — neither a life death
+    benefit nor an equipment payout.
+  - An unsettled claim leaves the **policy in force**. The buyer paid for
+    cover; a staffing gap at the Bank must not void it. Hire an Adjuster and
+    the same claim settles.
+  - The Banking island **starts with one Adjuster** (taken from its Unskilled
+    remainder, so headcount is unchanged), which is why this is
+    balance-neutral rather than silently switching off every existing death
+    benefit: 200 games × 2 seeds move every role by ≤1 pp.
+  - Trainable in 1 season from the Banking island, university capacity 4/year.
+  - This closes #196. All three of its rules are now in: one Actuary per line
+    (`.3`), equipment policies priced off the #188 curve (`.4`), and claims
+    processing (`.5`).
+
+- **Equipment ("industrial") insurance (#196)** — a third insurance line,
+  written on **one named machine** rather than on the island.
+  - **Priced off the #188 actuarial table the engine already uses.**
+    `EQUIPMENT_FAILURE_PROB_BY_QUARTER` is the Weibull curve failures are
+    rolled against each season; the premium compounds four quarters of it into
+    an annual failure probability, multiplies by the payout, and loads the
+    result by a **20% markup**. So the premium tracks the hazard that causes
+    the claim instead of being a separate hand-tuned number, and the Bank
+    keeps a consistent margin (loss ratio 1/1.2) at every age.
+  - **Pays 90% of the machine's value**, as the issue specifies. A claim is a
+    **total-loss settlement**: it pays and the policy closes. Repair proceeds
+    as normal — the payout is cash toward replacement, not a repair service.
+  - The rate is **struck at inception and held flat**: the unit ages, the
+    premium does not.
+  - One policy per machine, so a buyer cannot stack payouts on one failure,
+    and a Bank short of cash pays what it has.
+  - Equipment is a third **line**, so under the rule shipped in
+    `0.1.6-dev.2026-08-07.3` a Bank needs a **third Actuary** to write it
+    alongside Life and Medical.
+  - **The AI Banker does not sell this line.** Deliberate for now — it is a new
+    product with real payouts, and leaving the AI out keeps it balance-neutral
+    (200 games × 2 seeds are identical to baseline on every role) while the
+    pricing is proven in human play. Wiring the AI is the natural follow-up
+    and is what would let #235 be re-measured.
+  - Still open on #196: the **Insurance Adjuster** profession for claims
+    processing.
+
+- **One Actuary per line of insurance business (#196)** — the Bank needed *an*
+  Actuary to underwrite at all; now it needs one **per line**. Life and Medical
+  are separate lines, and the Banking island starts with a single Actuary, so
+  it opens one line and must train a second Actuary at the Education island to
+  write the other.
+  - Writing more policies in a line already running costs nothing extra — that
+    Actuary is already on it. Only *opening* a line needs a spare.
+  - A line that lapses entirely frees its Actuary again, so a Bank that runs
+    off its Life book can redeploy into Medical.
+  - Another Bank's policies don't occupy your Actuaries.
+  - The **AI Banker is bound by the same rule**, which matters — it issues
+    policies directly and would otherwise have underwritten around the
+    constraint.
+  - Both human paths are gated (the Banker's *Sell Insurance* and a buyer's
+    *Buy Insurance*), and the check runs **after** the line is chosen, so
+    adding to an open line is never refused.
+  - Calibration: 200 games × 3 seeds, every role within ±2 pp (Doctor −1.5 pp
+    mean; a −3.0 pp reading on one seed did not repeat).
+  - This is the first of #196's three rules. The Insurance Adjuster profession
+    and equipment/industrial policies are still open.
+
+- **Event-log action alerts (#3)** — a 🔔 **Alerts** button on the event-log
+  filter bar pops a toast when a tracked kind of entry appears, so a player
+  reading the board doesn't miss a disaster or a deal.
+  - Alert on any of four categories — **Events & disasters, Trades & deals,
+    Training, Anything about my island** — and/or on **free-text keywords**
+    (case-insensitive substrings, e.g. `Drought, Oil`).
+  - Rules persist per browser and survive a reload.
+  - **Rejoining a long game does not spray toasts.** The first log sync
+    back-fills history, so alerts are suppressed for that batch only; the very
+    next live line still alerts.
+  - The sidebar **My Alerts** panel already covered the *numeric* half of #3
+    (price / stock / treasury thresholds). The two are now presented as one
+    feature: they share a toast style, and the numeric panel points at the log
+    alerts for the event-driven half.
+
+`APP_VERSION`: `0.1.6-dev.2026-08-07.1`.
+
+- **Insured islands lose no productivity to injuries, and the death benefit
+  pays replacement cost (#19).** Two of the issue's three mechanics; the third
+  (an annual physical halving the premium) is gated on Laboratory Tests and
+  waits for Phase B of `requirements/medical-laboratory.md`.
+  - **Medical insurance no longer suppresses the injury roll.** The injury
+    happens and is still reported — but the insurer treats the worker at once,
+    so they are never sidelined (`INSURED_INJURY_RECOVERY_SEASONS = 0`), which
+    is what the issue actually asks for. Previously the policy halved the
+    *chance* of injury and the worker still lost two seasons when unlucky.
+    Brownouts across a 200-game sweep more than halved, 534 -> 245
+    island-seasons.
+  - **The life-insurance death benefit is now per band** — Manager 280,
+    Technician 160, Worker 100 Dp — because the payout is meant to cover
+    retraining a replacement, and a Manager is 2-4 seasons of university where
+    a Worker was hired off the dock.
+  - **Note a behavioural side effect:** because insured injured workers stay in
+    the active pool, they remain exposed to that tick's fatality roll. Under
+    the old model being injured effectively shielded a worker from dying that
+    season, which was an artefact rather than a design.
+  - **Balance.** First-pass band values (200/120/60) assumed a 20/30/50 band
+    mix; real islands are ~80% Worker, and unskilled workers carry 2x the risk
+    multiplier, so mean payout landed near 75 Dp instead of 120 and cut Banker
+    liability ~40% — worth +5.8 pp to Banker and -4.5 pp to Transporter across
+    three seeds. Recalibrated against the real mix, Banker is back in band
+    (-1.3 pp). A residual remains and is **structural, not a tuning miss**:
+    Transporter -3.3 pp / Farmer +3.2 pp, because making insurance more
+    valuable rewards roles in proportion to their injury rate and Transporter
+    has the lowest (0.030) of the insurable roles. Risk-differentiated premiums
+    are the fix; that is #196's territory and a follow-up issue tracks it.
+  - Also fixes a **vacuous test**: the existing death-benefit assertion in
+    `test_workforce_events.py` sat inside `if report.fatality_worker_ids:` and
+    never ran, because an always-fires RNG injures every worker first and
+    empties the active pool before the fatality roll. The new tests script the
+    two phases separately.
+
+- **Islands on the map are clickable, and the wordmark reads properly (#23).**
+  - **Clicking any island on the in-game map opens its briefing** — title,
+    full description, activity index and priorities — now led by the island's
+    **artwork**, picked day or night to match the current season. The briefing
+    content and the renders both already existed; the map simply had no way to
+    reach them, and `showIslandBriefing` never showed a picture. Nodes are
+    keyboard-reachable (Tab, then Enter or Space) and highlight on hover, so
+    it's discoverable that they do something.
+  - **The top-left wordmark** was 1rem at weight 700 in gold on a dark bar,
+    which read as thin and washed out. Now 1.16rem at weight 800 with positive
+    tracking and a dark halo (a light halo under the day theme); the anchor
+    glyph is split out so it doesn't inherit the tracking and drift.
+  - Regression tests pin the map-to-role mapping, the click and keyboard
+    handlers, the presence of a briefing per role, and that **every
+    `ROLE_ART` path resolves to a file that actually exists on disk**.
+
+`APP_VERSION`: `0.1.6-dev.2026-08-06.5`.
+
+- **Quality of Life is explained, and its breakdown actually displays (#227)** —
+  a player could see a QoL number but had no way to learn what moved it or why
+  it mattered.
+  - **Fixed a payload mismatch that hid the whole breakdown.** The wellbeing
+    tile read a `quality_of_life` object the server has never sent, falling
+    back to the 0..1 `qol_score`. So the score rendered but the four scoring
+    components never did, and `qol_productivity_multiplier` — the reason QoL
+    matters at all — was never shown. The tile now reads `qol_index`,
+    `qol_breakdown` and `qol_productivity_multiplier`, which is what the
+    server has been emitting all along. (It also looked for a `goods`
+    component key; the engine emits `consumer_goods`.)
+  - **The tile now shows a bar per component** (Nutrition 30, Medical 35,
+    Consumer goods 20, Stability 20) with points-of-max, plus the production
+    multiplier next to the score.
+  - **"How is this calculated?"** expands per-component guidance on what to
+    do or invest in to move each line, served from a new
+    `GET /api/qol-guide`. The guide is **derived from the same constants
+    `seasonal_qol_breakdown` scores against**, so the explanation cannot drift
+    from the calculation — tests pin it to those constants.
+  - **RULES.md gains a Quality of Life section** covering the 0.85x-1.15x
+    production swing, all four components, what moves each, and a note that
+    the seasonal index is a different measure from the annual food/health/
+    pollution wellbeing that drives birth rates and emigration.
+  - Note the components total 105, not 100. That is deliberate — the index is
+    clamped to 100, so a strong line can cover a weak one.
+- **Finished the Medical & Laboratory rename in the frontend.** The
+  `0.1.6-dev.2026-08-06.2` notes claimed no player-facing "Healthcare" label
+  remained; that was wrong. Five hardcoded strings in `index.html` were missed
+  because only the server's `ROLE_INFO` was checked, and that derives from
+  `ROLES` while the frontend keeps its own copies: the landing-page island map
+  label, `ROLE_DISPLAY_NAMES`, `ROLE_SHORT_NAMES`, the `ROLE_ART` island title,
+  and the board island list. All now read Medical & Laboratory.
+
+- **Lawyers (#44)** — a new Manager-tier profession, trainable from every
+  island through the existing Educator Manager-course pipeline (2 seasons,
+  university capacity 2/year), and required to write a new equipment lease.
+  - **The Banker starts with 1 Lawyer** (in-house counsel), taken from its
+    Unskilled remainder rather than added on top — the Banking island's total
+    headcount is unchanged. No other island gets a free Lawyer; they train one.
+  - **Mid-game `Lease capital` refuses cleanly** when the island has no active
+    Lawyer, telling the player to train one at the Education island. The check
+    runs before the lease catalogue is shown, so you are never asked to pick
+    equipment you can't sign for. A Lawyer away at law school doesn't count.
+  - **Certification is one-shot at inception.** A lease already running is
+    unaffected if the Lawyer later retires or is retrained, and leases written
+    before this change are grandfathered.
+  - **The investing phase is deliberately exempt.** No island has had a turn to
+    train a Lawyer at opening, and the only lease-eligible item in the
+    catalogue today (`educator.technical_workshop`) is Educator-only — gating
+    there would have removed the opening lease path rather than gated it.
+    Opening leases are standard-form contracts drawn by the Bank's own counsel.
+    Worth revisiting once the lease catalogue grows past one item.
+  - Calibration: 200 games × seed 42 moves every role ≤1 pp against
+    `pre-release` (Banker −0.5 pp) — inside the noise band at that sample size.
+
+- **The Healthcare island is now the Medical & Laboratory Island (#26)** — the
+  rename that has been sitting on the Phase A checklist in
+  `requirements/medical-laboratory.md` since May, ahead of the island picking
+  up the archipelago's assay work.
+  - Display-only: `ROLES["Doctor"]`'s `display_name`, `short_name` and
+    `island` change; the engine key stays `"Doctor"`, so saved games and the
+    JSON wire format are untouched. `ROLE_INFO` derives from `ROLES`, so the
+    client picked the new name up with no frontend change.
+  - RULES.md and ISLAND_BRIEFINGS.md follow — no player-facing "Healthcare"
+    label remains anywhere.
+  - 200 games × seed 42 is identical to `pre-release` to the decimal on every
+    role, confirming the rename is inert.
+- **Phase A of the medical-laboratory spec was re-scoped on measured evidence.**
+  The spec claimed adding the Lab Tests resource ahead of its consumers would
+  have "zero behavioural impact". A prototype showed otherwise: the Doctor went
+  **24.0% → 34.0%** win rate and **17.0% → 18.7%** wealth share, with **614 Lab
+  Tests produced, 0 consumed, 0 traded**. Scoring is on net worth, so an output
+  with no consumers is a pure wealth faucet — and gating it behind an opt-in
+  capital item doesn't help, because the AI buys the item. Lab Tests are
+  therefore deferred to Phase B, where supply and demand land together. The
+  numbers and a warning about hard-gating Metal smelting are recorded in
+  `requirements/medical-laboratory.md`.
+
+`APP_VERSION`: `0.1.6-dev.2026-07-14.7`.
 
 - **Capital orders are backordered instead of refused (Wave 9.1/9.4/9.5)** — a
   capital order the Manufacturer could not fill was rejected *before anything

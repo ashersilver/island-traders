@@ -70,6 +70,7 @@ from ..constants import (
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..dependency_graph import build_dependency_graph
+from ..engine.qol import qol_guide
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -1737,6 +1738,16 @@ class GameManager:
                 if not leased or spec_idx >= len(game.players):
                     continue
                 p = game.players[spec_idx]
+                # #44 deliberately does NOT gate the investing phase on a
+                # Lawyer.  Nobody has had a turn to train one yet, and the
+                # only lease-eligible item in CAPITAL_CATALOGUE today is
+                # `educator.technical_workshop` — Educator-only, and the
+                # Educator starts with no Lawyer.  Gating here would remove
+                # the opening lease path entirely rather than gate it.
+                # Opening leases are standard-form contracts drawn by the
+                # Bank's own counsel; the lessee needs counsel only once it
+                # starts writing its own leases mid-game (_action_lease_capital).
+                # Revisit if the lease catalogue grows beyond one item.
                 for iid in leased:
                     item = find_item(CAPITAL_CATALOGUE, iid)
                     if not item or not item.lease_terms:
@@ -7433,6 +7444,20 @@ def create_app() -> FastAPI:
         client fetches it once and caches it.
         """
         return build_dependency_graph()
+
+    @app.get(
+        "/api/qol-guide",
+        tags=["Reference"],
+        summary="How the Quality of Life index is calculated",
+    )
+    async def _get_qol_guide():
+        """Player-facing explanation of the seasonal QoL index (#227).
+
+        Derived from the same constants `seasonal_qol_breakdown` reads, so the
+        explanation cannot drift from the calculation. Static for a given
+        build, so the client fetches it once and caches it.
+        """
+        return qol_guide()
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():

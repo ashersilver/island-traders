@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-07-14.8"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.11"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -111,30 +111,38 @@ STARTING_INVENTORY: dict[str, dict[str, int]] = {
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
     # Doctor: services to sell + 2 seasons of inputs
     "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
+                      "LaboratoryTests": 4,                           # opening assay stock (#26)
                       "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
 }
 
-# Dollops per unit at balanced supply/demand
+# Dollops per unit at balanced supply/demand.
+#
+# RE-TUNED 2026-08-07 for #213.  These are calibrated together — changing one
+# in isolation will move role balance.  After any edit, re-run:
+#     python -m island_traders.simulation.runner --games 200 --seed 42
+# across several seeds and check wealth share stays inside roughly 12-16%
+# per role (tests/test_simulation/test_role_balance_regression.py gates this).
 BASE_PRICES: dict[str, float] = {
-    "Food":                26.4,
+    "Food":                24.5,
     "Fish":                14.4,
-    "Grain":               12.0,
+    "Grain":               13.0,
     "Produce":             14.4,
     "Meat":                16.2,
     "Ore":                  4.5,
-    "Metal":                8.0,
+    "Metal":                9.0,
     "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # MedicalSupplies/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
     "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
-    "Expertise":           17.1,
-    "Courses":             23.75,  # classroom slots; gated by Expertise consumption
+    "Expertise":           18.0,
+    "Courses":             25.0,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":                5.0,
+    "Goods":                9.5,
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
-    "MedicalSupplies":      30.0,
-    "Vaccine":             40.2,
+    "MedicalSupplies":      23.0,
+    "Vaccine":             32.0,
+    "LaboratoryTests":     10.0,   # routine assay: cheap and repeat-purchased, not a premium product
     "Finance":             22.0,
     # ForgeHaven product lines
     "FarmMachinery":       60.0,   # installs as farmer.tractor capital
@@ -175,13 +183,17 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
     # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
-    "Banker":        {"Finance": 0.7 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 0.58 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
     "Doctor":        {"MedicalSupplies": 3 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
                       "Vaccine": 0.75 * PRODUCER_PRODUCTIVITY_MULTIPLIER,
-                      "Reagents": 6},
+                      "Reagents": 6,
+                      # Lab Tests (#26).  Gated on doctor.pathology_lab capacity;
+                      # sized to cover the archipelago's assay demand with a
+                      # little spare so the market can clear.
+                      "LaboratoryTests": 3},
 }
 
 # Resources consumed each production cycle (base case; Farmer uses SEASONAL_CONVERSION;
@@ -223,6 +235,47 @@ OUTPUT_PRODUCTION_INPUT_STEPS: dict[str, dict[str, dict]] = {
         "Expertise": {"per_units": 10, "inputs": {"Reagents": 1, "Oil": 1}},
     },
 }
+
+# ---------------------------------------------------------------------------
+# Laboratory assays (#26)
+# ---------------------------------------------------------------------------
+# Outputs whose quality depends on a Lab Test from the Medical & Laboratory
+# Island: the Miner's metal assay, the Farmer's soil analysis.
+#
+# Deliberately a SOFT gate, not an entry in OUTPUT_PRODUCTION_INPUT_STEPS.
+# That table skips the output entirely when an input is short, which is exactly
+# the cascading-collapse dynamic #47 / PR #212 removed — no Pathology Lab
+# anywhere would mean no Metal at all, and the Manufacturer starves behind it.
+# Instead an uncovered batch still produces, at a reduced yield:
+#
+#   coverage  = min(1, lab_tests_on_hand / assays_needed)
+#   yield x   = floor + (1 - floor) * coverage
+#
+# so a fully-supplied island produces at 100%, a completely unsupplied one at
+# `floor`, and partial supply scales between. Tests are consumed up to what is
+# available, which is what creates real demand for the line.
+# Floors are deliberately shallow.  A first cut used 0.75 on Metal and 0.85 on
+# BOTH Grain and Produce; that compounded through the kitchen recipe (2 Grain +
+# 1 Produce + 1 protein per run) and collapsed Food production — Grain
+# consumption went to zero against a 1,880-unit baseline.  Soil analysis now
+# touches Grain only, which is both gentler and truer to what a soil test is
+# for, and the floors are shallower.
+ASSAY_REQUIREMENTS: dict[str, dict[str, dict]] = {
+    # per_units is in BOARD-SCALE units: output is multiplied by
+    # PRODUCER_PRODUCTIVITY_MULTIPLIER (10), so a season yields ~60 Metal.
+    # One assay per production run is the right granularity.  A first cut used
+    # per_units=10, demanding ~6 assays a season from the Miner alone against a
+    # Doctor supply of 5 — every consumer sat permanently at the floor while
+    # draining cash chasing tests that did not exist.
+    #
+    # Only the Miner is assayed for now.  The Farmer's soil analysis (also
+    # named in #26) is deferred: attaching an assay to Grain collapsed Food
+    # production from 1,880 to 60 units over 40 games, and did so at EVERY
+    # floor from 0.85 to 0.96 — the food chain runs on a fixed kitchen recipe
+    # and does not degrade gracefully.  See RELEASE_NOTES for the measurements.
+    "Miner":  {"Metal": {"per_units": 60, "floor": 0.98}},   # metal assay
+}
+ASSAY_RESOURCE: str = "LaboratoryTests"
 
 # Economic dependence P2a: all islands draw a flat building-power base, plus a
 # surcharge for owned fixed, grid-powered heavy plant.
@@ -565,7 +618,9 @@ STARTING_WORKERS_BY_PROFESSION: dict[str, list[tuple[str, int]]] = {
     ],
     "Banker":        [
         ("Banker", 1),               # Manager
+        ("Lawyer", 1),               # Manager — in-house counsel (#44 lease gate)
         ("Actuary", 1),              # Technician — insurance underwriting
+        ("InsuranceAdjuster", 1),    # Technician — claims handling (#196)
         ("BankingAnalyst", 1),       # Technician
         ("BankingClerk", 1),         # Technician
     ],
@@ -656,6 +711,13 @@ EQUIPMENT_MAINTENANCE_CONTRACT_PER_100: dict[int, tuple[float, float]] = {
     4: (55.29, 34.88),
     5: (78.23, 47.91),
 }
+# Equipment ("industrial") insurance — #196.  Cover on ONE named capital unit,
+# priced off the #188 failure curve above so the premium tracks the same hazard
+# that triggers the claim.  A claim is a total-loss settlement: it pays out and
+# the policy is done.
+EQUIPMENT_INSURANCE_PAYOUT_FRACTION: float = 0.90   # "pay out 90% of the value"
+EQUIPMENT_INSURANCE_MARKUP: float = 0.20            # "a flat rate with a 20% markup"
+
 EQUIPMENT_REPAIR_SHIP_FREIGHT: int = 1
 EQUIPMENT_REPAIR_AIR_FREIGHT: int = 2
 EQUIPMENT_AI_WARRANTY_MIN_COST: float = 0.0
@@ -731,20 +793,20 @@ LABOUR_REQUIREMENTS: dict[str, dict[str, int]] = {
 SKILLED_PROFESSIONS: dict[str, list[str]] = {
     "Farmer":       [
         "Farmer", "FarmingTechnician", "Horticulturalist", "Veterinarian",
-        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef",
+        "Marine Biologist", "Fish Processing Technician", "Mechanic", "Chef", "Lawyer",
     ],
     "Miner":        [
         "Miner", "MiningTechnician", "MiningForeman",
-        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef",
+        "OilExtractionWorker", "RefinerySpecialist", "Mechanic", "Chef", "Lawyer",
     ],
     "Transporter":  [
         "LogisticsManager", "Engineer",
-        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef",
+        "FlightCrew", "Seaman", "WarehouseManager", "Mechanic", "Chef", "Lawyer",
     ],
-    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef"],
-    "Banker":       ["Banker", "Actuary", "BankingAnalyst", "BankingClerk", "Chef"],
-    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef"],
-    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef"],
+    "Educator":     ["Professor", "Lecturer", "TechnicalDirector", "Instructor", "Chef", "Lawyer"],
+    "Banker":       ["Banker", "Actuary", "InsuranceAdjuster", "BankingAnalyst", "BankingClerk", "Chef", "Lawyer"],
+    "Manufacturer": ["FactoryForeman", "Tradesman", "AssemblyWorker", "Engineer", "Mechanic", "Chef", "Lawyer"],
+    "Doctor":       ["Doctor", "Nurse", "MedicalResearcher", "MedicalTechnician", "MedicalOrderly", "Chef", "Lawyer"],
 }
 
 # ---------------------------------------------------------------------------
@@ -892,6 +954,7 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     # Banking
     "Banker":               2,
     "Actuary":              4,
+    "InsuranceAdjuster":    4,
     "BankingAnalyst":       4,
     "BankingClerk":         6,
     # Education
@@ -906,6 +969,8 @@ UNIVERSITY_CAPACITY: dict[str, int] = {
     "WarehouseManager":     6,
     # Cross-island sustenance support
     "Chef":                 7,
+    # Cross-island legal counsel (#44) — required to write a new equipment lease
+    "Lawyer":               2,
 }
 
 # Professions that also have a per-SEASON cap (stricter than annual limit).
@@ -1007,6 +1072,18 @@ WORKPLACE_RISK: dict[str, dict[str, float]] = {
     "Doctor":       {"injury_rate": 0.005, "fatality_rate": 0.001},
 }
 
+# How many Actuaries an AI Bank aims to employ (#196 follow-up).  One per line
+# of business it wants open — life, medical, equipment.  Without this the AI
+# Bank is stuck at its single seeded Actuary and can never write more than one
+# line, which would quietly halve insurance coverage across the archipelago.
+AI_BANKER_TARGET_ACTUARIES: int = 3
+
+# #19: an annual physical halves life/medical premiums.  The physical is a
+# "Health Certificate" Lab Test bought from the Medical & Laboratory Island and
+# consumed when the policy is written.  Policies run a year, so renewal IS the
+# anniversary — miss the certificate then and the full rate returns.
+PHYSICAL_PREMIUM_DISCOUNT: float = 0.5
+
 # Seasons a policy stays valid after purchase (4 = one full year).
 INSURANCE_DURATION_SEASONS: int = 4
 
@@ -1035,8 +1112,45 @@ ACTUARIAL_EVALUATION_COST: float = 5.0
 # the bereaved island.
 LIFE_INSURANCE_DEATH_BENEFIT: float = 120.0
 
+# #19: the death benefit should cover the cost of *replacing* the worker, so
+# it tracks how long that worker took to train rather than being one flat
+# figure.  Managers are university-trained (2-4 seasons, EDUCATION_SEASONS),
+# Technicians apprenticed (1-2 seasons, APPRENTICESHIP_SEASONS), and Workers
+# are hired straight from the population with no course to repeat — they still
+# earn a recruitment payment, because "(if applicable)" in the issue refers to
+# the training component, not to leaving the island with nothing.
+# Calibrated to keep the *mean* payout near the previous flat 120 Dp, so total
+# expected Banker liability is roughly unchanged; see
+# LIFE_INSURANCE_DEATH_BENEFIT above for why that level matters.
+#
+# Calibrate against the ACTUAL band mix, not an intuitive one.  A first pass
+# used 200/120/60, reasoning from a 20/30/50 Manager/Technician/Worker split.
+# Real islands are roughly 80% Worker / 15% Technician / 5% Manager (a 25-head
+# workforce seeded with only a handful of named professions — see
+# STARTING_WORKERS_BY_PROFESSION), and unskilled workers carry 2x the risk
+# multiplier so fatalities skew further toward the Worker band still.  Mean
+# payout came out near 75 Dp instead of 120, cutting Banker liability ~40% and
+# moving Banker +5.8 pp / Transporter -4.5 pp across three seeds.  These
+# values put the mean back at ~118 Dp against the real mix.
+LIFE_INSURANCE_DEATH_BENEFIT_BY_BAND: dict[str, float] = {
+    "Manager":    280.0,
+    "Technician": 160.0,
+    "Worker":     100.0,
+}
+
 # Medical insurance reduces the effective injury_rate by this fraction.
+# NOTE (#19): no longer applied to the injury roll — an insured island now
+# takes injuries at the base rate but loses no productivity to them (see
+# INSURED_INJURY_RECOVERY_SEASONS).  Kept because the action-menu copy still
+# quotes it and older saves reference it; remove once that copy is reworked.
 MEDICAL_INSURANCE_INJURY_REDUCTION: float = 0.5
+
+# #19: "if they are insured they have no loss of productivity".  An injured
+# worker on an island holding medical insurance is treated immediately at the
+# insurer's expense and is never sidelined — mark_absent(…, 0) is a no-op.
+# This replaces the old rate reduction: the injury still happens (and still
+# shows in the season report), it just costs the island nothing in output.
+INSURED_INJURY_RECOVERY_SEASONS: int = 0
 
 # Life insurance reduces the effective fatality_rate by this fraction
 # (mirroring the medical-injury reduction).  Before this constant

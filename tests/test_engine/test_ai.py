@@ -65,8 +65,10 @@ def test_high_risk_ai_buys_workplace_insurance_when_solvent():
     market = Market()
     miner = make_player(1, "Miner AI", ["Miner"], dollops=500.0)
     banker = make_player(2, "Banker AI", ["Banker"], dollops=500.0)
+    # #196: one Actuary per line, so a Bank writing both life and medical
+    # needs two. The per-line rule itself is covered in test_actuary_per_line.py.
     banker.workforce.add_workers(
-        1, training_level=1, profession=Profession.ACTUARY.value
+        2, training_level=1, profession=Profession.ACTUARY.value
     )
 
     actions = ai.take_turn(
@@ -146,6 +148,9 @@ def test_ai_produces_multiple_runs_when_inputs_available():
     miner.receive_resources(ResourceType.OIL, 5)
     miner.receive_resources(ResourceType.FREIGHT, 2)
     miner.receive_resources(ResourceType.MINING_EQUIPMENT, 2)
+    # Metal is assayed (#26); stock Lab Tests so this measures production
+    # quantities rather than the un-assayed yield penalty.
+    miner.receive_resources(ResourceType.LABORATORY_TESTS, 4)
 
     actions = ai.take_turn(
         miner,

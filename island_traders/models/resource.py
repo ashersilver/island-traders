@@ -22,6 +22,12 @@ class ResourceType(str, Enum):
     # HealthServices. The canonical resource value is MedicalSupplies.
     HEALTH_SERVICES      = "MedicalSupplies"
     VACCINE              = "Vaccine"
+    # Medical & Laboratory Island's assay line (#26).  One resource covers every
+    # assay the archipelago buys — metal assays for the Miner, soil analyses for
+    # the Farmer, and later environmental assessments (#25) and health
+    # certificates (#19).  The "type" is narrative context, not an engine
+    # distinction; each consumer pays for 1 Lab Test.
+    LABORATORY_TESTS     = "LaboratoryTests"
     FINANCE              = "Finance"
     FARM_MACHINERY       = "FarmMachinery"
     MINING_EQUIPMENT     = "MiningEquipment"

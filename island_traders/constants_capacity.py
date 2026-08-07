@@ -458,6 +458,21 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
     # "Capital Equipment" hint with no catalogue option.  The Reagent Lab
     # is the dedicated piece of plant.  Modest, fast delivery so it can be
     # bought in the opening investing window.
+    # #26: the Pathology Lab is the plant behind Laboratory Tests — metal
+    # assays, soil analyses, and later environmental assessments and health
+    # certificates.  In the Doctor's mandatory minimum so assay supply exists
+    # from turn 1; without it the island has zero Lab Test capacity and every
+    # other island eats the un-assayed yield penalty with nothing to buy.
+    CapitalItem(
+        item_id="doctor.pathology_lab",
+        name="Pathology Lab",
+        role="Doctor",
+        cost=75.0,
+        delivery_seasons=0,
+        effects={"capacity": {"LaboratoryTests": 3}},
+        description="Assay bench: metal assays, soil analyses and health certificates",
+        capacity_units=1,
+    ),
     CapitalItem(
         item_id="doctor.reagent_lab",
         name="Reagent Lab",
@@ -620,6 +635,14 @@ PRODUCTION_RECIPES: list[ProductionRecipe] = [
         inputs={"Expertise": 0.25, "Reagents": 0.25},
         manager_per_unit=0.5, technician_per_unit=1.0, worker_per_unit=0.5,
     ),
+    # Lab Tests (#26).  The spec's draft recipe named "LaboratoryEquipment",
+    # renamed to Reagents in the 2026-06-02 pass — same input, new name.
+    # Technician-heavy: an Orderly runs the samples, a Doctor signs them off.
+    ProductionRecipe(
+        role="Doctor", output="LaboratoryTests",
+        inputs={"Expertise": 0.25, "Reagents": 0.2},
+        manager_per_unit=0.25, technician_per_unit=0.5, worker_per_unit=0.0,
+    ),
     ProductionRecipe(
         role="Doctor", output="Vaccine",
         inputs={"Expertise": 0.5, "Reagents": 1.0},
@@ -638,7 +661,7 @@ MANDATORY_MINIMUM_INVESTMENT: dict[str, list[str]] = {
     "Educator":     ["educator.lecture_hall", "educator.library", "educator.technical_workshop"],
     "Banker":       ["banker.vault", "banker.underwriting_desk"],
     "Manufacturer": ["manufacturer.foundry", "manufacturer.assembly_line", "manufacturer.shipyard"],
-    "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab"],
+    "Doctor":       ["doctor.hospital_ward", "doctor.vaccine_lab", "doctor.pathology_lab"],
 }
 
 

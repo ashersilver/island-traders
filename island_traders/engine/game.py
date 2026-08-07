@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 import json
 import uuid
 from dataclasses import dataclass, field
@@ -17,6 +18,7 @@ from ..models.order_book import ManufacturerOrderBook, compute_promise_dates
 from ..models.worker_transfer import WorkerTransferOffer
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
+from ..models.insurance import banker_can_process_claims
 from ..models.resource import ResourceType
 from ..models.role import ROLES
 from ..models.profession import Profession, band_of
@@ -1131,7 +1133,63 @@ class Game:
                         f"\n[CAPITAL FAILURE] {player.name}: 1 × {item.name} "
                         f"failed and is down until repaired."
                     )
+                    self._settle_equipment_claim(
+                        player, item_id, item, current_tick
+                    )
                     self._attempt_capital_repair(player, item, current_tick, unit=unit)
+
+    def _settle_equipment_claim(
+        self, player, item_id: str, item, current_tick: int
+    ) -> float:
+        """Pay out an equipment policy when the insured unit fails (#196).
+
+        A total-loss settlement: the Bank pays the agreed 90% of value and the
+        policy is spent.  Repair still proceeds as normal — the payout is cash
+        toward replacing the unit, not a repair service.
+        """
+        year, season_index = divmod(current_tick, len(SEASONS))
+        policy = next(
+            (
+                p for p in player.insurance_policies
+                if p.policy_type == "equipment"
+                and p.item_id == item_id
+                and p.is_valid(year, season_index)
+            ),
+            None,
+        )
+        if policy is None:
+            return 0.0
+        banker = next(
+            (p for p in self.players if p.player_id == policy.banker_player_id),
+            None,
+        )
+        if banker is None:
+            return 0.0
+        # #196: "For claims to be processed there needs to be an Insurance
+        # Adjuster to process the claim." No adjuster, no settlement — the
+        # policy stays open, so cover is not lost while the Bank rehires.
+        if not banker_can_process_claims(banker):
+            self.io.print(
+                f"[CLAIM] {player.name}'s {item.name} claim cannot be settled: "
+                f"{banker.name} has no Insurance Adjuster on staff. The policy "
+                f"remains in force."
+            )
+            return 0.0
+        # Round DOWN, never up: rounding a float balance up by a fraction of a
+        # Dollop made spend_dollops raise "has 16.15 but needs 16.15" and killed
+        # the game. A partial settlement must never exceed what the Bank holds.
+        payout = math.floor(min(policy.insured_value, banker.dollops) * 100) / 100
+        if payout <= 0:
+            return 0.0
+        banker.spend_dollops(payout)
+        player.receive_dollops(payout)
+        policy.active = False          # total loss — the cover is spent
+        self.io.print(
+            f"[CLAIM] {banker.name} paid {player.name} "
+            f"{CURRENCY_SYMBOL}{payout:.2f} for the failed {item.name}; "
+            f"that equipment policy is now closed."
+        )
+        return payout
 
     def _attempt_pending_capital_repairs(
         self,

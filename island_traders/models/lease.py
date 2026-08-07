@@ -69,6 +69,25 @@ class Lease:
         )
 
 
+# Refusal shown when an island tries to write a lease with no counsel on staff.
+NO_LAWYER_MESSAGE = (
+    "Cannot lease without a Lawyer on your island's roster. "
+    "Train one through the Education island first."
+)
+
+
+def lessee_has_lawyer(lessee) -> bool:
+    """True when the lessee has at least one active Lawyer on their roster.
+
+    Gates *lease inception only* (#44).  Certification is one-shot: a lease
+    already written keeps running even if the Lawyer later retires or is
+    retrained, and leases that predate the rule are grandfathered.
+    """
+    from .profession import Profession
+
+    return lessee.workforce.count_profession(Profession.LAWYER.value) >= 1
+
+
 def lease_quote(item: CapitalItem, year: int, season: int, cycle=None) -> dict:
     if not item.lease_terms:
         raise ValueError(f"{item.item_id} is not lease-eligible")

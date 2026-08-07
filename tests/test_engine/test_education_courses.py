@@ -27,9 +27,13 @@ from island_traders.models.profession import (
 # ---------------------------------------------------------------------------
 
 def test_courses_resource_exists_with_price():
+    """Prices are a balance lever and get re-tuned (#213), so assert the
+    relationship that must hold rather than frozen numbers: a Course is
+    produced by consuming Expertise, so it has to be worth more."""
     assert ResourceType.COURSES.value == "Courses"
-    assert BASE_PRICES["Courses"] == 23.75
-    assert BASE_PRICES["Expertise"] == 17.1
+    assert BASE_PRICES["Courses"] > 0
+    assert BASE_PRICES["Expertise"] > 0
+    assert BASE_PRICES["Courses"] > BASE_PRICES["Expertise"]
 
 
 def test_educator_has_courses_recipe_consuming_expertise():

@@ -20,6 +20,12 @@ class InsurancePolicy:
     # consumes coverage seats.  Defaults to 1 for backward compatibility with
     # older single-head policies / saves.
     covered_count: int = 1
+    # Equipment ("industrial") policies cover ONE named capital unit (#196).
+    # Empty for the life/medical lines, which cover people, not plant.
+    item_id: str = ""
+    # Agreed payout if that unit fails. Fixed at inception alongside the
+    # premium, so a claim is not re-priced against a later catalogue.
+    insured_value: float = 0.0
 
     def is_valid(self, year: int, season_index: int) -> bool:
         return self.active and (year * 4 + season_index) < self.expires_at_tick
@@ -54,3 +60,101 @@ class InsurancePolicy:
             f"(premium: {self.premium_paid:.0f} Dp  |  "
             f"expires start of Year {expires_year} {SEASONS[expires_season]})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Equipment ("industrial") insurance pricing — #196
+# ---------------------------------------------------------------------------
+
+def annual_failure_probability(age_seasons: int) -> float:
+    """Chance a unit of this age fails at least once over the next four seasons.
+
+    Built from the #188 per-quarter Weibull table the engine already rolls
+    against, so the premium is priced off the same hazard that causes the
+    claim rather than a separate hand-tuned number.
+    """
+    from ..constants import EQUIPMENT_FAILURE_PROB_BY_QUARTER
+
+    max_quarter = max(EQUIPMENT_FAILURE_PROB_BY_QUARTER)
+    survives = 1.0
+    for offset in range(4):
+        quarter = min(max(1, age_seasons + 1 + offset), max_quarter)
+        survives *= 1.0 - EQUIPMENT_FAILURE_PROB_BY_QUARTER[quarter]
+    return 1.0 - survives
+
+
+def equipment_insurance_quote(item_cost: float, age_seasons: int = 0) -> dict:
+    """Price one year of cover on a single capital unit (#196).
+
+    > "its premium will be a flat rate with a 20% markup, over percentage
+    > (based on the actuarial tables in Issue #188) of the equipment
+    > replacement value per year ... and will pay out 90% of the value of
+    > the equipment."
+
+    So: expected annual loss = payout x P(failure this year), and the premium
+    is that loaded by the markup.  The rate is struck at inception and held
+    flat for the life of the policy — the unit ages, the premium does not.
+    """
+    from ..constants import (
+        EQUIPMENT_INSURANCE_MARKUP,
+        EQUIPMENT_INSURANCE_PAYOUT_FRACTION,
+    )
+
+    probability = annual_failure_probability(age_seasons)
+    payout = round(item_cost * EQUIPMENT_INSURANCE_PAYOUT_FRACTION, 2)
+    expected_loss = payout * probability
+    premium = round(expected_loss * (1.0 + EQUIPMENT_INSURANCE_MARKUP), 2)
+    return {
+        "annual_premium": premium,
+        "payout": payout,
+        "failure_probability": round(probability, 4),
+        "expected_loss": round(expected_loss, 2),
+        "loss_ratio": round(expected_loss / premium, 4) if premium else 0.0,
+    }
+
+
+def banker_can_process_claims(banker) -> bool:
+    """#196: a claim needs an Insurance Adjuster on the Bank's staff.
+
+    Underwriting and claims are different jobs — an Actuary prices the risk,
+    an Adjuster settles the loss — so holding one does not cover the other.
+    A Bank with no Adjuster cannot pay out until it hires or trains one; the
+    policy stays in force in the meantime rather than lapsing.
+    """
+    from .profession import Profession
+
+    return banker.workforce.count_profession(Profession.INSURANCE_ADJUSTER.value) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Annual physical — #19
+# ---------------------------------------------------------------------------
+
+HEALTH_CERTIFICATE_TESTS = 1
+
+
+def apply_physical_discount(buyer, premium: float) -> tuple[float, bool]:
+    """Halve a life/medical premium if the island can produce a physical (#19).
+
+    > "If employees undergo a physical their medical and life insurance
+    > premiums are halved.  Employees covered by insurance need a physical
+    > once a year on the anniversary of the insurance to maintain reduced
+    > premiums."
+
+    The physical is a "Health Certificate" Lab Test from the Medical &
+    Laboratory Island, consumed at issuance.  Policies run one year, so
+    renewing *is* the anniversary — a buyer who cannot produce a certificate
+    at renewal simply pays the full rate again, which is the reversion the
+    issue describes without needing separate anniversary bookkeeping.
+
+    Returns (premium, certificate_used).
+    """
+    from ..constants import PHYSICAL_PREMIUM_DISCOUNT
+    from .resource import ResourceType
+
+    if premium <= 0:
+        return premium, False
+    if buyer.inventory.get(ResourceType.LABORATORY_TESTS) < HEALTH_CERTIFICATE_TESTS:
+        return premium, False
+    buyer.give_resources(ResourceType.LABORATORY_TESTS, HEALTH_CERTIFICATE_TESTS)
+    return round(premium * (1.0 - PHYSICAL_PREMIUM_DISCOUNT), 2), True

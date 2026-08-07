@@ -55,7 +55,7 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 | **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment | High |
 | **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* | High |
 | **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight | Medium |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
+| **Doctor** | Medical & Laboratory Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
 
 > **Activity index (how busy a role is):** roles differ in how many decisions
 > and interactions they demand each season — factor this into your auction
@@ -122,7 +122,7 @@ Each player begins the game with:
 > born at the end of each year but are **not** automatic workers — they must be
 > actively **recruited** (see Recruit Workers action on your turn).
 
-> **Healthcare Island full capacity** = 4 Doctors + 20 Nurses + 20 Medical
+> **Medical & Laboratory Island full capacity** = 4 Doctors + 20 Nurses + 20 Medical
 > Orderlies + unskilled aides.  Starting at 2 Doctors + 2 Nurses + 2 Medical
 > Orderlies means the clinic operates at partial capacity until additional
 > staff are recruited and trained.
@@ -232,7 +232,7 @@ On your turn you may take **any number of actions** in any order:
 | **Review Training** | *(Educator only)* Approve, counter-offer, or reject incoming training requests. |
 | **Arrange Transport** | *(Transporter only)* Accept or counter-offer transport jobs for workers going to college. |
 | **Recruit Workers** | Draw unskilled workers from your island's population into your workforce (1 recruit per 2 unskilled residents). |
-| **Request Medical Staff** | Hire Doctors or Nurses from the Healthcare island on a short-term contract (see Medical Staffing Contracts). |
+| **Request Medical Staff** | Hire Doctors or Nurses from the Medical & Laboratory island on a short-term contract (see Medical Staffing Contracts). |
 | **Review Staffing Requests** | *(Doctor only)* Review incoming staffing contract proposals — approve, counter-offer, or reject. |
 | **Repurpose Worker** | Re-assign an active worker to a new profession.  They lose all accumulated experience and training and restart as unskilled in the new role.  Costs **25 Dp** per worker. |
 | **Sell Insurance** | *(Banker only)* Sell a Life or Medical insurance policy to another player at a negotiated premium. |
@@ -396,7 +396,7 @@ Seasonal requirements:
 | Manufacturer | 5 | 5 | 5 | 4 |
 | Doctor | 30 | **35** | 30 | **44** |
 
-> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
+> Farmers need most workers at harvest (Autumn). The Medical & Laboratory Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
 
 ### Worker Professions
 Workers are not generic — each belongs to a **profession** that reflects their specialisation.  Every profession also has a **band** — *Manager*, *Technician*, or *Worker* — which determines training pathway and role on the island.  A worker's tier is shown as their profession name plus training level (e.g. *Doctor (Basic)*, *Flight Crew (Skilled)*).  Unskilled workers have no profession until they graduate from university or finish an apprenticeship.
@@ -422,9 +422,9 @@ Workers are not generic — each belongs to a **profession** that reflects their
 | **Banking Analyst** | Technician | Banking | Risk and pricing analysis |
 | **Banking Clerk** | Technician | Banking | Operations and account servicing |
 | Assembly Worker | Technician | Manufacturing | Factory floor production |
-| Doctor | Manager | Healthcare | Medical diagnosis and treatment |
-| Nurse | Manager | Healthcare | Patient care and vaccine administration |
-| **Medical Orderly** | Technician | Healthcare | Ward and theatre support |
+| Doctor | Manager | Medical & Laboratory | Medical diagnosis and treatment |
+| Nurse | Manager | Medical & Laboratory | Patient care and vaccine administration |
+| **Medical Orderly** | Technician | Medical & Laboratory | Ward and theatre support |
 | Mechanic | Technician | Multi-island | –20% downtime per Mechanic, capped –60% |
 
 Professions marked **bold** are recent additions; see the Quick Reference at
@@ -432,6 +432,69 @@ the end for which professions each island starts with.
 
 ### Population Growth
 At the end of each year, each island's population grows by up to **2% per year**. The actual growth rate is **inversely proportional to the island's wealth** — richer islands grow slower (reflecting the demographic transition observed in real economies). New workers arrive untrained.
+
+---
+
+## Quality of Life
+
+Every island carries a **Quality of Life index** from **0 to 100**, recalculated
+each season. It is not a vanity score — it multiplies everything the island
+makes.
+
+> **Production effect:** QoL 0 scales output by **×0.85**; QoL 100 scales it by
+> **×1.15**. That is a **30 percentage-point swing** in productivity between a
+> miserable island and a thriving one, applied every season.
+
+The index is the sum of four components. Note they add up to **105**, not 100 —
+the total is capped at 100, so a strong showing on one line can cover a
+shortfall on another. You do not need to max out everything.
+
+| Component | Max | What it measures |
+|---|---|---|
+| **Nutrition** | 30 | Are residents fed, and do they eat a varied diet? |
+| **Medical** | 35 | Insurance cover, nursing capacity, medical stock on hand |
+| **Consumer goods** | 20 | Could households buy the Goods they wanted? |
+| **Stability** | 20 | Shocks and untreated illness |
+
+### What moves each component
+
+**Nutrition (30)**
+- Up to **20 pts** — satisfy every meal your population needs this season
+  (1 meal per 10 residents). Partial feeding scores pro-rata.
+- **+10 pts** — serve at least **3 distinct food types** this season (Food,
+  Grain, Produce, Fish, Meat). Buying variety beats stockpiling one staple.
+
+**Medical (35)**
+- **+10 pts** — hold an active medical insurance policy from the Banking island.
+- Up to **15 pts** — employ **Nurses**. Each covers 15 workers, and the bonus
+  scales with the fraction of your workforce covered.
+- **+10 pts** — keep a MedicalSupplies stockpile of at least 1 unit per
+  10 residents.
+
+**Consumer goods (20)**
+- Buy **Goods** to meet your households' seasonal demand. Scores pro-rata, so
+  partial supply still earns partial credit.
+
+**Stability (20)**
+- Starts at **15 pts**, nudged by the business cycle (a boom adds, a bust
+  subtracts).
+- **−10 pts** while a pandemic or disaster is active.
+- **−5 pts** if any worker is sidelined untreated — vaccinate and keep
+  MedicalSupplies on hand to avoid this.
+
+Nutrition, Medical and Consumer goods are the three you control directly.
+Stability is mostly weather.
+
+> **Digital edition:** the Island Wellbeing tile shows your index, the
+> resulting production multiplier, and a bar per component so you can see which
+> line is dragging you down. "How is this calculated?" expands the same
+> guidance shown above, generated from the live scoring constants.
+
+> **Separately**, a slower **annual** wellbeing measure — built from food
+> coverage, health coverage and pollution — drives **birth rates** and
+> **emigration** between islands. Residents drift from low-wellbeing islands
+> toward high-wellbeing ones. It is a different calculation from the seasonal
+> index above.
 
 ---
 
@@ -585,7 +648,7 @@ penalty.
 
 ## Vaccines
 
-The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents one dose for Winter flu protection.
+The Medical & Laboratory Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents one dose for Winter flu protection.
 
 - **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Expertise + Capital).
 - **Winter flu:** Each Winter, one flu strain affects every island and can reduce productivity by up to 20% for that season.
@@ -597,7 +660,7 @@ The Healthcare Island produces **Vaccines** in addition to Health Services. Each
 
 ## Medical Staffing Contracts
 
-Any island can hire **Doctors or Nurses** from the Healthcare Island on a
+Any island can hire **Doctors or Nurses** from the Medical & Laboratory Island on a
 short-term contract — useful when an island faces a health crisis, a
 disease outbreak event, or simply wants qualified medical staff on-site for
 a season or two.
@@ -613,7 +676,7 @@ a season or two.
    to travel (round-trip = `staff_count × 2` tickets, split between the
    two sides as negotiated).
 
-2. **Healthcare Review** — The Doctor player reviews the proposal using
+2. **Medical & Laboratory Review** — The Doctor player reviews the proposal using
    **Review Staffing Requests** and can:
    - **Approve** it (fee transfers at dispatch)
    - **Counter-offer** (different fee and/or message)
@@ -624,9 +687,9 @@ a season or two.
    settles or rejects.
 
 4. **Dispatch** — Once approved and PassengerSeats are available, staff
-   depart.  The full fee is paid to the Healthcare Island at this point.
+   depart.  The full fee is paid to the Medical & Laboratory Island at this point.
    The staff member's `on_contract` flag is set — they no longer count
-   toward the Healthcare Island's active workforce until they return.
+   toward the Medical & Laboratory Island's active workforce until they return.
 
 5. **Return** — Staff automatically return at the end of the agreed term.
    The Doctor player does nothing — it happens at season start.
@@ -644,7 +707,7 @@ for the duration.  This means:
 ### Passenger Seats
 
 The two sides split the ticket cost by negotiation.  If the requester
-supplies all seats, the Healthcare player needs none.  If the Healthcare
+supplies all seats, the Medical & Laboratory player needs none.  If that
 player supplies all seats, the cost comes from their inventory.  The split
 is shown on the contract card and must be agreed before dispatch.
 
@@ -714,10 +777,58 @@ season, or restructure a stack of small loans into one longer-dated one.
 The Banker sells two products: **Life Insurance** and **Medical Insurance**.
 Both are **annual policies** valid for 4 seasons from purchase.
 
+> **One Actuary per line of business.** The Bank needs a qualified **Actuary**
+> on staff for each *line* it writes — Life and Medical are separate lines.
+> The Banking island starts with a single Actuary, so it can open only one
+> line until it trains a second at the Education island. Writing more policies
+> in a line it already runs costs nothing extra, and a line that lapses
+> entirely frees its Actuary for something else.
+
 | Product | Base Premium | What it covers |
 |---|---|---|
 | Life Insurance | 25 Dp / worker | Pays a 60 Dp death benefit per fatality on the covered island |
 | Medical Insurance | 25 Dp / worker | Halves the injury-absence rate (–50%) for covered workers |
+| Equipment Insurance | Priced per machine | Pays **90%** of a named machine's value if it fails |
+
+### Equipment Insurance
+
+Cover is written on **one named machine**, not the island. The premium is
+priced from that unit's **age**, using the same failure curve the engine rolls
+against each season — an old machine costs more to insure because it is
+likelier to break. On top of the expected loss the Bank adds a **20% markup**,
+so it keeps a consistent margin whatever it insures.
+
+The rate is **struck at inception and held flat** for the life of the policy:
+the machine ages, the premium does not.
+
+A claim is a **total-loss settlement** — it pays out 90% of the machine's
+value and the policy is then closed. Repair proceeds as normal; the payout is
+cash toward replacement, not a repair service. One policy per machine.
+
+> Equipment is a **third line of business**, so a Bank needs a third Actuary
+> before it can write it alongside Life and Medical.
+
+### The Annual Physical
+
+Buy a **Health Certificate** — a Lab Test from the Medical & Laboratory
+Island — and hand it over when a Life or Medical policy is written, and the
+**premium is halved**.
+
+Policies run one year, so **renewal is the anniversary**: produce another
+certificate then and the half rate continues; turn up without one and you pay
+the full premium again. Each policy needs its own certificate.
+
+### Processing Claims
+
+Selling cover and paying out are different jobs. An **Actuary** prices the
+risk; an **Insurance Adjuster** settles the loss. A Bank with no Adjuster on
+staff **cannot pay any claim** — neither a life death benefit nor an equipment
+payout — until it hires or trains one.
+
+The Banking island starts with one Adjuster, so this only bites if that
+Adjuster is lost or retrained away. A claim that cannot be settled leaves the
+**policy in force**: the buyer paid for cover, and a staffing gap at the Bank
+does not void it. Hire an Adjuster and the claim settles.
 
 ### Buying and Selling
 
@@ -903,7 +1014,7 @@ Bullet bond — pay principal × (1+rate) at maturity, or Roll Over.
 
 **Market floor/ceiling:** 20% – 500% of base price.
 
-**Vaccines:** Healthcare produces 1/season; each unit helps cover 20 residents against Winter flu for that season.
+**Vaccines:** the Medical & Laboratory Island produces 1/season; each unit helps cover 20 residents against Winter flu for that season.
 
 **Patents:** Educator produces 1/season; each Patent applied gives –20% input
 cost on the chosen output (max 3 per output).

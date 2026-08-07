@@ -312,7 +312,24 @@ button:active{transform:scale(.97)}
   display:flex;align-items:center;justify-content:space-between;padding:0 1rem;
   gap:.5rem;min-height:48px;
 }
-.g-hdr .title{font-size:1rem;font-weight:700;color:var(--gold);white-space:nowrap}
+/* Wordmark (#23): was 1rem/700 gold on a dark bar, which read as thin and
+   washed out. Heavier weight, a size bump, positive tracking and a dark halo
+   lift it clear of the header; the anchor is split out so it doesn't inherit
+   the letter-spacing and drift away from the text. */
+.g-hdr .title{font-size:1.16rem;font-weight:800;color:var(--gold);white-space:nowrap;
+  letter-spacing:.03em;text-shadow:0 1px 3px rgba(0,0,0,.55);display:inline-flex;
+  align-items:center;gap:.38rem}
+.g-hdr .title .anchor{letter-spacing:0;font-size:1.05em;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+:root[data-theme="day"] .g-hdr .title{text-shadow:0 1px 2px rgba(255,255,255,.65)}
+/* Island map nodes are clickable (#23): make that discoverable on hover and
+   keyboard-focusable for anyone not using a mouse. */
+.map-island{cursor:pointer;transition:opacity .15s ease,transform .15s ease;transform-origin:center}
+.map-island:hover ellipse,.map-island:focus-visible ellipse{fill-opacity:.55;stroke-width:2.5}
+.map-island:focus{outline:none}
+.map-island:focus-visible ellipse{stroke-dasharray:3,2}
+/* Island briefing artwork (#23) */
+.briefing-art{margin:0 0 .85rem;border:1px solid;border-radius:10px;overflow:hidden;line-height:0}
+.briefing-art img{width:100%;height:auto;max-height:210px;object-fit:cover;display:block}
 .season-badge{
   display:flex;align-items:center;gap:.5rem;
   background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);
@@ -547,6 +564,21 @@ button:active{transform:scale(.97)}
 .wealth-breakdown .wb-neg{color:#d98a8a}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
+/* QoL breakdown (#227): a bar per scoring component so the player can see at a
+   glance which line is dragging the index down. */
+.qol-comps{margin:.3rem 0 .2rem;display:flex;flex-direction:column;gap:.22rem}
+.qol-comp-head{display:flex;justify-content:space-between;font-size:.7rem}
+.qol-bar{height:4px;border-radius:2px;background:rgba(127,127,127,.25);overflow:hidden;margin-top:.1rem}
+.qol-bar>i{display:block;height:100%;border-radius:2px;transition:width .25s ease}
+.qol-explain-btn{background:none;border:none;padding:0;margin:.15rem 0 .1rem;cursor:pointer;
+  font:inherit;font-size:.7rem;color:var(--dim);text-decoration:underline}
+.qol-explain-btn:hover{color:var(--text)}
+.qol-explain{font-size:.7rem;line-height:1.45;border-left:2px solid rgba(127,127,127,.3);
+  padding-left:.45rem;margin:.2rem 0 .1rem;max-height:15rem;overflow-y:auto}
+.qol-exp-item{margin-bottom:.4rem}
+.qol-explain ul{margin:.15rem 0 0;padding-left:.9rem}
+.qol-explain li{margin:.1rem 0}
+.qol-note{color:var(--dim);margin:.1rem 0}
 .mkt-row .res{color:var(--text)}
 /* Production schedule rows (per-output capacity + limiting factor) */
 .prod-sched-row{padding:.18rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -745,6 +777,7 @@ button:active{transform:scale(.97)}
 .toast.error{border-left-color:var(--red)}
 .toast.success{border-left-color:var(--green)}
 .toast.info{border-left-color:var(--accent)}
+.toast.alert{border-left-color:var(--gold)}   /* action alerts (#3) */
 .toast .toast-msg{flex:1;white-space:pre-line;line-height:1.35}
 .toast .toast-x{cursor:pointer;color:var(--dim);font-weight:700;line-height:1}
 .toast.leaving{animation:toast-out .2s ease-in forwards}
@@ -1135,7 +1168,7 @@ body.fx-off .ih-pins .pdot{animation:none}
       <ellipse cx="225" cy="58" rx="42" ry="32" fill="#27ae6022" stroke="#27ae60" stroke-width="1.5"/>
       <text x="225" y="62" text-anchor="middle" fill="#27ae60" font-size="9" font-weight="700">Agriculture</text>
       <ellipse cx="316" cy="110" rx="40" ry="32" fill="#e74c3c22" stroke="#e74c3c" stroke-width="1.5"/>
-      <text x="316" y="114" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="700">Healthcare</text>
+      <text x="316" y="114" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="700">Medical &amp; Lab</text>
       <ellipse cx="316" cy="215" rx="40" ry="32" fill="#f1c40f22" stroke="#f1c40f" stroke-width="1.5"/>
       <text x="316" y="219" text-anchor="middle" fill="#f1c40f" font-size="9" font-weight="700">Banking</text>
       <ellipse cx="225" cy="268" rx="42" ry="32" fill="#9b59b622" stroke="#9b59b6" stroke-width="1.5"/>
@@ -1403,7 +1436,7 @@ body.fx-off .ih-pins .pdot{animation:none}
 <div id="screen-game" class="hidden">
   <div class="game-grid">
     <div class="g-hdr">
-      <span class="title">⚓ Island Traders</span>
+      <span class="title"><span class="anchor">⚓</span>Island Traders</span>
       <div class="season-badge" id="season-badge">
         <span class="season-year" id="hdr-year">Year 1</span>
         <span class="season-name" id="hdr-season">Spring</span>
@@ -1646,6 +1679,11 @@ body.fx-off .ih-pins .pdot{animation:none}
           <button class="btn-ghost btn-sm" onclick="addAlert()">+ Add</button>
         </div>
         <div id="alert-list" style="font-size:.75rem;color:var(--dim)">No alerts set.</div>
+        <div style="font-size:.7rem;color:var(--dim);margin-top:.35rem">
+          These watch numbers. For alerts on <em>events</em> — disasters, trades,
+          training, keywords — use <a href="#" onclick="openAlertSettings();return false"
+             style="color:var(--accent)">🔔 Alerts</a> on the event log.
+        </div>
       </div>
     </div>
 
@@ -1732,6 +1770,8 @@ body.fx-off .ih-pins .pdot{animation:none}
         <button class="lf-btn"        data-f="trades"   onclick="setLogFilter('trades')">Trades</button>
         <button class="lf-btn"        data-f="events"   onclick="setLogFilter('events')">Events</button>
         <button class="lf-btn"        data-f="training" onclick="setLogFilter('training')">Training</button>
+        <button class="lf-btn" id="log-alert-btn" onclick="openAlertSettings()"
+                title="Pop a toast when a tracked kind of event appears in the log">🔔 Alerts</button>
         <span class="log-search" id="log-search">
           <span class="ls-icon">🔍</span>
           <input type="text" id="log-search-input" placeholder="Search log…"
@@ -1946,7 +1986,7 @@ const ROLE_ISLAND_NAMES = {
   'Educator':     'Education, Research and Training',
   'Banker':       'Banking and Insurance',
   'Manufacturer': 'Manufacturing',
-  'Doctor':       'Healthcare and Health Research',
+  'Doctor':       'Medical & Laboratory',
 };
 const ROLE_SHORT_NAMES = {
   'Farmer':       'Agriculture',
@@ -1955,7 +1995,7 @@ const ROLE_SHORT_NAMES = {
   'Educator':     'Education',
   'Banker':       'Finance',
   'Manufacturer': 'Manufacturing',
-  'Doctor':       'Healthcare',
+  'Doctor':       'Medical & Laboratory',
 };
 const ROLE_ART = {
   Farmer: {
@@ -2034,7 +2074,7 @@ const ISLAND_BRIEFINGS = {
     full: `You produce Farm Machinery, Mining Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
   },
   Doctor: {
-    title: 'Healthcare and Health Research Island',
+    title: 'Medical & Laboratory Island',
     summary: 'Sell resilience. Produce MedicalSupplies and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
     complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
@@ -2077,6 +2117,8 @@ function restoreIdentity() {
   }
 }
 restoreIdentity();
+// #3: alert rules are per-browser and outlive the session.
+document.addEventListener('DOMContentLoaded', loadAlertRules);
 
 // ==================== QUICK-SEAT (playtest URLs) ====================
 // Dev/playtest convenience: pre-composed URLs that create-or-join a room,
@@ -2715,7 +2757,21 @@ function renderAuctionBriefingCard(role) {
 function showIslandBriefing(role) {
   const b = ISLAND_BRIEFINGS[role];
   if (!b) return;
-  const body = `<p style="line-height:1.5">${b.full}</p>
+  // #23: lead with the island's artwork, matched to the current season's
+  // time of day so the briefing looks like the island the player is seeing.
+  const art = ROLE_ART[role];
+  let hero = '';
+  if (art) {
+    const season = (gameState && gameState.season) || '';
+    const url = art[artTimeOfDay(season)] || art.day || art.night;
+    if (url) {
+      const color = ROLE_COLORS[role] || '#aaa';
+      hero = `<div class="briefing-art" style="border-color:${color}55">`
+        + `<img src="${esc(url)}" alt="${esc(b.title)}"/></div>`;
+    }
+  }
+  const body = `${hero}
+    <p style="line-height:1.5">${b.full}</p>
     ${complexityLine(b)}
     <div style="margin-top:.8rem;font-size:.82rem;color:var(--dim)"><strong>Priorities:</strong> ${b.priorities.map(esc).join(' · ')}</div>
     <button class="btn-gold btn-sm" style="margin-top:1rem" onclick="hideOverlay()">Close</button>`;
@@ -4071,7 +4127,7 @@ function evaluateAlerts() {
     const holds = _alertHolds(a);
     if (holds && !_alertFiring[a.id]) {
       // Rising edge — fire once.
-      showToast(`🔔 Alert: ${_alertText(a).replace(/<[^>]+>/g,'')}`, { type: 'info', ms: 8000 });
+      showToast(`🔔 Alert: ${_alertText(a).replace(/<[^>]+>/g,'')}`, { type: 'alert', ms: 8000 });
     }
     _alertFiring[a.id] = holds;
   }
@@ -5898,22 +5954,75 @@ function renderBusinessCycleChip() {
   chip.classList.remove('hidden');
 }
 
+// QoL explanation data (#227), served from /api/qol-guide and derived from the
+// same constants the engine scores against, so it can't drift.  Fetched once.
+// The fallback only carries the labels and maxima needed to draw the bars if
+// the fetch fails — the prose always comes from the server.
+let qolGuideCache = null;
+const QOL_COMPONENT_FALLBACK = [
+  { key: 'nutrition',      label: 'Nutrition',      max_points: 30 },
+  { key: 'medical',        label: 'Medical',        max_points: 35 },
+  { key: 'consumer_goods', label: 'Consumer goods', max_points: 20 },
+  { key: 'stability',      label: 'Stability',      max_points: 20 },
+];
+
+async function loadQolGuide() {
+  if (qolGuideCache) return qolGuideCache;
+  try {
+    const res = await fetch(`${API}/api/qol-guide`);
+    qolGuideCache = await res.json();
+  } catch (e) {
+    qolGuideCache = null;
+  }
+  return qolGuideCache;
+}
+
+function toggleQolExplain() {
+  const box = document.getElementById('qol-explain');
+  if (!box) return;
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const render = (g) => {
+    if (!g) { box.innerHTML = '<div class="qol-note">Explanation unavailable.</div>'; return; }
+    const comps = (g.components || []).map(c =>
+      `<div class="qol-exp-item"><b>${esc(c.label)}</b> <span style="color:var(--dim)">`
+      + `— up to ${c.max_points} pts</span><div class="qol-note">${esc(c.measures || '')}</div>`
+      + `<ul>${(c.improve || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`
+    ).join('');
+    const prod = g.productivity ? `<div class="qol-note">${esc(g.productivity.summary || '')}</div>` : '';
+    const clamp = g.total_is_clamped_to
+      ? `<div class="qol-note">Components can total more than ${g.total_is_clamped_to}; the index is`
+        + ` capped there, so a strong showing on one line can cover a shortfall on another.</div>`
+      : '';
+    box.innerHTML = prod + comps + clamp;
+  };
+  if (qolGuideCache) render(qolGuideCache);
+  else { box.innerHTML = '<div class="qol-note">Loading…</div>'; loadQolGuide().then(render); }
+}
+
 // Island wellbeing tile: Quality-of-Life index + continuing-education coverage
 // (medical-response-quality-of-life + continuing-education-expertise briefs).
 function renderIslandWellbeing(me) {
   const tile = document.getElementById('wellbeing-tile');
   const body = document.getElementById('s-wellbeing');
   if (!tile || !body || !me) return;
-  // QoL: the medical/QoL engine currently emits a 0..1 scalar `qol_score`; a
-  // richer {score, components:{nutrition,medical,goods,stability}} object may
-  // arrive later — read either.
-  const qolObj = me.quality_of_life;
-  let qolPct = null, comps = null;
-  if (qolObj && typeof qolObj.score === 'number') {
-    qolPct = qolObj.score <= 1 ? qolObj.score * 100 : qolObj.score;
-    comps = qolObj.components || null;
+  // QoL (#227). The server emits `qol_index` (0-100), `qol_breakdown`
+  // ({nutrition, medical, consumer_goods, stability, ...}) and
+  // `qol_productivity_multiplier`. This used to read a `quality_of_life`
+  // object that the server never sends, and fell back to the 0..1
+  // `qol_score` — so the score displayed but the components never did, and
+  // the production multiplier (the reason QoL matters) was invisible.
+  let qolPct = null, comps = null, qolMult = null;
+  if (typeof me.qol_index === 'number') {
+    qolPct = me.qol_index;
   } else if (typeof me.qol_score === 'number') {
     qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
+  }
+  if (me.qol_breakdown && typeof me.qol_breakdown === 'object') {
+    comps = me.qol_breakdown;
+  }
+  if (typeof me.qol_productivity_multiplier === 'number') {
+    qolMult = me.qol_productivity_multiplier;
   }
   // Continuing education (continuing-education-expertise-2026-07-05): the
   // server emits {managers, annual_need, expertise_ytd, expertise_consumed,
@@ -5925,14 +6034,37 @@ function renderIslandWellbeing(me) {
   if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
   const parts = [];
   if (qolPct != null) {
-    const comp = comps ? ['nutrition', 'medical', 'goods', 'stability']
-      .filter(k => typeof comps[k] === 'number')
-      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(comps[k])}`)
-      .join(' · ') : '';
-    const col = qolPct >= 100 ? 'var(--green)' : (qolPct >= 85 ? 'var(--text)' : 'var(--gold)');
-    parts.push(`<div class="mkt-row"><span class="res">Quality of Life</span>`
-      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
-      + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
+    const col = qolPct >= 85 ? 'var(--green)' : (qolPct >= 60 ? 'var(--text)' : 'var(--gold)');
+    let head = `<div class="mkt-row"><span class="res">Quality of Life</span>`
+      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`;
+    if (qolMult != null) {
+      // The multiplier is the whole point of QoL — show it next to the score.
+      const mcol = qolMult >= 1 ? 'var(--green)' : 'var(--gold)';
+      head += `<div class="mkt-row" style="font-size:.72rem">`
+        + `<span class="res" style="color:var(--dim)">Production effect</span>`
+        + `<span class="price" style="color:${mcol}">&times;${qolMult.toFixed(2)}</span></div>`;
+    }
+    parts.push(head);
+    if (comps) {
+      const guide = qolGuideCache;
+      const rows = (guide ? guide.components : QOL_COMPONENT_FALLBACK)
+        .filter(c => typeof comps[c.key] === 'number')
+        .map(c => {
+          const got = comps[c.key], max = c.max_points;
+          const pct = max > 0 ? Math.max(0, Math.min(100, (got / max) * 100)) : 0;
+          const bcol = pct >= 80 ? 'var(--green)' : (pct >= 40 ? 'var(--gold)' : 'var(--red)');
+          return `<div class="qol-comp" data-qol-key="${c.key}" title="${esc(c.measures || '')}">`
+            + `<div class="qol-comp-head"><span>${esc(c.label)}</span>`
+            + `<span style="color:var(--dim)">${got.toFixed(0)}/${max.toFixed(0)}</span></div>`
+            + `<div class="qol-bar"><i style="width:${pct.toFixed(0)}%;background:${bcol}"></i></div></div>`;
+        }).join('');
+      if (rows) {
+        parts.push(`<div class="qol-comps">${rows}</div>`
+          + `<button type="button" class="qol-explain-btn" onclick="toggleQolExplain()">`
+          + `How is this calculated?</button>`
+          + `<div id="qol-explain" class="qol-explain hidden"></div>`);
+      }
+    }
   }
   if (ce && typeof ce.manager_efficiency_multiplier === 'number') {
     const pct = Math.round(ce.manager_efficiency_multiplier * 100);
@@ -8404,23 +8536,36 @@ function onGameResumed(msg) {
 function buildIslandMap() {
   const container = document.getElementById('island-map-svg');
   if (container.querySelector('svg')) return;
+  // #23: each node carries its engine role key so clicking it can open the
+  // island briefing. Names stay short — they have to fit inside the ellipse.
   const islands = [
-    {name:'Transport',  cx:225, cy:165, color:'#3498db'},
-    {name:'Mining',     cx:134, cy:110, color:'#e67e22'},
-    {name:'Agriculture',cx:225, cy:58,  color:'#27ae60'},
-    {name:'Healthcare', cx:316, cy:110, color:'#e74c3c'},
-    {name:'Banking',    cx:316, cy:215, color:'#f1c40f'},
-    {name:'Education',  cx:225, cy:268, color:'#9b59b6'},
-    {name:'Manufacturing',cx:134,cy:215,color:'#1abc9c'},
+    {name:'Transport',  role:'Transporter',  cx:225, cy:165, color:'#3498db'},
+    {name:'Mining',     role:'Miner',        cx:134, cy:110, color:'#e67e22'},
+    {name:'Agriculture',role:'Farmer',       cx:225, cy:58,  color:'#27ae60'},
+    {name:'Medical & Lab', role:'Doctor',    cx:316, cy:110, color:'#e74c3c'},
+    {name:'Banking',    role:'Banker',       cx:316, cy:215, color:'#f1c40f'},
+    {name:'Education',  role:'Educator',     cx:225, cy:268, color:'#9b59b6'},
+    {name:'Manufacturing',role:'Manufacturer',cx:134,cy:215,color:'#1abc9c'},
   ];
   const lines = islands.slice(1).map(i =>
     `<line x1="225" y1="165" x2="${i.cx}" y2="${i.cy}" stroke="#1e3a5f" stroke-width="1.5" stroke-dasharray="4,4"/>`
   ).join('');
   const nodes = islands.map(i => `
-    <ellipse cx="${i.cx}" cy="${i.cy}" rx="40" ry="32" fill="${i.color}22" stroke="${i.color}" stroke-width="1.5"/>
-    <text x="${i.cx}" y="${i.cy+4}" text-anchor="middle" fill="${i.color}" font-size="9" font-weight="700">${i.name}</text>
+    <g class="map-island" role="button" tabindex="0" data-role="${i.role}"
+       aria-label="${esc(i.name)} island — open briefing">
+      <title>${esc(i.name)} — click for the island briefing</title>
+      <ellipse cx="${i.cx}" cy="${i.cy}" rx="40" ry="32" fill="${i.color}22" stroke="${i.color}" stroke-width="1.5"/>
+      <text x="${i.cx}" y="${i.cy+4}" text-anchor="middle" fill="${i.color}" font-size="9" font-weight="700">${i.name}</text>
+    </g>
   `).join('');
   container.innerHTML = `<svg viewBox="0 0 450 330" xmlns="http://www.w3.org/2000/svg">${lines}${nodes}</svg>`;
+  container.querySelectorAll('.map-island').forEach(node => {
+    const role = node.getAttribute('data-role');
+    node.addEventListener('click', () => showIslandBriefing(role));
+    node.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); showIslandBriefing(role); }
+    });
+  });
 }
 
 // ==================== INPUT PROMPTS ====================
@@ -9385,6 +9530,125 @@ function _isPlayerRelevant(text) {
   return targets.some(t => text.includes(t));
 }
 
+// ---- Action alerts (#3) --------------------------------------------------
+// Watch the event log and pop a toast when a tracked kind of thing happens,
+// so a player who is reading the board doesn't miss a disaster or a deal.
+// Rules persist per browser; `keywords` are plain case-insensitive substrings.
+const ALERT_RULES_KEY = 'islandTradersAlertRules';
+const ALERT_CATEGORIES = [
+  {key: 'event',    label: 'Events & disasters'},
+  {key: 'trade',    label: 'Trades & deals'},
+  {key: 'training', label: 'Training'},
+  {key: 'mine',     label: 'Anything about my island'},
+];
+let alertRules = {cats: [], keywords: []};
+// Suppressed while the log is bulk-replayed on (re)connect — otherwise
+// rejoining a long game fires a wall of toasts for things already past.
+let _alertsSuppressed = false;
+
+function loadAlertRules() {
+  try {
+    const raw = localStorage.getItem(ALERT_RULES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      alertRules = {
+        cats: Array.isArray(parsed.cats) ? parsed.cats : [],
+        keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+      };
+    }
+  } catch (e) { alertRules = {cats: [], keywords: []}; }
+  refreshAlertButton();
+  return alertRules;
+}
+
+function saveAlertRules() {
+  try { localStorage.setItem(ALERT_RULES_KEY, JSON.stringify(alertRules)); } catch (e) {}
+  refreshAlertButton();
+}
+
+function alertRuleCount() {
+  return alertRules.cats.length + alertRules.keywords.length;
+}
+
+function refreshAlertButton() {
+  const btn = document.getElementById('log-alert-btn');
+  if (!btn) return;
+  const n = alertRuleCount();
+  btn.textContent = n ? `🔔 Alerts (${n})` : '🔔 Alerts';
+  btn.classList.toggle('active', n > 0);
+  btn.title = n
+    ? `Alerting on ${n} rule${n === 1 ? '' : 's'} — click to change`
+    : 'Pop a toast when a tracked kind of event appears in the log';
+}
+
+// Which armed rule (if any) this line trips. Returns a label for the toast.
+function _alertMatch(text, category, isMine) {
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  for (const word of alertRules.keywords) {
+    if (word && lower.includes(word.toLowerCase())) return `“${word}”`;
+  }
+  if (alertRules.cats.includes('mine') && isMine) return 'My island';
+  const cat = alertRules.cats.find(c => c === category);
+  if (cat) {
+    const meta = ALERT_CATEGORIES.find(c => c.key === cat);
+    return meta ? meta.label : cat;
+  }
+  return null;
+}
+
+function _maybeAlert(text, category, isMine) {
+  if (_alertsSuppressed || !alertRuleCount()) return;
+  const label = _alertMatch(text, category, isMine);
+  if (!label) return;
+  showToast(`🔔 ${label}: ${text}`, {type: 'alert', ms: 9000});
+}
+
+function openAlertSettings() {
+  loadAlertRules();
+  const boxes = ALERT_CATEGORIES.map(c => `
+    <label style="display:flex;gap:.5rem;align-items:center;margin:.3rem 0;cursor:pointer;
+                  width:100%;text-align:left;font-size:.85rem">
+      <input type="checkbox" data-alert-cat="${c.key}" style="flex:none"
+             ${alertRules.cats.includes(c.key) ? 'checked' : ''}/>
+      <span style="flex:1">${esc(c.label)}</span>
+    </label>`).join('');
+  showDlg('Action alerts', `
+    <p style="font-size:.84rem;line-height:1.45;color:var(--dim)">
+      Pop a notification when a tracked kind of entry appears in the event log.
+      Useful while you are reading the board and not the log.
+    </p>
+    <div style="margin:.6rem 0">${boxes}</div>
+    <label style="display:block;font-size:.8rem;margin-top:.7rem">
+      Also alert on these words <span style="color:var(--dim)">(comma separated)</span>
+      <input type="text" id="alert-keywords" style="width:100%;margin-top:.25rem"
+             placeholder="e.g. Drought, Oil, bankrupt"
+             value="${esc(alertRules.keywords.join(', '))}"/>
+    </label>
+    <div style="margin-top:1rem;display:flex;gap:.5rem">
+      <button class="btn-gold btn-sm" onclick="saveAlertSettingsFromDialog()">Save</button>
+      <button class="btn-ghost btn-sm" onclick="clearAlertSettings()">Turn all off</button>
+    </div>`);
+}
+
+function saveAlertSettingsFromDialog() {
+  alertRules.cats = [...document.querySelectorAll('[data-alert-cat]')]
+    .filter(el => el.checked).map(el => el.getAttribute('data-alert-cat'));
+  alertRules.keywords = (v('alert-keywords') || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  saveAlertRules();
+  hideOverlay();
+  const n = alertRuleCount();
+  showToast(n ? `Alerting on ${n} rule${n === 1 ? '' : 's'}.` : 'Alerts turned off.');
+}
+
+function clearAlertSettings() {
+  alertRules = {cats: [], keywords: []};
+  saveAlertRules();
+  hideOverlay();
+  showToast('Alerts turned off.');
+}
+
 function _logCategory(text) {
   if (/\[EVENT\]|\[WORKPLACE\]|Drought|Flood|Disaster|Outage|Collapse|Spill|Pandemic|Storm|⛈/i.test(text))
     return 'event';
@@ -9429,11 +9693,14 @@ function addLog(text, cls = '') {
     div.className = 'ev';
   }
   div.classList.add('g-log-line');
-  div.dataset.cat = _logCategory(text);
+  const _cat = _logCategory(text);
+  div.dataset.cat = _cat;
   // Secondary highlight if the line directly concerns this player.
-  if (!cls && _isPlayerRelevant(text)) {
+  const _mine = _isPlayerRelevant(text);
+  if (!cls && _mine) {
     div.classList.add('log-mine');
   }
+  _maybeAlert(text, _cat, _mine);   // #3
   div.textContent = text;
   if (_logSearchTerm && !text.toLowerCase().includes(_logSearchTerm)) {
     div.classList.add('log-search-hidden');
@@ -9781,8 +10048,16 @@ function syncServerLog(msg) {
   if (!recent.length || total <= seenServerLogCount) return;
   const recentStart = Math.max(0, total - recent.length);
   const firstMissing = Math.max(seenServerLogCount, recentStart);
-  for (let idx = firstMissing; idx < total; idx++) {
-    addLog(recent[idx - recentStart]);
+  // #3: the first sync after joining or reconnecting back-fills history.
+  // Those lines are already past, so don't fire alerts for them.
+  const backfill = seenServerLogCount === 0;
+  if (backfill) _alertsSuppressed = true;
+  try {
+    for (let idx = firstMissing; idx < total; idx++) {
+      addLog(recent[idx - recentStart]);
+    }
+  } finally {
+    if (backfill) _alertsSuppressed = false;
   }
   seenServerLogCount = total;
 }
