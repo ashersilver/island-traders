@@ -5,6 +5,31 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
+`APP_VERSION`: `0.1.6-dev.2026-08-06.2`.
+
+- **The Healthcare island is now the Medical & Laboratory Island (#26)** — the
+  rename that has been sitting on the Phase A checklist in
+  `requirements/medical-laboratory.md` since May, ahead of the island picking
+  up the archipelago's assay work.
+  - Display-only: `ROLES["Doctor"]`'s `display_name`, `short_name` and
+    `island` change; the engine key stays `"Doctor"`, so saved games and the
+    JSON wire format are untouched. `ROLE_INFO` derives from `ROLES`, so the
+    client picked the new name up with no frontend change.
+  - RULES.md and ISLAND_BRIEFINGS.md follow — no player-facing "Healthcare"
+    label remains anywhere.
+  - 200 games × seed 42 is identical to `pre-release` to the decimal on every
+    role, confirming the rename is inert.
+- **Phase A of the medical-laboratory spec was re-scoped on measured evidence.**
+  The spec claimed adding the Lab Tests resource ahead of its consumers would
+  have "zero behavioural impact". A prototype showed otherwise: the Doctor went
+  **24.0% → 34.0%** win rate and **17.0% → 18.7%** wealth share, with **614 Lab
+  Tests produced, 0 consumed, 0 traded**. Scoring is on net worth, so an output
+  with no consumers is a pure wealth faucet — and gating it behind an opt-in
+  capital item doesn't help, because the AI buys the item. Lab Tests are
+  therefore deferred to Phase B, where supply and demand land together. The
+  numbers and a warning about hard-gating Metal smelting are recorded in
+  `requirements/medical-laboratory.md`.
+
 `APP_VERSION`: `0.1.6-dev.2026-07-14.7`.
 
 - **Capital orders are backordered instead of refused (Wave 9.1/9.4/9.5)** — a

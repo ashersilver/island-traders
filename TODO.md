@@ -166,7 +166,7 @@ for full spec.  Covers GitHub issues **#19, #25, #26**.  Five-phase
 implementation; recommend not combining phases.
 
 #### Phase A — Role rename + Lab Tests resource (#26 root)
-- [ ] Display rename: "Healthcare" → "Medical & Laboratory" (internal
+- [x] Display rename: "Healthcare" → "Medical & Laboratory" (internal
       `ROLES["Doctor"]` key unchanged)
 - [ ] New `ResourceType.LABORATORY_TESTS` (base price ≈ 35 Dp)
 - [ ] Add Doctor production recipe for Lab Tests

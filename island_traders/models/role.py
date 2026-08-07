@@ -88,11 +88,17 @@ ROLES: dict[str, Role] = {
             "Laboratory Equipment, Medical Devices, or Transportation Equipment. Choose one per season."
         ),
     ),
+    # #26: the island keeps its internal "Doctor" key (saved games and the JSON
+    # wire format are unchanged) but is presented as Medical & Laboratory,
+    # ahead of the assay lab landing in Phase B of
+    # requirements/medical-laboratory.md.  `produces` stays as-is until Lab
+    # Tests actually exist — see that doc for why supply and demand ship
+    # together.
     "Doctor": Role(
         name="Doctor",
-        display_name="Healthcare and Health Research",
-        short_name="Healthcare",
-        island="Healthcare and Health Research Island",
+        display_name="Medical & Laboratory",
+        short_name="Medical & Laboratory",
+        island="Medical & Laboratory Island",
         produces=(ResourceType.MEDICAL_SUPPLIES, ResourceType.VACCINE),
         needs=(ResourceType.EXPERTISE, ResourceType.REAGENTS),
         description="Provides medical supplies and vaccines, keeping the workforce productive.",
