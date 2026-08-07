@@ -10,6 +10,7 @@ class CapitalNegotiationStatus(Enum):
     QUEUED = "queued"
     ACCEPTED = "accepted"
     DECLINED = "declined"
+    CANCELLED = "cancelled"
     EXPIRED = "expired"
     # Buyer could not pay the balance once the build was ready: the deposit is
     # forfeit to the manufacturer, who keeps the goods to resell at list price.

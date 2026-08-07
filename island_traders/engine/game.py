@@ -495,8 +495,22 @@ class Game:
         entry = self.order_book.add(
             negotiation.negotiation_id,
             negotiation.manufacturer_id,
+            premium=round(
+                negotiation.buyer_offer - negotiation.recommended_total,
+                2,
+            ),
+        )
+        entry.premium = round(
+            negotiation.buyer_offer - negotiation.recommended_total,
+            2,
         )
         entry.locked = locked
+        if not locked:
+            self.order_book.place_by_premium(
+                negotiation.negotiation_id,
+                negotiation.manufacturer_id,
+                entry.premium,
+            )
         self.refresh_order_promises(
             negotiation.manufacturer_id,
             current_year,

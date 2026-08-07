@@ -3273,10 +3273,13 @@ function consolidatedPlayerView(owned, owner) {
 // Capital Equipment Order form (#185): collects order conditions and sends a
 // `capital_order` offer. The server routes it to the Manufacturer review flow.
 let capOrderItem = null;
+let capOrderAmendment = null;
+let capOrderBuyerOfferTouched = false;
+let capOrderBuyerOffer = null;
 function moneyDp(value) {
   return `${(Math.round((Number(value) || 0) * 100) / 100).toFixed(2)} Dp`;
 }
-function openCapitalOrder(itemId) {
+function openCapitalOrder(itemId, amendment = capOrderAmendment) {
   const me = gameState && gameState.players[myPlayerIdx];
   const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
   const it = cat.find(c => c.item_id === itemId);
@@ -3285,14 +3288,24 @@ function openCapitalOrder(itemId) {
   const arrival = it.delivery_seasons === 0 ? 'arrives now'
     : `${it.delivery_seasons}-season delivery`;
   document.getElementById('cap-order-item').textContent =
-    `${it.name} — ${it.cost} Dp · ${arrival}`;
-  document.getElementById('cap-order-maintenance').checked = true;
-  document.getElementById('cap-order-term').value = '3';
-  document.getElementById('cap-order-predictive').checked = true;
-  document.getElementById('cap-order-spares-toggle').checked = false;
-  document.getElementById('cap-order-spares').value = 0;
-  document.getElementById('cap-order-expedited').checked = false;
-  document.getElementById('cap-order-financing').checked = false;
+    `${it.name} — ${it.cost} Dp · ${arrival}${amendment ? ` · amending #${amendment.negotiation_id}` : ''}`;
+  document.getElementById('cap-order-maintenance').checked = amendment
+    ? amendment.maintenance_term_years > 0 : true;
+  document.getElementById('cap-order-term').value = amendment
+    ? String(amendment.maintenance_term_years || 0) : '3';
+  document.getElementById('cap-order-predictive').checked = amendment
+    ? !!amendment.predictive_maintenance : true;
+  document.getElementById('cap-order-spares-toggle').checked = amendment
+    ? (amendment.spares_kits || 0) > 0 : false;
+  document.getElementById('cap-order-spares').value = amendment
+    ? (amendment.spares_kits || 0) : 0;
+  document.getElementById('cap-order-expedited').checked = amendment
+    ? !!amendment.expedited_eligible : false;
+  document.getElementById('cap-order-financing').checked = amendment
+    ? !!amendment.financing : false;
+  capOrderAmendment = amendment || null;
+  capOrderBuyerOfferTouched = !!amendment;
+  capOrderBuyerOffer = amendment ? Number(amendment.buyer_offer) : null;
   document.querySelectorAll('#capital-order-overlay .cap-info').forEach(el => el.classList.remove('active'));
   updateCapOrderTotal();
   document.getElementById('capital-order-overlay').classList.add('active');
@@ -3300,10 +3313,19 @@ function openCapitalOrder(itemId) {
 function closeCapitalOrder() {
   document.getElementById('capital-order-overlay').classList.remove('active');
   capOrderItem = null;
+  capOrderAmendment = null;
+  capOrderBuyerOfferTouched = false;
+  capOrderBuyerOffer = null;
 }
 function toggleCapOrderInfo(key) {
   const el = document.getElementById(`cap-info-${key}`);
   if (el) el.classList.toggle('active');
+}
+function onCapOrderOfferInput() {
+  const offerEl = document.getElementById('cap-order-buyer-offer');
+  if (offerEl) capOrderBuyerOffer = Number(offerEl.value);
+  capOrderBuyerOfferTouched = true;
+  updateCapOrderTotal();
 }
 // "Purchase Equipment" action → pick a buildable item, then open the #185/#188
 // order form for it (term contract, financing, etc.). Replaces the legacy
@@ -3364,12 +3386,14 @@ function openCapitalPicker() {
   document.getElementById('cap-pick-list').innerHTML = rows.join('');
   document.getElementById('capital-pick-overlay').classList.add('active');
 }
-function closeCapitalPicker() {
+function closeCapitalPicker(keepAmendment = false) {
   document.getElementById('capital-pick-overlay').classList.remove('active');
+  if (!keepAmendment) capOrderAmendment = null;
 }
 function pickCapitalItem(itemId) {
-  closeCapitalPicker();
-  openCapitalOrder(itemId);
+  const amendment = capOrderAmendment;
+  closeCapitalPicker(true);
+  openCapitalOrder(itemId, amendment);
 }
 // #188 maintenance/warranty contract cost per $100, by term: [baseline, predictive].
 const CAP_CONTRACT_PER_100 = {
@@ -3428,7 +3452,12 @@ function updateCapOrderTotal() {
     `;
     return;
   }
-  const _short = total > _cash;
+  if (!capOrderBuyerOfferTouched || !Number.isFinite(capOrderBuyerOffer)) {
+    capOrderBuyerOffer = total;
+  }
+  const offer = Math.round(Math.max(0, capOrderBuyerOffer) * 100) / 100;
+  const premium = Math.round((offer - total) * 100) / 100;
+  const _short = offer > _cash;
   document.getElementById('cap-order-total').innerHTML = `
     <div class="cap-quote-row" style="color:${_short ? 'var(--red)' : 'var(--dim)'}"><div class="cap-quote-label">Cash available</div><div class="cap-quote-value">${moneyDp(_cash)}${_short ? ' — short, finance or lower the order' : ''}</div></div>
     <div class="cap-quote-row"><div class="cap-quote-label">List price</div><div class="cap-quote-value">${moneyDp(capOrderItem.cost)}</div></div>
@@ -3436,6 +3465,8 @@ function updateCapOrderTotal() {
     <div class="cap-quote-row"><div class="cap-quote-label">Manufacturer guarantee</div><div class="cap-quote-value">${moneyDp(0)}</div></div>
     <div class="cap-quote-row"><div class="cap-quote-label">Spares ×${kits}</div><div class="cap-quote-value">${moneyDp(sparesCost)}</div></div>
     <div class="cap-quote-row total"><div class="cap-quote-label">Recommended total</div><div class="cap-quote-value">${moneyDp(total)}</div></div>
+    <div class="cap-quote-row"><div class="cap-quote-label">Your offer</div><div class="cap-quote-value"><input id="cap-order-buyer-offer" type="number" min="0.01" step="0.01" value="${offer.toFixed(2)}" oninput="onCapOrderOfferInput()" style="width:7.5rem;text-align:right"> Dp</div></div>
+    <div class="cap-quote-row contingent"><div class="cap-quote-label">${premium >= 0 ? `+${moneyDp(premium)} — priority` : `${moneyDp(premium)} below recommendation`}</div><div class="cap-quote-value"></div></div>
     <div class="cap-quote-row contingent"><div class="cap-quote-label">+ Expedited repair, if eligible</div><div class="cap-quote-value">~${moneyDp(expeditedEstimate)}</div></div>
   `;
 }
@@ -3443,14 +3474,17 @@ function submitCapitalOrder() {
   if (!capOrderItem) return;
   const wantsMaintenance = document.getElementById('cap-order-maintenance').checked;
   const wantsSpares = document.getElementById('cap-order-spares-toggle').checked;
+  const buyerOffer = Number(document.getElementById('cap-order-buyer-offer')?.value);
   sendWsMessage({
-    type: 'capital_order',
+    type: capOrderAmendment ? 'capital_order_amend' : 'capital_order',
+    ...(capOrderAmendment ? { negotiation_id: capOrderAmendment.negotiation_id } : {}),
     item_id: capOrderItem.item_id,
     maintenance_term_years: wantsMaintenance ? parseInt(document.getElementById('cap-order-term').value, 10) : 0,
     predictive_maintenance: wantsMaintenance && document.getElementById('cap-order-predictive').checked,
     spares_kits: wantsSpares ? Math.max(0, parseInt(document.getElementById('cap-order-spares').value || '0', 10)) : 0,
     expedited_eligible: document.getElementById('cap-order-expedited').checked,
     financing: document.getElementById('cap-order-financing').checked,
+    buyer_offer: Number.isFinite(buyerOffer) ? buyerOffer : undefined,
   });
   closeCapitalOrder();
 }
@@ -3606,6 +3640,41 @@ function respondCapNeg(nid, action, suggestedTotal) {
 
 function acceptCapCounter(nid) {
   sendWsMessage({ type: 'capital_negotiation_accept', negotiation_id: nid });
+}
+
+function myCapitalOrder(nid) {
+  return ((gameState && gameState.my_capital_negotiations) || [])
+    .find(order => Number(order.negotiation_id) === Number(nid));
+}
+
+function amendCapitalOrder(nid) {
+  const order = myCapitalOrder(nid);
+  if (!order) return;
+  capOrderAmendment = order;
+  openCapitalPicker();
+}
+
+function sweetenCapitalOrder(nid) {
+  const order = myCapitalOrder(nid);
+  if (!order) return;
+  showPromptModal('Sweeten capital order', {
+    submitLabel: 'Raise offer',
+    intro: 'A higher offer moves ahead of lower-premium unlocked orders. Locked production never moves.',
+    fields: [{
+      name: 'buyer_offer', label: 'New total offer (Dp)', type: 'number',
+      value: String((Number(order.buyer_offer) + 1).toFixed(2)),
+      validate: value => (!Number.isFinite(Number(value)) || Number(value) <= Number(order.buyer_offer))
+        ? 'Enter an offer above the current total.' : null,
+    }],
+    onSubmit: values => sendWsMessage({
+      type: 'capital_order_sweeten', negotiation_id: nid,
+      buyer_offer: Number(values.buyer_offer),
+    }),
+  });
+}
+
+function cancelCapitalOrder(nid) {
+  sendWsMessage({ type: 'capital_order_cancel', negotiation_id: nid });
 }
 
 function onCapitalNegotiationAck(msg) {
@@ -4061,6 +4130,7 @@ function sendWsMessage(obj) {
       'capital_repair', 'island_transfer', 'training_counter_response', 'buy_out_float',
       'equity_sale_offer',
       'capital_negotiation_respond', 'capital_negotiation_accept',
+      'capital_order_amend', 'capital_order_cancel', 'capital_order_sweeten',
       'manufacturer_reorder_queue',
     ]);
     const msg = {...obj};
@@ -4738,6 +4808,8 @@ function _renderOrderBookRow(o, idx, total) {
   const priceLabel = o.status === 'accepted'
     ? moneyDp(o.counter_total != null ? o.counter_total : o.buyer_offer)
     : (o.counter_total != null ? `Countered ${moneyDp(o.counter_total)}` : moneyDp(o.buyer_offer));
+  const premiumLabel = o.premium == null ? '—'
+    : `${o.premium >= 0 ? '+' : ''}${moneyDp(o.premium)}`;
   let actionsHtml = '';
   if (o.status === 'proposed' && o.awaiting_id === _myEnginePlayerId()) {
     actionsHtml = `<button class="btn-accept btn-sm" onclick="respondCapNeg(${o.negotiation_id},'accept')">Accept</button>
@@ -4758,6 +4830,7 @@ function _renderOrderBookRow(o, idx, total) {
     <td>${esc(o.buyer_name || `Player ${o.buyer_id}`)}</td>
     <td style="text-transform:capitalize">${esc(o.status)}</td>
     <td>${priceLabel}</td>
+    <td>${premiumLabel}</td>
     <td>${promiseLabel}</td>
     <td>${actionsHtml}</td>
     <td>${reorderHtml}</td>
@@ -4777,7 +4850,7 @@ function _renderOrderBookSection(me) {
     <h4>Order Book — Production Queue</h4>
     <table class="popup-table">
       <thead><tr>
-        <th>#</th><th>Item</th><th>Buyer</th><th>Status</th><th>Price</th>
+        <th>#</th><th>Item</th><th>Buyer</th><th>Status</th><th>Price</th><th>Premium</th>
         <th>Promised</th><th>Review</th><th>Reorder</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -5712,13 +5785,26 @@ function renderMyCapitalOrders(me) {
         // panel then flatly says "proposed" and the wait becomes invisible.
         detail = `proposed — backordered, waiting on ${missing} × ${esc(resource)}`;
       }
+      const premium = Number(order.premium ?? (Number(order.buyer_offer) - Number(order.recommended_total)));
+      const canMutate = !order.locked && ['proposed', 'countered', 'queued'].includes(order.status);
       return `<div style="margin-top:.3rem;padding:.4rem;border:1px solid var(--border);border-radius:4px">`
         + `<strong>${esc(order.name || order.item_id)}</strong>`
         + `<div style="font-size:.7rem;color:var(--dim);margin-top:.15rem">${detail}</div>`
+        + `<div style="font-size:.68rem;color:var(--dim);margin-top:.1rem">`
+          + `offer ${moneyDp(order.buyer_offer)} · premium ${premium >= 0 ? '+' : ''}${moneyDp(premium)}`
+          + (order.queue_position != null ? ` · queue ${order.queue_position + 1}` : '')
+          + `</div>`
         + (order.deposit_paid > 0
             ? `<div style="font-size:.68rem;color:var(--gold);margin-top:.1rem">`
               + `deposit ${Number(order.deposit_paid).toFixed(1)} Dp down · `
               + `balance due on delivery</div>`
+            : '')
+        + (canMutate
+            ? `<div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem">`
+              + `<button class="btn-ghost btn-sm" onclick="amendCapitalOrder(${order.negotiation_id})">Amend</button>`
+              + `<button class="btn-ghost btn-sm" onclick="sweetenCapitalOrder(${order.negotiation_id})">Sweeten</button>`
+              + `<button class="btn-reject btn-sm" onclick="cancelCapitalOrder(${order.negotiation_id})">Cancel</button>`
+              + `</div>`
             : '')
         + `</div>`;
     }).join('');

@@ -268,3 +268,215 @@ def test_deposit_is_refunded_when_the_order_ends_without_a_build():
     assert room.game.capital_negotiations.get(nid).status \
         is CapitalNegotiationStatus.DECLINED
     assert buyer.dollops == pytest.approx(before), "deposit must come back"
+
+
+def _queue_backordered_order(mgr, room, maker):
+    ack = _propose(mgr, room)
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker",
+        {"negotiation_id": ack["negotiation_id"], "action": "accept"}, ws,
+    ))
+    return ack["negotiation_id"]
+
+
+def test_buyer_cancel_refunds_deposit_and_frees_queue():
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+    before = buyer.dollops
+    nid = _queue_backordered_order(mgr, room, maker)
+    deposit = room.game.capital_negotiations.get(nid).deposit_paid
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_cancel(
+        room.room_id, "buyer", {"negotiation_id": nid}, ws,
+    ))
+
+    negotiation = room.game.capital_negotiations.get(nid)
+    assert negotiation.status is CapitalNegotiationStatus.CANCELLED
+    assert negotiation.awaiting_id is None
+    assert negotiation.deposit_paid == 0
+    assert buyer.dollops == pytest.approx(before)
+    assert room.game.order_book.get(nid) is None
+    assert any(m.get("result") == "cancelled" for m in ws.sent)
+
+
+def test_buyer_amend_resets_counter_and_reawaits_manufacturer():
+    from island_traders.constants import CAPITAL_ORDER_DEPOSIT_FRACTION
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, buyer, maker = _bootstrap()
+    nid = _propose(mgr, room)["negotiation_id"]
+    counter = _WS()
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker",
+        {"negotiation_id": nid, "action": "counter", "counter_total": 999.0},
+        counter,
+    ))
+    amended_offer = 420.0
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer", {
+            "negotiation_id": nid,
+            "item_id": "transporter.cargo_plane",
+            "maintenance_term_years": 1,
+            "spares_kits": 1,
+            "predictive_maintenance": False,
+            "expedited_eligible": True,
+            "buyer_offer": amended_offer,
+        }, ws,
+    ))
+
+    negotiation = room.game.capital_negotiations.get(nid)
+    assert negotiation.status is CapitalNegotiationStatus.PROPOSED
+    assert negotiation.counter_total is None
+    assert negotiation.awaiting_id == maker.player_id
+    assert negotiation.spares_kits == 1
+    assert negotiation.deposit_paid == pytest.approx(
+        CAPITAL_ORDER_DEPOSIT_FRACTION * amended_offer
+    )
+    assert any(m.get("result") == "amended" for m in ws.sent)
+
+
+def test_buyer_mutations_refuse_locked_and_settled_orders():
+    mgr, room, _buyer, maker = _bootstrap()
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+    queued_id = _queue_backordered_order(mgr, room, maker)
+    room.game.order_book.get(queued_id).locked = True
+    locked = _WS()
+    asyncio.run(mgr._handle_capital_order_cancel(
+        room.room_id, "buyer", {"negotiation_id": queued_id}, locked,
+    ))
+    assert any(m.get("type") == "error" and "already settled" in m["message"]
+               for m in locked.sent)
+
+    maker.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 10)
+    settled_id = _propose(mgr, room)["negotiation_id"]
+    accepted = _WS()
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker",
+        {"negotiation_id": settled_id, "action": "accept"}, accepted,
+    ))
+    settled = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer", {
+            "negotiation_id": settled_id,
+            "item_id": "transporter.cargo_plane",
+            "buyer_offer": 500.0,
+        }, settled,
+    ))
+    assert any(m.get("type") == "error" and "already accepted" in m["message"]
+               for m in settled.sent)
+
+
+def test_sweetener_replaces_unlocked_order_without_passing_locked_entry():
+    mgr, room, _buyer, maker = _bootstrap()
+    held = maker.inventory.get(ResourceType.TRANSPORT_EQUIPMENT)
+    maker.give_resources(ResourceType.TRANSPORT_EQUIPMENT, held)
+    first = _queue_backordered_order(mgr, room, maker)
+    second = _queue_backordered_order(mgr, room, maker)
+    offer = room.game.capital_negotiations.get(second).buyer_offer + 40.0
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_sweeten(
+        room.room_id, "buyer", {"negotiation_id": second, "buyer_offer": offer}, ws,
+    ))
+    assert [entry.negotiation_id for entry in room.game.order_book.for_manufacturer(
+        maker.player_id
+    )] == [second, first]
+    assert room.game.order_book.get(second).premium > room.game.order_book.get(first).premium
+
+    room.game.order_book.get(second).locked = True
+    third = _queue_backordered_order(mgr, room, maker)
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_sweeten(
+        room.room_id, "buyer", {
+            "negotiation_id": third,
+            "buyer_offer": room.game.capital_negotiations.get(third).buyer_offer + 80.0,
+        }, ws,
+    ))
+    assert [entry.negotiation_id for entry in room.game.order_book.for_manufacturer(
+        maker.player_id
+    )] == [second, third, first]
+
+
+def test_sweetener_accepts_a_counter_when_it_meets_the_counter_total():
+    from island_traders.models.capital_negotiation import CapitalNegotiationStatus
+
+    mgr, room, _buyer, maker = _bootstrap()
+    nid = _propose(mgr, room)["negotiation_id"]
+    counter_total = room.game.capital_negotiations.get(nid).buyer_offer + 25.0
+    asyncio.run(mgr._handle_capital_negotiation_respond(
+        room.room_id, "maker", {
+            "negotiation_id": nid,
+            "action": "counter",
+            "counter_total": counter_total,
+        }, _WS(),
+    ))
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_sweeten(
+        room.room_id, "buyer", {
+            "negotiation_id": nid,
+            "buyer_offer": counter_total,
+        }, ws,
+    ))
+    assert room.game.capital_negotiations.get(nid).status \
+        is CapitalNegotiationStatus.ACCEPTED
+    assert any(m.get("type") == "capital_order_ack" for m in ws.sent)
+
+
+def test_deposit_is_trued_up_on_sweeten_and_amendment_reduction():
+    from island_traders.constants import CAPITAL_ORDER_DEPOSIT_FRACTION
+
+    mgr, room, buyer, _maker = _bootstrap()
+    nid = _propose(mgr, room)["negotiation_id"]
+    negotiation = room.game.capital_negotiations.get(nid)
+    initial_offer = negotiation.buyer_offer
+    initial_deposit = negotiation.deposit_paid
+    cash_after_initial_deposit = buyer.dollops
+
+    raised_offer = initial_offer + 100.0
+    asyncio.run(mgr._handle_capital_order_sweeten(
+        room.room_id, "buyer", {"negotiation_id": nid, "buyer_offer": raised_offer}, _WS(),
+    ))
+    assert negotiation.deposit_paid == pytest.approx(
+        CAPITAL_ORDER_DEPOSIT_FRACTION * raised_offer
+    )
+    assert buyer.dollops == pytest.approx(cash_after_initial_deposit - 50.0)
+
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer", {
+            "negotiation_id": nid,
+            "item_id": "transporter.cargo_plane",
+            "buyer_offer": initial_offer,
+        }, _WS(),
+    ))
+    assert negotiation.deposit_paid == pytest.approx(initial_deposit)
+    assert buyer.dollops == pytest.approx(cash_after_initial_deposit)
+
+
+def test_amendment_is_refused_when_buyer_cannot_fund_larger_deposit():
+    mgr, room, buyer, _maker = _bootstrap()
+    nid = _propose(mgr, room)["negotiation_id"]
+    negotiation = room.game.capital_negotiations.get(nid)
+    original_offer = negotiation.buyer_offer
+    original_deposit = negotiation.deposit_paid
+    buyer.dollops = 1.0
+
+    ws = _WS()
+    asyncio.run(mgr._handle_capital_order_amend(
+        room.room_id, "buyer", {
+            "negotiation_id": nid,
+            "item_id": "transporter.cargo_plane",
+            "buyer_offer": original_offer + 100.0,
+        }, ws,
+    ))
+    assert any(m.get("type") == "error" and "bring the deposit up" in m["message"]
+               for m in ws.sent)
+    assert negotiation.buyer_offer == original_offer
+    assert negotiation.deposit_paid == original_deposit

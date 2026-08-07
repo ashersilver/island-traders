@@ -5,7 +5,32 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-07-14.7`.
+`APP_VERSION`: `0.1.6-dev.2026-07-14.8`.
+
+- **Buyers can amend, cancel and sweeten capital orders (Wave 9.2/9.3)** —
+  completes the order book. A buyer can now change their mind while nothing has
+  been built:
+  - **Amend** swaps the item or terms on a live order. It re-quotes, resets the
+    order to *proposed* and hands it back to the Manufacturer for review — so a
+    buyer cannot swap a cheap item onto an agreed expensive price — and drops it
+    out of the build queue until those new terms are accepted, so an unapproved
+    amendment never holds a build slot.
+  - **Cancel** withdraws an unbuilt order and refunds the deposit in full.
+  - **Sweeten** raises the offer to buy queue priority: an order carrying a
+    larger premium is placed ahead of unlocked orders offering less. Orders
+    already in production never move, and the Manufacturer's own manual
+    reordering still wins — the sweetener places, the Manufacturer disposes.
+    Raising an offer to meet a counter accepts it outright.
+  - The order form now has an **editable total** that shows the premium over
+    the recommended price live ("+40.00 Dp — priority"), and the buyer's
+    pending-orders panel shows offer, premium, queue position and deposit
+    alongside Amend / Sweeten / Cancel.
+  - **The deposit is trued up on every change**: raise your offer and the extra
+    50% is taken (the amendment is refused if you cannot fund it); reduce it and
+    the difference comes back. Deposits can never drift from half of the live
+    offer, so an order cannot be amended upward while secured at the old price.
+  - Amend and cancel are refused once an order is locked in production or
+    settled — there is no unwind path for consumed units and issued finance.
 
 - **Capital orders are backordered instead of refused (Wave 9.1/9.4/9.5)** — a
   capital order the Manufacturer could not fill was rejected *before anything
