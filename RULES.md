@@ -435,6 +435,69 @@ At the end of each year, each island's population grows by up to **2% per year**
 
 ---
 
+## Quality of Life
+
+Every island carries a **Quality of Life index** from **0 to 100**, recalculated
+each season. It is not a vanity score — it multiplies everything the island
+makes.
+
+> **Production effect:** QoL 0 scales output by **×0.85**; QoL 100 scales it by
+> **×1.15**. That is a **30 percentage-point swing** in productivity between a
+> miserable island and a thriving one, applied every season.
+
+The index is the sum of four components. Note they add up to **105**, not 100 —
+the total is capped at 100, so a strong showing on one line can cover a
+shortfall on another. You do not need to max out everything.
+
+| Component | Max | What it measures |
+|---|---|---|
+| **Nutrition** | 30 | Are residents fed, and do they eat a varied diet? |
+| **Medical** | 35 | Insurance cover, nursing capacity, medical stock on hand |
+| **Consumer goods** | 20 | Could households buy the Goods they wanted? |
+| **Stability** | 20 | Shocks and untreated illness |
+
+### What moves each component
+
+**Nutrition (30)**
+- Up to **20 pts** — satisfy every meal your population needs this season
+  (1 meal per 10 residents). Partial feeding scores pro-rata.
+- **+10 pts** — serve at least **3 distinct food types** this season (Food,
+  Grain, Produce, Fish, Meat). Buying variety beats stockpiling one staple.
+
+**Medical (35)**
+- **+10 pts** — hold an active medical insurance policy from the Banking island.
+- Up to **15 pts** — employ **Nurses**. Each covers 15 workers, and the bonus
+  scales with the fraction of your workforce covered.
+- **+10 pts** — keep a MedicalSupplies stockpile of at least 1 unit per
+  10 residents.
+
+**Consumer goods (20)**
+- Buy **Goods** to meet your households' seasonal demand. Scores pro-rata, so
+  partial supply still earns partial credit.
+
+**Stability (20)**
+- Starts at **15 pts**, nudged by the business cycle (a boom adds, a bust
+  subtracts).
+- **−10 pts** while a pandemic or disaster is active.
+- **−5 pts** if any worker is sidelined untreated — vaccinate and keep
+  MedicalSupplies on hand to avoid this.
+
+Nutrition, Medical and Consumer goods are the three you control directly.
+Stability is mostly weather.
+
+> **Digital edition:** the Island Wellbeing tile shows your index, the
+> resulting production multiplier, and a bar per component so you can see which
+> line is dragging you down. "How is this calculated?" expands the same
+> guidance shown above, generated from the live scoring constants.
+
+> **Separately**, a slower **annual** wellbeing measure — built from food
+> coverage, health coverage and pollution — drives **birth rates** and
+> **emigration** between islands. Residents drift from low-wellbeing islands
+> toward high-wellbeing ones. It is a different calculation from the seasonal
+> index above.
+
+---
+
 ## Training
 
 Training is a multi-turn process between the island sending workers and the **Educator** (and, only if you choose a Transporter-hauled mode instead of the default Educator-supplied air ticket, the **Transporter**):

@@ -5,7 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-06.2`.
+`APP_VERSION`: `0.1.6-dev.2026-08-06.4`.
+
+- **Quality of Life is explained, and its breakdown actually displays (#227)** —
+  a player could see a QoL number but had no way to learn what moved it or why
+  it mattered.
+  - **Fixed a payload mismatch that hid the whole breakdown.** The wellbeing
+    tile read a `quality_of_life` object the server has never sent, falling
+    back to the 0..1 `qol_score`. So the score rendered but the four scoring
+    components never did, and `qol_productivity_multiplier` — the reason QoL
+    matters at all — was never shown. The tile now reads `qol_index`,
+    `qol_breakdown` and `qol_productivity_multiplier`, which is what the
+    server has been emitting all along. (It also looked for a `goods`
+    component key; the engine emits `consumer_goods`.)
+  - **The tile now shows a bar per component** (Nutrition 30, Medical 35,
+    Consumer goods 20, Stability 20) with points-of-max, plus the production
+    multiplier next to the score.
+  - **"How is this calculated?"** expands per-component guidance on what to
+    do or invest in to move each line, served from a new
+    `GET /api/qol-guide`. The guide is **derived from the same constants
+    `seasonal_qol_breakdown` scores against**, so the explanation cannot drift
+    from the calculation — tests pin it to those constants.
+  - **RULES.md gains a Quality of Life section** covering the 0.85x-1.15x
+    production swing, all four components, what moves each, and a note that
+    the seasonal index is a different measure from the annual food/health/
+    pollution wellbeing that drives birth rates and emigration.
+  - Note the components total 105, not 100. That is deliberate — the index is
+    clamped to 100, so a strong line can cover a weak one.
+- **Finished the Medical & Laboratory rename in the frontend.** The
+  `0.1.6-dev.2026-08-06.2` notes claimed no player-facing "Healthcare" label
+  remained; that was wrong. Five hardcoded strings in `index.html` were missed
+  because only the server's `ROLE_INFO` was checked, and that derives from
+  `ROLES` while the frontend keeps its own copies: the landing-page island map
+  label, `ROLE_DISPLAY_NAMES`, `ROLE_SHORT_NAMES`, the `ROLE_ART` island title,
+  and the board island list. All now read Medical & Laboratory.
 
 - **The Healthcare island is now the Medical & Laboratory Island (#26)** — the
   rename that has been sitting on the Phase A checklist in

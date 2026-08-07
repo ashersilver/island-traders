@@ -547,6 +547,21 @@ button:active{transform:scale(.97)}
 .wealth-breakdown .wb-neg{color:#d98a8a}
 
 .mkt-row{display:flex;justify-content:space-between;align-items:center;padding:.12rem 0;font-size:.79rem}
+/* QoL breakdown (#227): a bar per scoring component so the player can see at a
+   glance which line is dragging the index down. */
+.qol-comps{margin:.3rem 0 .2rem;display:flex;flex-direction:column;gap:.22rem}
+.qol-comp-head{display:flex;justify-content:space-between;font-size:.7rem}
+.qol-bar{height:4px;border-radius:2px;background:rgba(127,127,127,.25);overflow:hidden;margin-top:.1rem}
+.qol-bar>i{display:block;height:100%;border-radius:2px;transition:width .25s ease}
+.qol-explain-btn{background:none;border:none;padding:0;margin:.15rem 0 .1rem;cursor:pointer;
+  font:inherit;font-size:.7rem;color:var(--dim);text-decoration:underline}
+.qol-explain-btn:hover{color:var(--text)}
+.qol-explain{font-size:.7rem;line-height:1.45;border-left:2px solid rgba(127,127,127,.3);
+  padding-left:.45rem;margin:.2rem 0 .1rem;max-height:15rem;overflow-y:auto}
+.qol-exp-item{margin-bottom:.4rem}
+.qol-explain ul{margin:.15rem 0 0;padding-left:.9rem}
+.qol-explain li{margin:.1rem 0}
+.qol-note{color:var(--dim);margin:.1rem 0}
 .mkt-row .res{color:var(--text)}
 /* Production schedule rows (per-output capacity + limiting factor) */
 .prod-sched-row{padding:.18rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
@@ -1135,7 +1150,7 @@ body.fx-off .ih-pins .pdot{animation:none}
       <ellipse cx="225" cy="58" rx="42" ry="32" fill="#27ae6022" stroke="#27ae60" stroke-width="1.5"/>
       <text x="225" y="62" text-anchor="middle" fill="#27ae60" font-size="9" font-weight="700">Agriculture</text>
       <ellipse cx="316" cy="110" rx="40" ry="32" fill="#e74c3c22" stroke="#e74c3c" stroke-width="1.5"/>
-      <text x="316" y="114" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="700">Healthcare</text>
+      <text x="316" y="114" text-anchor="middle" fill="#e74c3c" font-size="9" font-weight="700">Medical &amp; Lab</text>
       <ellipse cx="316" cy="215" rx="40" ry="32" fill="#f1c40f22" stroke="#f1c40f" stroke-width="1.5"/>
       <text x="316" y="219" text-anchor="middle" fill="#f1c40f" font-size="9" font-weight="700">Banking</text>
       <ellipse cx="225" cy="268" rx="42" ry="32" fill="#9b59b622" stroke="#9b59b6" stroke-width="1.5"/>
@@ -1946,7 +1961,7 @@ const ROLE_ISLAND_NAMES = {
   'Educator':     'Education, Research and Training',
   'Banker':       'Banking and Insurance',
   'Manufacturer': 'Manufacturing',
-  'Doctor':       'Healthcare and Health Research',
+  'Doctor':       'Medical & Laboratory',
 };
 const ROLE_SHORT_NAMES = {
   'Farmer':       'Agriculture',
@@ -1955,7 +1970,7 @@ const ROLE_SHORT_NAMES = {
   'Educator':     'Education',
   'Banker':       'Finance',
   'Manufacturer': 'Manufacturing',
-  'Doctor':       'Healthcare',
+  'Doctor':       'Medical & Laboratory',
 };
 const ROLE_ART = {
   Farmer: {
@@ -2034,7 +2049,7 @@ const ISLAND_BRIEFINGS = {
     full: `You produce Farm Machinery, Mining Equipment, Medical Devices, and Transport Equipment. You choose a product line each season, so foresight matters more than brute volume.<br><br>Your strongest strategy is to forecast one season ahead: the manufacturer who answers only today’s shortage is late; the manufacturer who predicts tomorrow’s constraint becomes everyone else’s architect.`
   },
   Doctor: {
-    title: 'Healthcare and Health Research Island',
+    title: 'Medical & Laboratory Island',
     summary: 'Sell resilience. Produce MedicalSupplies and Vaccine, protect your specialist workforce, and be ready to dispatch Nurses when food crises threaten productivity.',
     complexity: { level: 'High', note: 'A production loop plus medical-staffing contracts, nurse-travel logistics, vaccines, and insurance certification — lots of moving parts and inter-island timing.' },
     priorities: ['Keep Expertise and Lab Equipment', 'Protect medical staff', 'Source PassengerSeats for nurse travel'],
@@ -5825,22 +5840,75 @@ function renderBusinessCycleChip() {
   chip.classList.remove('hidden');
 }
 
+// QoL explanation data (#227), served from /api/qol-guide and derived from the
+// same constants the engine scores against, so it can't drift.  Fetched once.
+// The fallback only carries the labels and maxima needed to draw the bars if
+// the fetch fails — the prose always comes from the server.
+let qolGuideCache = null;
+const QOL_COMPONENT_FALLBACK = [
+  { key: 'nutrition',      label: 'Nutrition',      max_points: 30 },
+  { key: 'medical',        label: 'Medical',        max_points: 35 },
+  { key: 'consumer_goods', label: 'Consumer goods', max_points: 20 },
+  { key: 'stability',      label: 'Stability',      max_points: 20 },
+];
+
+async function loadQolGuide() {
+  if (qolGuideCache) return qolGuideCache;
+  try {
+    const res = await fetch(`${API}/api/qol-guide`);
+    qolGuideCache = await res.json();
+  } catch (e) {
+    qolGuideCache = null;
+  }
+  return qolGuideCache;
+}
+
+function toggleQolExplain() {
+  const box = document.getElementById('qol-explain');
+  if (!box) return;
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const render = (g) => {
+    if (!g) { box.innerHTML = '<div class="qol-note">Explanation unavailable.</div>'; return; }
+    const comps = (g.components || []).map(c =>
+      `<div class="qol-exp-item"><b>${esc(c.label)}</b> <span style="color:var(--dim)">`
+      + `— up to ${c.max_points} pts</span><div class="qol-note">${esc(c.measures || '')}</div>`
+      + `<ul>${(c.improve || []).map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>`
+    ).join('');
+    const prod = g.productivity ? `<div class="qol-note">${esc(g.productivity.summary || '')}</div>` : '';
+    const clamp = g.total_is_clamped_to
+      ? `<div class="qol-note">Components can total more than ${g.total_is_clamped_to}; the index is`
+        + ` capped there, so a strong showing on one line can cover a shortfall on another.</div>`
+      : '';
+    box.innerHTML = prod + comps + clamp;
+  };
+  if (qolGuideCache) render(qolGuideCache);
+  else { box.innerHTML = '<div class="qol-note">Loading…</div>'; loadQolGuide().then(render); }
+}
+
 // Island wellbeing tile: Quality-of-Life index + continuing-education coverage
 // (medical-response-quality-of-life + continuing-education-expertise briefs).
 function renderIslandWellbeing(me) {
   const tile = document.getElementById('wellbeing-tile');
   const body = document.getElementById('s-wellbeing');
   if (!tile || !body || !me) return;
-  // QoL: the medical/QoL engine currently emits a 0..1 scalar `qol_score`; a
-  // richer {score, components:{nutrition,medical,goods,stability}} object may
-  // arrive later — read either.
-  const qolObj = me.quality_of_life;
-  let qolPct = null, comps = null;
-  if (qolObj && typeof qolObj.score === 'number') {
-    qolPct = qolObj.score <= 1 ? qolObj.score * 100 : qolObj.score;
-    comps = qolObj.components || null;
+  // QoL (#227). The server emits `qol_index` (0-100), `qol_breakdown`
+  // ({nutrition, medical, consumer_goods, stability, ...}) and
+  // `qol_productivity_multiplier`. This used to read a `quality_of_life`
+  // object that the server never sends, and fell back to the 0..1
+  // `qol_score` — so the score displayed but the components never did, and
+  // the production multiplier (the reason QoL matters) was invisible.
+  let qolPct = null, comps = null, qolMult = null;
+  if (typeof me.qol_index === 'number') {
+    qolPct = me.qol_index;
   } else if (typeof me.qol_score === 'number') {
     qolPct = me.qol_score <= 1 ? me.qol_score * 100 : me.qol_score;
+  }
+  if (me.qol_breakdown && typeof me.qol_breakdown === 'object') {
+    comps = me.qol_breakdown;
+  }
+  if (typeof me.qol_productivity_multiplier === 'number') {
+    qolMult = me.qol_productivity_multiplier;
   }
   // Continuing education (continuing-education-expertise-2026-07-05): the
   // server emits {managers, annual_need, expertise_ytd, expertise_consumed,
@@ -5852,14 +5920,37 @@ function renderIslandWellbeing(me) {
   if (qolPct == null && !ce) { tile.classList.add('hidden'); return; }
   const parts = [];
   if (qolPct != null) {
-    const comp = comps ? ['nutrition', 'medical', 'goods', 'stability']
-      .filter(k => typeof comps[k] === 'number')
-      .map(k => `${k[0].toUpperCase()}${k.slice(1)} ${Math.round(comps[k])}`)
-      .join(' · ') : '';
-    const col = qolPct >= 100 ? 'var(--green)' : (qolPct >= 85 ? 'var(--text)' : 'var(--gold)');
-    parts.push(`<div class="mkt-row"><span class="res">Quality of Life</span>`
-      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`
-      + (comp ? `<div style="font-size:.7rem;color:var(--dim);margin:.1rem 0 .3rem">${comp}</div>` : ''));
+    const col = qolPct >= 85 ? 'var(--green)' : (qolPct >= 60 ? 'var(--text)' : 'var(--gold)');
+    let head = `<div class="mkt-row"><span class="res">Quality of Life</span>`
+      + `<span class="price" style="color:${col}">${Math.round(qolPct)}/100</span></div>`;
+    if (qolMult != null) {
+      // The multiplier is the whole point of QoL — show it next to the score.
+      const mcol = qolMult >= 1 ? 'var(--green)' : 'var(--gold)';
+      head += `<div class="mkt-row" style="font-size:.72rem">`
+        + `<span class="res" style="color:var(--dim)">Production effect</span>`
+        + `<span class="price" style="color:${mcol}">&times;${qolMult.toFixed(2)}</span></div>`;
+    }
+    parts.push(head);
+    if (comps) {
+      const guide = qolGuideCache;
+      const rows = (guide ? guide.components : QOL_COMPONENT_FALLBACK)
+        .filter(c => typeof comps[c.key] === 'number')
+        .map(c => {
+          const got = comps[c.key], max = c.max_points;
+          const pct = max > 0 ? Math.max(0, Math.min(100, (got / max) * 100)) : 0;
+          const bcol = pct >= 80 ? 'var(--green)' : (pct >= 40 ? 'var(--gold)' : 'var(--red)');
+          return `<div class="qol-comp" data-qol-key="${c.key}" title="${esc(c.measures || '')}">`
+            + `<div class="qol-comp-head"><span>${esc(c.label)}</span>`
+            + `<span style="color:var(--dim)">${got.toFixed(0)}/${max.toFixed(0)}</span></div>`
+            + `<div class="qol-bar"><i style="width:${pct.toFixed(0)}%;background:${bcol}"></i></div></div>`;
+        }).join('');
+      if (rows) {
+        parts.push(`<div class="qol-comps">${rows}</div>`
+          + `<button type="button" class="qol-explain-btn" onclick="toggleQolExplain()">`
+          + `How is this calculated?</button>`
+          + `<div id="qol-explain" class="qol-explain hidden"></div>`);
+      }
+    }
   }
   if (ce && typeof ce.manager_efficiency_multiplier === 'number') {
     const pct = Math.round(ce.manager_efficiency_multiplier * 100);
@@ -8322,7 +8413,7 @@ function buildIslandMap() {
     {name:'Transport',  cx:225, cy:165, color:'#3498db'},
     {name:'Mining',     cx:134, cy:110, color:'#e67e22'},
     {name:'Agriculture',cx:225, cy:58,  color:'#27ae60'},
-    {name:'Healthcare', cx:316, cy:110, color:'#e74c3c'},
+    {name:'Medical & Lab', cx:316, cy:110, color:'#e74c3c'},
     {name:'Banking',    cx:316, cy:215, color:'#f1c40f'},
     {name:'Education',  cx:225, cy:268, color:'#9b59b6'},
     {name:'Manufacturing',cx:134,cy:215,color:'#1abc9c'},
