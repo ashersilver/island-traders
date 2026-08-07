@@ -5,7 +5,40 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.7`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.8`.
+
+- **Role economics re-tuned (#213 — closes the issue).** Wealth share was
+  spread 12.6–16.9% with win rates from **1.8% (Manufacturer) to 24.3%
+  (Doctor)**. After three tuning passes:
+
+  | Role | win% before | win% after | share before | share after |
+  |---|---|---|---|---|
+  | Farmer | 18.0 | 16.7 | 13.0 | 12.9 |
+  | Miner | 14.0 | 17.3 | 13.2 | 13.5 |
+  | Transporter | 13.2 | 17.5 | 13.9 | 14.7 |
+  | Educator | **5.3** | **10.3** | 13.7 | 14.5 |
+  | Banker | **23.3** | **12.8** | 16.8 | 14.9 |
+  | Manufacturer | **1.8** | **9.2** | 12.6 | 14.8 |
+  | Doctor | **24.3** | **16.2** | 16.9 | 14.7 |
+
+  Wealth-share spread closes from **4.3 points to 2.0** (12.9–14.9 against an
+  even split of 14.3), and win rates from a 22.5-point range to 8.3.
+  - **Validated on held-out seeds.** Tuned on 42/7/99, then checked on
+    123/2024/555 which were never used for tuning: spread **13.2–15.0**,
+    essentially identical. The result is not overfitted.
+  - Levers: MedicalSupplies 30→23 and Vaccine 40.2→32 (the Doctor was the
+    biggest single outlier), Banker Finance output 0.7→0.58, Goods 5.0→9.5
+    (the Manufacturer's margin was too thin to ever win), Expertise 17.1→18.0
+    and Courses 23.75→25.0, Metal 8.0→9.0, Grain 12.0→13.0, Food 26.4→24.5.
+  - **A regression gate now guards this** —
+    `tests/test_simulation/test_role_balance_regression.py` runs a short
+    simulation and fails if any role drifts outside 10–19% share, the spread
+    exceeds 6 points, or mean deviation from an even split exceeds 2 points.
+    A brittle test that pinned exact Course/Expertise prices was rewritten to
+    assert the relationship that must hold (a Course is made from Expertise,
+    so it is worth more) rather than frozen numbers.
+  - `BASE_PRICES` now carries a note that these values are calibrated together
+    and how to re-check after editing.
 
 - **Laboratory Tests exist and are actually consumed (#26 Phase B).** The
   Medical & Laboratory Island's third line, bought by the Miner as a metal
