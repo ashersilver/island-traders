@@ -788,6 +788,25 @@ Both are **annual policies** valid for 4 seasons from purchase.
 |---|---|---|
 | Life Insurance | 25 Dp / worker | Pays a 60 Dp death benefit per fatality on the covered island |
 | Medical Insurance | 25 Dp / worker | Halves the injury-absence rate (–50%) for covered workers |
+| Equipment Insurance | Priced per machine | Pays **90%** of a named machine's value if it fails |
+
+### Equipment Insurance
+
+Cover is written on **one named machine**, not the island. The premium is
+priced from that unit's **age**, using the same failure curve the engine rolls
+against each season — an old machine costs more to insure because it is
+likelier to break. On top of the expected loss the Bank adds a **20% markup**,
+so it keeps a consistent margin whatever it insures.
+
+The rate is **struck at inception and held flat** for the life of the policy:
+the machine ages, the premium does not.
+
+A claim is a **total-loss settlement** — it pays out 90% of the machine's
+value and the policy is then closed. Repair proceeds as normal; the payout is
+cash toward replacement, not a repair service. One policy per machine.
+
+> Equipment is a **third line of business**, so a Bank needs a third Actuary
+> before it can write it alongside Life and Medical.
 
 ### Buying and Selling
 

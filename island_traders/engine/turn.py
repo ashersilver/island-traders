@@ -15,7 +15,7 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
-from ..models.insurance import InsurancePolicy
+from ..models.insurance import InsurancePolicy, equipment_insurance_quote
 from ..models.loan import (
     CapitalFinanceError,
     Loan,
@@ -55,6 +55,7 @@ from ..constants import (
     TRAINEE_FOOD_ACCOM_PER_SEASON,
     PEOPLE_PER_MEAL,
     MBA_RESERVE_RATIO_BASE, MBA_RESERVE_RATIO_QUALIFIED, MBA_QUALIFIED_THRESHOLD,
+    EQUIPMENT_INSURANCE_PAYOUT_FRACTION,
     INSURANCE_BASE_PREMIUM, INSURANCE_DURATION_SEASONS, LIFE_INSURANCE_DEATH_BENEFIT,
     MEDICAL_INSURANCE_INJURY_REDUCTION, MEDICAL_PREMIUM_PER_HEAD,
     ACTUARIAL_EVALUATION_COST, WORKPLACE_RISK,
@@ -3372,10 +3373,17 @@ class TurnManager:
             f"    2. Medical Insurance  — halves seasonal injury-absence rate ({MEDICAL_INSURANCE_INJURY_REDUCTION*100:.0f}% reduction)\n"
             f"       Base premium: {INSURANCE_BASE_PREMIUM['medical']:.0f} {sym}  |  covers 1 year (4 seasons)"
         )
+        self.io.print(
+            f"    3. Equipment Insurance — covers one named machine; pays "
+            f"{EQUIPMENT_INSURANCE_PAYOUT_FRACTION*100:.0f}% of its value if it fails\n"
+            f"       Premium priced off the unit's age on the #188 failure curve"
+        )
         self.io.print("\n  High-hazard roles: Farmer, Miner, Transporter, Manufacturer")
 
-        choice = self.io.choose_quantity("Policy type [1=Life / 2=Medical]:", 1, 2)
-        policy_type = "life" if choice == 1 else "medical"
+        choice = self.io.choose_quantity(
+            "Policy type [1=Life / 2=Medical / 3=Equipment]:", 1, 3
+        )
+        policy_type = {1: "life", 2: "medical", 3: "equipment"}[choice]
         # #196: one Actuary per line of business. Checked after the line is
         # chosen — writing more of an already-open line is always fine, so
         # refusing before the player picks would be wrong.
@@ -3385,7 +3393,7 @@ class TurnManager:
         if not allowed:
             self.io.print(reason)
             return
-        base = INSURANCE_BASE_PREMIUM[policy_type]
+        base = INSURANCE_BASE_PREMIUM.get(policy_type, 0.0)
 
         # Medical policies are sized + priced per covered head (2026-06-02).
         covered_count = 1
@@ -3401,6 +3409,40 @@ class TurnManager:
             )
 
         buyer = self.io.choose_player("Sell to which player?", eligible)
+
+        # #196: equipment cover names ONE machine, so the unit can only be
+        # chosen once the buyer is known — hence this sits after the buyer
+        # prompt rather than beside the other per-line sizing above.
+        insured_item_id, insured_value = "", 0.0
+        if policy_type == "equipment":
+            units = self._insurable_units(buyer)
+            if not units:
+                self.io.print(
+                    f"  {buyer.name} has no in-service equipment to insure."
+                )
+                return
+            options = []
+            for item_id, item, age in units:
+                quote = equipment_insurance_quote(item.cost, age)
+                options.append({
+                    "value": item_id,
+                    "label": (
+                        f"{item.name} (age {age}s) — premium "
+                        f"{quote['annual_premium']:.1f} {sym}/yr, "
+                        f"pays {quote['payout']:.1f} {sym}"
+                    ),
+                })
+            insured_item_id = self.io.choose_option("Insure which machine?", options)
+            chosen = next(
+                (u for u in units if u[0] == insured_item_id), None
+            )
+            if chosen is None:
+                self.io.print("  Unknown equipment selection.")
+                return
+            _, chosen_item, chosen_age = chosen
+            quote = equipment_insurance_quote(chosen_item.cost, chosen_age)
+            base = quote["annual_premium"]
+            insured_value = quote["payout"]
 
         # Show current cover for buyer
         existing = buyer.active_policies(year, season_index)
@@ -3459,6 +3501,8 @@ class TurnManager:
             purchased_tick=purchased_tick,
             expires_at_tick=purchased_tick + INSURANCE_DURATION_SEASONS,
             covered_count=covered_count,
+            item_id=insured_item_id,
+            insured_value=insured_value,
         )
         buyer.add_insurance_policy(policy)
         self.io.print(
@@ -3467,6 +3511,36 @@ class TurnManager:
             f"actuarial evaluation cost {ACTUARIAL_EVALUATION_COST:.0f} {sym}"
         )
         result.actions_taken.append(f"sell_insurance:{policy_type}:{buyer.name}")
+
+    def _insurable_units(self, holder: Player) -> list[tuple]:
+        """(item_id, item, age_seasons) for each in-service unit not already covered.
+
+        One policy per machine — offering cover on something already insured
+        would let a buyer stack payouts on a single failure.
+        """
+        covered = {
+            p.item_id for p in holder.insurance_policies
+            if p.policy_type == "equipment" and p.active and p.item_id
+        }
+        current_tick = self._current_tick()
+        out = []
+        for item_id, units in getattr(holder, "capital_units", {}).items():
+            if item_id in covered:
+                continue
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            if item is None:
+                continue
+            in_service = [u for u in units if getattr(u, "status", "") == "in_service"]
+            if not in_service:
+                continue
+            youngest = min(
+                max(0, current_tick - getattr(u, "acquired_tick", 0)) for u in in_service
+            )
+            out.append((item_id, item, youngest))
+        return out
+
+    def _current_tick(self) -> int:
+        return int(getattr(self, "_tick_for_pricing", 0))
 
     @staticmethod
     def _banker_can_underwrite_insurance(banker: Player) -> bool:
