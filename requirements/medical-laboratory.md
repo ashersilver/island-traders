@@ -268,6 +268,60 @@ Phased so each piece is independently mergeable:
 2. Farmer's seasonal production requires 1 "Soil Analysis" Lab Test.
 3. RULES.md updated.
 
+> **Attempted 2026-08-07 and NOT merged.** Working prototype on branch
+> `feature/lab-tests-phase-b` (commit `5717766`). Read this before trying
+> again — the mechanism works; the *demand* side is the hard part.
+>
+> **What the prototype got right, and is worth reusing verbatim:**
+>
+> - `ProductionEngine.assay_plan()` — a **soft** gate. Coverage-scaled yield:
+>   `coverage = min(1, on_hand / needed)`, `yield x = floor + (1-floor) *
+>   coverage`. Verified: Metal 40 with 0 tests → ×0.75, with 2 → ×0.875, with
+>   4 → ×1.0. It never blocks, so it avoids the cascade that putting Lab Tests
+>   into `OUTPUT_PRODUCTION_INPUT_STEPS` would cause — **that table skips the
+>   output entirely when an input is short**, which is the exact
+>   Manny-Fracture dynamic #47 / PR #212 removed. Do not use it for assays.
+> - The `ASSAY_REQUIREMENTS` table shape, `doctor.pathology_lab` capacity
+>   item, and the `LaboratoryTests` recipe.
+>
+> **Why it was not merged.** Over 40 games at seed 42:
+> **2,318 Lab Tests produced, 0 consumed, 289 traded** — and the Doctor went
+> to **43.5%** win rate (from ~24%). The same wealth-faucet failure the
+> Phase A note above describes, and for a subtler reason:
+>
+> **A soft gate creates only *optional* demand.** Skipping the assay costs a
+> Miner 25% of one Metal run — perhaps 60-80 Dp — while a Lab Test lists at
+> 35 Dp. The margin is thin, it is a second-order effect the AI's purchase
+> logic does not weigh, and so the AI barely buys (289 traded ≈ 0.09 per
+> island-season) and holds none at the moment it produces (0 consumed). The
+> Doctor meanwhile produces on every tick and banks the unsold stock as net
+> worth. Adding `AIStrategy._assay_shortfall()` to
+> `_inputs_for_ai_purchase` was not enough to close it.
+>
+> **This is the structural tension to solve first:** a *hard* gate creates
+> real demand but risks the cascade; a *soft* gate is safe but creates demand
+> too weak for the AI to act on, so supply outruns it and the faucet returns.
+>
+> Options, roughly in order of promise:
+>
+> 1. **Cap supply to demand.** Make the Doctor's Lab Test capacity track
+>    actual archipelago assay demand rather than a flat 12/season, so
+>    unsold stock cannot accumulate no matter how weak demand is. Cheapest
+>    fix and it removes the faucet directly.
+> 2. **Make the penalty bite harder** (floor ~0.5 on Metal) so skipping the
+>    assay is clearly worse than the 35 Dp, then re-check that the AI
+>    actually buys. Needs the flow table to show non-zero *consumed*.
+> 3. **Price Lab Tests well below the yield they protect** — the demand has
+>    to be obviously profitable, not marginally so.
+> 4. **Ship Phase B without the Doctor producing to stock**: make Lab Tests
+>    produced *on order* only (a service the consumer requests), which
+>    sidesteps inventory-as-wealth entirely. Biggest change, cleanest model.
+>
+> **Acceptance criterion for the next attempt:** the supply-chain liveness
+> table must show LaboratoryTests **consumed > 0 and roughly tracking
+> produced**, and no role may move more than ±2 pp across three seeds. If
+> consumed is 0, the faucet is back regardless of what the win rates say.
+
 ### Phase C — Ecologist profession + Environmental Assessment gate
 1. Add `Profession.ECOLOGIST` (Technician, 2-season apprenticeship).
 2. Add `installation_review_required: bool` field to `CapitalItem`.
