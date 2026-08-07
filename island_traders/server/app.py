@@ -70,6 +70,7 @@ from ..constants import (
 )
 from ..constants_capacity import CAPITAL_CATALOGUE
 from ..dependency_graph import build_dependency_graph
+from ..engine.qol import qol_guide
 from .ws_adapter import WebSocketIOAdapter
 
 try:
@@ -7151,6 +7152,20 @@ def create_app() -> FastAPI:
         client fetches it once and caches it.
         """
         return build_dependency_graph()
+
+    @app.get(
+        "/api/qol-guide",
+        tags=["Reference"],
+        summary="How the Quality of Life index is calculated",
+    )
+    async def _get_qol_guide():
+        """Player-facing explanation of the seasonal QoL index (#227).
+
+        Derived from the same constants `seasonal_qol_breakdown` reads, so the
+        explanation cannot drift from the calculation. Static for a given
+        build, so the client fetches it once and caches it.
+        """
+        return qol_guide()
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():

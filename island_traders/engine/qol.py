@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ..constants import (
     MEDICAL_SUPPLIES_STOCKPILE_PEOPLE_PER_UNIT,
+    PEOPLE_PER_MEAL,
     NURSE_PRODUCTIVITY_BONUS_CAP,
     NURSE_QOL_BONUS_CAP_POINTS,
     NURSE_QOL_WORKFORCE_COVERAGE,
@@ -77,6 +78,84 @@ def qol_productivity_multiplier(qol_index: float) -> float:
     return round(QOL_PRODUCTIVITY_MIN + (score / 100.0) * (
         QOL_PRODUCTIVITY_MAX - QOL_PRODUCTIVITY_MIN
     ), 4)
+
+
+def qol_guide() -> dict:
+    """Player-facing explanation of the seasonal QoL index (#227).
+
+    Derived from the constants that `seasonal_qol_breakdown` actually reads, so
+    the explanation cannot drift from the calculation.  Static for a given
+    build — the client fetches it once and caches it.
+
+    Note the component maxima sum to more than 100 (30 + 35 + 20 + 20 = 105).
+    That is deliberate: `seasonal_qol_breakdown` clamps the total to 100, so a
+    strong showing on one component can cover a shortfall on another rather
+    than every single line having to be perfect.
+    """
+    return {
+        "index_range": [0, 100],
+        "total_is_clamped_to": 100,
+        "productivity": {
+            "min_multiplier": QOL_PRODUCTIVITY_MIN,
+            "max_multiplier": QOL_PRODUCTIVITY_MAX,
+            "summary": (
+                f"Production is scaled by {QOL_PRODUCTIVITY_MIN}x at QoL 0 rising "
+                f"linearly to {QOL_PRODUCTIVITY_MAX}x at QoL 100 — a "
+                f"{round((QOL_PRODUCTIVITY_MAX - QOL_PRODUCTIVITY_MIN) * 100)} "
+                "percentage-point swing between a miserable island and a thriving one."
+            ),
+        },
+        "components": [
+            {
+                "key": "nutrition",
+                "label": "Nutrition",
+                "max_points": 30.0,
+                "measures": "Whether your residents are fed, and whether they eat a varied diet.",
+                "improve": [
+                    f"Up to 20 pts: satisfy every meal your population needs this season "
+                    f"(1 meal per {PEOPLE_PER_MEAL} residents). Partial feeding scores pro-rata.",
+                    "+10 pts: serve at least 3 distinct food types this season "
+                    "(Food, Grain, Produce, Fish, Meat) — buy variety, don't just stockpile one.",
+                ],
+            },
+            {
+                "key": "medical",
+                "label": "Medical",
+                "max_points": 35.0,
+                "measures": "Insurance cover, nursing capacity and medical stock on hand.",
+                "improve": [
+                    "+10 pts: hold an active medical insurance policy from the Banking island.",
+                    f"Up to {NURSE_QOL_BONUS_CAP_POINTS} pts: employ Nurses — each covers "
+                    f"{NURSE_QOL_WORKFORCE_COVERAGE} workers, and the bonus scales with the "
+                    "fraction of your workforce covered.",
+                    f"+10 pts: keep a MedicalSupplies stockpile of at least 1 unit per "
+                    f"{MEDICAL_SUPPLIES_STOCKPILE_PEOPLE_PER_UNIT} residents.",
+                ],
+            },
+            {
+                "key": "consumer_goods",
+                "label": "Consumer goods",
+                "max_points": 20.0,
+                "measures": "Whether households could buy the Goods they wanted this season.",
+                "improve": [
+                    "Buy Goods to meet your households' seasonal demand. Scores pro-rata, "
+                    "so partial supply still earns partial credit.",
+                ],
+            },
+            {
+                "key": "stability",
+                "label": "Stability",
+                "max_points": 20.0,
+                "measures": "Shocks and untreated illness — largely outside your direct control.",
+                "improve": [
+                    "Starts at 15 pts and is nudged by the business cycle (a boom adds, a bust subtracts).",
+                    "-10 pts while a pandemic or disaster is active.",
+                    "-5 pts if any worker is sidelined untreated — vaccinate and keep "
+                    "MedicalSupplies on hand to avoid this.",
+                ],
+            },
+        ],
+    }
 
 
 def seasonal_qol_breakdown(
