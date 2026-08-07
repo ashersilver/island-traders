@@ -124,3 +124,37 @@ def banker_can_process_claims(banker) -> bool:
     from .profession import Profession
 
     return banker.workforce.count_profession(Profession.INSURANCE_ADJUSTER.value) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Annual physical — #19
+# ---------------------------------------------------------------------------
+
+HEALTH_CERTIFICATE_TESTS = 1
+
+
+def apply_physical_discount(buyer, premium: float) -> tuple[float, bool]:
+    """Halve a life/medical premium if the island can produce a physical (#19).
+
+    > "If employees undergo a physical their medical and life insurance
+    > premiums are halved.  Employees covered by insurance need a physical
+    > once a year on the anniversary of the insurance to maintain reduced
+    > premiums."
+
+    The physical is a "Health Certificate" Lab Test from the Medical &
+    Laboratory Island, consumed at issuance.  Policies run one year, so
+    renewing *is* the anniversary — a buyer who cannot produce a certificate
+    at renewal simply pays the full rate again, which is the reversion the
+    issue describes without needing separate anniversary bookkeeping.
+
+    Returns (premium, certificate_used).
+    """
+    from ..constants import PHYSICAL_PREMIUM_DISCOUNT
+    from .resource import ResourceType
+
+    if premium <= 0:
+        return premium, False
+    if buyer.inventory.get(ResourceType.LABORATORY_TESTS) < HEALTH_CERTIFICATE_TESTS:
+        return premium, False
+    buyer.give_resources(ResourceType.LABORATORY_TESTS, HEALTH_CERTIFICATE_TESTS)
+    return round(premium * (1.0 - PHYSICAL_PREMIUM_DISCOUNT), 2), True

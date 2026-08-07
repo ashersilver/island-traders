@@ -808,6 +808,16 @@ cash toward replacement, not a repair service. One policy per machine.
 > Equipment is a **third line of business**, so a Bank needs a third Actuary
 > before it can write it alongside Life and Medical.
 
+### The Annual Physical
+
+Buy a **Health Certificate** — a Lab Test from the Medical & Laboratory
+Island — and hand it over when a Life or Medical policy is written, and the
+**premium is halved**.
+
+Policies run one year, so **renewal is the anniversary**: produce another
+certificate then and the half rate continues; turn up without one and you pay
+the full premium again. Each policy needs its own certificate.
+
 ### Processing Claims
 
 Selling cover and paying out are different jobs. An **Actuary** prices the

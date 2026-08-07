@@ -15,7 +15,11 @@ from ..engine.events import EventResult
 from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.ai import AIStrategy
-from ..models.insurance import InsurancePolicy, equipment_insurance_quote
+from ..models.insurance import (
+    InsurancePolicy,
+    apply_physical_discount,
+    equipment_insurance_quote,
+)
 from ..models.loan import (
     CapitalFinanceError,
     Loan,
@@ -3410,6 +3414,19 @@ class TurnManager:
 
         buyer = self.io.choose_player("Sell to which player?", eligible)
 
+        # #19: an annual physical (a Health Certificate Lab Test) halves the
+        # life/medical premium.  Applied to the quoted base before the seller
+        # names a price, so the discount is visible rather than a silent
+        # adjustment after the fact.
+        if policy_type in ("life", "medical"):
+            discounted, certified = apply_physical_discount(buyer, base)
+            if certified:
+                self.io.print(
+                    f"  {buyer.name} produced a Health Certificate — premium "
+                    f"halved to {discounted:.0f} {sym}."
+                )
+                base = discounted
+
         # #196: equipment cover names ONE machine, so the unit can only be
         # chosen once the buyer is known — hence this sits after the buyer
         # prompt rather than beside the other per-line sizing above.
@@ -3644,6 +3661,14 @@ class TurnManager:
             self.io.print(reason)
             return
         base = INSURANCE_BASE_PREMIUM[policy_type]
+        # #19: the buyer's own Health Certificate halves the premium here too.
+        discounted, certified = apply_physical_discount(player, base)
+        if certified:
+            self.io.print(
+                f"  Health Certificate produced — premium halved to "
+                f"{discounted:.0f} {sym}."
+            )
+            base = discounted
 
         premium = self.io.ask_dollop_amount(
             f"Offer premium to {banker.name} ({sym})? [base: {base:.0f}]", player.dollops

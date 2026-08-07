@@ -11,7 +11,11 @@ from ..engine.production import ProductionEngine
 from ..engine.trading import TradingEngine
 from ..engine.revenue import revenue_opportunities
 from ..engine.flu import vaccine_doses_needed
-from ..models.insurance import InsurancePolicy, equipment_insurance_quote
+from ..models.insurance import (
+    InsurancePolicy,
+    apply_physical_discount,
+    equipment_insurance_quote,
+)
 from ..models.training import (
     TrainingCapacityError,
     campus_has_technical_workshop,
@@ -524,6 +528,8 @@ class AIStrategy:
                     if policy_type not in open_lines and len(open_lines) >= actuaries:
                         continue
                     premium = INSURANCE_BASE_PREMIUM[policy_type]
+                    # #19: a Health Certificate halves the premium.
+                    premium, _ = apply_physical_discount(target, premium)
                     if target.dollops < premium or banker.dollops < ACTUARIAL_EVALUATION_COST:
                         continue
                     target.spend_dollops(premium)
@@ -689,6 +695,8 @@ class AIStrategy:
             if not self._ai_can_write_line(banker, policy_type, open_lines):
                 continue
             premium = INSURANCE_BASE_PREMIUM[policy_type]
+            # #19: a Health Certificate halves the premium.
+            premium, _ = apply_physical_discount(player, premium)
             if player.dollops < premium + AI_INSURANCE_CASH_RESERVE:
                 continue
             if banker.dollops < ACTUARIAL_EVALUATION_COST:

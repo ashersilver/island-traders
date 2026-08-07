@@ -5,7 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.8`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.9`.
+
+- **The annual physical halves insurance premiums (#19, third mechanic).**
+  Blocked until Lab Tests shipped in `.7`; now unblocked.
+  - Hand over a **Health Certificate** (a Lab Test) when a Life or Medical
+    policy is written and the premium is **halved**. The certificate is
+    consumed.
+  - Policies run a year, so **renewal is the anniversary** — produce another
+    certificate and the half rate continues, turn up without one and the full
+    premium returns. That is the reversion #19 describes, with no separate
+    anniversary bookkeeping to drift out of sync.
+  - **All four policy-minting paths honour it** — the Banker's *Sell
+    Insurance*, a buyer's *Buy Insurance*, and both AI paths — with a test
+    that asserts none of them can quietly stop doing so. Getting this wrong
+    once already (the #196 per-line rule reached only one of two AI paths) is
+    why that test exists.
+  - Balance holds: 200 games × 3 seeds keep wealth share at **12.9–15.0%**,
+    unchanged from the `.8` re-tune.
+  - **Known limitation:** AI islands don't stock Health Certificates, because
+    nothing tells them to — only the Miner holds Lab Tests, and then for
+    assays. So the discount is exercised mainly in human play for now. Giving
+    the AI a reason to buy certificates is a follow-up, and would raise Lab
+    Test demand along with it.
 
 - **Role economics re-tuned (#213 — closes the issue).** Wealth share was
   spread 12.6–16.9% with win rates from **1.8% (Manufacturer) to 24.3%
