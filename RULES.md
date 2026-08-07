@@ -55,7 +55,7 @@ Each player takes one role. Roles are not pre-assigned — the game begins with 
 | **Educator** | Education & Training Island | Expertise, **Patents** | Laboratory Equipment | High |
 | **Banker** | Banking Island | **Loans**, **Insurance** *(services, not commodities)* | Expertise *(expertise; no per-season input)* | High |
 | **Manufacturer** | Manufacturing Island | Goods + capital equipment lines (Farm Machinery, Mining Equipment, Medical Devices, Transport Equipment, Lab Equipment) | **Metal**, Oil, Freight | Medium |
-| **Doctor** | Healthcare Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
+| **Doctor** | Medical & Laboratory Island | Health Services, Vaccine | Expertise, Laboratory Equipment | High |
 
 > **Activity index (how busy a role is):** roles differ in how many decisions
 > and interactions they demand each season — factor this into your auction
@@ -122,7 +122,7 @@ Each player begins the game with:
 > born at the end of each year but are **not** automatic workers — they must be
 > actively **recruited** (see Recruit Workers action on your turn).
 
-> **Healthcare Island full capacity** = 4 Doctors + 20 Nurses + 20 Medical
+> **Medical & Laboratory Island full capacity** = 4 Doctors + 20 Nurses + 20 Medical
 > Orderlies + unskilled aides.  Starting at 2 Doctors + 2 Nurses + 2 Medical
 > Orderlies means the clinic operates at partial capacity until additional
 > staff are recruited and trained.
@@ -232,7 +232,7 @@ On your turn you may take **any number of actions** in any order:
 | **Review Training** | *(Educator only)* Approve, counter-offer, or reject incoming training requests. |
 | **Arrange Transport** | *(Transporter only)* Accept or counter-offer transport jobs for workers going to college. |
 | **Recruit Workers** | Draw unskilled workers from your island's population into your workforce (1 recruit per 2 unskilled residents). |
-| **Request Medical Staff** | Hire Doctors or Nurses from the Healthcare island on a short-term contract (see Medical Staffing Contracts). |
+| **Request Medical Staff** | Hire Doctors or Nurses from the Medical & Laboratory island on a short-term contract (see Medical Staffing Contracts). |
 | **Review Staffing Requests** | *(Doctor only)* Review incoming staffing contract proposals — approve, counter-offer, or reject. |
 | **Repurpose Worker** | Re-assign an active worker to a new profession.  They lose all accumulated experience and training and restart as unskilled in the new role.  Costs **25 Dp** per worker. |
 | **Sell Insurance** | *(Banker only)* Sell a Life or Medical insurance policy to another player at a negotiated premium. |
@@ -396,7 +396,7 @@ Seasonal requirements:
 | Manufacturer | 5 | 5 | 5 | 4 |
 | Doctor | 30 | **35** | 30 | **44** |
 
-> Farmers need most workers at harvest (Autumn). Healthcare Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
+> Farmers need most workers at harvest (Autumn). The Medical & Laboratory Island peaks in Summer (injuries) and Winter (illness). Full capacity = 4 Doctors + 20 Nurses + 20 Medical Orderlies (44 total).
 
 ### Worker Professions
 Workers are not generic — each belongs to a **profession** that reflects their specialisation.  Every profession also has a **band** — *Manager*, *Technician*, or *Worker* — which determines training pathway and role on the island.  A worker's tier is shown as their profession name plus training level (e.g. *Doctor (Basic)*, *Flight Crew (Skilled)*).  Unskilled workers have no profession until they graduate from university or finish an apprenticeship.
@@ -422,9 +422,9 @@ Workers are not generic — each belongs to a **profession** that reflects their
 | **Banking Analyst** | Technician | Banking | Risk and pricing analysis |
 | **Banking Clerk** | Technician | Banking | Operations and account servicing |
 | Assembly Worker | Technician | Manufacturing | Factory floor production |
-| Doctor | Manager | Healthcare | Medical diagnosis and treatment |
-| Nurse | Manager | Healthcare | Patient care and vaccine administration |
-| **Medical Orderly** | Technician | Healthcare | Ward and theatre support |
+| Doctor | Manager | Medical & Laboratory | Medical diagnosis and treatment |
+| Nurse | Manager | Medical & Laboratory | Patient care and vaccine administration |
+| **Medical Orderly** | Technician | Medical & Laboratory | Ward and theatre support |
 | Mechanic | Technician | Multi-island | –20% downtime per Mechanic, capped –60% |
 
 Professions marked **bold** are recent additions; see the Quick Reference at
@@ -585,7 +585,7 @@ penalty.
 
 ## Vaccines
 
-The Healthcare Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents one dose for Winter flu protection.
+The Medical & Laboratory Island produces **Vaccines** in addition to Health Services. Each unit of Vaccine represents one dose for Winter flu protection.
 
 - **Production:** The Doctor island produces 1 Vaccine per season alongside its Health Services output (no extra inputs required beyond the standard Expertise + Capital).
 - **Winter flu:** Each Winter, one flu strain affects every island and can reduce productivity by up to 20% for that season.
@@ -597,7 +597,7 @@ The Healthcare Island produces **Vaccines** in addition to Health Services. Each
 
 ## Medical Staffing Contracts
 
-Any island can hire **Doctors or Nurses** from the Healthcare Island on a
+Any island can hire **Doctors or Nurses** from the Medical & Laboratory Island on a
 short-term contract — useful when an island faces a health crisis, a
 disease outbreak event, or simply wants qualified medical staff on-site for
 a season or two.
@@ -613,7 +613,7 @@ a season or two.
    to travel (round-trip = `staff_count × 2` tickets, split between the
    two sides as negotiated).
 
-2. **Healthcare Review** — The Doctor player reviews the proposal using
+2. **Medical & Laboratory Review** — The Doctor player reviews the proposal using
    **Review Staffing Requests** and can:
    - **Approve** it (fee transfers at dispatch)
    - **Counter-offer** (different fee and/or message)
@@ -624,9 +624,9 @@ a season or two.
    settles or rejects.
 
 4. **Dispatch** — Once approved and PassengerSeats are available, staff
-   depart.  The full fee is paid to the Healthcare Island at this point.
+   depart.  The full fee is paid to the Medical & Laboratory Island at this point.
    The staff member's `on_contract` flag is set — they no longer count
-   toward the Healthcare Island's active workforce until they return.
+   toward the Medical & Laboratory Island's active workforce until they return.
 
 5. **Return** — Staff automatically return at the end of the agreed term.
    The Doctor player does nothing — it happens at season start.
@@ -644,7 +644,7 @@ for the duration.  This means:
 ### Passenger Seats
 
 The two sides split the ticket cost by negotiation.  If the requester
-supplies all seats, the Healthcare player needs none.  If the Healthcare
+supplies all seats, the Medical & Laboratory player needs none.  If that
 player supplies all seats, the cost comes from their inventory.  The split
 is shown on the contract card and must be agreed before dispatch.
 
@@ -903,7 +903,7 @@ Bullet bond — pay principal × (1+rate) at maturity, or Roll Over.
 
 **Market floor/ceiling:** 20% – 500% of base price.
 
-**Vaccines:** Healthcare produces 1/season; each unit helps cover 20 residents against Winter flu for that season.
+**Vaccines:** the Medical & Laboratory Island produces 1/season; each unit helps cover 20 residents against Winter flu for that season.
 
 **Patents:** Educator produces 1/season; each Patent applied gives –20% input
 cost on the chosen output (max 3 per output).

@@ -226,14 +226,42 @@ If an insured worker dies (workplace fatality event):
 Phased so each piece is independently mergeable:
 
 ### Phase A — Role rename + Lab Tests resource (smallest)
-1. Display rename `Healthcare → Medical & Laboratory`.
-2. Add `ResourceType.LABORATORY_TESTS`.
-3. Add the Lab Test production recipe.
+1. Display rename `Healthcare → Medical & Laboratory`.  **Shipped
+   2026-08-06** (`Refs #26`) — engine `ROLES["Doctor"]` display fields plus
+   RULES.md / ISLAND_BRIEFINGS.md.  `ROLE_INFO` in `server/app.py` derives
+   from `ROLES`, so the client picked it up with no frontend change.
+2. Add `ResourceType.LABORATORY_TESTS`.  **Deferred to Phase B — see below.**
+3. Add the Lab Test production recipe.  **Deferred to Phase B.**
 4. Update STARTING_INVENTORY so the Doctor opens with a small Lab Test
-   stockpile.
+   stockpile.  **Deferred to Phase B.**
 
-Zero behavioural impact on other islands yet — Lab Tests just exists as a
-tradeable.
+> ~~Zero behavioural impact on other islands yet — Lab Tests just exists as a
+> tradeable.~~
+>
+> **This premise does not hold, measured 2026-08-06.**  A prototype of steps
+> 2–4 (Lab Tests at 35 Dp, a `doctor.pathology_lab` capacity item deliberately
+> left out of `MANDATORY_MINIMUM_INVESTMENT`, `BASE_PRODUCTION` 6/season) moved
+> the Doctor from **24.0% → 34.0%** win rate and **17.0% → 18.7%** wealth share
+> over 200 games at seed 42.  Supply-chain liveness showed **614 Lab Tests
+> produced, 0 consumed, 0 traded**.
+>
+> The cause is structural, not a tuning error: scoring is on net worth, so an
+> output with no consumers is a pure wealth faucet — the AI buys the plant,
+> produces, and banks inventory nothing ever draws down.  Gating production
+> behind an opt-in capital item does **not** avoid this, because the AI buys
+> the item.
+>
+> **Therefore supply and demand must land together.**  Fold steps 2–4 into
+> Phase B so the Mining assay and Agricultural soil-analysis consumers exist
+> in the same branch that starts producing Lab Tests.  Phase A reduces to the
+> display rename, which is genuinely inert.
+>
+> Note for whoever picks up Phase B: adding Lab Tests as a *hard* input to
+> Metal smelting and Farmer production risks re-creating the cascading-collapse
+> dynamic that #47 / PR #212 removed (no Pathology Lab anywhere → no Metal →
+> Manufacturer starves).  Prefer a soft gate — a yield penalty or a
+> graceful-degradation floor in the style of `EXPERTISE_DEGRADATION_*` — over a
+> hard stop, and re-run the calibration sweep before merging.
 
 ### Phase B — Mining / Agriculture Lab Test consumers
 1. Mining's Ore → Metal smelting requires 1 Lab Test per batch.
