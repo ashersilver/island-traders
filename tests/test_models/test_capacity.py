@@ -27,6 +27,7 @@ def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchens():
         assert [item.item_id for item in universal_items] == [
             "common.kitchen",
             "common.industrial_kitchen",
+            "common.food_store",
             "common.laboratory_equipment",
         ]
 

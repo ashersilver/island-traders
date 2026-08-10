@@ -35,7 +35,7 @@ def _farmer_tm(player, io=None):
         production_engine=ProductionEngine(),
         trading_engine=TradingEngine(market, DealLedger()),
         market=market,
-        io_adapter=io or InvestIO(chosen_item_id="farmer.storage_building"),
+        io_adapter=io or InvestIO(chosen_item_id="farmer.grain_silo"),
     )
 
 
@@ -48,40 +48,40 @@ def _farmer_player(dollops: float = 1500.0) -> Player:
 
 def test_invest_adds_chosen_item_immediately_and_debits_cost():
     p = _farmer_player(dollops=200.0)
-    assert p.capital_inventory.get("farmer.storage_building", 0) == 0
-    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.storage_building"))
+    assert p.capital_inventory.get("farmer.grain_silo", 0) == 0
+    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.grain_silo"))
     tm._action_invest(
         p, TurnResult(player_id=p.player_id, season=0, year=0),
         year=0, season_index=0,
     )
-    # storage_building cost 40 (see constants_capacity catalogue).
-    assert p.capital_inventory.get("farmer.storage_building", 0) == 1
-    assert p.dollops == 160.0
+    # Grain Silo costs 35 Dp (see constants_capacity catalogue).
+    assert p.capital_inventory.get("farmer.grain_silo", 0) == 1
+    assert p.dollops == 165.0
     # Acquired tick set to the current tick (0).
-    assert p.capital_acquired_ticks["farmer.storage_building"] == [0]
+    assert p.capital_acquired_ticks["farmer.grain_silo"] == [0]
 
 
 def test_invest_skips_items_already_owned():
     p = _farmer_player()
-    p.add_capital("farmer.storage_building", 1, acquired_tick=0)
-    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.storage_building"))
+    p.add_capital("farmer.grain_silo", 1, acquired_tick=0)
+    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.grain_silo"))
     tm._action_invest(
         p, TurnResult(player_id=p.player_id, season=0, year=0),
         year=0, season_index=0,
     )
     # The owned item must NOT appear in the choices presented; IO falls
     # back to None → "Unknown selection." Stock unchanged.
-    assert p.capital_inventory.get("farmer.storage_building", 0) == 1
+    assert p.capital_inventory.get("farmer.grain_silo", 0) == 1
 
 
 def test_invest_refuses_when_player_cannot_afford():
-    p = _farmer_player(dollops=10.0)   # too poor for storage_building (40 Dp)
-    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.storage_building"))
+    p = _farmer_player(dollops=10.0)   # too poor for a Grain Silo (35 Dp)
+    tm = _farmer_tm(p, InvestIO(chosen_item_id="farmer.grain_silo"))
     tm._action_invest(
         p, TurnResult(player_id=p.player_id, season=0, year=0),
         year=0, season_index=0,
     )
-    assert p.capital_inventory.get("farmer.storage_building", 0) == 0
+    assert p.capital_inventory.get("farmer.grain_silo", 0) == 0
     assert p.dollops == 10.0
 
 
@@ -91,7 +91,7 @@ def test_invest_reports_no_remaining_when_role_catalogue_fully_taken():
     for item in items_for_role(CAPITAL_CATALOGUE, "Farmer"):
         if p.capital_inventory.get(item.item_id, 0) == 0:
             p.add_capital(item.item_id, 1, acquired_tick=0)
-    io = InvestIO(chosen_item_id="farmer.storage_building")
+    io = InvestIO(chosen_item_id="farmer.grain_silo")
     tm = _farmer_tm(p, io)
     tm._action_invest(
         p, TurnResult(player_id=p.player_id, season=0, year=0),
