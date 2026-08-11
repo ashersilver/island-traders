@@ -339,7 +339,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={
             "unlocks_lines": ["FarmMachinery", "MiningEquipment"],
-            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2},
+            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2, "Spares": 2},
         },
         description="enables FarmMachinery + MiningEquipment lines",
         capacity_units=1,

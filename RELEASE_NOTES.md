@@ -5,7 +5,23 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.9`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.10`.
+
+- **Ordered spares kits are real goods now (Wave 7.1)** — capital orders let a
+  buyer add spares kits, charged at 15% of list each and attached to the
+  delivered unit. They were never manufactured and never debited from the
+  Manufacturer's stock: the kits were conjured from nothing.
+  - Settlement now **debits the Manufacturer's held Spares**, and auto-builds
+    any shortfall from Metal + Oil (respecting warehouse room). This happens in
+    the shared settlement primitive, so it applies equally to an order accepted
+    directly and to one settled later by the seasonal backorder drain.
+  - If the shortfall genuinely cannot be built, the order **settles with fewer
+    kits and a correspondingly lower price** rather than conjuring them, and
+    the reduction reconciles against the deposit already paid — the buyer is
+    never charged for a kit they did not receive.
+  - Kits leaving with the delivered unit free the warehouse room they occupied.
+  - The **Foundry now contributes to Spares capacity** alongside the Assembly
+    Line, so a Manufacturer running both can supply kits early.
 
 - **The annual physical halves insurance premiums (#19, third mechanic).**
   Blocked until Lab Tests shipped in `.7`; now unblocked.

@@ -620,13 +620,15 @@ class Player:
         self.capital_in_transit = remaining
         return delivered
 
-    def manufacture_spares(self, count: int = 1) -> int:
-        """Manufacture generic spares into this island's inventory (#185/#188).
+    def _spares_manufacturing_capacity(self, count: int) -> int:
+        """Return how many requested Spares can be made from held inputs.
 
-        Spares are produced by the Manufacturer as tradable repair kits and
-        held until transferred with delivered equipment, sold, or consumed in
-        a repair.  Returns the number actually manufactured after warehouse
-        capacity is applied.
+        This is intentionally a small, side-effect-free counterpart to
+        ``manufacture_spares`` so capital-order settlement can price an order
+        before it consumes either the buyer's balance or the Manufacturer's
+        inputs.  The recipe scales proportionally for a partial batch: the
+        normal 2 Metal + 1 Oil -> 4 Spares recipe still rounds each consumed
+        input up to a whole unit when manufacture actually happens.
         """
         if count <= 0:
             return 0
@@ -634,8 +636,47 @@ class Player:
             0,
             self.spares_capacity() - self.inventory.get(ResourceType.SPARES),
         )
-        produced = min(count, room_left)
+        possible = min(count, room_left)
+        recipe = MANUFACTURER_PRODUCT_LINES["Spares"]
+        output_qty = max(1, int(recipe["qty"]))
+        for resource_name, required in recipe["inputs"].items():
+            if required <= 0:
+                continue
+            resource = ResourceType(resource_name)
+            possible = min(
+                possible,
+                self.inventory.get(resource) * output_qty // int(required),
+            )
+        return max(0, possible)
+
+    def manufacture_spares(self, count: int = 1, *, consume_inputs: bool = False) -> int:
+        """Manufacture generic spares into this island's inventory (#185/#188).
+
+        Spares are produced by the Manufacturer as tradable repair kits and
+        held until transferred with delivered equipment, sold, or consumed in
+        a repair.  Returns the number actually manufactured after warehouse
+        capacity is applied.  Capital-order settlement passes
+        ``consume_inputs=True`` so auto-made kits are physical output rather
+        than a bookkeeping adjustment.  The default preserves the existing
+        direct helper behaviour used by the normal production path.
+        """
+        if count <= 0:
+            return 0
+        if consume_inputs:
+            produced = self._spares_manufacturing_capacity(count)
+        else:
+            room_left = max(
+                0,
+                self.spares_capacity() - self.inventory.get(ResourceType.SPARES),
+            )
+            produced = min(count, room_left)
         if produced > 0:
+            if consume_inputs:
+                recipe = MANUFACTURER_PRODUCT_LINES["Spares"]
+                output_qty = max(1, int(recipe["qty"]))
+                for resource_name, required in recipe["inputs"].items():
+                    consumed = ceil(produced * int(required) / output_qty)
+                    self.give_resources(ResourceType(resource_name), consumed)
             self.receive_resources(ResourceType.SPARES, produced)
         return produced
 
