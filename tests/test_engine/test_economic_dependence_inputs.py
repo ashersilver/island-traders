@@ -62,7 +62,7 @@ def test_energy_floor_counts_only_energy_intensive_units_and_prorates_brownout()
 
     farmer = _player(1, "Farmer")
     farmer.add_capital("farmer.fishing_boat")
-    farmer.add_capital("farmer.storage_building")
+    farmer.add_capital("farmer.grain_silo")
     assert farmer.owned_capital_capacity_units() == 2
     assert farmer.energy_intensive_capacity_units() == 0
     assert farmer.energy_floor_oil_required() == 1

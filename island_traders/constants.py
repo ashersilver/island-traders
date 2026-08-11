@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.10"
+APP_VERSION: str = "0.1.6-dev.2026-08-07.12"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -757,6 +757,14 @@ MBA_QUALIFIED_THRESHOLD: int = 3
 # be replaced from the Manufacturer within its remaining life.  Phase C
 # activates Agriculture only (the combine harvester); other islands
 # default to no aged seed.  Generalises as a bootstrap balance lever.
+# Every island keeps a basic larder: this much Food is protected from spoilage
+# with no building required. Without it the opening Food stock simply perishes
+# two seasons in, which reads as a bug rather than a decision. Implemented as a
+# floor rather than seeded capital so it cannot fail, cannot be sold, and does
+# not perturb repair costs or AI investment choices; the orderable Food Store
+# (80) remains the real upgrade.
+BASELINE_FOOD_STORAGE: int = 12
+
 STARTING_AGED_CAPITAL: dict[str, list[tuple[str, int, int]]] = {
     "Farmer": [
         # Combine harvester (`farmer.harvester`, 8-season life) 4 seasons

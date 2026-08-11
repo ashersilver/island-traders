@@ -5662,6 +5662,14 @@ class GameManager:
                 "banker_active_loan_cap": loan_book["cap"],
                 "spares_held": p.inventory.get(ResourceType.SPARES),
                 "spares_capacity": p.spares_capacity(),
+                "storage": {
+                    resource.value: p.spoilage_status(resource, current_tick)
+                    for resource in (
+                        ResourceType.GRAIN,
+                        ResourceType.FOOD,
+                        ResourceType.SPARES,
+                    )
+                },
                 "energy": {
                     "oil_required": p.energy_floor_oil_required(CAPITAL_CATALOGUE),
                     "oil_consumed": getattr(

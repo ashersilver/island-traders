@@ -1,5 +1,11 @@
 # Brief — Manufacturer spares production + warehouse storage cap (2026-06-22)
 
+> **Superseded capacity note (2026-08-07):** Wave 7.2 replaces the capacities
+> below. `manufacturer.small_warehouse` now exposes **12 effective Spares**
+> capacity, while `manufacturer.warehouse` is **Large Warehouse** and exposes
+> **30 effective Spares** capacity (cost 90 Dp). The rest of this historical
+> brief remains useful background only.
+
 **Suggested owner:** Codex (engine model + capital catalogue + tests).
 **Relates to:** #185/#188 (capital orders, spares kits), Capital Orders III.
 **Base off:** `origin/pre-release` at **`9e07b41`** (the commit that added these briefs) or
@@ -29,8 +35,8 @@ Playtest 2026-06-22: the Manufacturer (Forge) can already manufacture generic sp
 (`Player.manufacture_spares`, `island_traders/models/player.py:544`, which adds
 `ResourceType.SPARES` to inventory), and capital orders carry `spares_kits` that ride onto
 the delivered unit as `spares_attached`. But spares production is **unbounded** — there is
-no physical storage limit. The user wants spares to require **warehouse capacity**: a
-Manufacturer must own **one warehouse per 12 spares** it wishes to hold. Without enough
+no physical storage limit. The user wants spares to require **warehouse capacity**: small
+warehouses protect 12 Spares and large warehouses protect 30. Without enough
 warehouse capacity, spares production is capped at what fits.
 
 ## What exists today (read before starting)
@@ -42,7 +48,7 @@ warehouse capacity, spares production is capped at what fits.
   (`player.py:49,109`; settlement in `server/app.py` `_settle_capital_negotiation`).
 - Capital catalogue: `island_traders/constants_capacity.py`. Manufacturer items today are
   `manufacturer.foundry / assembly_line / precision_workshop / shipyard`. **No warehouse.**
-- `CapitalItem` schema + `effects` dict pattern (e.g. `farmer.storage_building` already
+- `CapitalItem` schema + `effects` dict pattern (e.g. `farmer.grain_silo` now
   models commodity storage — use it as the template for the new warehouse).
 
 ## Spec
@@ -53,11 +59,13 @@ Each warehouse declares a `spares_storage` effect; total capacity is the **sum**
 owned, maintained warehouse units. Add to `CAPITAL_CATALOGUE` (`constants_capacity.py`)
 under `role="Manufacturer"`:
 
-- `manufacturer.small_warehouse` — **"Small Spares Warehouse"**, `effects={"spares_storage": 10}`.
+- `manufacturer.small_warehouse` — **"Small Spares Warehouse"**, authored as
+  `effects={"spares_storage": 1.2}` and exposed as **12 effective Spares** after scaling.
   This is the **starting warehouse** every Manufacturer island begins with (see §1a). Cheap;
   cost/`delivery_seasons` in line with light infra.
-- `manufacturer.warehouse` — **"Spares Warehouse"**, `effects={"spares_storage": 12}`. The
-  standard orderable upgrade; cost in line with other Manufacturer infra (suggest ~50 Dp —
+- `manufacturer.warehouse` — **"Large Warehouse"**, authored as
+  `effects={"spares_storage": 3.0}` and exposed as **30 effective Spares** after scaling.
+  The standard orderable upgrade costs **90 Dp** —
   Codex tune against balance tests), `delivery_seasons` consistent with siblings.
 - Neither is `cash_only` (both are manufactured like other Manufacturer equipment) unless
   that conflicts with self-build settlement — confirm against the current
@@ -70,7 +78,7 @@ under `role="Manufacturer"`:
 ### 1a. Starting warehouse
 
 Every Manufacturer island **starts with one `manufacturer.small_warehouse`** already built
-(10-spares capacity) so it can hold spares from turn one. Seed it where starting capital
+(12-spares capacity) so it can hold spares from turn one. Seed it where starting capital
 units are configured (game setup / starting-capital seeding — find how other starting
 capital is placed; if the Manufacturer has no starting capital today, add this unit).
 
@@ -82,12 +90,12 @@ units**:
 
 ```
 spares_capacity = Σ spares_storage(item) for each owned+maintained warehouse unit
-                = 10 (starting small warehouse) + 12 * (standard warehouses) + 10 * (extra small)
+                = 12 (starting small warehouse) + 30 * (large warehouses) + 12 * (extra small)
 ```
 
 Use `effective_capital_inventory()` so an unmaintained warehouse does not count that season
-(mirrors `_has_enhanced_metal_equipment`). A new Manufacturer therefore starts at **10**
-capacity (one small warehouse); ordering one standard warehouse takes it to 22.
+(mirrors `_has_enhanced_metal_equipment`). A new Manufacturer therefore starts at **12**
+capacity (one small warehouse); ordering one large warehouse takes it to 42.
 
 ### 3. Enforce the cap in production
 
@@ -100,7 +108,7 @@ produced  = min(count, room_left)
 
 Return the actual number produced (callers already use the return value). When clamped,
 the production/turn log should say why ("Spares warehouse full — built N of M; add a
-warehouse for +12 capacity."). Find every caller of `manufacture_spares` (the Manufacturer
+warehouse for more capacity."). Find every caller of `manufacture_spares` (the Manufacturer
 production path in `engine/production.py` / `engine/turn.py`) and surface the message.
 
 ### 4. Spares attached to delivered equipment
@@ -122,14 +130,14 @@ the handoff, don't silently change scope.)
 
 - Both warehouse items are in the catalogue and orderable; a Manufacturer self-build of a
   warehouse settles immediately (no negotiation deadlock).
-- A new Manufacturer **starts with one small warehouse ⇒ capacity 10**.
+- A new Manufacturer **starts with one small warehouse ⇒ capacity 12**.
 - `manufacture_spares` clamps to total warehouse capacity and returns the clamped count
-  (e.g. starting island can hold 10; the 11th spare is refused with a clear message).
-- Ordering one standard warehouse raises the cap to **22** (10 + 12).
+  (e.g. starting island can hold 12; the 13th spare is refused with a clear message).
+- Ordering one large warehouse raises the cap to **42** (12 + 30).
 - An unmaintained warehouse does not count toward capacity.
 - Full `pytest` suite green (baseline: **799 passing** on `9e07b41`).
 
 ## Resolved (user, 2026-06-22)
 
-- **Starting storage:** the island starts with **one small warehouse holding 10 spares**
-  (not 0). Additional standard warehouses add +12 each.
+- **Starting storage:** the island starts with **one small warehouse holding 12 spares**
+  (not 0). Additional large warehouses add +30 each.

@@ -299,10 +299,16 @@ class Player:
     # Each value is a list of patent records: [{"patent_id": str, "boost": float}, ...].
     # Per requirements: max 3 active patents per output, –20% input cost each.
     active_patents: dict[str, list[dict]] = field(default_factory=dict)
+    # Perishable stock currently outside effective storage. Each resource key
+    # contains FIFO ``{"acquired_tick": int, "qty": int}`` buckets. Protected
+    # stock deliberately has no ageing bucket: it must never spoil, even if a
+    # warehouse later fails and its protection disappears.
+    spoilage_buckets: dict[str, list[dict[str, int]]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._season_revenue = 0.0
         self._season_costs = 0.0
+        self._spoilage_tick = 0
         self._pl_history = []
         self._oil_consumed_this_year = 0
         self._food_demanded_this_year = 0
@@ -476,18 +482,120 @@ class Player:
         units = self.energy_intensive_capacity_units(catalogue)
         return ENERGY_BASE + ceil(units / max(1, ENERGY_DIVISOR))
 
-    def spares_capacity(self) -> int:
-        """Total generic-spares storage from maintained warehouse capital."""
+    def storage_capacity(self, resource: ResourceType | str) -> int:
+        """Effective storage protection for one resource.
+
+        This is intentionally the single capacity seam for spoilage. Route 1
+        contributes maintained owned capital today; Route 2 can add rented
+        capacity here later without changing spoilage or production callers.
+        """
         from ..constants_capacity import CAPITAL_CATALOGUE
         from .capacity import find_item
 
-        capacity = 0
+        from ..constants import BASELINE_FOOD_STORAGE
+
+        resource_name = resource.value if isinstance(resource, ResourceType) else str(resource)
+        # Every island has a basic larder even with no storage building.
+        capacity = (
+            BASELINE_FOOD_STORAGE
+            if resource_name == ResourceType.FOOD.value else 0
+        )
         for item_id, count in self.effective_capital_inventory().items():
             item = find_item(CAPITAL_CATALOGUE, item_id)
             if not item:
                 continue
-            capacity += int(item.effects.get("spares_storage", 0)) * count
+            if resource_name == ResourceType.SPARES.value:
+                capacity += int(item.effects.get("spares_storage", 0)) * count
+            capacity += int(item.effects.get("storage", {}).get(resource_name, 0)) * count
         return capacity
+
+    def spares_capacity(self) -> int:
+        """Backward-compatible alias used by generic-spares manufacture."""
+        return self.storage_capacity(ResourceType.SPARES)
+
+    @staticmethod
+    def _spoilage_shelf_life(resource: ResourceType) -> int | None:
+        return {
+            ResourceType.GRAIN: 1,
+            ResourceType.FOOD: 2,
+            ResourceType.SPARES: 4,
+        }.get(resource)
+
+    def _trim_spoilage_buckets(self, resource: ResourceType, quantity: int) -> None:
+        """Keep at most ``quantity`` FIFO at-risk units for ``resource``."""
+        key = resource.value
+        remaining = max(0, int(quantity))
+        trimmed: list[dict[str, int]] = []
+        for bucket in self.spoilage_buckets.get(key, []):
+            qty = min(remaining, max(0, int(bucket.get("qty", 0))))
+            if qty:
+                trimmed.append({"acquired_tick": int(bucket.get("acquired_tick", 0)), "qty": qty})
+                remaining -= qty
+            if remaining <= 0:
+                break
+        if trimmed:
+            self.spoilage_buckets[key] = trimmed
+        else:
+            self.spoilage_buckets.pop(key, None)
+
+    def process_spoilage(self, current_tick: int) -> dict[ResourceType, int]:
+        """Expire unprotected Grain, Food, and Spares at a season boundary.
+
+        Buckets represent only the excess over protection. When protection is
+        lost, newly exposed units join the FIFO at this boundary; while stock
+        is protected it never ages. This makes failed/unmaintained storage
+        immediately stop protecting stock without retroactively ageing it.
+        """
+        self._spoilage_tick = int(current_tick)
+        losses: dict[ResourceType, int] = {}
+        for resource in (ResourceType.GRAIN, ResourceType.FOOD, ResourceType.SPARES):
+            held = self.inventory.get(resource)
+            at_risk = max(0, held - self.storage_capacity(resource))
+            key = resource.value
+            known = sum(max(0, int(b.get("qty", 0))) for b in self.spoilage_buckets.get(key, []))
+            self._trim_spoilage_buckets(resource, min(known, at_risk))
+            known = sum(b["qty"] for b in self.spoilage_buckets.get(key, []))
+            if at_risk > known:
+                self.spoilage_buckets.setdefault(key, []).append({
+                    "acquired_tick": int(current_tick), "qty": at_risk - known,
+                })
+
+            shelf_life = self._spoilage_shelf_life(resource)
+            kept: list[dict[str, int]] = []
+            lost = 0
+            for bucket in self.spoilage_buckets.get(key, []):
+                if current_tick - bucket["acquired_tick"] >= shelf_life:
+                    lost += bucket["qty"]
+                else:
+                    kept.append(bucket)
+            if lost:
+                self.inventory = self.inventory.subtract(resource, lost)
+                losses[resource] = lost
+            if kept:
+                self.spoilage_buckets[key] = kept
+            else:
+                self.spoilage_buckets.pop(key, None)
+        return losses
+
+    def spoilage_status(self, resource: ResourceType, current_tick: int) -> dict[str, int | None]:
+        """State payload for one perishable resource."""
+        held = self.inventory.get(resource)
+        protected = self.storage_capacity(resource)
+        at_risk = max(0, held - protected)
+        shelf_life = self._spoilage_shelf_life(resource)
+        buckets = self.spoilage_buckets.get(resource.value, [])
+        if not at_risk or shelf_life is None:
+            perishes_in = None
+        elif buckets:
+            oldest_tick = min(int(bucket.get("acquired_tick", current_tick)) for bucket in buckets)
+            perishes_in = max(0, shelf_life - (current_tick - oldest_tick))
+        else:
+            perishes_in = shelf_life
+        return {
+            "protected": protected,
+            "at_risk": at_risk,
+            "perishes_in_seasons": perishes_in,
+        }
 
     def add_capital(
         self,
@@ -872,7 +980,7 @@ class Player:
         food_have = self.inventory.get(ResourceType.FOOD)
         food_use = min(food_have, meals_needed)
         if food_use > 0:
-            self.inventory = self.inventory.subtract(ResourceType.FOOD, food_use)
+            self.give_resources(ResourceType.FOOD, food_use)
             used[ResourceType.FOOD] = food_use
         remaining = meals_needed - food_use
 
@@ -889,9 +997,7 @@ class Player:
                 for rtype in (ResourceType.GRAIN, ResourceType.PRODUCE,
                               ResourceType.FISH, ResourceType.MEAT):
                     if raw_used[rtype] > 0:
-                        self.inventory = self.inventory.subtract(
-                            rtype, raw_used[rtype]
-                        )
+                        self.give_resources(rtype, raw_used[rtype])
                 used[ResourceType.GRAIN]   = raw_used[ResourceType.GRAIN]
                 used[ResourceType.PRODUCE] = raw_used[ResourceType.PRODUCE]
                 used[ResourceType.FISH]    = raw_used[ResourceType.FISH]
@@ -972,6 +1078,23 @@ class Player:
 
     def give_resources(self, rtype: ResourceType, qty: int) -> None:
         self.inventory = self.inventory.subtract(rtype, qty)
+        if self._spoilage_shelf_life(rtype) is not None:
+            # Consume exposed stock first, FIFO, so selling/eating stock can
+            # avert a pending loss. Protected stock is inferred from held
+            # inventory and therefore needs no bucket of its own.
+            key = rtype.value
+            remaining = qty
+            updated: list[dict[str, int]] = []
+            for bucket in self.spoilage_buckets.get(key, []):
+                used = min(remaining, bucket["qty"])
+                left = bucket["qty"] - used
+                remaining -= used
+                if left:
+                    updated.append({**bucket, "qty": left})
+            if updated:
+                self.spoilage_buckets[key] = updated
+            else:
+                self.spoilage_buckets.pop(key, None)
 
     def receive_resources(
         self,
@@ -980,6 +1103,7 @@ class Player:
         *,
         acquired_tick: int = 0,
         install_equipment: bool = True,
+        track_spoilage: bool = True,
     ) -> None:
         if qty <= 0:
             return
@@ -987,7 +1111,25 @@ class Player:
             rtype, qty, acquired_tick
         ):
             return
+        held_before = self.inventory.get(rtype)
+        at_risk_before = max(0, held_before - self.storage_capacity(rtype)) \
+            if self._spoilage_shelf_life(rtype) is not None else 0
         self.inventory = self.inventory.add(rtype, qty)
+        if track_spoilage and self._spoilage_shelf_life(rtype) is not None:
+            at_risk_after = max(
+                0, self.inventory.get(rtype) - self.storage_capacity(rtype)
+            )
+            newly_exposed = max(0, at_risk_after - at_risk_before)
+            if newly_exposed:
+                tick = acquired_tick
+                # Most production callers pre-date age buckets and omit a
+                # tick. The season boundary records the current tick so their
+                # newly produced excess starts ageing in the right season.
+                if tick == 0:
+                    tick = getattr(self, "_spoilage_tick", 0)
+                self.spoilage_buckets.setdefault(rtype.value, []).append({
+                    "acquired_tick": int(tick), "qty": newly_exposed,
+                })
 
     def _normalised_ce_history(self) -> list[float]:
         size = len(SEASONS)

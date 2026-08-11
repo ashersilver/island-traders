@@ -657,7 +657,7 @@ def test_capital_order_self_build_warehouse_settles_immediately():
     assert ack is not None, ws.sent
     assert ack["item_id"] == "manufacturer.warehouse"
     assert manufacturer.capital_inventory.get("manufacturer.warehouse") == 1
-    assert manufacturer.spares_capacity() == 22
+    assert manufacturer.spares_capacity() == 42
     assert not any(
         m.get("type") == "capital_negotiation_ack" and m.get("result") == "proposed"
         for m in ws.sent
@@ -725,12 +725,22 @@ def test_capital_order_self_order_rejected_when_self_build_cost_unaffordable():
 def test_game_state_exposes_spares_held_and_capacity():
     mgr, room, players = _bootstrap(["Manufacturer", "Transporter"])
     manufacturer, _other = players
-    manufacturer.manufacture_spares(7)
+    # Starts with 4; the small warehouse now protects 12, so a request for 7
+    # is no longer clamped (room is 8) and all 7 are made: 4 + 7 = 11.
+    started_with = manufacturer.inventory.get(ResourceType.SPARES)
+    made = manufacturer.manufacture_spares(7)
+    assert (started_with, made) == (4, 7)
 
     state = mgr.get_game_state(room.room_id, "p0")
     manufacturer_state = next(
         p for p in state["players"] if p["player_id"] == manufacturer.player_id
     )
 
-    assert manufacturer_state["spares_held"] == 10
-    assert manufacturer_state["spares_capacity"] == 10
+    assert manufacturer_state["spares_held"] == started_with + made
+    assert manufacturer_state["spares_capacity"] == 12
+    # Held is under capacity, so nothing is exposed to spoilage.
+    assert manufacturer_state["storage"]["Spares"] == {
+        "protected": 12,
+        "at_risk": 0,
+        "perishes_in_seasons": None,
+    }

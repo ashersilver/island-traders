@@ -5,7 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.10`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.12`.
+
+- **Perishable goods now spoil without storage (Wave 7.2a)** — the first half
+  of the storage rework. One rule carries it: stock **within** an island's
+  protected storage capacity never spoils; only the excess ages, and is lost
+  once it passes its shelf life — **Grain after 1 season, Food after 2, Spares
+  after 4**. A bucket past its life is lost outright rather than decaying by a
+  percentage.
+  - Two new stores: **Food Store** (protects 80 Food, any island) and **Grain
+    Silo** (protects 100 Grain, Farmer). The Manufacturer's spares warehouses
+    are renumbered to **12** (small) and **30** (Large Warehouse, was 12).
+  - The long-dead `inventory_cap` effect on the Farmer's storage building —
+    declared but never enforced — is retired.
+  - Failed or unmaintained storage protects nothing, consistent with how
+    capacity already treats broken equipment.
+  - Inventory rows carry an amber pill when stock is at risk, and imminent
+    spoilage counts as *needed now* on the dependency map.
+  - **Every island keeps a basic larder of 12 Food protected for free**, so
+    the opening Food stock does not simply rot two seasons in. It is a floor
+    rather than a building: it cannot fail, be sold, or be lost, and the
+    orderable Food Store (80) remains the real upgrade. Anything above 12 is
+    still exposed, so the mechanic keeps its teeth.
+  - Renting protection from the Transporter (the second route) follows in 7.2b.
 
 - **Ordered spares kits are real goods now (Wave 7.1)** — capital orders let a
   buyer add spares kits, charged at 15% of list each and attached to the
