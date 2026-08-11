@@ -42,6 +42,18 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         capacity_units=2,
     ),
     CapitalItem(
+        item_id="common.food_store",
+        name="Food Store",
+        role="Any",
+        cost=40.0,
+        delivery_seasons=0,
+        # Storage effects are scaled with the production-capacity multiplier
+        # below. Keep this pre-scale value so the live capacity is 80 Food.
+        effects={"storage": {"Food": 8}, "cash_only": True},
+        description="Protects 80 Food from spoilage",
+        capacity_units=1,
+    ),
+    CapitalItem(
         item_id="common.laboratory_equipment",
         name="Laboratory Equipment",
         role="Any",
@@ -114,13 +126,15 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         capacity_units=1,
     ),
     CapitalItem(
-        item_id="farmer.storage_building",
-        name="Storage Building",
+        item_id="farmer.grain_silo",
+        name="Grain Silo",
         role="Farmer",
-        cost=40.0,
+        cost=35.0,
         delivery_seasons=0,
-        effects={"inventory_cap": 10},
-        description="+10 inventory cap",
+        # Storage effects are scaled with the production-capacity multiplier
+        # below. Keep this pre-scale value so the live capacity is 100 Grain.
+        effects={"storage": {"Grain": 10}},
+        description="Protects 100 Grain from spoilage",
         capacity_units=1,
     ),
 
@@ -339,7 +353,7 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         delivery_seasons=0,
         effects={
             "unlocks_lines": ["FarmMachinery", "MiningEquipment"],
-            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2},
+            "capacity": {"FarmMachinery": 3, "MiningEquipment": 2, "Spares": 2},
         },
         description="enables FarmMachinery + MiningEquipment lines",
         capacity_units=1,
@@ -372,18 +386,20 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         role="Manufacturer",
         cost=30.0,
         delivery_seasons=0,
-        effects={"spares_storage": 10, "maintenance_free": True},
-        description="+10 Spares storage capacity",
+        # This is deliberately pre-scale: live capacity is 12 Spares.
+        effects={"spares_storage": 1.2, "maintenance_free": True},
+        description="+12 Spares storage capacity",
         capacity_units=1,
     ),
     CapitalItem(
         item_id="manufacturer.warehouse",
-        name="Spares Warehouse",
+        name="Large Warehouse",
         role="Manufacturer",
-        cost=50.0,
+        cost=90.0,
         delivery_seasons=0,
-        effects={"spares_storage": 12},
-        description="+12 Spares storage capacity",
+        # This is deliberately pre-scale: live capacity is 30 Spares.
+        effects={"spares_storage": 3.0},
+        description="+30 Spares storage capacity",
         capacity_units=1,
     ),
     CapitalItem(
@@ -672,6 +688,7 @@ def _multiply_capital_capacity(
     for item in catalogue:
         effects = dict(item.effects)
         capacity = effects.get("capacity")
+        storage = effects.get("storage")
         if capacity:
             effects["capacity"] = {
                 output: amount * multiplier
@@ -683,6 +700,13 @@ def _multiply_capital_capacity(
             )
         else:
             description = item.description
+        if storage:
+            effects["storage"] = {
+                resource: amount * multiplier
+                for resource, amount in storage.items()
+            }
+        if "spares_storage" in effects:
+            effects["spares_storage"] = effects["spares_storage"] * multiplier
         scaled.append(CapitalItem(
             item_id=item.item_id,
             name=item.name,

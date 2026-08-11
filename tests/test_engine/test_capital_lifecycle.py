@@ -54,12 +54,14 @@ def test_manufacturer_spares_warehouses_are_catalogue_items():
 
     assert small is not None
     assert small.role == "Manufacturer"
-    assert small.effects["spares_storage"] == 10
+    assert small.effects["spares_storage"] == 12
     assert not small.effects.get("cash_only", False)
 
     assert standard is not None
     assert standard.role == "Manufacturer"
-    assert standard.effects["spares_storage"] == 12
+    assert standard.effects["spares_storage"] == 30
+    assert standard.name == "Large Warehouse"
+    assert standard.cost == 90.0
     assert not standard.effects.get("cash_only", False)
 
 
@@ -172,7 +174,7 @@ def test_setup_seeds_manufacturer_with_small_spares_warehouse():
 
     assert manufacturer.capital_inventory.get("manufacturer.small_warehouse") == 1
     assert manufacturer.capital_acquired_ticks["manufacturer.small_warehouse"] == [0]
-    assert manufacturer.spares_capacity() == 10
+    assert manufacturer.spares_capacity() == 12
 
 
 def test_maintenance_charges_three_percent_of_cost_per_season():
@@ -562,17 +564,17 @@ def test_spares_resource_is_tradable():
 
 def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_price():
     game = _service_game()
-    p = game.players[1]  # Manufacturer starts with one small warehouse (+10).
+    p = game.players[1]  # Manufacturer starts with one small warehouse (+12).
 
     assert p.inventory.get(ResourceType.SPARES) == 4
-    assert p.manufacture_spares(11) == 6
-    assert p.inventory.get(ResourceType.SPARES) == 10
+    assert p.manufacture_spares(11) == 8
+    assert p.inventory.get(ResourceType.SPARES) == 12
     assert p.manufacture_spares(1) == 0
 
     p.add_capital("manufacturer.warehouse")
-    assert p.spares_capacity() == 22
-    assert p.manufacture_spares(20) == 12
-    assert p.inventory.get(ResourceType.SPARES) == 22
+    assert p.spares_capacity() == 42
+    assert p.manufacture_spares(30) == 30
+    assert p.inventory.get(ResourceType.SPARES) == 42
 
     # Held spares now contribute tradable wealth through their market price.
     assert game.market.current_prices()[ResourceType.SPARES] > 0.0
@@ -592,11 +594,11 @@ def test_unmaintained_warehouse_does_not_count_toward_spares_capacity():
     manufacturer = game.players[1]
     manufacturer.add_capital("manufacturer.warehouse")
 
-    assert manufacturer.spares_capacity() == 22
+    assert manufacturer.spares_capacity() == 42
 
     manufacturer.unmaintained_capital = {"manufacturer.warehouse": 1}
 
-    assert manufacturer.spares_capacity() == 10
+    assert manufacturer.spares_capacity() == 12
 
 
 def test_repair_with_attached_spare_halves_fee_and_consumes_it():

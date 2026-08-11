@@ -593,7 +593,7 @@ def test_ai_invests_in_unclaimed_catalogue_item():
     )
 
     assert farmer.capital_inventory
-    assert "farmer.storage_building" in farmer.capital_inventory
+    assert "farmer.grain_silo" in farmer.capital_inventory
     assert any("invested" in action for action in actions)
 
 

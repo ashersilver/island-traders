@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from island_traders.constants_capacity import (
+    CAPACITY_PRODUCTIVITY_MULTIPLIER,
     CAPITAL_CATALOGUE, PRODUCTION_RECIPES, MANDATORY_MINIMUM_INVESTMENT,
 )
 from island_traders.models.capacity import (
@@ -26,6 +27,7 @@ def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchens():
         assert [item.item_id for item in universal_items] == [
             "common.kitchen",
             "common.industrial_kitchen",
+            "common.food_store",
             "common.laboratory_equipment",
         ]
 
@@ -132,6 +134,19 @@ def test_manufacturer_opening_equipment_provides_capacity():
     # Reagents moved off the Manufacturer to Medical Sciences (2026-06-02).
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "MedicalDevices") > 0
     assert equipment_capacity(CAPITAL_CATALOGUE, owned, "TransportEquipment") > 0
+
+
+def test_foundry_and_assembly_line_both_contribute_spares_capacity():
+    # Catalogue capacities are rescaled by CAPACITY_PRODUCTIVITY_MULTIPLIER at
+    # module load, so the authored Foundry 2 / Assembly Line 4 read as 20 / 40.
+    assert equipment_capacity(
+        CAPITAL_CATALOGUE, {"manufacturer.foundry": 1}, "Spares"
+    ) == 2 * CAPACITY_PRODUCTIVITY_MULTIPLIER
+    assert equipment_capacity(
+        CAPITAL_CATALOGUE,
+        {"manufacturer.foundry": 1, "manufacturer.assembly_line": 1},
+        "Spares",
+    ) == 6 * CAPACITY_PRODUCTIVITY_MULTIPLIER
 
 
 def test_transporter_uses_food_as_provisions():

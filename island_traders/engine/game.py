@@ -85,6 +85,9 @@ LEGACY_RESOURCE_IDS: dict[str, str] = {
 
 LEGACY_CAPITAL_ITEM_IDS: dict[str, str] = {
     "educator.apprenticeship_programme": "educator.technical_workshop",
+    # The old storage effect was never enforced; preserve old saves by
+    # converting the retired building into its functional replacement.
+    "farmer.storage_building": "farmer.grain_silo",
 }
 
 
@@ -680,6 +683,7 @@ class Game:
                 self._process_staffing_returns(year, season_index)
                 self._process_retirements(year, season_index)
                 self._process_capital_maintenance(year, season_index)
+                self._process_spoilage(year, season_index)
                 self._process_payroll(year, season_index)
                 self._process_household_activity_stimulus(year, season_index)
                 event_results = self.event_resolver.resolve_all(
@@ -890,6 +894,21 @@ class Game:
             # Failure is rolled every season on the #188 per-quarter schedule
             # (was once a year under the old annual age-bucket model).
             self._process_equipment_failures(player, current_tick, catalogue)
+
+    def _process_spoilage(self, year: int, season: int) -> None:
+        """Destroy stock that has exceeded its unprotected shelf life."""
+        current_tick = year * len(SEASONS) + season
+        no_capacity_name = {
+            ResourceType.GRAIN: "silo",
+            ResourceType.FOOD: "food-store",
+            ResourceType.SPARES: "warehouse",
+        }
+        for player in self.players:
+            for resource, lost in player.process_spoilage(current_tick).items():
+                self.io.print(
+                    f"[SPOILAGE] {player.name}: {lost} {resource.value} perished "
+                    f"— no {no_capacity_name[resource]} capacity."
+                )
 
     def _role_player(self, role_name: str) -> Player | None:
         return next(
@@ -1605,6 +1624,10 @@ class Game:
             "production_capacity": p.production_capacity,
             "population": p.population,
             "inventory": {r.value: p.inventory.get(r) for r in ResourceType if p.inventory.get(r) > 0},
+            "spoilage_buckets": {
+                resource: [dict(bucket) for bucket in buckets]
+                for resource, buckets in p.spoilage_buckets.items()
+            },
             "wealth_history": p.wealth_history,
             "capital_units": {
                 item_id: [u.to_dict() for u in units]
@@ -1887,6 +1910,15 @@ class Game:
                 shareholder_loans=dict(pd.get("shareholder_loans", {})),
                 ce_history=list(pd.get("ce_history", [0.0] * len(SEASONS))),
                 ce_penalty=float(pd.get("ce_penalty", 0.0)),
+                spoilage_buckets={
+                    str(resource): [
+                        {"acquired_tick": int(bucket.get("acquired_tick", 0)),
+                         "qty": int(bucket.get("qty", 0))}
+                        for bucket in buckets
+                        if int(bucket.get("qty", 0)) > 0
+                    ]
+                    for resource, buckets in pd.get("spoilage_buckets", {}).items()
+                },
             )
             if p.owner_id and p.owner_id in game.owners:
                 p.owner = game.owners[p.owner_id]
@@ -1894,7 +1926,9 @@ class Game:
                 # Save-migration: the consumable "LaboratoryEquipment" was
                 # renamed to "Reagents" (2026-06-02); fold legacy keys forward.
                 r_str = LEGACY_RESOURCE_IDS.get(r_str, r_str)
-                p.receive_resources(ResourceType(r_str), qty)
+                p.receive_resources(
+                    ResourceType(r_str), qty, track_spoilage=False
+                )
             p._season_revenue = float(pd.get("season_revenue", 0.0))
             p._season_costs = float(pd.get("season_costs", 0.0))
             p._pl_history = list(pd.get("pl_history", []))[-4:]
