@@ -13,6 +13,7 @@ class ManufacturerOrderBookEntry:
     promised_year: int | None = None
     promised_season: int | None = None
     locked: bool = False
+    premium: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -22,6 +23,7 @@ class ManufacturerOrderBookEntry:
             "promised_year": self.promised_year,
             "promised_season": self.promised_season,
             "locked": self.locked,
+            "premium": self.premium,
         }
 
     @classmethod
@@ -33,6 +35,7 @@ class ManufacturerOrderBookEntry:
             promised_year=raw.get("promised_year"),
             promised_season=raw.get("promised_season"),
             locked=bool(raw.get("locked", False)),
+            premium=round(float(raw.get("premium", 0.0)), 2),
         )
 
 
@@ -49,7 +52,13 @@ class ManufacturerOrderBook:
     def get(self, negotiation_id: int) -> ManufacturerOrderBookEntry | None:
         return next((e for e in self.entries if e.negotiation_id == negotiation_id), None)
 
-    def add(self, negotiation_id: int, manufacturer_id: int) -> ManufacturerOrderBookEntry:
+    def add(
+        self,
+        negotiation_id: int,
+        manufacturer_id: int,
+        *,
+        premium: float = 0.0,
+    ) -> ManufacturerOrderBookEntry:
         existing = self.get(negotiation_id)
         if existing is not None:
             return existing
@@ -57,8 +66,43 @@ class ManufacturerOrderBook:
             negotiation_id=negotiation_id,
             manufacturer_id=manufacturer_id,
             queue_position=len(self.for_manufacturer(manufacturer_id)),
+            premium=round(float(premium), 2),
         )
         self.entries.append(entry)
+        return entry
+
+    def place_by_premium(
+        self,
+        negotiation_id: int,
+        manufacturer_id: int,
+        premium: float,
+    ) -> ManufacturerOrderBookEntry:
+        """Place an unlocked entry ahead of lower-premium unlocked entries.
+
+        Locked entries retain their exact slots.  This makes a sweetener useful
+        when it is offered without undoing a Manufacturer's later manual
+        ordering of the rest of the book.
+        """
+        entry = self.add(negotiation_id, manufacturer_id, premium=premium)
+        entry.premium = round(float(premium), 2)
+        if entry.locked:
+            return entry
+
+        current = self.for_manufacturer(manufacturer_id)
+        unlocked_positions = [
+            row.queue_position for row in current if not row.locked
+        ]
+        unlocked = [
+            row for row in current
+            if not row.locked and row.negotiation_id != negotiation_id
+        ]
+        insert_at = next(
+            (idx for idx, row in enumerate(unlocked) if row.premium < entry.premium),
+            len(unlocked),
+        )
+        unlocked.insert(insert_at, entry)
+        for queue_position, row in zip(unlocked_positions, unlocked):
+            row.queue_position = queue_position
         return entry
 
     def remove(self, negotiation_id: int) -> None:

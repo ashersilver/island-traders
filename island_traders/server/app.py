@@ -3758,31 +3758,19 @@ class GameManager:
         if state:
             await websocket.send_text(json.dumps(state))
 
-    async def _handle_capital_order(
+    def _capital_order_quote(
         self,
-        room_id: str,
-        lobby_player_id: str,
+        game: Game,
+        buyer: Player,
         msg: dict,
-        websocket,
-    ) -> None:
-        """Create a manufacturer-review capital order negotiation (#185)."""
-        from ..models.capacity import find_item
-
-        async def _err(message: str) -> None:
-            await websocket.send_text(json.dumps({"type": "error", "message": message}))
-
-        room = self.rooms.get(room_id)
-        if not room or not room.game:
-            await _err("Room not found"); return
-        game = room.game
-        buyer, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
-        if buyer is None:
-            await _err(actor_error or "Player not found"); return
+        *,
+        manufacturer: Player | None = None,
+    ) -> dict:
+        """Parse a capital order and calculate the currently quoted build."""
         item = find_item(CAPITAL_CATALOGUE, str(msg.get("item_id", "")))
         if item is None:
-            await _err("Unknown capital item"); return
+            raise ValueError("Unknown capital item")
 
-        # Parse order conditions defensively.
         try:
             term = max(0, min(5, int(msg.get("maintenance_term_years", 0))))
             spares_kits = max(0, int(msg.get("spares_kits", 0)))
@@ -3793,21 +3781,26 @@ class GameManager:
         financing = bool(msg.get("financing", False))
 
         cash_only = bool(item.effects.get("cash_only", False))
-        manufacturer = buyer if cash_only else None
-        manufactured_resource = None
-        required_units = 0
-        units_short_at_order = 0
-        if not cash_only:
+        if cash_only:
+            manufacturer = buyer
+        elif manufacturer is None:
             manufacturer = next(
                 (p for p in game.players if any(r.name == "Manufacturer" for r in p.roles)),
                 None,
             )
-            if manufacturer is None:
-                await _err("No Manufacturing island is available to build capital equipment."); return
+        if manufacturer is None:
+            raise ValueError("No Manufacturing island is available to build capital equipment.")
+
+        manufactured_resource = None
+        required_units = 0
+        units_short_at_order = 0
+        if not cash_only:
             manufactured_resource = game.turn_manager._manufactured_resource_for_capital_item(item)
             required_units = max(1, int(getattr(item, "capacity_units", 1)))
-            on_hand = manufacturer.inventory.get(manufactured_resource)
-            units_short_at_order = max(0, required_units - on_hand)
+            units_short_at_order = max(
+                0,
+                required_units - manufacturer.inventory.get(manufactured_resource),
+            )
 
         from ..models.player import maintenance_contract_cost
         contract_cost = maintenance_contract_cost(item.cost, term, predictive)
@@ -3818,7 +3811,87 @@ class GameManager:
         except (TypeError, ValueError):
             buyer_offer = recommended_total
         if buyer_offer <= 0:
-            await _err("Offer total must be positive."); return
+            raise ValueError("Offer total must be positive.")
+        return {
+            "item": item,
+            "manufacturer": manufacturer,
+            "maintenance_term_years": term,
+            "predictive_maintenance": predictive,
+            "spares_kits": spares_kits,
+            "expedited_eligible": expedited,
+            "financing": financing,
+            "manufactured_resource": manufactured_resource,
+            "capacity_units": required_units,
+            "units_short_at_order": units_short_at_order,
+            "list_price": item.cost,
+            "recommended_total": recommended_total,
+            "buyer_offer": buyer_offer,
+        }
+
+    @staticmethod
+    def _capital_order_entry_is_unlocked(game: Game, negotiation: CapitalOrderNegotiation) -> bool:
+        entry = game.order_book.get(negotiation.negotiation_id)
+        return entry is None or not entry.locked
+
+    def _true_up_capital_deposit(
+        self,
+        game: Game,
+        negotiation: CapitalOrderNegotiation,
+        buyer_offer: float,
+    ) -> float:
+        """Keep a live order's deposit at its required fraction of the offer."""
+        required = 0.0
+        if negotiation.buyer_id != negotiation.manufacturer_id:
+            required = round(CAPITAL_ORDER_DEPOSIT_FRACTION * buyer_offer, 2)
+        current = round(float(negotiation.deposit_paid or 0.0), 2)
+        adjustment = round(required - current, 2)
+        if adjustment == 0:
+            return 0.0
+        buyer = next(
+            (p for p in game.players if p.player_id == negotiation.buyer_id), None,
+        )
+        if buyer is None:
+            raise ValueError("Capital order buyer no longer exists.")
+        if adjustment > 0:
+            if buyer.dollops < adjustment:
+                raise ValueError(
+                    f"Need {adjustment:.1f} Dp to bring the deposit up to "
+                    f"{required:.1f} Dp; you have {buyer.dollops:.1f} Dp."
+                )
+            buyer.spend_dollops(adjustment)
+        else:
+            buyer.receive_dollops(-adjustment)
+        negotiation.deposit_paid = required
+        return adjustment
+
+    async def _handle_capital_order(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        """Create a manufacturer-review capital order negotiation (#185)."""
+        async def _err(message: str) -> None:
+            await websocket.send_text(json.dumps({"type": "error", "message": message}))
+
+        room = self.rooms.get(room_id)
+        if not room or not room.game:
+            await _err("Room not found"); return
+        game = room.game
+        buyer, actor_error = self._engine_player_for_action(room, lobby_player_id, msg)
+        if buyer is None:
+            await _err(actor_error or "Player not found"); return
+        try:
+            quote = self._capital_order_quote(game, buyer, msg)
+        except ValueError as exc:
+            await _err(str(exc)); return
+        item = quote["item"]
+        manufacturer = quote["manufacturer"]
+        manufactured_resource = quote["manufactured_resource"]
+        required_units = quote["capacity_units"]
+        units_short_at_order = quote["units_short_at_order"]
+        buyer_offer = quote["buyer_offer"]
 
         # Deposit (Wave 9): a real order costs the buyer 50% up front, applied
         # against the balance on delivery and forfeit if they cannot pay it.
@@ -3843,13 +3916,13 @@ class GameManager:
             buyer_id=buyer.player_id,
             manufacturer_id=manufacturer.player_id,
             item_id=item.item_id,
-            maintenance_term_years=term,
-            predictive_maintenance=predictive,
-            spares_kits=spares_kits,
-            expedited_eligible=expedited,
-            financing=financing,
-            list_price=item.cost,
-            recommended_total=recommended_total,
+            maintenance_term_years=quote["maintenance_term_years"],
+            predictive_maintenance=quote["predictive_maintenance"],
+            spares_kits=quote["spares_kits"],
+            expedited_eligible=quote["expedited_eligible"],
+            financing=quote["financing"],
+            list_price=quote["list_price"],
+            recommended_total=quote["recommended_total"],
             buyer_offer=buyer_offer,
             units_required=required_units,
             units_short_at_order=units_short_at_order,
@@ -3961,6 +4034,187 @@ class GameManager:
             room_id, lobby_player_id, msg, websocket, actor_role="buyer"
         )
 
+    async def _handle_capital_order_amend(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        await self._handle_capital_negotiation_action(
+            room_id, lobby_player_id, {**msg, "action": "amend"}, websocket,
+            actor_role="buyer",
+        )
+
+    async def _handle_capital_order_cancel(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        await self._handle_capital_negotiation_action(
+            room_id, lobby_player_id, {**msg, "action": "cancel"}, websocket,
+            actor_role="buyer",
+        )
+
+    async def _handle_capital_order_sweeten(
+        self,
+        room_id: str,
+        lobby_player_id: str,
+        msg: dict,
+        websocket,
+    ) -> None:
+        await self._handle_capital_negotiation_action(
+            room_id, lobby_player_id, {**msg, "action": "sweeten"}, websocket,
+            actor_role="buyer",
+        )
+
+    def _require_buyer_capital_mutation(
+        self,
+        game: Game,
+        actor: Player,
+        negotiation: CapitalOrderNegotiation,
+        action: str,
+    ) -> None:
+        if actor.player_id != negotiation.buyer_id:
+            raise ValueError(f"Only the buyer can {action} this capital order.")
+        if negotiation.status not in {
+            CapitalNegotiationStatus.PROPOSED,
+            CapitalNegotiationStatus.COUNTERED,
+            CapitalNegotiationStatus.QUEUED,
+        }:
+            raise ValueError(
+                f"Capital negotiation #{negotiation.negotiation_id} is already "
+                f"{negotiation.status.value} — cannot {action}."
+            )
+        if not self._capital_order_entry_is_unlocked(game, negotiation):
+            raise ValueError(
+                f"Capital negotiation #{negotiation.negotiation_id} is already "
+                f"settled or in production — cannot {action}."
+            )
+
+    def _amend_capital_order(
+        self,
+        room,
+        buyer: Player,
+        negotiation: CapitalOrderNegotiation,
+        msg: dict,
+    ) -> None:
+        game = room.game
+        self._require_buyer_capital_mutation(game, buyer, negotiation, "amend")
+        manufacturer = next(
+            (p for p in game.players if p.player_id == negotiation.manufacturer_id),
+            None,
+        )
+        if manufacturer is None:
+            raise ValueError("Capital order manufacturer no longer exists.")
+        quote_msg = {**msg, "financing": negotiation.financing}
+        quote = self._capital_order_quote(
+            game, buyer, quote_msg, manufacturer=manufacturer,
+        )
+        if quote["manufacturer"].player_id != negotiation.manufacturer_id:
+            raise ValueError(
+                "An amendment cannot change the manufacturer; cancel and place a new order."
+            )
+
+        # Deposit changes are funded before replacing any negotiated terms, so
+        # an unaffordable amendment leaves the live order exactly as it was.
+        self._true_up_capital_deposit(game, negotiation, quote["buyer_offer"])
+        previous_offer = round(float(negotiation.buyer_offer), 2)
+        negotiation.item_id = quote["item"].item_id
+        negotiation.maintenance_term_years = quote["maintenance_term_years"]
+        negotiation.predictive_maintenance = quote["predictive_maintenance"]
+        negotiation.spares_kits = quote["spares_kits"]
+        negotiation.expedited_eligible = quote["expedited_eligible"]
+        negotiation.list_price = quote["list_price"]
+        negotiation.recommended_total = quote["recommended_total"]
+        negotiation.buyer_offer = quote["buyer_offer"]
+        negotiation.units_required = quote["capacity_units"]
+        negotiation.units_short_at_order = quote["units_short_at_order"]
+        negotiation.counter_total = None
+        negotiation.status = CapitalNegotiationStatus.PROPOSED
+        negotiation.awaiting_id = negotiation.manufacturer_id
+        # An amendment goes back to the Manufacturer for review either way, but
+        # only a DOWNGRADE costs the buyer their slot: paying the same or more
+        # should never send you to the back of the queue. The entry left in the
+        # book is skipped by the drain (it is no longer QUEUED), so holding the
+        # slot cannot block the orders behind it, and a raised premium
+        # re-places by the usual priority rule.
+        if round(float(negotiation.buyer_offer), 2) >= previous_offer:
+            entry = game.order_book.get(negotiation.negotiation_id)
+            if entry is not None and not entry.locked:
+                game.order_book.place_by_premium(
+                    negotiation.negotiation_id,
+                    negotiation.manufacturer_id,
+                    round(negotiation.buyer_offer - negotiation.recommended_total, 2),
+                )
+        else:
+            game.order_book.remove(negotiation.negotiation_id)
+        game.refresh_order_promises(
+            negotiation.manufacturer_id,
+            getattr(room, "current_year_index", 0),
+            getattr(room, "current_season_index", 0),
+        )
+
+    def _sweeten_capital_order(
+        self,
+        room,
+        buyer: Player,
+        negotiation: CapitalOrderNegotiation,
+        msg: dict,
+    ) -> tuple[str, dict | None]:
+        game = room.game
+        self._require_buyer_capital_mutation(game, buyer, negotiation, "sweeten")
+        try:
+            buyer_offer = round(float(msg.get("buyer_offer")), 2)
+        except (TypeError, ValueError):
+            raise ValueError("Offer total must be positive.")
+        if buyer_offer <= negotiation.buyer_offer:
+            raise ValueError("A sweetened offer must be higher than the current offer.")
+        if negotiation.status == CapitalNegotiationStatus.COUNTERED:
+            if negotiation.counter_total is None or buyer_offer < negotiation.counter_total:
+                raise ValueError("Sweeten to at least the counter-offer to accept it.")
+            self._true_up_capital_deposit(game, negotiation, buyer_offer)
+            negotiation.buyer_offer = buyer_offer
+            negotiation.counter_total = None
+            if self._capital_negotiation_units_short(game, negotiation) > 0:
+                negotiation.status = CapitalNegotiationStatus.QUEUED
+                negotiation.awaiting_id = None
+                game.enqueue_capital_negotiation(
+                    negotiation,
+                    getattr(room, "current_year_index", 0),
+                    getattr(room, "current_season_index", 0),
+                    locked=False,
+                )
+                return "backordered", None
+            return "accepted", self._settle_capital_negotiation(
+                room, negotiation, buyer_offer,
+            )
+
+        self._true_up_capital_deposit(game, negotiation, buyer_offer)
+        negotiation.buyer_offer = buyer_offer
+        entry = game.order_book.get(negotiation.negotiation_id)
+        if negotiation.status == CapitalNegotiationStatus.QUEUED and entry is None:
+            game.enqueue_capital_negotiation(
+                negotiation,
+                getattr(room, "current_year_index", 0),
+                getattr(room, "current_season_index", 0),
+                locked=False,
+            )
+        elif entry is not None:
+            game.order_book.place_by_premium(
+                negotiation.negotiation_id,
+                negotiation.manufacturer_id,
+                round(negotiation.buyer_offer - negotiation.recommended_total, 2),
+            )
+        game.refresh_order_promises(
+            negotiation.manufacturer_id,
+            getattr(room, "current_year_index", 0),
+            getattr(room, "current_season_index", 0),
+        )
+        return "sweetened", None
+
     async def _handle_capital_negotiation_action(
         self,
         room_id: str,
@@ -3987,20 +4241,28 @@ class GameManager:
         negotiation = ledger.get(negotiation_id) if ledger else None
         if negotiation is None:
             await _err(f"Capital negotiation #{negotiation_id} not found"); return
-        if negotiation.awaiting_id != actor.player_id:
-            await _err(
-                f"Capital negotiation #{negotiation_id} is not awaiting your response"
-            ); return
 
         action = str(msg.get("action", "")).strip().lower()
         if actor_role == "buyer":
-            action = "accept"
             if actor.player_id != negotiation.buyer_id:
                 await _err("Only the buyer can accept this counter-offer."); return
-            if negotiation.status != CapitalNegotiationStatus.COUNTERED:
-                await _err("Only countered capital orders can be buyer-accepted."); return
-        elif actor.player_id != negotiation.manufacturer_id:
-            await _err("Only the Manufacturer can respond to this capital order."); return
+            action = action or "accept"
+            if action == "accept":
+                if negotiation.awaiting_id != actor.player_id:
+                    await _err(
+                        f"Capital negotiation #{negotiation_id} is not awaiting your response"
+                    ); return
+                if negotiation.status != CapitalNegotiationStatus.COUNTERED:
+                    await _err("Only countered capital orders can be buyer-accepted."); return
+            elif action not in {"amend", "cancel", "sweeten"}:
+                await _err(f"Unknown capital negotiation action: {action!r}"); return
+        else:
+            if actor.player_id != negotiation.manufacturer_id:
+                await _err("Only the Manufacturer can respond to this capital order."); return
+            if negotiation.awaiting_id != actor.player_id:
+                await _err(
+                    f"Capital negotiation #{negotiation_id} is not awaiting your response"
+                ); return
 
         try:
             if action == "accept":
@@ -4046,6 +4308,33 @@ class GameManager:
                 room.game.order_book.remove(negotiation.negotiation_id)
                 settlement = None
                 result = "declined"
+            elif action == "amend":
+                self._amend_capital_order(room, actor, negotiation, msg)
+                settlement = None
+                result = "amended"
+            elif action == "cancel":
+                self._require_buyer_capital_mutation(
+                    room.game, actor, negotiation, "cancel",
+                )
+                # No await occurs between the active/unlocked guard above and
+                # this mutation. A concurrent settlement therefore wins only
+                # if it already changed status, in which case the guard emits
+                # the same clean already-settled error as deal withdrawal.
+                negotiation.status = CapitalNegotiationStatus.CANCELLED
+                negotiation.awaiting_id = None
+                self._refund_capital_deposit(room.game, negotiation)
+                room.game.order_book.remove(negotiation.negotiation_id)
+                room.game.refresh_order_promises(
+                    negotiation.manufacturer_id,
+                    getattr(room, "current_year_index", 0),
+                    getattr(room, "current_season_index", 0),
+                )
+                settlement = None
+                result = "cancelled"
+            elif action == "sweeten":
+                result, settlement = self._sweeten_capital_order(
+                    room, actor, negotiation, msg,
+                )
             else:
                 await _err(f"Unknown capital negotiation action: {action!r}"); return
         except (CapitalFinanceError, ValueError) as exc:
@@ -4405,6 +4694,7 @@ class GameManager:
                 "promised_year": None,
                 "promised_season": None,
                 "locked": None,
+                "premium": None,
             }
         return {
             "queue_position": entry.queue_position,
@@ -4418,6 +4708,7 @@ class GameManager:
                 else entry.promised_season
             ),
             "locked": entry.locked,
+            "premium": entry.premium,
         }
 
     @staticmethod
@@ -4481,6 +4772,7 @@ class GameManager:
                 ),
                 "queue_position": entry.queue_position,
                 "locked": entry.locked,
+                "premium": entry.premium,
                 "promised_year": (
                     entry.promised_year + 1
                     if entry.promised_year is not None else None
@@ -7795,6 +8087,18 @@ def create_app() -> FastAPI:
                     )
                 elif msg_type == "capital_negotiation_accept":
                     await manager._handle_capital_negotiation_accept(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_order_amend":
+                    await manager._handle_capital_order_amend(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_order_cancel":
+                    await manager._handle_capital_order_cancel(
+                        room_id, player_id, msg, websocket
+                    )
+                elif msg_type == "capital_order_sweeten":
+                    await manager._handle_capital_order_sweeten(
                         room_id, player_id, msg, websocket
                     )
                 elif msg_type == "capital_repair":
