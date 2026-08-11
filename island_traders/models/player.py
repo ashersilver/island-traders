@@ -492,8 +492,14 @@ class Player:
         from ..constants_capacity import CAPITAL_CATALOGUE
         from .capacity import find_item
 
+        from ..constants import BASELINE_FOOD_STORAGE
+
         resource_name = resource.value if isinstance(resource, ResourceType) else str(resource)
-        capacity = 0
+        # Every island has a basic larder even with no storage building.
+        capacity = (
+            BASELINE_FOOD_STORAGE
+            if resource_name == ResourceType.FOOD.value else 0
+        )
         for item_id, count in self.effective_capital_inventory().items():
             item = find_item(CAPITAL_CATALOGUE, item_id)
             if not item:

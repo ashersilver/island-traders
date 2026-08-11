@@ -6,6 +6,7 @@ import pytest
 from island_traders.cli.prompts import FakeIOAdapter
 from island_traders.engine.game import Game, GameConfig, PlayerSpec
 from island_traders.models.player import Player
+from island_traders.constants import BASELINE_FOOD_STORAGE
 from island_traders.models.resource import ResourceType
 from island_traders.models.role import ROLES
 
@@ -42,15 +43,20 @@ def test_protected_stock_never_spoils():
 )
 def test_unprotected_stock_spoils_exactly_on_its_shelf_life(resource, shelf_life):
     player = _player("Manufacturer")
-    player.receive_resources(resource, 7)
+    # Every island has a baseline Food larder, so put the test quantity ABOVE
+    # whatever this resource is protected by — otherwise Food is simply safe.
+    protected = player.storage_capacity(resource)
+    qty = protected + 7
+    player.receive_resources(resource, qty)
 
     assert player.process_spoilage(0) == {}
     for tick in range(1, shelf_life):
         assert player.process_spoilage(tick) == {}
-        assert player.inventory.get(resource) == 7
+        assert player.inventory.get(resource) == qty
 
+    # Only the excess above protection perishes; protected stock survives.
     assert player.process_spoilage(shelf_life) == {resource: 7}
-    assert player.inventory.get(resource) == 0
+    assert player.inventory.get(resource) == protected
 
 
 def test_only_stock_above_owned_capacity_ages_and_perishes():
@@ -79,9 +85,11 @@ def test_failed_or_unmaintained_storage_does_not_protect_stock():
     assert player.process_spoilage(0) == {}
     assert player.process_spoilage(1) == {ResourceType.GRAIN: 10}
 
+    # An unmaintained Food Store contributes nothing, leaving only the
+    # baseline larder every island has.
     player.add_capital("common.food_store")
     player.unmaintained_capital = {"common.food_store": 1}
-    assert player.storage_capacity(ResourceType.FOOD) == 0
+    assert player.storage_capacity(ResourceType.FOOD) == BASELINE_FOOD_STORAGE
 
 
 def test_spoilage_buckets_survive_save_load(tmp_path):

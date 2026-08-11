@@ -22,8 +22,11 @@ Release notes are required before merging a feature/fix branch into
     capacity already treats broken equipment.
   - Inventory rows carry an amber pill when stock is at risk, and imminent
     spoilage counts as *needed now* on the dependency map.
-  - **Your starting Food will perish in two seasons unless you buy a Food
-    Store** — the most visible early-game consequence of this change.
+  - **Every island keeps a basic larder of 12 Food protected for free**, so
+    the opening Food stock does not simply rot two seasons in. It is a floor
+    rather than a building: it cannot fail, be sold, or be lost, and the
+    orderable Food Store (80) remains the real upgrade. Anything above 12 is
+    still exposed, so the mechanic keeps its teeth.
   - Renting protection from the Transporter (the second route) follows in 7.2b.
 
 - **Ordered spares kits are real goods now (Wave 7.1)** — capital orders let a
