@@ -5,7 +5,25 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.13`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.14`.
+
+- **Rent storage from the Transporter (Wave 7.2b)** — the second route to
+  spoilage protection, completing the storage rework. An island can either
+  build its own store or rent covered capacity from the Logistics island; the
+  two are interchangeable and simply add together.
+  - Two new Transporter capital items let their capacity **to other islands**
+    rather than protecting the owner: a **Bulk Warehouse** (120 shared Grain /
+    Spares slots) and a **Cold Warehouse** (80 Food slots).
+  - A **storage contract** reserves slots for a named island at a per-season
+    fee paid to the Transporter — its new revenue line. A Transporter cannot
+    let the same slot twice, and cancelled or lapsed contracts free capacity
+    for re-letting.
+  - **If the renter cannot pay, the contract lapses** at season end and the
+    protection is gone the following season; the renter is warned while there
+    is still time to act rather than after the loss.
+  - Rented capacity flows through the same single seam owned capacity uses, so
+    spoilage and production needed no changes, and owned and rented protection
+    sum without double counting.
 
 - **Buyers can amend, cancel and sweeten capital orders (Wave 9.2/9.3)** —
   completes the order book. A buyer can now change their mind while nothing has
