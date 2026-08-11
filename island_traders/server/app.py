@@ -5722,6 +5722,88 @@ class GameManager:
             })
         return details
 
+    def _storage_contracts_detail_for_player(
+        self,
+        game: Game,
+        player_id: int,
+        player_names: dict[int, str],
+    ) -> list[dict]:
+        ledger = getattr(game, "storage_contract_ledger", None)
+        if ledger is None:
+            return []
+        players_by_id = {player.player_id: player for player in game.players}
+        renter_fees = {
+            renter_id: sum(
+                contract.fee_per_season for contract in ledger.active_contracts()
+                if contract.renter_id == renter_id
+            )
+            for renter_id in players_by_id
+        }
+        details = []
+        for contract in ledger.active_for_player(player_id):
+            renter = players_by_id.get(contract.renter_id)
+            role = "renter" if contract.renter_id == player_id else "transporter"
+            details.append({
+                "contract_id": contract.contract_id,
+                "role": role,
+                "counterparty_id": (
+                    contract.transporter_id if role == "renter" else contract.renter_id
+                ),
+                "counterparty_name": player_names.get(
+                    contract.transporter_id if role == "renter" else contract.renter_id,
+                    "Unknown island",
+                ),
+                "item_id": contract.item_id,
+                "resource": contract.resource,
+                "capacity": contract.capacity,
+                "effective_capacity": ledger.effective_capacity_for_contract(contract),
+                "fee_per_season": round(contract.fee_per_season, 2),
+                "fee_due_this_season": role == "renter",
+                "at_risk": bool(
+                    role == "renter" and renter is not None
+                    and renter.dollops < renter_fees.get(contract.renter_id, 0.0)
+                ),
+                "payments_made": contract.payments_made,
+                "status": contract.status.value,
+            })
+        return details
+
+    def _storage_rental_summary_for_player(
+        self, game: Game, player_id: int, year: int, season: int
+    ) -> list[dict]:
+        """Warehouse utilisation/revenue shown only to the Transporter."""
+        from ..models.capacity import find_item
+
+        ledger = getattr(game, "storage_contract_ledger", None)
+        player = next((p for p in game.players if p.player_id == player_id), None)
+        if ledger is None or player is None:
+            return []
+        summaries = []
+        for item_id in player.capital_inventory:
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            spec = item.effects.get("storage_rental") if item else None
+            if not isinstance(spec, dict):
+                continue
+            total = ledger._effective_capacity(player_id, item_id)
+            committed = ledger.committed_capacity(player_id, item_id)
+            summaries.append({
+                "item_id": item_id,
+                "item_name": item.name if item else item_id,
+                "resources": list(spec.get("resources", ())),
+                "capacity": total,
+                "committed": committed,
+                "free": max(0, total - committed),
+                "fee_per_unit": spec.get("fee_per_unit", 0.0),
+                "income_this_season": round(sum(
+                    contract.fee_per_season for contract in ledger.contracts
+                    if contract.transporter_id == player_id
+                    and contract.item_id == item_id
+                    and (contract.last_payment_year, contract.last_payment_season)
+                    == (year, season)
+                ), 2),
+            })
+        return summaries
+
     def _decision_hints_for_player(self, pd: dict) -> list[dict]:
         hints: list[dict] = []
         capacity = pd.get("capacity", {})
@@ -5962,6 +6044,21 @@ class GameManager:
                         ResourceType.SPARES,
                     )
                 },
+                # Preserve the Route 1 storage payload for existing clients;
+                # this additive breakdown makes owned and rented protection
+                # visible without a second spoilage calculation.
+                "storage_breakdown": {
+                    resource.value: {
+                        "owned": p.owned_storage_capacity(resource),
+                        "rented": p.rented_storage_capacity(resource),
+                        "protected": p.storage_capacity(resource),
+                    }
+                    for resource in (
+                        ResourceType.GRAIN,
+                        ResourceType.FOOD,
+                        ResourceType.SPARES,
+                    )
+                },
                 "energy": {
                     "oil_required": p.energy_floor_oil_required(CAPITAL_CATALOGUE),
                     "oil_consumed": getattr(
@@ -6030,6 +6127,12 @@ class GameManager:
                     for l in active_loans
                 ],
                 "leases_detail": self._leases_detail_for_player(
+                    game, p.player_id, current_year_idx, current_season_idx
+                ),
+                "storage_contracts_detail": self._storage_contracts_detail_for_player(
+                    game, p.player_id, player_names
+                ),
+                "storage_rental": self._storage_rental_summary_for_player(
                     game, p.player_id, current_year_idx, current_season_idx
                 ),
                 "workforce_count": p.workforce.count,

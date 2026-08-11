@@ -18,6 +18,9 @@ from ..models.order_book import ManufacturerOrderBook, compute_promise_dates
 from ..models.worker_transfer import WorkerTransferOffer
 from ..models.loan import LoanLedger, Loan, LoanStatus
 from ..models.lease import LeaseLedger, Lease, LeaseStatus
+from ..models.storage_contract import (
+    StorageContractLedger, StorageContract, StorageContractStatus,
+)
 from ..models.insurance import banker_can_process_claims
 from ..models.resource import ResourceType
 from ..models.role import ROLES
@@ -215,6 +218,7 @@ class Game:
         self.transfer_offers: list[WorkerTransferOffer] = []
         self.loan_ledger: LoanLedger | None = None
         self.lease_ledger: LeaseLedger | None = None
+        self.storage_contract_ledger: StorageContractLedger | None = None
         self.training: TrainingRegistry | None = None
         self.staffing: StaffingRegistry | None = None
         self.turn_manager: TurnManager | None = None
@@ -238,6 +242,7 @@ class Game:
         self.owners: dict[str, Owner] = {}
         self.loan_ledger = LoanLedger()
         self.lease_ledger = LeaseLedger()
+        self.storage_contract_ledger = StorageContractLedger()
         self.training = TrainingRegistry()
         self.staffing = StaffingRegistry()
 
@@ -361,6 +366,7 @@ class Game:
         self.turn_manager = TurnManager(
             self.players, production, trading, self.market, self.io, self.training,
             self.staffing, self.loan_ledger, self.lease_ledger,
+            storage_contract_ledger=self.storage_contract_ledger,
         )
         self.turn_manager.current_cycle = self.current_cycle
 
@@ -1607,6 +1613,7 @@ class Game:
             "staffing": self._serialise_staffing(),
             "loan_ledger": self._serialise_loans(),
             "lease_ledger": self._serialise_leases(),
+            "storage_contract_ledger": self._serialise_storage_contracts(),
             "damage_counters": {
                 str(k): v for k, v in self.turn_manager._damage_counters.items()
             } if self.turn_manager else {},
@@ -1848,6 +1855,32 @@ class Game:
             ],
         }
 
+    def _serialise_storage_contracts(self) -> dict:
+        ledger = self.storage_contract_ledger or StorageContractLedger()
+        return {
+            "next_id": ledger._next_id,
+            "contracts": [
+                {
+                    "contract_id": contract.contract_id,
+                    "transporter_id": contract.transporter_id,
+                    "renter_id": contract.renter_id,
+                    "item_id": contract.item_id,
+                    "resource": contract.resource,
+                    "capacity": contract.capacity,
+                    "fee_per_season": contract.fee_per_season,
+                    "started_year": contract.started_year,
+                    "started_season": contract.started_season,
+                    "status": contract.status.value,
+                    "payments_made": contract.payments_made,
+                    "last_payment_year": contract.last_payment_year,
+                    "last_payment_season": contract.last_payment_season,
+                    "ended_year": contract.ended_year,
+                    "ended_season": contract.ended_season,
+                }
+                for contract in ledger.contracts
+            ],
+        }
+
     @classmethod
     def load(cls, path: str, io_adapter) -> "Game":
         from ..models.market import PriceShock, PriceSnapshot
@@ -2028,6 +2061,29 @@ class Game:
                 return_year=lease_d.get("return_year", -1),
                 return_season=lease_d.get("return_season", -1),
             ))
+        game.storage_contract_ledger = StorageContractLedger()
+        storage_data = data.get("storage_contract_ledger", {})
+        game.storage_contract_ledger._next_id = storage_data.get("next_id", 0)
+        for contract_d in storage_data.get("contracts", []):
+            game.storage_contract_ledger.contracts.append(StorageContract(
+                contract_id=contract_d["contract_id"],
+                transporter_id=contract_d["transporter_id"],
+                renter_id=contract_d["renter_id"],
+                item_id=contract_d["item_id"],
+                resource=contract_d["resource"],
+                capacity=contract_d["capacity"],
+                fee_per_season=contract_d["fee_per_season"],
+                started_year=contract_d["started_year"],
+                started_season=contract_d["started_season"],
+                status=StorageContractStatus(contract_d.get(
+                    "status", StorageContractStatus.ACTIVE.value
+                )),
+                payments_made=contract_d.get("payments_made", 0),
+                last_payment_year=contract_d.get("last_payment_year", -1),
+                last_payment_season=contract_d.get("last_payment_season", -1),
+                ended_year=contract_d.get("ended_year", -1),
+                ended_season=contract_d.get("ended_season", -1),
+            ))
         game.training = TrainingRegistry()
         td = data.get("training", {})
         game.training._next_id = td.get("next_id", 0)
@@ -2160,6 +2216,7 @@ class Game:
         game.turn_manager = TurnManager(
             game.players, production, trading, game.market, io_adapter, game.training,
             game.staffing, game.loan_ledger, game.lease_ledger,
+            storage_contract_ledger=game.storage_contract_ledger,
         )
         game.turn_manager._damage_counters = {
             int(k): v for k, v in data.get("damage_counters", {}).items()

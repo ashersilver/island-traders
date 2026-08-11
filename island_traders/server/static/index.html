@@ -6340,18 +6340,48 @@ function renderGameState() {
 
   const inv = me.inventory || {};
   const storage = me.storage || {};
+  const storageBreakdown = me.storage_breakdown || {};
+  const storageContracts = me.storage_contracts_detail || [];
+  const storageRental = me.storage_rental || [];
   document.getElementById('s-inventory').innerHTML = Object.entries(inv)
     .filter(([,q]) => q > 0)
     .map(([r,q]) => {
       const status = storage[r];
+      const protection = storageBreakdown[r] || {};
       const risk = status && Number(status.at_risk || 0) > 0;
       const seasons = Number(status?.perishes_in_seasons);
       const pill = risk
         ? `<span style="margin-left:.35rem;padding:.08rem .32rem;border-radius:999px;background:rgba(246,185,59,.2);color:var(--gold);font-size:.65rem" title="${status.at_risk} at risk; ${status.protected} protected">${status.at_risk} at risk · perishes in ${seasons} season${seasons === 1 ? '' : 's'}</span>`
         : '';
-      return `<div class="mkt-row"><span class="res">${r}${pill}</span><span class="price">${q}</span></div>`;
+      const rented = Number(protection.rented || 0);
+      const ownership = rented > 0
+        ? `<span style="margin-left:.28rem;font-size:.62rem;color:var(--dim)" title="${protection.owned || 0} owned + ${rented} rented protection">${protection.owned || 0} owned + ${rented} rented</span>`
+        : '';
+      return `<div class="mkt-row"><span class="res">${r}${pill}${ownership}</span><span class="price">${q}</span></div>`;
     })
     .join('') || '<span style="color:var(--dim)">Empty</span>';
+  const rentalNotes = [];
+  if (storageContracts.length) {
+    const rows = storageContracts.map(contract => {
+      const risk = contract.role === 'renter'
+        ? (contract.at_risk
+          ? '<span style="color:var(--gold);font-weight:600">Fee at risk — add Dollops before season end</span>'
+          : 'Fee due at season end')
+        : 'Income settles at season end';
+      const side = contract.role === 'renter' ? 'from' : 'to';
+      return `<div style="margin-top:.22rem">${contract.capacity} ${esc(contract.resource)} slots ${side} ${esc(contract.counterparty_name)} · ${Number(contract.fee_per_season).toFixed(2)} Dp/season <span style="color:var(--dim)">(${risk})</span></div>`;
+    }).join('');
+    rentalNotes.push(`<div style="margin-top:.45rem;padding-top:.35rem;border-top:1px solid var(--border);font-size:.68rem"><strong>Storage rentals</strong>${rows}</div>`);
+  }
+  if (storageRental.length) {
+    const rows = storageRental.map(warehouse =>
+      `<div style="margin-top:.22rem">${esc(warehouse.item_name)}: ${warehouse.committed}/${warehouse.capacity} committed · ${warehouse.free} free · income ${Number(warehouse.income_this_season).toFixed(2)} Dp</div>`
+    ).join('');
+    rentalNotes.push(`<div style="margin-top:.45rem;padding-top:.35rem;border-top:1px solid var(--border);font-size:.68rem"><strong>Warehouse service</strong>${rows}</div>`);
+  }
+  if (rentalNotes.length) {
+    document.getElementById('s-inventory').innerHTML += rentalNotes.join('');
+  }
 
   // Pending economics-vision features (business cycle, QoL, continuing
   // education). These render only when the engine ships the data, so they're

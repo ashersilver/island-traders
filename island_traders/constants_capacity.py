@@ -240,6 +240,37 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         description="+5 PassengerSeats (fast)",
         capacity_units=4,
     ),
+    CapitalItem(
+        item_id="transporter.bulk_warehouse",
+        name="Bulk Warehouse",
+        role="Transporter",
+        cost=75.0,
+        delivery_seasons=1,
+        # Rental capacity is scaled at module load like other catalogue
+        # capacity. Authored 12 becomes 120 shared Grain/Spares slots.
+        effects={"storage_rental": {
+            "capacity": 12,
+            "resources": ("Grain", "Spares"),
+            "fee_per_unit": 0.10,
+        }},
+        description="Lets 120 shared Grain or Spares slots at 0.10 Dp per slot/season",
+        capacity_units=2,
+    ),
+    CapitalItem(
+        item_id="transporter.cold_warehouse",
+        name="Cold Warehouse",
+        role="Transporter",
+        cost=100.0,
+        delivery_seasons=1,
+        # Authored 8 becomes 80 Food slots after catalogue scaling.
+        effects={"storage_rental": {
+            "capacity": 8,
+            "resources": ("Food",),
+            "fee_per_unit": 0.15,
+        }},
+        description="Lets 80 chilled Food slots at 0.15 Dp per slot/season",
+        capacity_units=2,
+    ),
 
     # ----- Educator --------------------------------------------------------
     CapitalItem(
@@ -704,6 +735,12 @@ def _multiply_capital_capacity(
             effects["storage"] = {
                 resource: amount * multiplier
                 for resource, amount in storage.items()
+            }
+        rental_storage = effects.get("storage_rental")
+        if rental_storage:
+            effects["storage_rental"] = {
+                **rental_storage,
+                "capacity": rental_storage["capacity"] * multiplier,
             }
         if "spares_storage" in effects:
             effects["spares_storage"] = effects["spares_storage"] * multiplier

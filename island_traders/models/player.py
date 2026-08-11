@@ -304,6 +304,11 @@ class Player:
     # stock deliberately has no ageing bucket: it must never spoil, even if a
     # warehouse later fails and its protection disappears.
     spoilage_buckets: dict[str, list[dict[str, int]]] = field(default_factory=dict)
+    # Bound by StorageContractLedger at game setup/load.  Deliberately
+    # transient: the ledger is serialised by Game and re-bound on restore.
+    _storage_contract_ledger: object | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         self._season_revenue = 0.0
@@ -482,12 +487,15 @@ class Player:
         units = self.energy_intensive_capacity_units(catalogue)
         return ENERGY_BASE + ceil(units / max(1, ENERGY_DIVISOR))
 
-    def storage_capacity(self, resource: ResourceType | str) -> int:
-        """Effective storage protection for one resource.
+    def bind_storage_contract_ledger(self, ledger: object | None) -> None:
+        """Attach the live storage-contract ledger (not save data)."""
+        self._storage_contract_ledger = ledger
 
-        This is intentionally the single capacity seam for spoilage. Route 1
-        contributes maintained owned capital today; Route 2 can add rented
-        capacity here later without changing spoilage or production callers.
+    def owned_storage_capacity(self, resource: ResourceType | str) -> int:
+        """Protection from the island's baseline and maintained own capital.
+
+        This feeds the single spoilage seam; ``storage_capacity`` adds active
+        Transporter rentals without changing spoilage or production callers.
         """
         from ..constants_capacity import CAPITAL_CATALOGUE
         from .capacity import find_item
@@ -508,6 +516,17 @@ class Player:
                 capacity += int(item.effects.get("spares_storage", 0)) * count
             capacity += int(item.effects.get("storage", {}).get(resource_name, 0)) * count
         return capacity
+
+    def rented_storage_capacity(self, resource: ResourceType | str) -> int:
+        """Protection currently allocated by active Transporter contracts."""
+        ledger = self._storage_contract_ledger
+        if ledger is None:
+            return 0
+        return int(ledger.rented_capacity_for(self.player_id, resource))
+
+    def storage_capacity(self, resource: ResourceType | str) -> int:
+        """Total owned and rented protection at the single spoilage seam."""
+        return self.owned_storage_capacity(resource) + self.rented_storage_capacity(resource)
 
     def spares_capacity(self) -> int:
         """Backward-compatible alias used by generic-spares manufacture."""

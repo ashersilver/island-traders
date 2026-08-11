@@ -40,6 +40,7 @@ from ..models.lease import (
     lease_quote,
     lessee_has_lawyer,
 )
+from ..models.storage_contract import StorageContractLedger
 from ..models.profession import (
     Profession, PROFESSION_LABEL, SCIENCE_TRAINING_PROFESSIONS,
     WorkerBand, EngineerSpecialty, band_of,
@@ -117,6 +118,8 @@ class TurnAction(Enum):
     CONSOLIDATE_LOANS  = "consolidate_loans"   # borrower: combine 2+ active loans from one lender
     VIEW_LOANS         = "view_loans"          # view outstanding loans
     PAY_LEASE          = "pay_lease"           # pay due lease annual/buyout/catch-up amount
+    RENT_STORAGE        = "rent_storage"       # reserve Transporter warehouse capacity
+    CANCEL_STORAGE_RENTAL = "cancel_storage_rental"  # release a storage contract
     PAY_REBUILD_LEVY   = "pay_rebuild_levy"    # pay outstanding disaster rebuild levy to unblock repairs (5.1)
     APPLY_PATENT       = "apply_patent"        # any producer: activate a Patent on one output
     REPURPOSE_WORKER         = "repurpose_worker"         # reassign a worker to a new profession
@@ -161,6 +164,7 @@ class TurnManager:
         loan_ledger: LoanLedger | None = None,
         lease_ledger: LeaseLedger | None = None,
         rng=None,
+        storage_contract_ledger: StorageContractLedger | None = None,
     ):
         import random as _random
         import threading as _threading
@@ -173,6 +177,8 @@ class TurnManager:
         self.staffing = staffing or StaffingRegistry()
         self.loan_ledger = loan_ledger or LoanLedger()
         self.lease_ledger = lease_ledger or LeaseLedger()
+        self.storage_contract_ledger = storage_contract_ledger or StorageContractLedger()
+        self.storage_contract_ledger.bind_players(self.players)
         self._ai = AIStrategy()
         self._damage_counters: dict[int, int] = {}
         self._rng: _random.Random = rng if rng is not None else _random.Random()
@@ -240,6 +246,10 @@ class TurnManager:
         self._process_seasonal_qol(year, season_index, event_results)
         self._process_consumer_demand(season_name, risk_reports)
         self._process_continuing_education(season_index)
+        # Storage protects through the current season.  Settle after every
+        # island has had a chance to earn cash; an unpaid contract then lapses
+        # before the next season's spoilage boundary.
+        self._process_storage_contract_payments(year, season_index)
 
         # Loan repayment processing moved to AFTER the action phase
         # (2026-05-27 brief, Codex Player report: "an earlier mature
@@ -798,6 +808,7 @@ class TurnManager:
             f"({player.workforce.average_efficiency*100:.0f}% eff  |  "
             f"capacity: {player.production_capacity*100:.0f}%)"
         )
+        self._warn_storage_contract_risk(player)
         self._review_pending_deals(player, result)
         self._review_training_counteroffers(player, result, season_name, year)
         while True:
@@ -874,6 +885,10 @@ class TurnManager:
                     self._action_view_loans(player)
                 elif action == TurnAction.PAY_LEASE:
                     self._action_pay_lease(player, result, year, season_index)
+                elif action == TurnAction.RENT_STORAGE:
+                    self._action_rent_storage(player, result, year, season_index)
+                elif action == TurnAction.CANCEL_STORAGE_RENTAL:
+                    self._action_cancel_storage_rental(player, result, year, season_index)
                 elif action == TurnAction.PAY_REBUILD_LEVY:
                     self._action_pay_rebuild_levy(player, result)
                 elif action == TurnAction.APPLY_PATENT:
@@ -4167,6 +4182,165 @@ class TurnManager:
             self.lease_ledger.complete(lease.lease_id)
             self.io.print("  Buyout paid. You now own the item outright.")
             result.actions_taken.append(f"pay_lease_buyout:lease#{lease.lease_id}")
+
+    # ------------------------------------------------------------------
+    # Transporter storage rentals
+    # ------------------------------------------------------------------
+
+    def create_storage_contract(
+        self,
+        renter: Player,
+        transporter: Player,
+        item_id: str,
+        resource: ResourceType | str,
+        capacity: int,
+        year: int,
+        season: int,
+    ):
+        """Reserve maintained Transporter warehouse capacity for this season."""
+        return self.storage_contract_ledger.create(
+            transporter_id=transporter.player_id,
+            renter_id=renter.player_id,
+            item_id=item_id,
+            resource=resource,
+            capacity=capacity,
+            year=year,
+            season=season,
+        )
+
+    def cancel_storage_contract(self, contract_id: int, year: int, season: int):
+        """End a rental immediately and return its capacity to the pool."""
+        return self.storage_contract_ledger.cancel(contract_id, year, season)
+
+    def _action_rent_storage(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        choices: list[tuple[Player, str, int]] = []
+        for transporter in self.players:
+            if transporter.player_id == player.player_id:
+                continue
+            if not any(role.name == "Transporter" for role in transporter.roles):
+                continue
+            for item_id in transporter.effective_capital_inventory():
+                try:
+                    self.storage_contract_ledger._rental_spec(item_id)
+                except ValueError:
+                    continue
+                free = self.storage_contract_ledger.free_capacity(
+                    transporter.player_id, item_id
+                )
+                if free > 0:
+                    choices.append((transporter, item_id, free))
+        if not choices:
+            self.io.print("  No maintained Transporter warehouse capacity is available.")
+            return
+        option_values = []
+        for index, (transporter, item_id, free) in enumerate(choices):
+            spec = self.storage_contract_ledger._rental_spec(item_id)
+            item = find_item(CAPITAL_CATALOGUE, item_id)
+            resources = "/".join(spec["resources"])
+            option_values.append({
+                "value": index,
+                "label": (
+                    f"{transporter.name}: {item.name if item else item_id} — "
+                    f"{free} free {resources} slots "
+                    f"({spec['fee_per_unit']:.2f} {CURRENCY_SYMBOL}/slot/season)"
+                ),
+            })
+        selected = int(self.io.choose_option("Rent storage from:", option_values))
+        transporter, item_id, free = choices[selected]
+        spec = self.storage_contract_ledger._rental_spec(item_id)
+        resources = [ResourceType(name) for name in spec["resources"]]
+        resource = self.io.choose_resource("Store which resource?", resources)
+        capacity = self.io.choose_quantity(
+            "How many protected slots?", 1, free, default=free
+        )
+        fee = round(capacity * float(spec["fee_per_unit"]), 2)
+        if not self.io.confirm(
+            f"Reserve {capacity} {resource.value} slots from {transporter.name} "
+            f"for {fee:.2f} {CURRENCY_SYMBOL} each season? "
+            "The first fee is due at this season's end."
+        ):
+            return
+        contract = self.create_storage_contract(
+            player, transporter, item_id, resource, capacity, year, season_index
+        )
+        self.io.print(
+            f"  Storage contract #{contract.contract_id} active: {capacity} "
+            f"{resource.value} slots from {transporter.name}; "
+            f"{fee:.2f} {CURRENCY_SYMBOL} due at season end."
+        )
+        result.actions_taken.append(f"rent_storage:contract#{contract.contract_id}")
+
+    def _action_cancel_storage_rental(
+        self, player: Player, result: TurnResult, year: int, season_index: int
+    ) -> None:
+        contracts = [
+            contract for contract in self.storage_contract_ledger.active_for_player(player.player_id)
+            if contract.renter_id == player.player_id
+        ]
+        if not contracts:
+            self.io.print("  You have no active storage rentals to cancel.")
+            return
+        options = [
+            {
+                "value": contract.contract_id,
+                "label": (
+                    f"#{contract.contract_id}: {contract.capacity} {contract.resource} "
+                    f"slots — {contract.fee_per_season:.2f} {CURRENCY_SYMBOL}/season"
+                ),
+            }
+            for contract in contracts
+        ]
+        contract_id = int(self.io.choose_option("Cancel which storage rental?", options))
+        contract = self.cancel_storage_contract(contract_id, year, season_index)
+        self.io.print(
+            f"  Storage contract #{contract.contract_id} cancelled; its capacity is free to re-let."
+        )
+        result.actions_taken.append(f"cancel_storage_rental:contract#{contract.contract_id}")
+
+    def _process_storage_contract_payments(self, year: int, season: int) -> None:
+        """Settle active rental fees after every island has acted this season."""
+        player_map = {player.player_id: player for player in self.players}
+        for contract in self.storage_contract_ledger.due_contracts(year, season):
+            renter = player_map.get(contract.renter_id)
+            transporter = player_map.get(contract.transporter_id)
+            if renter is None or transporter is None:
+                self.storage_contract_ledger.lapse(contract.contract_id, year, season)
+                continue
+            fee = contract.fee_per_season
+            if renter.dollops >= fee:
+                renter.spend_dollops(fee)
+                if transporter.player_id != renter.player_id:
+                    transporter.receive_dollops(fee)
+                self.storage_contract_ledger.record_payment(
+                    contract.contract_id, year, season
+                )
+                self.io.print(
+                    f"[STORAGE] {renter.name} paid {fee:.2f} {CURRENCY_SYMBOL} "
+                    f"to {transporter.name} for {contract.capacity} "
+                    f"{contract.resource} slots."
+                )
+            else:
+                self.storage_contract_ledger.lapse(contract.contract_id, year, season)
+                self.io.print(
+                    f"[STORAGE] {renter.name} could not pay {fee:.2f} "
+                    f"{CURRENCY_SYMBOL}; {contract.resource} storage rental lapsed. "
+                    "Protection ends next season."
+                )
+
+    def _warn_storage_contract_risk(self, player: Player) -> None:
+        """Give renters an actionable warning before the end-season sweep."""
+        active = [
+            contract for contract in self.storage_contract_ledger.active_for_player(player.player_id)
+            if contract.renter_id == player.player_id
+        ]
+        fees = sum(contract.fee_per_season for contract in active)
+        if active and player.dollops < fees:
+            self.io.print(
+                f"  [STORAGE WARNING] {len(active)} rental contract(s) need "
+                f"{fees:.2f} {CURRENCY_SYMBOL} by season end or their protection lapses."
+            )
 
     def _process_loan_repayments(self, year: int, season: int) -> None:
         sym = CURRENCY_SYMBOL
