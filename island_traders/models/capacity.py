@@ -190,6 +190,15 @@ class CapacityResult:
     equipment_cap: float
     workforce_cap: float
     input_cap: float
+    # Wave 7.3 (CNC Workshop): stepped-staffing metadata. tier_capacity is the
+    # portion of equipment/workforce cap contributed by tiered items;
+    # tier_dedicated is how many workers were auto-dedicated to them; and
+    # next_tier_gain is the extra output one more dedicated worker would add
+    # (0 when every owned tiered unit is fully staffed) — surfaced to the
+    # What-If panel so the UI can hint "add 1 tradesman → +4 Spares/season".
+    tier_capacity: float = 0.0
+    tier_dedicated: int = 0
+    next_tier_gain: float = 0.0
 
     @property
     def max_producible(self) -> float:
@@ -205,6 +214,69 @@ class CapacityResult:
         return min(caps, key=caps.get)
 
 
+# Wave 7.3 — stepped-staffing capacity primitive.  An equipment effect
+#     tiered_capacity: {"output": "Spares", "base": 2,
+#                       "per_worker": [6, 10], "band": "skilled"}
+# replaces the linear workforce term for THAT ITEM'S units only: each owned
+# unit contributes `base` output capacity unstaffed, or `per_worker[k-1]`
+# with k dedicated workers (k capped at len(per_worker)).  Other equipment
+# keeps the flat-capacity + linear-workforce model.
+#
+# Draw order (contract): dedicated workers are drawn from the named band
+# BEFORE general allocation, walking the catalogue in declaration order and
+# filling each owned unit to its worker cap before moving to the next unit.
+# The remaining pool is what every recipe's linear workforce term then sees,
+# so dedicating tradesmen to a CNC Workshop deliberately thins the labour
+# available to the island's other lines.
+_TIER_BAND_ALIASES: dict[str, WorkerBand] = {
+    "skilled": WorkerBand.TECHNICIAN,
+    "technician": WorkerBand.TECHNICIAN,
+    "manager": WorkerBand.MANAGER,
+    "worker": WorkerBand.WORKER,
+}
+
+
+def tiered_dedication(
+    catalogue: Iterable[CapitalItem],
+    owned: dict[str, int],
+    workforce: dict[WorkerBand, int],
+) -> tuple[dict[str, float], dict[WorkerBand, int], dict[str, dict]]:
+    """Auto-assign dedicated workers to tiered-capacity equipment.
+
+    Returns ``(tier_capacity_by_output, remaining_workforce, meta_by_output)``
+    where meta carries ``{"dedicated": n, "next_tier_gain": g}`` per output.
+    The input ``workforce`` dict is not mutated.
+    """
+    remaining: dict[WorkerBand, int] = dict(workforce)
+    tier_caps: dict[str, float] = {}
+    meta: dict[str, dict] = {}
+    for it in catalogue:
+        n = owned.get(it.item_id, 0)
+        if n <= 0:
+            continue
+        spec = it.effects.get("tiered_capacity")
+        if not spec:
+            continue
+        output = str(spec.get("output", ""))
+        base = float(spec.get("base", 0))
+        steps = [float(x) for x in spec.get("per_worker", [])]
+        band = _TIER_BAND_ALIASES.get(
+            str(spec.get("band", "skilled")).lower(), WorkerBand.TECHNICIAN
+        )
+        out_meta = meta.setdefault(output, {"dedicated": 0, "next_tier_gain": 0.0})
+        for _unit in range(int(n)):
+            k = min(len(steps), max(0, remaining.get(band, 0)))
+            remaining[band] = remaining.get(band, 0) - k
+            contribution = steps[k - 1] if k > 0 else base
+            tier_caps[output] = tier_caps.get(output, 0.0) + contribution
+            out_meta["dedicated"] += k
+            if k < len(steps) and out_meta["next_tier_gain"] == 0.0:
+                next_step = steps[k]
+                prev_step = steps[k - 1] if k > 0 else base
+                out_meta["next_tier_gain"] = max(0.0, next_step - prev_step)
+    return tier_caps, remaining, meta
+
+
 def compute_capacity(
     recipe: ProductionRecipe,
     catalogue: Iterable[CapitalItem],
@@ -212,9 +284,22 @@ def compute_capacity(
     workforce: dict[WorkerBand, int],
     on_hand: dict[str, float],
 ) -> CapacityResult:
+    catalogue = list(catalogue)
+    tier_caps, remaining_wf, tier_meta = tiered_dedication(catalogue, owned, workforce)
+    tier_total = tier_caps.get(recipe.output, 0.0)
+    # The linear workforce term always sees the post-dedication pool; the
+    # tiered units' output rides on their dedicated staff, so it is added on
+    # top of whatever the remaining pool supports linearly.
+    workforce_cap = workforce_capacity(recipe, remaining_wf)
+    if tier_total > 0 and workforce_cap != float("inf"):
+        workforce_cap += tier_total
+    meta = tier_meta.get(recipe.output, {})
     return CapacityResult(
         output=recipe.output,
-        equipment_cap=equipment_capacity(catalogue, owned, recipe.output),
-        workforce_cap=workforce_capacity(recipe, workforce),
+        equipment_cap=equipment_capacity(catalogue, owned, recipe.output) + tier_total,
+        workforce_cap=workforce_cap,
         input_cap=input_capacity(recipe, on_hand),
+        tier_capacity=tier_total,
+        tier_dedicated=int(meta.get("dedicated", 0)),
+        next_tier_gain=float(meta.get("next_tier_gain", 0.0)),
     )
