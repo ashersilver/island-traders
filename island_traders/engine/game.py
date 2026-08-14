@@ -184,6 +184,12 @@ class GameConfig:
     num_years: int = 3
     starting_dollops: float = STARTING_DOLLOPS
     event_charts_path: str | None = None
+    # TEST/DEBUG (scenario seeding): role name -> [(profession, count,
+    # engineer_specialty)] replacing that role's default STARTING_WORKFORCE /
+    # STARTING_WORKERS_BY_PROFESSION breakdown with EXACT unscaled counts.
+    # Entries are pre-validated by the caller (see app.py's room plumbing);
+    # roles absent from the mapping keep the normal scaled default.
+    workforce_overrides: dict[str, list[tuple[str, int, str]]] | None = None
 
 
 @dataclass
@@ -312,6 +318,24 @@ class Game:
 
             # Build starting workforce with specific professions (scaled by player count)
             for rname in spec.role_names:
+                override = (self.config.workforce_overrides or {}).get(rname)
+                if override is not None:
+                    # Scenario seeding: exact counts, no player-count scaling
+                    # and no unskilled fill — the scenario says precisely who
+                    # starts on the island. Unskilled entries keep training
+                    # level 0 like the default path.
+                    for profession_name, count, specialty in override:
+                        if count <= 0:
+                            continue
+                        level = 0 if profession_name == Profession.UNSKILLED.value else 1
+                        player.workforce.add_workers(
+                            count, training_level=level,
+                            profession=profession_name,
+                            engineer_specialty=specialty,
+                        )
+                    for item_id, qty, age in STARTING_AGED_CAPITAL.get(rname, []):
+                        player.add_capital(item_id, qty, acquired_tick=-age)
+                    continue
                 total_workers = max(1, round(STARTING_WORKFORCE.get(rname, 3) * workforce_scale))
                 profession_breakdown = STARTING_WORKERS_BY_PROFESSION.get(rname, [])
 
