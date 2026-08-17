@@ -5,7 +5,18 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-07.14`.
+`APP_VERSION`: `0.1.6-dev.2026-08-07.15`.
+
+- **Scenario seeding: exact starting workforce per role (test/debug)** — room
+  creation accepts `debug_starting_workforce`, mapping a role to a list of
+  `{profession, count, specialty?}` entries that REPLACE that role's default
+  starting-workforce breakdown with exact, unscaled counts (engineer
+  specialties included). The launcher's named scenarios use it to pin an
+  island's opening staff the same way `debug_starting_inventory` pins its
+  inventory. Names match case-insensitively (spaces/underscores ignored);
+  unknown names are skipped with a warning; every seeded group logs a
+  `[DEBUG SEED]` line. Roles not listed — and rooms without the field —
+  are unchanged.
 
 - **Rent storage from the Transporter (Wave 7.2b)** — the second route to
   spoilage protection, completing the storage rework. An island can either
