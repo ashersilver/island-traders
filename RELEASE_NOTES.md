@@ -5,7 +5,7 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-18.1`.
+`APP_VERSION`: `0.1.6-dev.2026-08-18.3`.
 
 - **Back-merged `master` into `pre-release`, reconciling a two-way divergence.**
   `master` held 15 commits `pre-release` had never seen — the MCP game server,
@@ -48,6 +48,25 @@ Release notes are required before merging a feature/fix branch into
     Ore 4.5→5.5, MedicalSupplies 23.0→18.0, Vaccine 32.0→26.0, Goods 9.5→12.5,
     Expertise 18.0→20.5, Courses 25.0→27.0, Banker Finance 0.58→0.70.
   - Full suite green at **1136**, including the #213 balance gate.
+
+- **CNC Workshop — stepped-staffing Spares capacity (Wave 7.3, completes Wave
+  7)** — new Manufacturer capital item `manufacturer.cnc_workshop` (150 Dp,
+  1-season delivery, energy-intensive) and a new capacity primitive: a
+  `tiered_capacity` equipment effect whose output steps with **dedicated
+  tradesmen** instead of the linear workforce term — 0 staff → 2 Spares/season,
+  1 tradesman → 6, 2 → 10 (cap). Dedicated workers are drawn from the skilled
+  band BEFORE general allocation (catalogue order, each unit filled to its cap
+  first), so staffing the CNC deliberately thins the labour available to the
+  island's other lines — that tradeoff is the point of the item. Other
+  equipment keeps the flat-capacity + linear-workforce model, and the tier
+  numbers sit outside `effects["capacity"]` so the board-scale multiplier
+  leaves them at player-facing per-season values. The What-If panel payload
+  gains a `tier` block (`capacity`, `dedicated`, `next_tier_gain`) so the UI
+  can hint "add 1 tradesman → +4 Spares/season". Sim gate: 3 same-seed sims
+  (42/7/100, 40 games each), Manufacturer mean net worth within 1% of the
+  pre-change baseline (gate was ±10%), no crashes. New tests:
+  `tests/test_models/test_capacity_tiered.py` (9); catalogue-size invariant
+  widened to 3–7 role items for the Manufacturer's 7th item.
 
 - **Rent storage from the Transporter (Wave 7.2b)** — the second route to
   spoilage protection, completing the storage rework. An island can either

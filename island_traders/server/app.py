@@ -2213,6 +2213,15 @@ class GameManager:
                     "workforce_short": workforce_short,
                     "equipment_short": equipment_short,
                     "per_unit":       per_unit,
+                    # Wave 7.3: stepped-staffing tier (CNC Workshop). Present
+                    # only when a tiered item contributes to this output;
+                    # next_tier_gain powers the What-If hint
+                    # "add 1 tradesman → +N Spares/season" (0 = fully staffed).
+                    "tier": ({
+                        "capacity":       round(cap.tier_capacity, 2),
+                        "dedicated":      cap.tier_dedicated,
+                        "next_tier_gain": round(cap.next_tier_gain, 2),
+                    } if cap.tier_capacity > 0 else None),
                     "patents_active": p.active_patent_count(recipe.output),
                     "patent_input_mult": round(mult, 3),
                     # Graceful-degradation floor (2026-05-27 brief, GitHub
