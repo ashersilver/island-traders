@@ -5,7 +5,49 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-12.1`.
+`APP_VERSION`: `0.1.6-dev.2026-08-18.3`.
+
+- **Back-merged `master` into `pre-release`, reconciling a two-way divergence.**
+  `master` held 15 commits `pre-release` had never seen — the MCP game server,
+  the qwen agent driver, two auction fixes and an early-game balance pass —
+  while `pre-release` was 91 commits ahead. Promoting straight to `master`
+  would have shipped an economy nobody had measured; this merge does the risky
+  part on `pre-release`, where it belongs.
+  - **Two textual conflicts, both kept-both-sides.** `STARTING_INVENTORY`'s
+    Doctor row (master's `Spares` buffer + pre-release's opening
+    `LaboratoryTests`), and `ws_adapter.py` where each branch had added a
+    different `TurnAction` case (`BUY_FLOAT` and `PAY_REBUILD_LEVY`).
+  - **The auction test now covers both behaviours.** master's fix stops an
+    unsatisfiable `require_all_human` lobby re-auctioning forever;
+    `pre-release`'s test asserted the old bounce-back. Rather than pick a
+    side, the re-auction case now uses a lobby with enough humans to actually
+    succeed, and two new tests cover the unsatisfiable case and the retry cap.
+  - **A capital-order test was asserting a stale premise.** It added 3
+    TransportEquipment and assumed the shop then held exactly 3 — but master's
+    balance pass gives the Manufacturer opening equipment stock. It now sets
+    stock absolutely instead of adding to it.
+  - **Re-tuned the combined economy (three passes).** Two independently
+    calibrated balance passes collided: master's larger opening buffers plus
+    `pre-release`'s re-priced goods and new storage-rental income sent the
+    Transporter to a **20.2% wealth share on a 45.8% win rate** while the Miner
+    fell to 10.5%. Spread was **9.8 points**.
+
+    | Role | share before | share after |
+    |---|---|---|
+    | Farmer | 15.0 | 15.1 |
+    | Miner | **10.5** | 12.7 |
+    | Transporter | **20.2** | 15.1 |
+    | Educator | 12.3 | 13.2 |
+    | Banker | 12.6 | 14.3 |
+    | Manufacturer | 12.5 | 14.8 |
+    | Doctor | 17.0 | 14.9 |
+
+    Spread closes to **2.4 points**, and the held-out seeds (123/2024/555,
+    never tuned against) give **2.4** as well — so the tune isn't overfitted.
+    Levers: Freight 21.0→13.5, PassengerSeats 23.0→19.0, Metal 9.0→11.5,
+    Ore 4.5→5.5, MedicalSupplies 23.0→18.0, Vaccine 32.0→26.0, Goods 9.5→12.5,
+    Expertise 18.0→20.5, Courses 25.0→27.0, Banker Finance 0.58→0.70.
+  - Full suite green at **1136**, including the #213 balance gate.
 
 - **CNC Workshop — stepped-staffing Spares capacity (Wave 7.3, completes Wave
   7)** — new Manufacturer capital item `manufacturer.cnc_workshop` (150 Dp,

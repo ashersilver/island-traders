@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from island_traders.server.app import (
-    AuctionState, GameManager, LobbyPlayer, RoleBid,
+    ALL_ROLES, AuctionState, GameManager, LobbyPlayer, RoleBid,
 )
 from island_traders.models.player import Player
 from island_traders.models.profession import Profession
@@ -222,9 +222,9 @@ def test_idle_human_absorbs_unclaimed_role_before_ai():
     assert ai.role_names == ["Miner"]
 
 
-def test_require_all_human_rejects_ai_won_role():
-    mgr = GameManager()
-    room_id = _make_room(mgr, num_humans=1)
+def _ai_won_banker_room(mgr: GameManager, num_humans: int) -> "tuple[str, object]":
+    """A require_all_human room where an AI has outbid the humans for Banker."""
+    room_id = _make_room(mgr, num_humans=num_humans)
     room = mgr.rooms[room_id]
     room.require_all_human = True
     room.players.append(LobbyPlayer(
@@ -235,13 +235,47 @@ def test_require_all_human_rejects_ai_won_role():
                          for role in ["Farmer","Miner","Transporter","Educator",
                                       "Manufacturer","Doctor"]}
     room.auction.bids["Banker"] = [RoleBid("ai1", "Ada Bot", 100.0, now)]
-
     mgr._loop = None
+    return room_id, room
+
+
+def test_require_all_human_rejects_ai_won_role():
+    """With enough humans to fill every role, an AI win re-runs the auction."""
+    mgr = GameManager()
+    room_id, room = _ai_won_banker_room(mgr, num_humans=len(ALL_ROLES))
+
     mgr._resolve_auction(room_id)
 
     assert room.status == "auction"
     assert room.auction.phase == "bidding"
     assert not any("Banker" in p.role_names for p in room.players)
+
+
+def test_require_all_human_resolves_when_it_cannot_be_satisfied():
+    """A lobby with fewer humans than roles can never satisfy
+    require_all_human.  Re-auctioning it forever left the game wedged at the
+    auction screen, so the auction now resolves and lets AI fill the gap."""
+    mgr = GameManager()
+    room_id, room = _ai_won_banker_room(mgr, num_humans=1)
+
+    mgr._resolve_auction(room_id)
+
+    assert room.auction.phase == "complete"
+
+
+def test_require_all_human_reauction_is_capped():
+    """Even a full human lobby stops retrying, rather than looping forever."""
+    mgr = GameManager()
+    room_id, room = _ai_won_banker_room(mgr, num_humans=len(ALL_ROLES))
+
+    for _ in range(5):
+        if room.auction.phase == "complete":
+            break
+        room.auction.phase = "bidding"
+        mgr._resolve_auction(room_id)
+
+    assert room.auction.phase == "complete", "re-auction must not loop forever"
+    assert room.auction.reauction_count <= 3
 
 
 def test_join_room_rejects_after_auction_starts():

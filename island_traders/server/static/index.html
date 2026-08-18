@@ -5566,9 +5566,14 @@ function handleMessage(msg) {
         mandatory: msg.mandatory || [],
       };
       investSelected = new Set(msg.selections || msg.mandatory || []);
-      // If user is still on the auction-result overlay, leave them there;
-      // they'll click "Continue →" to enter investing.  Otherwise switch now.
-      if (document.getElementById('screen-auction').classList.contains('hidden')) {
+      // Advance to Investing unless the auction-result overlay is showing
+      // (then wait for the user's "Continue →" click). If we're stranded on
+      // the auction screen with NO result overlay — e.g. a reconnect that
+      // missed the live auction_result, or the overlay never rendered — switch
+      // anyway so the game can never dead-end at the auction with timer 0.
+      const _leftAuction = document.getElementById('screen-auction').classList.contains('hidden');
+      const _resultShown = !document.getElementById('auction-result-overlay').classList.contains('hidden');
+      if (_leftAuction || !_resultShown) {
         showScreen('investing');
         renderInvesting();
       }

@@ -77,7 +77,9 @@ def test_repair_blocked_by_missing_spares_names_spares_not_dollops_freight():
     banker.capital_units[item.item_id][0].status = "failed"
     # Plenty of cash and Freight (matches the reported repro: 270 Dp, 4 Freight
     # both comfortably clear the repair fee/freight quote) but zero Spares —
-    # the actual, sole blocker.
+    # the actual, sole blocker.  Clear the bootstrap-seeded Spares so the
+    # missing-Spares path is the one under test.
+    banker.inventory.amounts[ResourceType.SPARES] = 0
     assert banker.inventory.get(ResourceType.SPARES) == 0
 
     ack = _repair(mgr, room, "p0", item.item_id)

@@ -301,6 +301,9 @@ def test_capital_order_backorders_when_manufacturer_capacity_units_short():
     item = find_item(CAPITAL_CATALOGUE, "transporter.cargo_plane")
     assert item.capacity_units == 4
     buyer.dollops = item.cost * 5
+    # Clear the bootstrap-seeded equipment so this test controls the exact
+    # on-hand count (needs 4, has 3 → short).
+    manufacturer.inventory.amounts[ResourceType.TRANSPORT_EQUIPMENT] = 0
     manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
     ws = _WS()
 
@@ -346,7 +349,9 @@ def test_capital_backorder_drain_stops_at_first_unfillable_and_settles_in_order(
         manufacturer.player_id
     )] == [first_id, second_id]
 
-    manufacturer.receive_resources(ResourceType.TRANSPORT_EQUIPMENT, 3)
+    # Set stock absolutely: islands now open with equipment in hand, so
+    # *adding* 3 no longer means the shop holds exactly 3.
+    manufacturer.inventory.amounts[ResourceType.TRANSPORT_EQUIPMENT] = 3
     assert mgr._drain_capital_order_books(room, 0, 0) == []
     assert room.game.capital_negotiations.get(second_id).status.value == "queued"
     assert manufacturer.inventory.get(ResourceType.TRANSPORT_EQUIPMENT) == 3
