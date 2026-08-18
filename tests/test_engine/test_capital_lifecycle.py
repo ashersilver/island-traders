@@ -583,6 +583,7 @@ def test_manufacture_spares_clamps_to_warehouse_capacity_and_carries_price():
 def test_manufacture_spares_without_warehouse_produces_none():
     game = _service_game()
     owner = game.players[0]
+    owner.inventory.amounts[ResourceType.SPARES] = 0  # clear the seeded Spares; this test controls the count
 
     assert owner.spares_capacity() == 0
     assert owner.manufacture_spares(2) == 0
@@ -630,6 +631,7 @@ def test_repair_with_generic_spare_halves_fee_and_consumes_it():
     item = find_item(CAPITAL_CATALOGUE, "common.laboratory_equipment")
     owner.add_capital(item.item_id, 1, acquired_tick=-8)   # no attached spare
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.inventory.amounts[ResourceType.SPARES] = 0        # clear seeded Spares
     owner.receive_resources(ResourceType.SPARES, 1)        # generic spare on hand
     manufacturer_start = manufacturer.dollops
 
@@ -651,6 +653,7 @@ def test_two_unit_repair_with_one_spare_pends_until_stocked():
     unit = owner.capital_units[item.item_id][0]
     unit.status = "failed"
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.inventory.amounts[ResourceType.SPARES] = 0        # clear seeded Spares
     owner.receive_resources(ResourceType.SPARES, 1)
     manufacturer_start = manufacturer.dollops
 
@@ -697,6 +700,7 @@ def test_repair_preview_matches_actual_repair_charge_and_freight():
     unit = owner.capital_units[item.item_id][0]
     unit.status = "failed"
     owner.receive_resources(ResourceType.FREIGHT, EQUIPMENT_REPAIR_SHIP_FREIGHT)
+    owner.inventory.amounts[ResourceType.SPARES] = 0        # clear seeded Spares
     owner.receive_resources(ResourceType.SPARES, item.capacity_units)
     owner_start = owner.dollops
     freight_start = owner.inventory.get(ResourceType.FREIGHT)

@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-07.14"
+APP_VERSION: str = "0.1.6-dev.2026-08-18.1"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
@@ -81,38 +81,43 @@ PRODUCER_PRODUCTIVITY_MULTIPLIER: int = 10
 #   (b) TWO seasons' worth of its production inputs, enough to produce through
 #       Spring and Summer of Year 1 before needing to buy from other islands
 # This gives every player breathing room to establish trade relationships.
+# Bootstrap seeding (2026-07 balance pass): every island starts with 4 Spares
+# so capital failures are always repairable from turn 1; the Manufacturer opens
+# with one unit of every equipment line (Farm/Mining/Transport/Medical) so
+# producer islands can actually BUY the durable capital they need instead of
+# being walled by an unstaffed/idle Manufacturer; and the producer buffers
+# (Miner Oil, Farmer Food, Educator Expertise) are large enough to survive the
+# early game without immediately starving their own building power / services.
 STARTING_INVENTORY: dict[str, dict[str, int]] = {
-    # Farmer: Spring outputs to sell + 2 seasons of fuel. FarmMachinery is
-    # durable capital now, not a consumable inventory buffer.
-    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 15,  # to sell (Spring outputs) + Food buffer
-                      "Oil": 2},
-    # Miner: partial output to sell + 2 seasons of consumable inputs.
-    # MiningEquipment is durable capital now, not a consumable inventory buffer.
-    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 8,                # to sell + larger Oil buffer (self-consumed)
-                      "Freight": 2},
-    # Transporter: cargo + seats to sell + 2 seasons of Oil & Food
+    # Farmer: Spring outputs to sell + Food buffer + fuel + repair Spares.
+    "Farmer":        {"Grain": 2, "Produce": 2, "Fish": 3, "Food": 30,  # larger Food buffer
+                      "Oil": 2, "Spares": 4},
+    # Miner: partial output to sell + Oil buffer (self-consumed for power) + Spares.
+    "Miner":         {"Ore": 3, "Metal": 2, "Oil": 20,                # larger Oil buffer avoids brownouts
+                      "Freight": 2, "Spares": 4},
+    # Transporter: cargo + seats to sell + 2 seasons of Oil & Food + Spares
     "Transporter":   {"Freight": 4, "PassengerSeats": 4,             # to sell
-                      "Oil": 4, "Food": 2},                           # 2 seasons: Oil 2/s, Food 1/s
+                      "Oil": 4, "Food": 2, "Spares": 4},              # 2 seasons: Oil 2/s, Food 1/s
     # Educator: Expertise + Courses on hand so other islands can train in
     # Spring Y1 while the Expertise→Courses pipeline ramps (Phase 2).
-    "Educator":      {"Expertise": 7,                                 # feeds Course production and opening CE demand
+    "Educator":      {"Expertise": 20,                                # larger buffer: services + faculty training both consume it
                       "Courses": 5,                                    # classroom slots ready Y1
                       "Reagents": 2,                                   # 2 seasons of Reagents
                       "Oil": 2,                                        # building power + lab step buffer
-                      "PassengerSeats": 10},                            # bootstraps cross-island training
-    # Banker: no production output to stock; just the working knowledge they
-    # need to write loans / underwrite insurance.  Banker income comes from
-    # loan interest spread and insurance premiums — see island-ledger.md §3
-    # for the full institutional-cash-pool model (future implementation).
-    "Banker":        {"Expertise": 2, "Oil": 2},                      # knowledge + building power buffer
-    # Manufacturer: FarmMachinery (default opening line) + Spares to sell,
-    # plus 2 seasons of inputs.
-    "Manufacturer":  {"FarmMachinery": 2, "Goods": 4, "Spares": 4,   # to sell
+                      "PassengerSeats": 10,                            # bootstraps cross-island training
+                      "Spares": 4},
+    # Banker: working knowledge to write loans / underwrite insurance + Spares.
+    "Banker":        {"Expertise": 2, "Oil": 2, "Spares": 4},         # knowledge + building power buffer
+    # Manufacturer: one unit of every equipment line so producers can buy the
+    # durable capital they need + Goods/Spares to sell + 2 seasons of inputs.
+    "Manufacturer":  {"FarmMachinery": 2, "MiningEquipment": 2,      # opening equipment stock for all producers
+                      "TransportEquipment": 2, "MedicalDevices": 2,
+                      "Goods": 4, "Spares": 4,                        # to sell
                       "Metal": 4, "Oil": 2},                          # 2 seasons: Metal 2/s, Oil 1/s
-    # Doctor: services to sell + 2 seasons of inputs
+    # Doctor: services to sell + 2 seasons of inputs + Spares
     "Doctor":        {"MedicalSupplies": 2, "Vaccine": 1,             # to sell
                       "LaboratoryTests": 4,                           # opening assay stock (#26)
-                      "Expertise": 3, "Oil": 2, "Ore": 2},  # 2 seasons of inputs plus CE buffer (makes own Reagents)
+                      "Expertise": 3, "Oil": 2, "Ore": 2, "Spares": 4},  # inputs + CE buffer
 }
 
 # Dollops per unit at balanced supply/demand.
@@ -128,20 +133,20 @@ BASE_PRICES: dict[str, float] = {
     "Grain":               13.0,
     "Produce":             14.4,
     "Meat":                16.2,
-    "Ore":                  4.5,
-    "Metal":                9.0,
+    "Ore":                  5.5,
+    "Metal":               11.5,
     "Oil":                  5.4,
     # Rebalance 2026-06-02: Freight/Seats up (Transporter was 553 Dp/s vs ~1300 avg);
     # MedicalSupplies/Vaccine down (Doctor was printing 31.5/36.75 vs Farmer 13.5/10.8);
     # Patents down (Educator Patent compounding at 47.5 Dp each dominated the sim).
-    "Freight":             21.0,   # P3/#112 trims prior Transporter uplift
-    "Expertise":           18.0,
-    "Courses":             25.0,  # classroom slots; gated by Expertise consumption
+    "Freight":             13.5,   # P3/#112 trims prior Transporter uplift
+    "Expertise":           20.5,
+    "Courses":             27.0,  # classroom slots; gated by Expertise consumption
     "Reagents":            28.0,
-    "Goods":                9.5,
+    "Goods":               12.5,
     "Spares":              12.0,   # repair kits; 2 Metal + 1 Oil input basis + margin
-    "MedicalSupplies":      23.0,
-    "Vaccine":             32.0,
+    "MedicalSupplies":      18.0,
+    "Vaccine":             26.0,
     "LaboratoryTests":     10.0,   # routine assay: cheap and repeat-purchased, not a premium product
     "Finance":             22.0,
     # ForgeHaven product lines
@@ -150,7 +155,7 @@ BASE_PRICES: dict[str, float] = {
     "MedicalDevices":      50.0,   # surgical tools, dental equipment, scanners
     "TransportEquipment":  75.0,   # vehicles, ships, cranes (no freight surcharge)
     # Transporter services
-    "PassengerSeats":      23.0,   # #112 trims prior Transporter uplift
+    "PassengerSeats":      19.0,   # #112 trims prior Transporter uplift
     # Educator IP
     "Patents":             32.0,   # was 47.5; curtail Patent compounding
 }
@@ -183,7 +188,7 @@ BASE_PRODUCTION: dict[str, dict[str, int]] = {
     # some base value in the sim while the AI lending model is improved.
     # 0.5 × M = 5 units/season × 20 Dp = 100 Dp/s — just enough to be viable,
     # not enough to dominate.  (2 × M was too strong: Banker won 55% of sims.)
-    "Banker":        {"Finance": 0.58 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
+    "Banker":        {"Finance": 0.70 * PRODUCER_PRODUCTIVITY_MULTIPLIER},
     # Medical Sciences also produces Reagents (formerly the Manufacturer's
     # "LaboratoryEquipment") from Oil + Ore for sale to the Educator and its
     # own clinical use — 2026-06-02.  Modest, not the bulk x10 line.
@@ -1032,6 +1037,11 @@ CARGO_TRANSIT_SEASONS: int = 1   # extra seasons of absence when travelling by c
 # re-rolls avoiding halts.  Addresses the "5 production-halting events in
 # 5 consecutive seasons" reports (Comet 1 #9, AyaySir BUG-08).
 HALT_EVENTS_PER_PLAYER_PER_YEAR: int = 1
+
+# Early-game grace: natural disasters are suppressed (re-rolled to a
+# non-disaster) for this many opening seasons of Year 1, so every island can
+# establish production and trade before the weather can wipe it out.
+DISASTER_GRACE_SEASONS: int = 2
 
 # ---------------------------------------------------------------------------
 # Worker repurposing (2026-05-28)
