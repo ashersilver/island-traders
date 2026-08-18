@@ -60,6 +60,7 @@ ACTION_GROUPS: dict[TurnAction, str] = {
     TurnAction.SELL_INSURANCE: "Finance",
     TurnAction.MANAGE_INSURANCE: "Finance",
     TurnAction.LEND_TO_ISLAND: "Finance",
+    TurnAction.BUY_FLOAT: "Finance",
     TurnAction.REPAY_SHAREHOLDER_LOAN: "Finance",
     TurnAction.VIEW_MARKET: "Info",
     TurnAction.VIEW_PLAYERS: "Info",
@@ -109,6 +110,15 @@ def action_option_payload(action: TurnAction, player) -> dict:
         elif getattr(player, "dollops", 0.0) <= 0:
             enabled = False
             disabled_reason = "Island treasury is empty — cannot pay the levy now."
+    elif action == TurnAction.BUY_FLOAT:
+        cap = getattr(player, "cap_table", None)
+        cash = getattr(player, "personal_cash", 0.0)
+        if cap is None or cap.unissued() <= 0:
+            enabled = False
+            disabled_reason = "No unissued float to buy."
+        elif cash <= 0:
+            enabled = False
+            disabled_reason = "No personal cash to invest."
     elif action == TurnAction.REPAY_SHAREHOLDER_LOAN:
         from ..models import shareholder_loans as sh_loans
         owed = sh_loans.total_owed(getattr(player, "shareholder_loans", {}))

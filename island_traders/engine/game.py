@@ -718,6 +718,7 @@ class Game:
                 self._process_household_activity_stimulus(year, season_index)
                 event_results = self.event_resolver.resolve_all(
                     self.players, self.turn_manager._damage_counters, year=year,
+                    season_index=season_index,
                 )
                 self._apply_business_cycle_event_effects(event_results)
                 self._process_disaster_capital_impacts(year, season_index, event_results)
