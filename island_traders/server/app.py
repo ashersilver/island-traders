@@ -29,7 +29,7 @@ from typing import Any
 from ..engine.game import Game, GameConfig, PlayerSpec, GameSummary
 from ..engine.revenue import revenue_opportunities
 from ..engine.trading import InvalidDealError, StaleResourceError
-from ..models.profession import Profession, PROFESSION_LABEL
+from ..models.profession import EngineerSpecialty, Profession, PROFESSION_LABEL
 from ..models.resource import ResourceType, NON_TRADABLE_RESOURCES
 from ..models.role import ROLES
 from ..models.training import (
@@ -152,6 +152,19 @@ if BaseModel is not None:
                 "{'Farmer': {'Food': 200}} so food production doesn't cloud a "
                 "test). Resource names are matched case-insensitively. Presence "
                 "marks the room as a debug room; omit in real games."
+            ),
+        )
+        debug_starting_workforce: dict[str, list[dict]] | None = Field(
+            None,
+            description=(
+                "TEST/DEBUG ONLY (scenario seeding). Role name -> list of "
+                "{profession, count, specialty?} entries REPLACING that role's "
+                "default starting-workforce breakdown with exact unscaled "
+                "counts (e.g. {'Miner': [{'profession': 'MiningTechnician', "
+                "'count': 4}, {'profession': 'Unskilled', 'count': 8}]}). "
+                "Profession/specialty names are matched case-insensitively "
+                "(spaces and underscores ignored). Roles not listed keep the "
+                "normal default. Omit in real games."
             ),
         )
 
@@ -423,6 +436,9 @@ class GameRoom:
     # TEST/DEBUG ONLY: role -> {resource: qty} opening-inventory overrides,
     # applied at game launch. Non-empty marks this as a debug room.
     debug_starting_inventory: dict[str, dict[str, int]] = field(default_factory=dict)
+    # TEST/DEBUG ONLY (scenario seeding): role -> [{profession, count,
+    # specialty?}] starting-workforce overrides, applied at game launch.
+    debug_starting_workforce: dict[str, list[dict]] = field(default_factory=dict)
     status: str = "waiting"  # waiting | auction | guarantee | investing | running | finished
     players: list[LobbyPlayer] = field(default_factory=list)
     creator_id: str = ""
@@ -509,6 +525,7 @@ class GameRoom:
             # TEST/DEBUG override (empty in normal games); surfaced so a
             # playtester can confirm a debug room seeded the right inventory.
             "debug_starting_inventory": self.debug_starting_inventory,
+            "debug_starting_workforce": self.debug_starting_workforce,
             "status": self.status,
             "paused": self.paused,
             "player_count": len([p for p in self.players if p.is_human]),
@@ -559,6 +576,7 @@ class GameManager:
                     season_timer_seconds: int = DEFAULT_SEASON_TIMER,
                     pre_season_timer_seconds: int = DEFAULT_PRE_SEASON_TIMER,
                     debug_starting_inventory: dict[str, dict[str, int]] | None = None,
+                    debug_starting_workforce: dict[str, list[dict]] | None = None,
                     room_id: str | None = None) -> GameRoom:
         # Playtest quick-seat: a caller may pin a deterministic room ID so all
         # seven tabs can be pre-composed before the room exists.  Only honoured
@@ -582,6 +600,7 @@ class GameManager:
             season_timer_seconds=int(season_timer_seconds),
             pre_season_timer_seconds=int(pre_season_timer_seconds),
             debug_starting_inventory=dict(debug_starting_inventory or {}),
+            debug_starting_workforce=dict(debug_starting_workforce or {}),
             creator_id=creator_id,
         )
         room.players.append(LobbyPlayer(player_id=creator_id, name=creator_name))
@@ -1504,6 +1523,69 @@ class GameManager:
 
     # ---- Game launch ----
 
+    @staticmethod
+    def _validated_workforce_overrides(
+        room: "GameRoom",
+    ) -> dict[str, list[tuple[str, int, str]]] | None:
+        """Normalise room.debug_starting_workforce into the pre-validated
+        (profession, count, specialty) tuples GameConfig expects.
+
+        Profession and specialty names are matched case-insensitively with
+        spaces/underscores ignored, so scenario YAML can say "Mining
+        Technician" for Profession "MiningTechnician". Unknown names are
+        skipped with a loud warning (same policy as debug_starting_inventory)
+        rather than failing the launch. Returns None for non-debug rooms.
+        """
+        if not room.debug_starting_workforce:
+            return None
+
+        def norm(text: object) -> str:
+            return re.sub(r"[\s_]+", "", str(text)).lower()
+
+        prof_by_norm = {norm(p.value): p.value for p in Profession}
+        spec_by_norm = {norm(s.value): s.value for s in EngineerSpecialty}
+        out: dict[str, list[tuple[str, int, str]]] = {}
+        for role_name, entries in room.debug_starting_workforce.items():
+            rows: list[tuple[str, int, str]] = []
+            for entry in entries or []:
+                if not isinstance(entry, dict):
+                    continue
+                profession = prof_by_norm.get(norm(entry.get("profession", "")))
+                if profession is None:
+                    logger.warning(
+                        "Room %s debug workforce: unknown profession %r for "
+                        "role %s — skipped.",
+                        room.room_id, entry.get("profession"), role_name,
+                    )
+                    continue
+                try:
+                    count = int(entry.get("count", 0))
+                except (TypeError, ValueError):
+                    count = 0
+                if count <= 0:
+                    continue
+                specialty = ""
+                if entry.get("specialty"):
+                    specialty = spec_by_norm.get(norm(entry["specialty"]), "")
+                    if not specialty:
+                        logger.warning(
+                            "Room %s debug workforce: unknown engineer "
+                            "specialty %r for role %s — worker(s) seeded "
+                            "without one.",
+                            room.room_id, entry["specialty"], role_name,
+                        )
+                rows.append((profession, count, specialty))
+                logger.warning(
+                    "[DEBUG SEED] Room %s: %s starts with %d x %s%s.",
+                    room.room_id, role_name, count, profession,
+                    f" ({specialty})" if specialty else "",
+                )
+            # An empty list is meaningful: it wipes the role's default
+            # breakdown (workers-free island). Only roles present in the
+            # mapping are overridden at all.
+            out[role_name] = rows
+        return out
+
     def _launch_game(self, room_id: str,
                      bids: dict[str, float] | None = None,
                      capital_purchases: dict[str, list[str]] | None = None,
@@ -1552,7 +1634,10 @@ class GameManager:
                 spec_to_role[spec_idx] = role
                 lobby_to_specs.setdefault(lp.player_id, []).append(spec_idx)
 
-        config = GameConfig(player_specs=specs, num_years=room.num_years)
+        config = GameConfig(
+            player_specs=specs, num_years=room.num_years,
+            workforce_overrides=self._validated_workforce_overrides(room),
+        )
 
         player_send_fns: dict[int, object] = {}
         for idx, lobby_pid in spec_to_lobby_pid.items():
@@ -7671,6 +7756,7 @@ def create_app() -> FastAPI:
             season_timer_seconds=body.season_timer_seconds,
             pre_season_timer_seconds=body.pre_season_timer_seconds,
             debug_starting_inventory=body.debug_starting_inventory,
+            debug_starting_workforce=body.debug_starting_workforce,
         )
         return JSONResponse(room.to_dict())
 

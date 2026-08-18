@@ -8,7 +8,7 @@
 # *tagged* package release (currently 0.1.4) and is only bumped when cutting a
 # release — dropping the `-dev.*` suffix as the dev series ships.  The two are
 # reconciled at release time, not on every merge.
-APP_VERSION: str = "0.1.6-dev.2026-08-18.1"
+APP_VERSION: str = "0.1.6-dev.2026-08-18.2"
 
 SEASONS = ["Spring", "Summer", "Autumn", "Winter"]
 
