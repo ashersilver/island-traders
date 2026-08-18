@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -130,8 +131,19 @@ def render_game_state(msg: dict[str, Any], player_id: str) -> str:
 
 def _option_value(options: list[dict[str, Any]], raw: str) -> Any:
     raw = raw.strip()
-    if raw.isdigit():
-        idx = int(raw) - 1
+    # An LLM often echoes a whole menu line like "3. Produce Food -> produce::..."
+    # instead of a bare "3". Recover the choice from, in order of trust:
+    #   1. an explicit "-> value" suffix, matched against option values,
+    #   2. a leading option number,
+    #   3. an exact value or label match.
+    if "->" in raw:
+        tail = raw.rsplit("->", 1)[1].strip()
+        for opt in options:
+            if tail == str(opt.get("value", opt.get("id"))):
+                return opt.get("value", opt.get("id"))
+    lead = re.match(r"\s*(\d+)", raw)
+    if lead:
+        idx = int(lead.group(1)) - 1
         if 0 <= idx < len(options):
             return options[idx].get("value", options[idx].get("id"))
     for opt in options:
@@ -281,7 +293,12 @@ async def run_client(server: str, code: str, name: str) -> None:
     ws_url = websocket_url(http_base, joined.room_id, joined.player_id)
     print(f"Connecting {ws_url}")
 
-    async with websockets.connect(ws_url) as ws:
+    # The library default ping_timeout (20s) is too tight for a slow local-LLM
+    # driver -- a single Ollama call occasionally spikes well past that (e.g.
+    # two agents alternating against the same GPU can force a model reload),
+    # which closes the connection mid-game with "keepalive ping timeout" even
+    # though the client is still making progress.
+    async with websockets.connect(ws_url, ping_interval=20, ping_timeout=90) as ws:
         await _send(ws, {"type": "get_state"})
         async for raw in ws:
             msg = json.loads(raw)
@@ -314,8 +331,13 @@ async def run_client(server: str, code: str, name: str) -> None:
                 raw = await _ainput("Type 'undo' to resume, blank to stay done > ")
                 if raw.strip().lower() == "undo":
                     await _send(ws, {"type": "ready", "ready": False})
-            elif msg_type in {"pre_season_start", "ready_update"}:
+            elif msg_type == "pre_season_start":
                 await _handle_ready_prompt(ws, msg)
+            elif msg_type == "ready_update":
+                # Status broadcast (who is ready + countdown ticks), not a
+                # decision point. Print it, but never re-prompt — otherwise an
+                # automated player is asked to "ready" on every tick.
+                print(f"ready_update: {json.dumps(msg, sort_keys=True)[:400]}")
             elif msg_type == "game_over":
                 print("\n=== GAME OVER ===")
                 print(json.dumps(msg, indent=2, sort_keys=True))
