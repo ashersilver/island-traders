@@ -1071,11 +1071,20 @@ class Player:
             prices, loan_ledger, capital_catalogue, current_tick
         )["total"]
 
-    def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:
+    def capital_book_value_by_item(
+        self, capital_catalogue=None, current_tick: int = 0
+    ) -> dict[str, float]:
+        """Depreciated book value per owned capital ``item_id``.
+
+        Split out of :meth:`capital_book_value` so callers that need the value
+        attributed to a particular island (see
+        ``island_traders.models.island_view``) can group by the catalogue
+        item's ``role`` without re-deriving the depreciation maths.
+        """
         if not capital_catalogue:
-            return 0.0
+            return {}
         items = {item.item_id: item for item in capital_catalogue}
-        total = 0.0
+        by_item: dict[str, float] = {}
         from ..engine.engineering import effective_capital_service_life
         for item_id, count in self.capital_inventory.items():
             item = items.get(item_id)
@@ -1089,11 +1098,24 @@ class Player:
             ticks = list(self.capital_acquired_ticks.get(item_id, []))
             if len(ticks) < count:
                 ticks.extend([0] * (count - len(ticks)))
+            subtotal = 0.0
             for acquired_tick in ticks[:count]:
                 age = max(0, current_tick - acquired_tick)
                 remaining = max(0.0, (depreciation_ticks - age) / depreciation_ticks)
-                total += item.cost * remaining
-        return round(total, 2)
+                subtotal += item.cost * remaining
+            if subtotal:
+                by_item[item_id] = subtotal
+        return by_item
+
+    def capital_book_value(self, capital_catalogue=None, current_tick: int = 0) -> float:
+        return round(
+            sum(
+                self.capital_book_value_by_item(
+                    capital_catalogue, current_tick
+                ).values()
+            ),
+            2,
+        )
 
     def record_year_wealth(self, prices: dict[ResourceType, float],
                            loan_ledger=None, capital_catalogue=None,

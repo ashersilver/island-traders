@@ -65,6 +65,22 @@ ACTION_GROUPS: dict[TurnAction, str] = {
 }
 
 
+# Actions that belong to one specific island rather than to every island a
+# player holds (#252).  The dashboard's island tabs use this to show only the
+# actions that island can take; an action absent from this map is generic —
+# every island can do it, so it appears on every tab.
+ACTION_ROLES: dict[TurnAction, tuple[str, ...]] = {
+    TurnAction.OFFER_LOAN:               ("Banker",),
+    TurnAction.SELL_INSURANCE:           ("Banker",),
+    TurnAction.ARRANGE_TRANSPORT:        ("Transporter",),
+    TurnAction.REVIEW_TRAINING:          ("Educator",),
+    TurnAction.REORDER_TRAINING_QUEUE:   ("Educator",),
+    TurnAction.REJECT_TRAINING_REQUEST:  ("Educator",),
+    TurnAction.COUNTER_TRAINING_REQUEST: ("Educator",),
+    TurnAction.REVIEW_STAFFING_REQUESTS: ("Doctor",),
+}
+
+
 def _player_has_role(player, role_name: str) -> bool:
     return any(getattr(role, "name", None) == role_name for role in getattr(player, "roles", []))
 
@@ -122,6 +138,8 @@ def action_option_payload(action: TurnAction, player) -> dict:
         "value": action.value,
         "label": action_label(action),
         "group": ACTION_GROUPS.get(action, "Info"),
+        # Island(s) this action belongs to; empty = every island can take it.
+        "roles": list(ACTION_ROLES.get(action, ())),
         "enabled": enabled,
         "disabled_reason": disabled_reason,
         "recommended": False,
@@ -419,6 +437,10 @@ class WebSocketIOAdapter(IOAdapter):
                         opt = dict(base)
                         opt["value"] = f"produce::{po['key']}"
                         opt["label"] = po["label"]
+                        # Each Produce button makes one island's product, so
+                        # tag it with that island for per-tab filtering (#252).
+                        if po.get("role"):
+                            opt["roles"] = [po["role"]]
                         opt["context"] = po.get("context") or f"up to {po['max_qty']} now"
                         options.append(opt)
                 else:

@@ -2978,17 +2978,52 @@ function openBuyFloat() {
   ws.send(JSON.stringify({ type: 'buy_out_float', shares: n }));
 }
 
-// ==================== PRODUCTION CAPACITY PANEL ====================
-// Return a capacity object filtered to a single role's outputs + capital.
-// When role is null / 'ALL', returns the original unfiltered object.
-function filteredCapacity(capacity, role) {
+// ==================== PER-ISLAND VIEW (#252) ====================
+// Capital with role "Any" (kitchens, housing, workshops) serves whichever
+// island needs it, so it belongs on every island tab — not only Consolidated.
+const SHARED_CAPITAL_ROLE = 'Any';
+
+function capitalOnIsland(entry, role) {
+  return entry.role === role || entry.role === SHARED_CAPITAL_ROLE;
+}
+
+// Return a capacity object filtered to a single island's outputs + capital,
+// with that island's worker bands substituted in.  When role is null / 'ALL',
+// returns the original unfiltered object.
+function filteredCapacity(capacity, role, bandCounts) {
   if (!capacity || !role || role === 'ALL') return capacity;
   return {
     outputs:            (capacity.outputs || []).filter(o => o.role === role),
-    capital_owned:      (capacity.capital_owned || []).filter(o => o.role === role),
-    capital_in_transit: (capacity.capital_in_transit || []).filter(o => o.role === role),
-    band_counts:        capacity.band_counts,   // workforce is shared
+    capital_owned:      (capacity.capital_owned || []).filter(o => capitalOnIsland(o, role)),
+    capital_in_transit: (capacity.capital_in_transit || []).filter(o => capitalOnIsland(o, role)),
+    band_counts:        bandCounts || capacity.band_counts,
   };
+}
+
+// A player holding several roles is a single island to the engine — one
+// treasury, one inventory, one roster.  The server attributes those pooled
+// figures per island (`me.islands`, see models/island_view.py) so an island
+// tab can render as if that island were the only one the player held.
+// Consolidated — and any single-role player — keeps the raw player payload.
+function islandEntry(player, role) {
+  if (!player || !role || role === 'ALL') return null;
+  return (player.islands || []).find(i => i.role === role) || null;
+}
+
+// The player payload with the selected island's figures substituted in.
+// Fields the engine tracks at player level (net worth, personal cash, equity,
+// loans) stay consolidated — they belong to the owner, not to one island.
+function islandView(player, role) {
+  const entry = islandEntry(player, role);
+  return entry ? Object.assign({}, player, entry) : player;
+}
+
+// True when an action belongs on the selected island's tab: it either names
+// that island, or names none at all (every island can take it).
+function actionOnIsland(opt, role) {
+  if (!role || role === 'ALL') return true;
+  const roles = opt.roles || [];
+  return roles.length === 0 || roles.includes(role);
 }
 
 function playerRoles(player) {
@@ -3367,10 +3402,13 @@ function repairCapitalItem(itemId) {
 // the island can still build (from capacity.capital_catalogue). The header
 // "＋ Build…" button launches the existing Purchase Equipment action; an
 // "Available" row opens the richer Capital Equipment Order form (#185).
-function renderBuildDevelop(me) {
+function renderBuildDevelop(me, tabRole) {
   const el = document.getElementById('build-develop-list');
   if (!el) return;
-  const cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  let cat = (me && me.capacity && me.capacity.capital_catalogue) || [];
+  // On an island tab, show only that island's plant (plus the "Any" kit that
+  // serves every island); Consolidated keeps the full catalogue (#252).
+  if (tabRole && tabRole !== 'ALL') cat = cat.filter(c => capitalOnIsland(c, tabRole));
   if (!cat.length) {
     el.innerHTML = '<span style="color:var(--dim)">No buildable equipment for this island.</span>';
     return;
@@ -4480,7 +4518,9 @@ function showInventoryPopup() {
   if (!gameState || myPlayerIdx == null) return;
   const me = gameState.players[myPlayerIdx];
   if (!me) return;
-  const inv = me.inventory || {};
+  // Same isolation as the sidebar tile: one island's stock on an island tab,
+  // the pooled holding on Consolidated.
+  const inv = islandView(me, activeTabRole).inventory || {};
   const rows = Object.entries(inv).filter(([, q]) => q > 0);
   if (!rows.length) {
     showPopup(`Inventory — ${esc(me.name)}`,
@@ -5250,6 +5290,12 @@ function renderGameState() {
   applyRoleTileDefaults(roles);
   const tabRole = activeTabRole || roles[0] || null;
   const isConsolidated = tabRole === 'ALL';
+  // Everything below that describes *an island* (cash, stock, people, plant)
+  // reads from `island`; anything that describes *the owner* (net worth,
+  // personal cash, equity, loans) keeps reading from `me`.  For a single-role
+  // player, and on the Consolidated tab, `island` is `me`.
+  const island = islandView(me, tabRole);
+  const isolated = island !== me;
 
   // Determine which island name to show
   const islandLabel = isConsolidated
@@ -5260,11 +5306,17 @@ function renderGameState() {
   updateMainIslandArt(tabRole, roles, gameState.season);
   const heroRole = (tabRole === 'ALL') ? (roles[0] || null) : tabRole;
   const heroRoleLabel = isConsolidated ? displayRoles(roles) : heroRole;
-  updateIslandHero(islandLabel, heroRoleLabel, gameState.season, me, heroRole);
+  updateIslandHero(islandLabel, heroRoleLabel, gameState.season, island, heroRole);
   document.getElementById('s-role').textContent = isConsolidated
     ? displayRoles(roles)
     : (roleDisplayName(tabRole) || '—');
-  document.getElementById('s-dollops').textContent = (me.treasury ?? me.dollops) + ' Dp';
+  const dollopsEl = document.getElementById('s-dollops');
+  dollopsEl.textContent = (island.treasury ?? island.dollops) + ' Dp';
+  dollopsEl.title = isolated
+    ? `${roleDisplayName(tabRole)}'s share of your island treasury — the engine `
+      + 'pools operating cash across the islands you hold; this is the portion '
+      + 'attributed to this one.'
+    : "Your island's operating cash (buys inputs, pays wages & maintenance)";
   document.getElementById('s-loans').textContent = (me.loans_outstanding || 0) + ' Dp';
   document.getElementById('s-wealth').textContent = me.wealth + ' Dp';
   renderWealthBreakdown(me);
@@ -5302,8 +5354,8 @@ function renderGameState() {
       ? { shares: floatShares, price: me.share_price || 0, cash: me.personal_cash || 0 }
       : null;
   }
-  document.getElementById('s-equipment').textContent = (me.equipment_value || 0) + ' Dp';
-  document.getElementById('s-workers').textContent = `${me.workforce_active} / ${me.workforce_count}`;
+  document.getElementById('s-equipment').textContent = (island.equipment_value || 0) + ' Dp';
+  document.getElementById('s-workers').textContent = `${island.workforce_active} / ${island.workforce_count}`;
   // Sustenance warning icon next to worker count
   const susAlerts = (gameState.sustenance_alerts || {})[String(me.player_id)] || [];
   const susWarnEl = document.getElementById('s-sus-warn');
@@ -5326,9 +5378,9 @@ function renderGameState() {
       susWarnEl.textContent = '';
     }
   }
-  const wb = me.workforce_bands || {};
-  const tb = me.workforce_training_bands || {};
-  const profs = me.workforce_professions || {};
+  const wb = island.workforce_bands || {};
+  const tb = island.workforce_training_bands || {};
+  const profs = island.workforce_professions || {};
   let personnelHtml = '';
   if (Object.keys(profs).length > 0) {
     // Show per-profession counts in the sidebar (exact roles, not generic bands).
@@ -5385,7 +5437,7 @@ function renderGameState() {
   document.getElementById('hdr-wealth').textContent =
     'Net Worth ' + (me.net_worth ?? me.wealth) + ' Dp';
 
-  const inv = me.inventory || {};
+  const inv = island.inventory || {};
   document.getElementById('s-inventory').innerHTML = Object.entries(inv)
     .filter(([,q]) => q > 0)
     .map(([r,q]) => `<div class="mkt-row"><span class="res">${r}</span><span class="price">${q}</span></div>`)
@@ -5461,9 +5513,10 @@ function renderGameState() {
 
   _notifyTrainingPipelineChanges(me.training_pipeline || []);
 
-  // Production Capacity panel — filtered to active tab's role (or all if Consolidated)
-  renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole));
-  renderBuildDevelop(me);
+  // Production Capacity + Build & Develop — the machines on the active tab's
+  // island (everything, on Consolidated).
+  renderCapacityPanel(filteredCapacity(me.capacity || {}, tabRole, island.workforce_bands));
+  renderBuildDevelop(me, tabRole);
   renderDecisionHints(me, tabRole);
   renderFundingRates();
 
@@ -6914,7 +6967,14 @@ function switchTab(role) {
   document.querySelectorAll('.tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.role === role)
   );
-  renderGameState();
+  // The action menu is filtered per island, so re-render it from the cached
+  // prompt when one is live (#252).  showActionPrompt refreshes the sidebar
+  // itself, so only render directly when no action prompt is up.
+  if (_activePromptType === 'choose_action' && lastActionPromptMsg) {
+    showActionPrompt(lastActionPromptMsg);
+  } else {
+    renderGameState();
+  }
 }
 
 // ==================== SIMULTANEOUS PLAY ====================
@@ -7677,8 +7737,11 @@ function showActionPrompt(msg) {
 
   // Bucket options by their server-supplied group, defaulting to 'Info' for
   // any older payload that predates the Phase 1 server contract.
+  // Only the selected island's actions — an action naming no island (Trade,
+  // Recruit, Info…) belongs to every island, so it shows on every tab (#252).
   const buckets = {};
   for (const opt of msg.options) {
+    if (!actionOnIsland(opt, activeTabRole)) continue;
     const group = opt.group || 'Info';
     (buckets[group] = buckets[group] || []).push(opt);
   }

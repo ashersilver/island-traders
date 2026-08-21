@@ -898,6 +898,9 @@ class ProductionEngine:
             out.append({
                 "key": self.produce_option_key(option),
                 "label": f"Produce {name}",
+                # Which island makes this product — lets a dashboard show only
+                # the selected island's Produce buttons (#252).
+                "role": option["role"],
                 "max_qty": option["max_qty"],
                 "context": context,
             })

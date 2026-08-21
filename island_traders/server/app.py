@@ -57,6 +57,7 @@ from ..models.loan import (
     posted_funding_rates,
 )
 from ..models.capacity import find_item
+from ..models.island_view import island_breakdown
 from ..constants import (
     APP_VERSION,
     SEASONS, CURRENCY_SYMBOL, KITCHEN_SPECS,
@@ -4867,6 +4868,17 @@ class GameManager:
                 season_name=getattr(game, "season", SEASONS[current_season_idx]),
             )
             pd["decision_hints"] = self._decision_hints_for_player(pd)
+            # Per-island isolation (#252): a player holding several roles gets
+            # one entry per island so the dashboard's island tabs can render
+            # treasury / inventory / personnel / equipment as if that island
+            # were the only one they held.  Empty for single-role players —
+            # their island already *is* the consolidated view.
+            pd["islands"] = island_breakdown(
+                p,
+                capital_catalogue=CAPITAL_CATALOGUE,
+                current_tick=current_tick,
+                training_targets=training_targets,
+            )
             players_data.append(pd)
 
         mkt_summary = game.market.market_summary()

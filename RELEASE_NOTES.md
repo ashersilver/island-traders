@@ -3,6 +3,46 @@
 Release notes are required before merging a feature/fix branch into
 `pre-release`.
 
+## 0.1.6-dev.2026-08-21.1 — 2026-08-21
+
+- **Feature: island tabs show one island at a time (#252)** — a player holding
+  more than one role saw the *combined* cash, stock, people and plant on every
+  island tab, because the engine models a multi-role player as a single island
+  (one treasury, one inventory, one roster). Selecting an island tab now renders
+  the left-hand panel as if that island were the only one the player owned;
+  **Consolidated** is unchanged and still shows everything combined.
+  - **New attribution layer** — `island_traders/models/island_view.py` derives a
+    per-island view of a multi-role player without touching engine state. Capital
+    equipment is attributed exactly (every `CapitalItem` carries a `role`);
+    personnel by `ROLE_PROFESSIONS`; inventory by which island produces or
+    consumes the resource; pooled cash by island weight. Weights come from the
+    workers only one of the player's islands can claim, falling back to
+    `LABOUR_REQUIREMENTS` and then to an even split — so the attribution never
+    depends on the quantities it allocates. Whole units are split by largest
+    remainder, so the island tabs always sum back to Consolidated.
+  - **`game_state` gains `islands`** — one entry per island for a multi-role
+    player, carrying that island's treasury, inventory, professions, band
+    counts, headcount and equipment value. Empty for single-role players, whose
+    island already *is* the consolidated view, so nothing changes for them.
+  - **Actions are per-island too** — action options now declare the island(s)
+    they belong to (`roles`; empty = every island can take it), and each
+    per-product Produce button carries the island that makes it. The action menu
+    hides the other island's actions while an island tab is selected and
+    re-renders on tab switch.
+  - **Build & Develop / Production Capacity** now filter to the selected island,
+    and equipment with catalogue role `Any` (kitchens, housing, workshops) shows
+    on every island tab instead of only on Consolidated — it genuinely serves
+    them all.
+  - Owner-level figures — net worth, personal cash, ownership, shareholder
+    loans, borrowings — stay consolidated on every tab: they belong to the
+    player, not to one island. The Island Treasury tile explains the split in
+    its tooltip when a tab is isolated.
+  - `Player.capital_book_value` is now a sum over a new
+    `capital_book_value_by_item`, so book value can be grouped by island without
+    re-deriving the depreciation maths.
+  - New tests: `tests/test_models/test_island_view.py`,
+    `tests/test_server/test_island_isolation.py`.
+
 ## 0.1.5 — 2026-07-14
 
 Tag: `v0.1.5` · running `APP_VERSION`: `0.1.5` · package `version`: `0.1.5`.
