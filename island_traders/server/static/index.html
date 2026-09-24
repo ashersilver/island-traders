@@ -3162,12 +3162,23 @@ function counterEquitySale(sale_id, currentPrice) {
 // ==================== PRODUCTION CAPACITY PANEL ====================
 // Return a capacity object filtered to a single role's outputs + capital.
 // When role is null / 'ALL', returns the original unfiltered object.
+// Rows whose "role" is not one of the seven island roles: catalogue equipment
+// with role "Any" (Kitchen, Industrial Kitchen, Food Store, Laboratory
+// Equipment) and the synthesized "Kitchen" Food output line. They belong to
+// whichever island owns them, so an island tab must keep them rather than
+// filter them out along with another island's plant.
+const CROSS_ISLAND_ROLES = new Set(['Any', 'Kitchen']);
+
+function onThisIsland(entry, role) {
+  return entry.role === role || CROSS_ISLAND_ROLES.has(entry.role);
+}
+
 function filteredCapacity(capacity, role) {
   if (!capacity || !role || role === 'ALL') return capacity;
   return {
-    outputs:            (capacity.outputs || []).filter(o => o.role === role),
-    capital_owned:      (capacity.capital_owned || []).filter(o => o.role === role),
-    capital_in_transit: (capacity.capital_in_transit || []).filter(o => o.role === role),
+    outputs:            (capacity.outputs || []).filter(o => onThisIsland(o, role)),
+    capital_owned:      (capacity.capital_owned || []).filter(o => onThisIsland(o, role)),
+    capital_in_transit: (capacity.capital_in_transit || []).filter(o => onThisIsland(o, role)),
     band_counts:        capacity.band_counts,   // workforce is shared
   };
 }
