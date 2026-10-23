@@ -16,13 +16,14 @@ ROLES = ["Farmer", "Miner", "Transporter", "Educator",
          "Banker", "Manufacturer", "Doctor"]
 
 
-def test_every_role_has_3_to_6_role_capital_items_plus_universal_kitchens():
+def test_every_role_has_3_to_7_role_capital_items_plus_universal_kitchens():
     for role in ROLES:
         items = items_for_role(CAPITAL_CATALOGUE, role)
         role_items = [item for item in items if item.role == role]
         universal_items = [item for item in items if item.role == "Any"]
-        assert 3 <= len(role_items) <= 6, (
-            f"{role} has {len(role_items)} role items (expected 3–6)"
+        # Wave 7.3 added the Manufacturer's 7th item (CNC Workshop).
+        assert 3 <= len(role_items) <= 7, (
+            f"{role} has {len(role_items)} role items (expected 3–7)"
         )
         assert [item.item_id for item in universal_items] == [
             "common.kitchen",

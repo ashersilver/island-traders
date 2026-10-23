@@ -71,6 +71,11 @@ def adjusted_capacity_for_engineers(
         equipment_cap=cap.equipment_cap + bonus,
         workforce_cap=cap.workforce_cap,
         input_cap=cap.input_cap,
+        # Wave 7.3: carry the stepped-staffing metadata through, or the
+        # What-If tier hint disappears whenever an Engineer bonus applies.
+        tier_capacity=cap.tier_capacity,
+        tier_dedicated=cap.tier_dedicated,
+        next_tier_gain=cap.next_tier_gain,
     )
 
 

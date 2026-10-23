@@ -455,6 +455,28 @@ CAPITAL_CATALOGUE: list[CapitalItem] = [
         capacity_units=4,
         energy_intensive=True,
     ),
+    CapitalItem(
+        item_id="manufacturer.cnc_workshop",
+        name="CNC Workshop",
+        role="Manufacturer",
+        cost=150.0,
+        delivery_seasons=1,
+        # Wave 7.3: stepped-staffing primitive — Spares output is keyed to
+        # dedicated tradesmen (skilled band), NOT the linear workforce term:
+        # 0 staff → 2/season, 1 tradesman → 6, 2 tradesmen → 10 (cap).
+        # These numbers are per-season line output on the Spares qty scale and
+        # must NOT be board-scaled by _multiply_capital_capacity (the effect
+        # key deliberately sits outside effects["capacity"]).
+        effects={"tiered_capacity": {
+            "output": "Spares",
+            "base": 2,
+            "per_worker": [6, 10],
+            "band": "skilled",
+        }},
+        description="CNC spares machining: 2/6/10 Spares per season by dedicated tradesmen",
+        capacity_units=2,
+        energy_intensive=True,
+    ),
 
     # ----- Doctor ----------------------------------------------------------
     CapitalItem(
