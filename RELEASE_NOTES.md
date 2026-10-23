@@ -5,7 +5,7 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-09-24.1`.
+`APP_VERSION`: `0.1.6-dev.2026-10-23.1`.
 
 - **Fix: kitchens, food stores and lab equipment were invisible on every island
   tab** — `filteredCapacity` matched a capacity row's `role` strictly against
