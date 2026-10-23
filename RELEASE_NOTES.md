@@ -5,7 +5,29 @@ Release notes are required before merging a feature/fix branch into
 
 ## Unreleased
 
-`APP_VERSION`: `0.1.6-dev.2026-08-18.1`.
+`APP_VERSION`: `0.1.6-dev.2026-10-23.1`.
+
+- **Fix: kitchens, food stores and lab equipment were invisible on every island
+  tab** — `filteredCapacity` matched a capacity row's `role` strictly against
+  the selected island's role. Two kinds of row are not labelled with one of the
+  seven island roles: the four catalogue items that serve whichever island owns
+  them (`role="Any"` — Kitchen, Industrial Kitchen, Food Store, Laboratory
+  Equipment), and the Kitchen's Food line, emitted as a synthesized output row
+  with `role="Kitchen"`. Both were filtered out alongside other islands' plant,
+  so an island that owned a Kitchen saw neither the Kitchen in its capital
+  portfolio nor the Food it produces.
+  - The same filtered `capital_owned` feeds the repair hints, so a **failed**
+    Kitchen or Food Store never raised a repair card either — the item was
+    simply missing from the panel with no route to fix it. Given kitchens drive
+    meals and the sustenance runway warning, that could strand an island with
+    no visible cause.
+  - `filteredCapacity` now keeps a row when its role matches the island **or**
+    is cross-island (`CROSS_ISLAND_ROLES`). Consolidated is unchanged — it
+    passes a null role and is returned unfiltered, as before.
+  - New tests: `tests/test_server/test_cross_island_capacity.py`, including a
+    guard that every non-island role the server can emit (catalogue items and
+    synthesized output rows) is one the client knows to keep, so adding a
+    fifth cross-island marker can't silently repeat this.
 
 - **Back-merged `master` into `pre-release`, reconciling a two-way divergence.**
   `master` held 15 commits `pre-release` had never seen — the MCP game server,
